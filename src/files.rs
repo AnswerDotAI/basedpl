@@ -1,5 +1,5 @@
 //! Paths and the filesystem, named after Rust's `std::path` and `std::fs`. `•path` reads a path into its parts and `•path⁻¹` joins them. `•metadata` and `•readdir` give tables of entries, and `•copy`, `•rename`, `•remove` and `•mkdir` change the filesystem.
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed};
 use std::{fs, path::Path};
 

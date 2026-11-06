@@ -4,7 +4,7 @@ use crate::session;
 use crate::{
     Described, Error, ErrorKind, Function, Span, Value, agreement::{Agree, Agreement, laid_cells, spread},
     array::{Gather, Layout, Promotion, Storage, Widening, item_dtype}, primitive::{FoldKind, Form, Operation, Primitive},
-    transform::{Carrier, Cause, Ended, Kept, Op, Pairing, Stop}
+    error::{Cause, Kept, Stop}, transform::{Carrier, Ended, Op, Pairing}
 };
 use rustymath::{agreement::Mapping, buffer::DType, gather::{Steps, Writes}, structure::IndexPart};
 use std::borrow::Cow;
@@ -68,8 +68,7 @@ impl Batch {
         if !form.keeps_atoms() && layout.shape().is_empty() && self.template().is_atom() { return Err(stop()); }
         match plan.route() {
             rustymath::agreement::ReadRoute::Input(0) => Ok(self.view(layout)),
-            rustymath::agreement::ReadRoute::Map { input, map, .. } if matches!(input.route(), rustymath::agreement::ReadRoute::Input(0)) => self.copied(layout, map, fill).described("a batch's structural copy"),
-            _ => Err(stop()),
+            _ => crate::fusion::copied_through(inputs[0], &plan, &layout, fill).ok_or_else(stop)?.described("a batch's structural copy"),
         }
     }
     /// Whether code with no rule for batches has read the items one at a time (`Batch::storage`).

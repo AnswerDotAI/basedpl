@@ -1,4 +1,5 @@
-use super::*;
+use super::{Binding, Function, Operand, OperatorNode};
+use crate::{Value, display::Elide};
 
 #[derive(Clone, Debug)]
 pub(super) enum Expression { Atom(Operand), Operator(OperatorNode), Call { function: Function, left: Option<Box<Self>>, right: Box<Self> }, Strand(Vec<Self>) }

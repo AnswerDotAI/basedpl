@@ -6,9 +6,9 @@
 use crate::array::{Footprint, Seen};
 use crate::session;
 use crate::{
-    Error, ErrorKind, Function, Span, Value, agreement::{Agree, Agreement, expand}, array::{Gather, Layout, Promotion, Prototype, Widening}, error::Described,
+    Error, ErrorKind, Function, Span, Value, agreement::{Agree, Agreement, expand}, array::{Gather, Layout, Promotion, Widening}, error::Described,
     number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive},
-    transform::{Carrier, Cause, Mark, Op, Pairing, Part, Stop, walk}
+    error::{Cause, Stop}, transform::{Carrier, Mark, Op, Pairing, Part, walk}
 };
 use rustymath::{buffer::{DType, FloatWidth}, facts::Slot, recipe::{Binary, Cmp, Integer, Unary}};
 use std::cell::RefCell;
@@ -262,8 +262,8 @@ impl Join {
     /// Appends `item`.
     pub(crate) fn add(&mut self, item: Value) { self.each(&item, false, |g, s, _| g.add(s.clone())) }
     /// The dual array gathered, laid out by `layout`. An empty array takes `prototype`.
-    pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
-        let primal = self.primal.finish(layout.clone(), prototype)?;
+    pub(crate) fn finish(self, layout: Layout, prototype: &mut dyn FnMut() -> Value) -> Result<Value, ErrorKind> {
+        let primal = self.primal.finished(layout.clone(), prototype)?;
         let tangent = self.tangent.finish(layout, Value::integer(0))?;
         let tangent = match &self.ids { Some(ids) => ids.assembled(tangent, &crate::fusion::FORCING), None => tangent };
         Ok(dual(self.tag, primal, tangent))
@@ -338,7 +338,7 @@ pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, s
     let numeric = crate::number::Numeric::current();
     let right = &walk(right, &mut |leaf| {
         let leaf = &unrendered(leaf);
-        match crate::plan::Kind::approximate([crate::plan::Kind::value(leaf)], numeric).map_err(Error::domain)? {
+        match crate::plan::Kind::approximate([crate::plan::Kind::value(leaf)], numeric) {
             Some(width) => converted(leaf, DType::Float(width), span),
             None if leaf.template().is_exact() => converted(leaf, DType::Float(numeric.width_of([None])), span),
             None => Ok(leaf.clone()),
@@ -895,13 +895,13 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
         // Where reverse mode records one item from each lane, or `x` is a batch or traced, the tangent folds the tangent times a mask of the chosen items. Its transpose reads: each item takes its lane's cotangent where it was chosen, and 0 elsewhere. A gather's transpose would scatter. A trace computes the mask in its program (`Traced::picked`).
         if !kind.scan && windows.is_none() && (tx.carried() || batch.is_some() || traced.is_some()) {
             let mask = match (traced, batch) {
-                (Some(t), _) => t.picked(p, along).map_err(|reason| t.stop(crate::transform::Cause::Rule, reason))?,
+                (Some(t), _) => t.picked(p, along).map_err(|reason| t.stop(crate::error::Cause::Rule, reason))?,
                 (None, Some(b)) => crate::batch::batch(b.level, extreme_mask(p, all, frame + along)?, b.frame), (None, None) => extreme_mask(p, all, along)?
             };
             return Ok((r, fold(plus, &call(times, &mask, tx, span)?)?));
         }
         if let Some(t) = traced {
-            return Err(t.stop(crate::transform::Cause::Rule, if kind.scan { "a scan by ⌈ or ⌊" }
+            return Err(t.stop(crate::error::Cause::Rule, if kind.scan { "a scan by ⌈ or ⌊" }
             else { "picks by ⌈ or ⌊ from sliding windows" }).into());
         }
         let offsets = match windows { Some(offsets) => offsets, None => picked_offsets(p, all, Lanes::new(all.shape(), frame + along)?, kind.scan)? };
@@ -951,7 +951,7 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
     let arguments: Vec<(usize, &Value)> = match (x, code) { (Some(x), None) => vec![(0, x), (1, y)], _ => vec![(1, y)] };
     let kind = DType::Float(width);
     let kernel = crate::pervasive::kernel_at(p, code, kind, arguments.len(), numeric).ok_or_else(unsupported)?;
-    let recorder = Recorder { values: RefCell::new(Vec::with_capacity(16)), error: RefCell::new(None), like: r, width, span };
+    let recorder = Recorder { values: RefCell::new(Vec::with_capacity(16)), error: RefCell::new(None), like: r, width, tolerance: numeric.tolerance_at(width), span };
     let slots: Vec<Slot> = arguments.iter().map(|&(_, v)| recorder.held(v.clone())).collect();
     let result = recorder.held(r.clone());
     let needed: Vec<bool> = arguments.iter().map(|&(side, _)| need[side]).collect();
@@ -968,7 +968,7 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
 }
 
 /// Calls of BPL's primitives on whole values, which run a recipe of rustymath's partial derivatives on them, one call for each operation. A value is its slot's index in `values`. After the first error, an operation makes no call and gives slot 0, and `finish` gives the error. `like` is the result whose partials the recipe gives, of float width `width`.
-struct Recorder<'a> { values: RefCell<Vec<Value>>, error: RefCell<Option<Error>>, like: &'a Value, width: FloatWidth, span: &'a Span }
+struct Recorder<'a> { values: RefCell<Vec<Value>>, error: RefCell<Option<Error>>, like: &'a Value, width: FloatWidth, tolerance: rustymath::tolerant::Tolerance, span: &'a Span }
 
 impl Recorder<'_> {
     /// `value`'s slot.
@@ -1025,6 +1025,8 @@ impl rustymath::recipe::Ops<f64> for Recorder<'_> {
     fn from_bits(&self, _: Slot) -> Slot { self.bits() }
     /// A float of the width that a constant beside the result takes (`primitive::float_like`).
     fn number(&self, x: f64) -> Slot { self.held(crate::primitive::float_like(x, self.like)) }
+    /// The run's comparison tolerance at the recorded width, in place of the recipe's fallback.
+    fn tolerance(&self, _: f64) -> Slot { self.number(self.tolerance.value()) }
     fn unary(&self, op: Unary, x: Slot) -> Slot {
         let call = |p| self.call(p, None, x);
         match op {

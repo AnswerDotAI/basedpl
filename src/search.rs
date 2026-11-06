@@ -11,7 +11,7 @@
 //! - Cells that are arrays file under their first number, and `Value::matches` confirms each candidate. Classification sorts them by their first number, and compares each with the earlier representatives in its run.
 //!
 //! Other data takes the pairwise comparison.
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Error, ErrorKind, Span, Value, array::Items, element::read_as, number::Numeric};
 use rustymath::hashing::{HashMap, HashMapExt, Hashing};
 use rustymath::{buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width};

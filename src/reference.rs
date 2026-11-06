@@ -96,7 +96,7 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), when block stages compile their parts (`settings::Compiles`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run, its mode, in results and failures.
+/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`settings::Sizes::SMALL`), when block stages compile their parts (`settings::Compiles`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run, its mode, in results and failures.
 #[derive(Clone, Copy)]
 struct Run { batch: bool, fused: bool, compiles: Compiles, twice: bool, words: &'static str }
 /// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts, then on with the code as a dfn's body, whose second call runs the statements that its first call recorded. The run with no compiled parts takes place only where the run before it used one (`case_result`).
@@ -172,7 +172,7 @@ fn outcome(
             return Err(json!({"status":"error", "kind":kind, "message":message, "actual":crate::protocol::response(result)}));
         }
     }
-    let numeric = crate::settings::numeric();
+    let numeric = Numeric::current();
     let mismatch = if result.error.is_some() { None }
     else if result.function.is_some() || result.operator.is_some() { Some(Difference::new("function result", "unexpected function or operator result")) } else {
         match (error_kind, &result.value, &expected) {
@@ -217,7 +217,7 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
             calls.push(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }));
         }
     }
-    let numeric = crate::settings::numeric();
+    let numeric = Numeric::current();
     let Ok([first, second]) = <[crate::Evaluation; 2]>::try_from(calls) else { return Ok(Outcome { value: None, numeric, expected: None }) };
     for error in [&first.error, &second.error].into_iter().flatten() {
         if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {

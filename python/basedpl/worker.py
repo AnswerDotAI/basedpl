@@ -7,7 +7,9 @@ from decimal import Decimal
 from . import BplError, _output_text, _written
 from .syntax import linear
 from fastcore.meta import delegates
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+try: from fastws.timelock import timing_lock
+except ModuleNotFoundError: timing_lock = nullcontext # fastws is a dev dependency
 
 INSTALLED_BPL = Path(sysconfig.get_path('scripts'))/'bpl' # The `bpl` that `cargo develop` installs, a link through its installed build (`fastws.store`)
 Compiles = Annotated[str, {'choices': ['always', 'never']}] # The values that `environment`'s `compile` takes, as choices for a shell argument
@@ -57,9 +59,10 @@ class Worker:
         bpl=None, # The native `bpl` to run (`resolved`); None or `installed`: the installed build
         stderr_limit=30, # Maximum diagnostic lines to retain; None keeps all stderr
         cwd=None, # Working directory of the child; None inherits the caller's directory
+        lock=True, # Hold this machine's timing lock shared during each request but a timing (`timing`, `costs`), which locks it exclusively in the worker; False where the caller holds it for a batch of workers
         **kwargs
     ):
-        self.cwd = None if cwd is None else Path(cwd).expanduser().resolve()
+        self.cwd, self.lock = None if cwd is None else Path(cwd).expanduser().resolve(), lock
         self.process = subprocess.Popen((resolved(bpl), '--worker'), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             encoding='utf-8', bufsize=1, env=environment(**kwargs), cwd=self.cwd)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=stderr_limit)
@@ -130,7 +133,7 @@ class Worker:
         "Send one request to the worker and return its result. A Ctrl-C interrupts the request and re-raises with its partial `output` and `events`. If no reply arrives within `timeout` plus `grace`, or within `stall` seconds of the worker's last line of stderr, the worker closes and its session is lost, since a deadlocked worker never takes the interrupt. The call then raises `TimeoutError`. A worker that exits, as a crash ends it, raises `EOFError` with its last lines of stderr."
         for name, seconds in [('timeout', timeout), ('grace', grace), ('stall', stall)]:
             if seconds is not None and (not math.isfinite(seconds) or seconds < 0): raise ValueError(f'{name} must be finite and nonnegative')
-        with self._request_lock:
+        with self._request_lock, (timing_lock() if self.lock and not {'timing', 'costs'} & payload.keys() else nullcontext()):
             if self.process.poll() is not None: raise RuntimeError('worker is closed; its session is lost')
             self._id += 1
             message = dict(payload, id=self._id)

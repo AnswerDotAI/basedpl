@@ -42,15 +42,8 @@ test = false
 [profile.test]
 inherits = "release"
 
-[profile.quick]
-inherits = "test"
-lto = "off"
-
-[profile.lto]
-inherits = "release"
-
 [profile.release]
-opt-level = 2
+opt-level = 3
 # Thin LTO across the crate's own codegen units, Cargo's default. Incremental builds put `#[inline]` helpers such as iterator adapters in codegen units of their own, where only LTO can inline them.
 lto = false
 overflow-checks = false
@@ -72,7 +65,7 @@ debug-assertions = true
 [features]
 default = ["native"]
 # rustymath's own linear algebra, beside Accelerate on macOS, for `RUSTYMATH_NATIVE=1`. The Mac release builds turn it off.
-native = ["rustymath/native"]
+native = ["rustymath/default"]
 
 [dependencies]
 csv = "1"
@@ -137,11 +130,6 @@ web-sys = { version = ">=0.3.106, <0.4", features = ["Url", "XmlHttpRequest", "X
 wasm-bindgen = ">=0.2.129, <0.3"
 # `eval::room` reads the stack pointer for the room left on the browser's main stack, where stacker reports none.
 psm = ">=0.1.32, <0.2"
-
-# `tests/units.rs` reads the development build's object files.
-[dev-dependencies]
-object = { version = ">=0.39.1, <1", default-features = false, features = ["read"] }
-rustc-demangle = ">=0.1.28, <1"
 
 [build-dependencies]
 serde_json = "1"

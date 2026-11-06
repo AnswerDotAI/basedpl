@@ -1,4 +1,4 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{
     Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len}, element::{Float, read_as}, primitive::Primitive,
     number::{Arithmetic, Field, Math, Numeric, with_field}
@@ -197,7 +197,7 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
     if let Some(y) = evaluated(left, right)? { return Ok(y); }
     let (cells, agreement) = polynomial_cells(left, right.layout())?;
     let polynomials = parsed(&cells)?;
-    let settings = Numeric::for_values([left, right])?;
+    let settings = Numeric::for_values([left, right]);
     let mut results = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         check()?;

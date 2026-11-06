@@ -132,7 +132,7 @@ p←{⍵ - 0.1× [x y]loss∂⍵}⍣200p
 [x y] loss p                ⍝ 0.07655752909
 ```
 
-`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
+`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. A map in the function, such as Rank in `+/{⊼1○+/w×⍵}⍤1 X`, calls its dfn once on all its cells, as it does outside a trace. Each call in the dfn then adds one step for all the cells. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
 
 Later calls with the same argument types and shapes replay the program on their arguments, without running the function. The replay runs the program's steps as ordinary calls. Chains of elementwise steps then run as one stage, a block of items at a time, as they do outside a program. A stage folds its last step's items as it computes them. Its intermediate results exist only one block at a time. Once a stage is large enough, or runs again, BPL compiles it to machine code with Cranelift, if its steps can compile. The browser build has no compiler. It runs every stage on the interpreter's kernels. `•explain` shows whether a call built a program or replayed one:
 
@@ -218,7 +218,7 @@ BPL also differs from all of them. `∂` strips its tags from values that escape
 These are planned:
 
 - Branches in programs. Agenda (`⍚`) with a selector computed from differentiated values stops a trace, as a guard on them does. The plan is to trace such a selector as a masked select, as JAX traces `select`.
-- Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level". Batching inside traces is planned.
+- Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level".
 - Writes. `@` and selective assignment with differentiated values stop a trace. `∂` still gives the right result, more slowly.
 - Whole training steps. A program holds one call of `∂`. The update, and the loop around it, run outside the program. A tracing point for whole training steps, such as `⍣`, would run a step's forward pass, gradient and update as one program.
 - Deferred Jacobians. `f∂ x` builds every item of the Jacobian. The plan holds a large Jacobian as its linearisation, and builds its items only when something reads them. `J+.×v` would then run as a JVP, `u+.×J` as a vector–Jacobian product, and `b⌹J` as an iterative solve, as in the Gauss–Newton step `x - r⁝x ⌹ r∂x`.

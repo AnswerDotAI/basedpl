@@ -47,6 +47,7 @@ pub(crate) enum ListForm {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
+/// A dfn's or an operator's definition. Its calls fill two caches that live on the definition, one per definition, as JAX's `jit` caches per function: what maps remember of a stopped batched run (`remembered`), and the programs that `∂` traces (`programs`).
 #[derive(Debug)]
 pub(crate) struct Definition {
     pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], remembered: AtomicU64,

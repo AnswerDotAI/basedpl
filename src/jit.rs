@@ -190,7 +190,7 @@ impl Kernel {
         let ptr = module.target_config().pointer_type();
         ctx.func.signature.params.extend([ptr; 6].map(AbiParam::new));
         self.build(&mut ctx, module.target_config());
-        let id = module.declare_function("kernel", Linkage::Local, &ctx.func.signature).map_err(|e| e.to_string())?;
+        let id = module.declare_function("bpl_jit_stage", Linkage::Local, &ctx.func.signature).map_err(|e| e.to_string())?;
         module.define_function(id, &mut ctx).map_err(|e| format!("{e:?}"))?;
         if let Some(code) = ctx.compiled_code().and_then(|c| c.vcode.as_deref()) { eprintln!("{self:?}\n{code}"); }
         module.clear_context(&mut ctx);
@@ -267,8 +267,8 @@ impl Kernel {
         widths
     }
 
-    /// The running totals of the kernel's float fold (`running`), where it has one. Each pass of the main loop steps every total once, one vector of totals for each vector of items, and the loops over single vectors and items step one vector of them.
-    pub fn totals(&self) -> Option<usize> { self.folds.iter().map(|&(_, k)| self.steps[k].ty).find(|t| t.float()).map(|t| running(t.bytes() as usize)) }
+    /// The running totals of the kernel's float sum or product (`running`), where it has one: a maximum or minimum is exact in any association, so it keeps `UNROLL` sets, as an integer fold does. Each pass of the main loop steps every total once, one vector of totals for each vector of items, and the loops over single vectors and items step one vector of them.
+    pub fn totals(&self) -> Option<usize> { self.folds.iter().filter(|(fold, _)| matches!(fold, Fold::Sum | Fold::Product)).map(|&(_, k)| self.steps[k].ty).find(|t| t.float()).map(|t| running(t.bytes() as usize)) }
 
     /// The type of value `v`.
     fn ty(&self, v: Value) -> Ty { match v { Value::Input(k) => self.inputs[k].ty(), Value::Step(k) => self.steps[k].ty } }
@@ -371,7 +371,9 @@ impl Kernel {
         let outs: Vec<Ir> = (0..self.stores.len()).map(|k| b.ins().load(ptr, FLAGS, outs, k as i32 * 8)).collect();
         let widths = self.widths();
         let accs: Vec<Acc> = self.folds.iter().map(|&(fold, k)| Acc::new(fold, self.steps[k].ty, widths[k], width)).collect();
-        let group = self.totals().map_or(UNROLL, |r| r as i64 / lanes);
+        // A kernel whose folds are all float maxima or minima, exact in any association, steps twice as many groups a pass, so that the loop's own instructions weigh less. A count keeps `UNROLL`, the groups a pass that `COUNTED` allows its byte lanes.
+        let extremes = !self.folds.is_empty() && self.folds.iter().all(|&(f, k)| matches!(f, Fold::Max | Fold::Min) && self.steps[k].ty.float());
+        let group = self.totals().map_or(if extremes { 2 * UNROLL } else { UNROLL }, |r| r as i64 / lanes);
         let vector_totals: Vec<Vec<Variable>> = accs.iter().map(|acc| (0..acc.vectors()).map(|_| b.declare_var(acc.vector())).collect()).collect();
         let scalar_totals: Vec<Variable> = accs.iter().map(|acc| b.declare_var(acc.total())).collect();
         let (i, t) = (b.declare_var(ptr), b.declare_var(ptr));
@@ -431,13 +433,17 @@ impl Kernel {
             b.switch_to_block(head);
             let iv = b.use_var(i);
             let more = b.ins().icmp(IntCC::UnsignedLessThan, iv, end);
-            b.ins().brif(more, body, &[], next, &[]);
+            // The exit is a block of its own: the next loop's preheader, outside this loop, where Cranelift lifts that loop's bounds and constants.
+            let done = b.create_block();
+            b.ins().brif(more, body, &[], done, &[]);
             b.switch_to_block(body);
             let iv = b.use_var(i);
             run(b, iv);
             let step = b.ins().iadd_imm_s(iv, items);
             b.def_var(i, step);
             b.ins().jump(head, &[]);
+            b.switch_to_block(done);
+            b.ins().jump(next, &[]);
         };
         looped(&mut b, group_head, group_body, groups, single_head, group * lanes, &mut |b, iv| {
             let now = current(b);
@@ -584,14 +590,14 @@ impl Kernel {
     }
 }
 
-/// A fold's accumulators, in vectors of `lane`-byte lanes: `sets` sets of one vector for each vector of a group's items, of which unrolled group `u` steps set `u` modulo `sets`. A float fold keeps as many running results as rustymath's folds keep, one set for each group of an iteration. An integer sum and a count of Booleans keep enough sets that up to `UNROLL` groups step separate vectors, so that their adds don't wait on each other. A count keeps its counts in integer lanes as wide as the lanes its mask lies at (`Kernel::widths`). Byte lanes count at most 255 items in a block (`COUNTED`). `width` is the bytes of the kernel's narrowest type.
+/// A fold's accumulators, in vectors of `lane`-byte lanes: `sets` sets of one vector for each vector of a group's items, of which unrolled group `u` steps set `u` modulo `sets`. A float sum or product keeps as many running results as rustymath's folds keep, one set for each group of an iteration, so that its association matches theirs. A float maximum or minimum, exact in any association, an integer sum and a count of Booleans keep enough sets that up to `UNROLL` groups step separate vectors, so that their adds don't wait on each other. A count keeps its counts in integer lanes as wide as the lanes its mask lies at (`Kernel::widths`). Byte lanes count at most 255 items in a block (`COUNTED`). `width` is the bytes of the kernel's narrowest type.
 #[derive(Clone, Copy)]
 struct Acc { fold: Fold, ty: Ty, lane: i64, width: i64, sets: usize }
 
 impl Acc {
     fn new(fold: Fold, ty: Ty, lane: i64, width: i64) -> Self {
         let (bytes, per) = (lane as usize, (lane / width) as usize);
-        let sets = if ty.float() { running(bytes) / (16 / bytes) / per } else { (UNROLL as usize / per).max(1) };
+        let sets = if ty.float() && matches!(fold, Fold::Sum | Fold::Product) { running(bytes) / (16 / bytes) / per } else { (UNROLL as usize / per).max(1) };
         Acc { fold, ty, lane, width, sets }
     }
 
@@ -727,9 +733,19 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
         (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
         (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
         (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => magnitude(b, x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
         _ => unreachable!("`check` gives each operation its arguments")
     }
+}
+
+/// `x`, floats, with the sign bit of each item cleared. A vector clears it with a constant mask, which a loop computes once, where `fabs` rebuilds the mask for each vector on x86-64.
+fn magnitude(b: &mut FunctionBuilder, x: Ir) -> Ir {
+    let t = b.func.dfg.value_type(x);
+    if !t.is_vector() { return b.ins().fabs(x); }
+    let lane = t.lane_type().bytes() as usize;
+    let mask = b.func.dfg.constants.insert(ConstantData::from((0..16).map(|i| if i % lane == lane - 1 { 0x7f } else { 0xff }).collect::<Vec<u8>>()));
+    let mask = b.ins().vconst(t, mask);
+    b.ins().band(x, mask)
 }
 
 /// `x × y`, wrapping for integers. A vector of bytes multiplies at 16 bits, because x86-64 has no vector multiply of bytes.

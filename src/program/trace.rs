@@ -1,12 +1,13 @@
 //! The program that a running level builds from values that carry a type and a layout but no items (`Traced`). A trace builds one from a dfn's call, which later calls replay (`programmed`). Reverse mode's tape builds one from a `∂` call's linear calls on tangents, which `derivative::tape` runs backwards. Both record steps through one `Tracer`, and each traced value's `role` says which its program serves.
 
-use super::{Desc, Node, Nodes, Origin, Program, Read, Recent, Selector, Step, run};
+use crate::plan::Desc;
+use super::{Node, Nodes, Origin, Program, Read, Recent, Selector, Step, run};
 use crate::{
     Error, ErrorKind, error::Described, Function, Number, Span, Value, array::{Layout, Seen, Shape, Storage}, eval::Place, number::Numeric, plan::{self, Operand},
     primitive::{FoldKind, Operation, Primitive, structural::Form}, session,
-    transform::{Carrier, Cause, Ended, Kept, Kind, Op, Pairing, Stop}
+    error::{Cause, Kept, Stop}, transform::{Carrier, Ended, Kind, Op, Pairing}
 };
-use rustymath::{agreement::Mapping, buffer::{Buffer, DType}, structure::IndexPart};
+use rustymath::{agreement::Mapping, buffer::{Buffer, DType}, domain::Range, structure::IndexPart};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, atomic::{AtomicBool, Ordering}};
 
 /// The node of a traced value that isn't in the program, such as an item that code with no rule for traces read (`Carrier::storage`). Any call on it stops the trace.
@@ -102,7 +103,9 @@ fn described(value: &Value) -> Option<Desc> {
     let mut plain = value;
     while let Some(carrier) = plain.carrier() { plain = carrier.template(); }
     let item = if plain.is_atom() { plain.clone() } else { plain.prototype() };
-    Some(Desc { atom: value.is_atom(), layout: value.layout().clone(), ..Desc::of(&item)? })
+    // A template answers for every value that the carrier holds, as a batch's first cell does for the others, so its items bound nothing: the range is the type's.
+    let desc = Desc::of(&item)?;
+    Some(Desc { atom: value.is_atom(), layout: value.layout().clone(), range: desc.kind.dtype.map_or(Range::ANY, Range::of_dtype), ..desc })
 }
 
 impl Traced {
@@ -319,7 +322,7 @@ impl<'a> Arg<'a> {
     fn of(value: &'a Value, level: u64, role: Role) -> Result<Self, &'static str> {
         match value.carrier_at(level).and_then(Carrier::traced) {
             Some(t) if t.read.of == OUTSIDE => Err("an item read one at a time"), Some(t) => Ok(Arg::Traced(t.read.clone(), t.desc())),
-            None if value.carrier().is_none() => Desc::held(value).map(|d| Arg::Held(value, d)).ok_or_else(|| unholdable(value)),
+            None if value.carrier().is_none() => Desc::of(value).map(|d| Arg::Held(value, d)).ok_or_else(|| unholdable(value)),
             None if role == Role::Tape && value.older_than(level) => described(value).map(|d| Arg::Held(value, d)).ok_or_else(|| unholdable(value)),
             None => Err("a value that another level carries")
         }
@@ -419,7 +422,7 @@ fn shape_query(p: Primitive, t: &Traced, right: &Value, level: u64) -> Result<Va
     let value = p.run_axis(None, right, None, &crate::fusion::FORCING)?;
     if matches!(p, Primitive::Shape) { t.tracer.exact("a shape read as a value"); return Ok(value); }
     let Some(desc) = Desc::of(&Value::integer(i64::MAX)) else { unreachable!("a program describes an integer atom") };
-    let counted = node(level, Role::Trace, &t.tracer, Desc { nonnegative: true, ..desc }, Step::Shape { p, of: t.read.clone() });
+    let counted = node(level, Role::Trace, &t.tracer, Desc { range: Range::NONNEGATIVE, ..desc }, Step::Shape { p, of: t.read.clone() });
     if let Some(c) = counted.carrier().and_then(Carrier::traced) { let _ = c.known.set(Some(value)); }
     Ok(counted)
 }
@@ -434,6 +437,17 @@ pub(crate) fn contracted(p: Primitive, kind: FoldKind, axes: &[usize], right: &V
     let desc = read.desc(&builder.nodes);
     drop(builder);
     Some(traced(t.level, t.role, read, &desc, &t.tracer))
+}
+
+/// `yes` where `mask` is true and `no` elsewhere, as one `Select` step (`plan::select`) where one of them is a trace's or a tape's value. `None` where none is, or where the program can't hold an operand or no plan covers the select.
+pub(crate) fn chosen(mask: &Value, yes: &Value, no: &Value) -> Option<Value> {
+    let t = [mask, yes, no].into_iter().find_map(|v| v.carrier()?.traced())?;
+    let (tracer, role, level) = (t.tracer.clone(), t.role, t.level);
+    let [m, y, n] = [mask, yes, no].map(|v| Arg::of(v, level, role).ok());
+    let (m, y, n) = (m?, y?, n?);
+    let select = plan::select(&m.operand(), &y.operand(), &n.operand()).ok()?;
+    let step = Step::Select { mask: m.read(&tracer), yes: y.read(&tracer), no: n.read(&tracer) };
+    Some(node(level, role, &tracer, select.desc, step))
 }
 
 /// A call's plan, before its arguments have nodes.
@@ -564,7 +578,7 @@ pub(crate) enum Descs { Leaf(Desc), Nested(Layout, Vec<Descs>) }
 /// Whether `a` and `b` describe arguments that one program serves: the same, where the program keys exact lengths, and otherwise the same but for the lengths of unkeyed axes (`laid_alike`).
 fn alike(a: &Descs, b: &Descs, exact: bool) -> bool {
     match (a, b) {
-        (Descs::Leaf(x), Descs::Leaf(y)) => x.kind == y.kind && x.atom == y.atom && x.nonnegative == y.nonnegative && laid_alike(&x.layout, &y.layout, exact),
+        (Descs::Leaf(x), Descs::Leaf(y)) => x.kind == y.kind && x.atom == y.atom && x.range == y.range && laid_alike(&x.layout, &y.layout, exact),
         (Descs::Nested(l, xs), Descs::Nested(m, ys)) => l == m && xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| alike(x, y, exact)),
         _ => false,
     }
@@ -674,7 +688,7 @@ impl Entry {
     /// The free values, read again for a call: `None` at an index that isn't an input. A name is read from where it's bound, and a datum from `data`, the data of the function that the call runs. The outer `None` means a free value no longer holds what the trace assumed, so the outcome doesn't apply to the call.
     fn reread(&self, data: &[Value]) -> Option<Vec<Option<Value>>> {
         self.captured.iter().map(|c| match (c.free.found(data)?, &c.expect) {
-            (Found::Value(v), Expect::Value(desc)) if desc.matches(&v) && laid_alike(&desc.layout, v.layout(), self.exact()) => Some(Some(v)),
+            (Found::Value(v), Expect::Value(desc)) if desc.matches(&v) && Desc::of(&v).is_some_and(|d| d.range.within(desc.range.lo, desc.range.hi)) && laid_alike(&desc.layout, v.layout(), self.exact()) => Some(Some(v)),
             (Found::Function(f), Expect::Function(g)) if f.identity() == g.identity() => Some(None),
             (Found::Value(v), Expect::Same(w)) if v.same(w) => Some(None), (Found::Value(v), Expect::Held(w)) if v.same(w) => Some(Some(v)), _ => None
         }).collect()

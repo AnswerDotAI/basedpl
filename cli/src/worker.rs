@@ -62,6 +62,7 @@ fn reply(session: &Session, request: &Value, interrupt: InterruptHandle) -> Resu
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
     if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, &options.interrupt))); }
     if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("steps") { return basedpl::timing::steps_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("costs") { return basedpl::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, &options.interrupt, options.timeout).map(Reply::Json); }

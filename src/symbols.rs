@@ -72,7 +72,7 @@ const SYNTAX: &[(&str, &str, &str, &str)] = &[
     ("⍬", "zilde", "literal", "empty"),
 ];
 
-/// Every glyph: syntax, then primitives and operators from their rows in `primitive.rs`.
+/// Every glyph: syntax, then primitives from their rows in `primitive/facts.rs` and operators from theirs in `primitive.rs`.
 pub fn symbols() -> &'static [Symbol] {
     static SYMBOLS: OnceLock<Vec<Symbol>> = OnceLock::new();
     SYMBOLS.get_or_init(|| {

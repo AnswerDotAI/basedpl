@@ -1,10 +1,10 @@
 use crate::array::{Footprint, Seen};
 use crate::{
-    Described, Error, ErrorKind, Span, Value, array::{Frame, Gather, Items, Layout, Prototype, Storage, Widening, generated_len},
+    Described, Error, ErrorKind, Span, Value, array::{Frame, Gather, Items, Layout, Storage, Widening, generated_len},
     primitive::{Form, Origin, Primitive, Selection, Targets}, transform::{Carrier, Part}
 };
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{agreement::Mapping, buffer::View, error::Kind, gather::Steps};
+use rustymath::{agreement::{Mapping, ReadRoute}, buffer::View, error::Kind, gather::Steps};
 use std::sync::{Arc, OnceLock};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -19,11 +19,14 @@ enum Places { Offsets(usize), Paths(Vec<Vec<usize>>) }
 /// The offset that label `id` leads to in a root of `n` items with no nested items (`transform::id_offset`): `Steps::FILL` for a fill and past the root's end, where a write writes nothing.
 fn offset(id: usize, n: usize) -> usize { let o = crate::transform::id_offset(id); if o < n { o } else { Steps::FILL } }
 
-/// The offsets that compact `ids` lead to in a root of `n` items with no nested items, in one pass. The error is the one for the first id that isn't a label.
+/// The offsets that compact `ids` lead to in a root of `n` items with no nested items. The error is the one for the first id that isn't a label.
 fn offsets(ids: &[i64], n: usize) -> Result<Vec<usize>, Error> {
-    let mut bad = None;
-    let offsets = ids.iter().map(|&id| usize::try_from(id).map_or_else(|_| { bad.get_or_insert(id); Steps::FILL }, |i| offset(i, n))).collect();
-    match bad { None => Ok(offsets), Some(id) => Err(label_id(Some(id)).expect_err("a negative id isn't a label")) }
+    // A negative id isn't a label. A vectorized pass finds the least id. Only a failure then searches for the first negative one.
+    if ids.iter().min().is_some_and(|&least| least < 0) {
+        let id = ids.iter().copied().find(|&id| id < 0);
+        return Err(label_id(id).expect_err("a negative id isn't a label"));
+    }
+    Ok(ids.iter().map(|&id| offset(id as usize, n)).collect())
 }
 
 /// A selection as `Labels::read` gives it: a walk over the root's items, or ids that `Labels::replacements` turns into places.
@@ -31,9 +34,9 @@ pub(crate) enum Read { Walk(Selection), Ids(Value, SelectionKind) }
 
 impl Labels {
     /// Labels for every item of `original`, built item by item: each atom's place as a path, and each nested array kept by its storage id. The labels array itself stands for the whole of `original`.
-    fn new(original: &Value, span: &Span) -> Result<(Self, Value), Error> {
+    fn new(original: &Value) -> Result<(Self, Value), Error> {
         let mut labels = Self { places: Places::Paths(vec![]), nested: HashMap::new() };
-        let array = labels.build(original, &mut Vec::new(), span)?;
+        let array = labels.build(original, &mut Vec::new())?;
         labels.nested.insert(array.storage_id(), (array.clone(), vec![]));
         Ok((labels, array))
     }
@@ -54,7 +57,7 @@ impl Labels {
         Some(Read::Ids(ids, l.kind))
     }
     fn len(&self) -> usize { match &self.places { Places::Offsets(n) => *n, Places::Paths(paths) => paths.len() } }
-    fn build(&mut self, a: &Value, path: &mut Vec<usize>, span: &Span) -> Result<Value, Error> {
+    fn build(&mut self, a: &Value, path: &mut Vec<usize>) -> Result<Value, Error> {
         crate::explain::itemwise(rustymath::events::Route::NestedLabels, a.len());
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
@@ -62,7 +65,7 @@ impl Labels {
             path.push(i);
             items.push(match e {
                 a @ Value::Array(_) => {
-                    let child = self.build(&a, path, span)?;
+                    let child = self.build(&a, path)?;
                     // Retain the array: a later selector must not reuse its storage ID.
                     self.nested.insert(child.storage_id(), (child.clone(), path.clone()));
                     child
@@ -100,7 +103,7 @@ impl Labels {
         match item { Value::Number(n) => matches!(n.nonnegative_integer(), Ok(0)), Value::Array(_) => item.elements().all(|e| Self::fill(&e)), _ => false }
     }
     /// The targets in the root that `read` gives, with `right` as their values. A walk, and compact ids on a root with no nested items, keep the selection's layout as their frame, so the write aligns keys and checks the shape itself.
-    pub fn replacements(&self, read: Read, right: &Value, span: &Span) -> Result<(Selection, Value), Error> {
+    pub(crate) fn replacements(&self, read: Read, right: &Value) -> Result<(Selection, Value), Error> {
         let (selected, kind) = match read { Read::Walk(selection) => return Ok((selection, right.clone())), Read::Ids(ids, kind) => (ids, kind) };
         let selected = &selected;
         if let (SelectionKind::Elements, Places::Offsets(n), Some(View::Integers(ids))) = (kind, &self.places, selected.view()) {
@@ -118,12 +121,12 @@ impl Labels {
             else { false };
             if !found { return Err(Error::new(Kind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
-        } else { self.collect(selected, right, span, &mut targets, &mut values)?; }
+        } else { self.collect(selected, right, &mut targets, &mut values)?; }
         let shape = vec![targets.len()];
         let values = values.finish(shape.clone().into(), || right.prototype()).described("invalid replacement")?;
         Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
     }
-    fn collect(&self, selected: &Value, right: &Value, span: &Span, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
+    fn collect(&self, selected: &Value, right: &Value, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
         crate::explain::itemwise(rustymath::events::Route::LabelIds, selected.len());
         let aligned;
         let right = if right.has_keys() && selected.has_keys() {
@@ -149,7 +152,7 @@ impl Labels {
                         targets.push(path);
                         values.push(right, pick(i));
                     }
-                    None => self.collect(a, &right.at(pick(i)), span, targets, values)?,
+                    None => self.collect(a, &right.at(pick(i)), targets, values)?,
                 },
                 Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(Error::domain("invalid selection")),
             }
@@ -211,7 +214,7 @@ impl Labelled {
         Value::integers(self.layout.clone(), Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
     }
     /// Whether this is the root itself, unchanged, which a write replaces whole where its kind is one item.
-    fn whole(&self) -> bool { !self.atom && matches!(self.labels, Lead::Mapped(Mapping::Linear(1))) && self.layout == *self.root.layout() }
+    fn whole(&self) -> bool { !self.atom && self.layout == *self.root.layout() && matches!(&self.labels, Lead::Mapped(m) if m.in_order(self.root.len(), self.layout.shape())) }
     /// The value that answers queries that read no items: an atom's own value, the values where something has read them, or else the root, whose kind and prototype a selection from it shares.
     pub(crate) fn template(&self) -> &Value { if self.atom { self.values() } else { self.values.get().unwrap_or(&self.root) } }
     pub(crate) fn storage(&self) -> &Storage { self.values().storage().expect("a labelled array's values are an array") }
@@ -246,10 +249,19 @@ impl Labelled {
             self.level, SelectionKind::Elements, self.root.clone(), crate::fusion::copied(&self.ids(), layout.clone(), map, None)?,
             crate::fusion::copied(self.values(), layout, map, fill)?))
     }
-    /// `form`'s result on `inputs`, with `params` and `fill`, at this label level (`fusion::copy`): the values and the labels copy through the same plan. An input that this level doesn't carry labels its items `FOREIGN`. A position that reaches no item, or reads the fill, has the fill's label, 0. Parameters and the fill read as values.
+    /// `form`'s result on `inputs`, with `params` and `fill`, at this label level (`fusion::copy`): the values and the labels copy through the same plan. One labelled input that the plan reads whole, or through one map, gives this label viewed or `copied` through that map, which composes a mapping where there's no fill and so builds no ids. An input that this level doesn't carry labels its items `FOREIGN`. A position that reaches no item, or reads the fill, has the fill's label, 0. Parameters and the fill read as values.
     pub(crate) fn structural(&self, form: &crate::primitive::structural::Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
         let level = self.level;
         let params: Vec<Value> = params.iter().map(|p| strip(p, level)).collect();
+        if let [input] = inputs && let Some(l) = at_level(input, level) && !input.is_atom() {
+            let (layout, plan) = crate::primitive::structural::plan(form, &params, &[input.layout()])?;
+            match plan.route() {
+                ReadRoute::Input(0) => return Ok(l.view(layout)),
+                ReadRoute::Map { input: source, map, .. } if matches!(source.route(), ReadRoute::Input(0)) =>
+                    return l.copied(layout, map, fill.map(|f| strip(f, level)).as_ref()).described("a structural copy"),
+                _ => {}
+            }
+        }
         let foreign = Value::integer(FOREIGN);
         let (values, ids): (Vec<Value>, Vec<Value>) = inputs.iter().map(|v| match at_level(v, level) {
             Some(l) => (l.values().clone(), l.ids()),
@@ -277,14 +289,14 @@ pub(crate) fn strip(value: &Value, level: u64) -> Value {
 }
 
 /// `root` at label level `level`, each item labelled with its own position, with the `Labels` that turn labels back into places. A root with nested items labels them all through `Labels::new`. Any other root builds no labels until a reader needs them.
-pub(crate) fn labelled(root: &Value, level: u64, span: &Span) -> Result<(Labels, Value), Error> {
+pub(crate) fn labelled(root: &Value, level: u64) -> Result<(Labels, Value), Error> {
     // Compact storage holds only atoms, and `dtype` says so without computing a pending root's items.
     let simple = root.dtype().is_some() || match root.as_items() { Items::Values(items) => items.iter().all(Value::is_atom), _ => true };
     if matches!(root, Value::Array(_)) && !root.is_empty() && simple {
         let labels = Labels { places: Places::Offsets(root.len()), nested: HashMap::new() };
         return Ok((labels, Labelled::mapped(level, SelectionKind::Item, root.clone(), root.layout().clone(), false, Mapping::Linear(1))));
     }
-    let (labels, ids) = Labels::new(root, span)?;
+    let (labels, ids) = Labels::new(root)?;
     Ok((labels, Labelled::given(level, SelectionKind::Item, root.clone(), ids, root.clone())))
 }
 
@@ -308,25 +320,23 @@ pub(crate) fn kind_after(p: Primitive, left: Option<&Value>, right: &Value, kind
 }
 
 /// A call of `p` at label level `level`. An ordering form whose items come from the labelled right argument selects them by the positions it takes (`Primitive::taken`), through `⌷`. A primitive that selects, called on a labelled right argument, runs its own code on that argument (`Primitive::run_axis`), so a structural copy carries the labels on (`Labelled::structural`, or `Labelled::copied` for a raw mapping). Where that code reads the values instead, through `Labelled::storage`, its result holds the values, and the call runs once more, on the ids. Any other call reads values, which drops the labels, and a labelled left argument reads as values.
-pub(crate) fn call(p: Primitive, axis: Option<usize>, left: Option<&Value>, right: &Value, level: u64, span: &Span) -> Option<Result<Value, Error>> {
+pub(crate) fn call(p: Primitive, axis: Option<usize>, left: Option<&Value>, right: &Value, level: u64, span: &Span) -> Result<Value, Error> {
     let left = left.map(|x| strip(x, level));
-    let Some(labelled) = at_level(right, level) else { return Some(p.call_axis(left.as_ref(), &strip(right, level), axis, span)) };
+    let Some(labelled) = at_level(right, level) else { return p.call_axis(left.as_ref(), &strip(right, level), axis, span) };
     let dyadic = left.is_some();
     if axis.is_none() && matches!(p.facts(dyadic).form, Form::Orders) {
         if let Some(taken) = p.taken(left.as_ref(), labelled.values(), span) {
-            return Some(taken.and_then(|(origin, positions)| match origin {
+            return taken.and_then(|(origin, positions)| match origin {
                 Origin::Right => Primitive::Index.call(Some(&positions.enclose().expect("positions enclose")), right, span),
                 Origin::Left | Origin::Both => p.call_axis(left.as_ref(), labelled.values(), axis, span),
-            }));
+            });
         }
     }
-    if !p.selects(dyadic) { return Some(p.call_axis(left.as_ref(), labelled.values(), axis, span)); }
-    Some((|| {
-        let kind = kind_after(p, left.as_ref(), right, labelled.kind)?;
-        let ran = p.run_axis(left.as_ref(), right, axis, span)?;
-        if let Some(r) = at_level(&ran, level) { return Ok(r.with_kind(kind)); }
-        Ok(Labelled::given(level, kind, labelled.root.clone(), p.call_axis(left.as_ref(), &labelled.ids(), axis, span)?, strip(&ran, level)))
-    })())
+    if !p.selects(dyadic) { return p.call_axis(left.as_ref(), labelled.values(), axis, span); }
+    let kind = kind_after(p, left.as_ref(), right, labelled.kind)?;
+    let ran = p.run_axis(left.as_ref(), right, axis, span)?;
+    if let Some(r) = at_level(&ran, level) { return Ok(r.with_kind(kind)); }
+    Ok(Labelled::given(level, kind, labelled.root.clone(), p.call_axis(left.as_ref(), &labelled.ids(), axis, span)?, strip(&ran, level)))
 }
 
 /// The labelled items that a `Gather` copies at label level `level`: their values and their ids (`Labelled::ids`), each in a buffer of its own. An item from elsewhere gets `FOREIGN`. `finish` gives the labelled array.
@@ -360,8 +370,8 @@ impl Join {
         }
     }
     pub(crate) fn add(&mut self, item: Value) { self.each(&item, false, |g, s, _| g.add(s.clone())) }
-    pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
-        let values = self.values.finish(layout.clone(), prototype)?;
+    pub(crate) fn finish(self, layout: Layout, prototype: &mut dyn FnMut() -> Value) -> Result<Value, ErrorKind> {
+        let values = self.values.finished(layout.clone(), prototype)?;
         Ok(Labelled::given(self.level, SelectionKind::Elements, self.root, self.ids.finish(layout, Value::integer(0))?, values))
     }
 }

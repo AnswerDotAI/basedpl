@@ -1,6 +1,7 @@
 mod agreement;
 mod array;
 mod batch;
+mod cancel;
 mod canvas;
 mod csv;
 mod data;
@@ -56,7 +57,8 @@ pub(crate) use error::{At, Described};
 pub use error::{Error, ErrorKind, Source, Span};
 pub(crate) use eval::session;
 pub use eval::{Evaluation, Function, Operand, Operator, Session, Turn};
-pub use execution::{EvalOptions, Input, InterruptHandle, MimeBundle, MimeData, Output, OutputKind, OutputSink, Poll};
+pub use cancel::{InterruptHandle, Poll};
+pub use execution::{EvalOptions, Input, MimeBundle, MimeData, Output, OutputKind, OutputSink};
 #[cfg(web)]
 pub use host::configure_browser;
 pub use inspection::Inspection;

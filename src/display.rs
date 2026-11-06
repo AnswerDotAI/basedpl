@@ -46,41 +46,41 @@ pub(crate) enum Hidden { Full, Short, Omit }
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
-    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64),
+    pub(crate) const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64),
         marks: true, notation: Notation::Apl, display: false, hidden: Hidden::Full, reals: false };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
-    pub fn edges(self, shape: &[usize]) -> Option<usize> {
+    pub(crate) fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
         (count > self.limit).then_some(self.edges)
     }
     /// The positions kept at each end of the last axis of an array of `shape`, or `None` when display shows all of them.
-    pub fn last(self, shape: &[usize]) -> Option<usize> {
+    pub(crate) fn last(self, shape: &[usize]) -> Option<usize> {
         let columns = (self.columns != usize::MAX).then_some(self.columns);
         self.edges(shape).map_or(columns, |e| Some(columns.map_or(e, |c| c.min(e))))
     }
     /// The text of `n` rounded to `prec` significant digits, with its numeric marker when `marks` is set. Float widths obey `plain`.
-    pub fn number(self, n: &Number) -> String {
+    pub(crate) fn number(self, n: &Number) -> String {
         if !self.marks { return self.unmarked(n); }
         let n = self.shown_number(n);
         format!("{}{}", n.rounded(self.prec), n.float_width().and_then(|w| self.width_marker(w)).unwrap_or_default())
     }
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
-    pub fn unmarked(self, n: &Number) -> String { format!("{:#}", self.shown_number(n).rounded(self.prec)) }
+    pub(crate) fn unmarked(self, n: &Number) -> String { format!("{:#}", self.shown_number(n).rounded(self.prec)) }
     /// `n` as an item shows it: a complex number with a zero imaginary part as its real part where `reals` is set.
-    pub fn shown_number(self, n: &Number) -> std::borrow::Cow<'_, Number> {
+    pub(crate) fn shown_number(self, n: &Number) -> std::borrow::Cow<'_, Number> {
         match n.as_complex() {
             Some(z) if self.reals && z.im == 0.0 => std::borrow::Cow::Owned(Number::float(z.re, n.float_width().unwrap_or(FloatWidth::F64))),
             _ => std::borrow::Cow::Borrowed(n),
         }
     }
     /// These settings for the items of `a`: complex items with a zero imaginary part show as real numbers in an array that holds a complex number with a nonzero one (`Value::keeps_complex`).
-    pub fn items_of(self, a: &Value) -> Self { Self { reals: a.keeps_complex(), ..self } }
+    pub(crate) fn items_of(self, a: &Value) -> Self { Self { reals: a.keeps_complex(), ..self } }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
-    pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
+    pub(crate) fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
         (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker())
     }
     /// The marker for a numeric dtype and its fixedness under these display settings.
-    pub fn kind_marker(self, kind: rustymath::buffer::DType, fixed: bool) -> Option<&'static str> {
+    pub(crate) fn kind_marker(self, kind: rustymath::buffer::DType, fixed: bool) -> Option<&'static str> {
         use {crate::number::Mark, rustymath::buffer::DType};
         if !self.marks { return None; }
         match kind {
@@ -89,13 +89,13 @@ impl Elide {
         }
     }
     /// The numeric marker that `n` writes under these display settings.
-    pub fn marker(self, n: &Number) -> Option<&'static str> { self.kind_marker(n.dtype()?, n.fixed_width().is_some()) }
+    pub(crate) fn marker(self, n: &Number) -> Option<&'static str> { self.kind_marker(n.dtype()?, n.fixed_width().is_some()) }
     /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out, otherwise as `shown` gives it.
-    pub fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<Cow<'_, str>> {
+    pub(crate) fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<Cow<'_, str>> {
         name.as_deref().filter(|n| self.hidden != Hidden::Omit || !rustymath::layout::hidden(n)).map(|n| self.shown(n))
     }
     /// `text` as display shows it: shortened by `rustymath::layout::shown`, as in `_b·…`, unless `hidden` is `Full`.
-    pub fn shown(self, text: &str) -> Cow<'_, str> { if self.hidden == Hidden::Full { text.into() } else { rustymath::layout::shown(text) } }
+    pub(crate) fn shown(self, text: &str) -> Cow<'_, str> { if self.hidden == Hidden::Full { text.into() } else { rustymath::layout::shown(text) } }
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
@@ -143,12 +143,12 @@ pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bo
 
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
-    pub fn interactive() -> Self {
+    pub(crate) fn interactive() -> Self {
         let elide = Elide { width: crate::system::terminal_size().map(|(_, columns)| columns).unwrap_or(usize::MAX), ..Elide::default() };
         Self { boxed: true, trees: true, functions: true, elide, ..Self::default() }
     }
     /// Display text for `a`, boxed where `boxes` says, unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
-    pub fn array(&self, a: &Value, inside: bool) -> String {
+    pub(crate) fn array(&self, a: &Value, inside: bool) -> String {
         let text = |columns| {
             let elide = Elide { columns, display: true, hidden: if self.boxed { Hidden::Short } else { Hidden::Omit }, ..self.elide };
             if self.boxed && (!inside || self.functions) && boxes(a) { array(a, elide).text() } else { plain(a, elide) }
@@ -161,9 +161,9 @@ impl Settings {
         while over - fit > 1 { let mid = (fit + over) / 2; if fits(&text(mid)) { fit = mid } else { over = mid } }
         text(fit)
     }
-    pub fn diagram(&self, a: &Value) -> String { array(a, Elide { display: true, ..self.elide }).text() }
+    pub(crate) fn diagram(&self, a: &Value) -> String { array(a, Elide { display: true, ..self.elide }).text() }
     /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them and with its float width plain.
-    pub fn explicit(&self, a: &Value, inside: bool) -> String {
+    pub(crate) fn explicit(&self, a: &Value, inside: bool) -> String {
         Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside)
     }
     /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.
@@ -181,7 +181,7 @@ impl Settings {
     /// Sets the setting `key` to `value`. `Ok(false)` when no display setting has that key.
     fn set(&mut self, key: &str, value: &Value) -> Result<bool, crate::ErrorKind> {
         let count = |v: &Value| match v.as_number() {
-            Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX), Some(n) => n.nonnegative_integer().map(crate::array::saturated),
+            Some(n) if n.as_float() == Some(f64::INFINITY) => Ok(usize::MAX), Some(n) => n.nonnegative_integer::<u64>().map(rustymath::convert::saturated),
             None => Err(Kind::Domain.into())
         };
         let positive = |v: &Value| count(v).and_then(|d| if d == 0 { Err(Kind::Domain.into()) } else { Ok(d) });
@@ -208,7 +208,7 @@ impl Settings {
 
 /// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
 pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, bool), crate::Error> {
-    let (mut display, mut numeric, mut threads, mut seed) = (settings::display(), settings::numeric(), None, None);
+    let (mut display, mut numeric, mut threads, mut seed) = (settings::display(), crate::number::Numeric::current(), None, None);
     let mut float_set = settings::float_set();
     let (mut hanzi_aliases, mut batch, mut fusion) = (settings::hanzi_aliases(), settings::batch(), settings::reports_fusion());
     let pairs = keyed::pairs(right).described("•prefs takes a record of settings")?;
@@ -293,12 +293,12 @@ impl Block {
 /// A cell of a grid: its text, for a number the widths around its decimal point, and whether it holds an array.
 pub(crate) struct Cell { block: Block, number: Option<Decimals>, nested: bool }
 impl Cell {
-    pub fn text(text: String) -> Self { Self { block: Block::new(text), number: None, nested: false } }
-    pub fn number(text: String) -> Self { Self { number: Some(Decimals::of(text.chars())), block: Block::new(text), nested: false } }
+    pub(crate) fn text(text: String) -> Self { Self { block: Block::new(text), number: None, nested: false } }
+    pub(crate) fn number(text: String) -> Self { Self { number: Some(Decimals::of(text.chars())), block: Block::new(text), nested: false } }
     /// A cell for `spot`: `item` for an item's offset, and a marker that lines up with the units digits of numbers.
-    pub fn spot(spot: &Spot, item: impl FnOnce(usize) -> Self) -> Self { match *spot { Spot::At(i) => item(i), Spot::Gap(c) => Self::number(c.into()) } }
+    pub(crate) fn spot(spot: &Spot, item: impl FnOnce(usize) -> Self) -> Self { match *spot { Spot::At(i) => item(i), Spot::Gap(c) => Self::number(c.into()) } }
     /// A cell of `⍕`'s layout for `item`, from the rows of its formatted text.
-    pub fn formatted(rows: Vec<Vec<char>>, item: &Value) -> Self {
+    pub(crate) fn formatted(rows: Vec<Vec<char>>, item: &Value) -> Self {
         Self::item(Block::measured(rows.into_iter().map(String::from_iter).collect(), |s| s.chars().count()), item)
     }
     /// A cell holding `block`, the text of `item`.
@@ -306,7 +306,7 @@ impl Cell {
         let number = matches!(item.displayed(), Plain::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
         Self { block, number, nested: matches!(item, Value::Array(_)) }
     }
-    pub fn height(&self) -> usize { self.block.lines.len() }
+    pub(crate) fn height(&self) -> usize { self.block.lines.len() }
 }
 
 /// How a grid spaces and aligns its cells. In every style, numbers in a column line up on their decimal points.
@@ -516,8 +516,8 @@ fn labelled(a: &Value, el: Elide) -> String {
 
 pub(crate) struct Tree { pub label: String, pub children: Vec<Tree> }
 impl Tree {
-    pub fn leaf(label: impl Into<String>) -> Self { Self { label: label.into(), children: vec![] } }
-    pub fn render(&self) -> String {
+    pub(crate) fn leaf(label: impl Into<String>) -> Self { Self { label: label.into(), children: vec![] } }
+    pub(crate) fn render(&self) -> String {
         fn branch(node: &Tree, prefix: &str, edge: &str, next: &str, out: &mut Vec<String>) {
             out.push(format!("{prefix}{edge}{}", node.label.replace('\n', " ⋄ ")));
             let prefix = format!("{prefix}{next}");

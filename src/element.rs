@@ -37,7 +37,7 @@ pub(crate) trait Whole: Stored + Int + rustymath::convert::Int + rustymath::redu
 macro_rules! whole {
     ($($t:ty: $width:ident),+) => {$(
         impl Stored for $t {
-            fn build_narrowed(layout: impl Into<crate::array::Layout>, data: Vec<Self>) -> Option<Value> { Value::from_storage(layout, Storage::narrowed(data)).ok() }
+            fn build_narrowed(layout: impl Into<crate::array::Layout>, data: Vec<Self>) -> Option<Value> { Value::from_buffer(layout, Self::buffer(data)).ok() }
         }
         impl Whole for $t { const WIDTH: Width = Width::$width; }
     )+};
@@ -109,10 +109,8 @@ macro_rules! into_wholes {
         into_wholes!(@floats $t: half::f16, f32, f64);
         impl Converts<$t> for &num_rational::BigRational {
             fn converted(self, _: impl Tolerant) -> $t {
-                use num_traits::{Signed, ToPrimitive};
                 if self.is_integer() { return crate::number::low_bits(self.numer()) as $t; }
-                let floor = self.floor().to_integer();
-                floor.to_i64().map_or(if floor.is_negative() { <$t>::MIN } else { <$t>::MAX }, |n| n.clamp(<$t>::MIN as i64, <$t>::MAX as i64) as $t)
+                rustymath::convert::saturated(&self.floor().to_integer())
             }
         }
     )+};

@@ -47,7 +47,7 @@ macos-deployment-target = "15.0"
 cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "py/Cargo.toml" }]
 
 [tool.fastws]
-dev-profile = "quick"
+dev-profile = "release"
 native-binaries = true
 post-develop-module = "basedpl.editors"
 

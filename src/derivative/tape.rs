@@ -2,12 +2,13 @@
 //!
 //! A tape value has no items, so reading them is a bug (`Traced::storage`). Tape values live only in the tangents of duals, and only code that handles tangents meets them.
 use super::{complex, dual, numbers, numeric, packed, split, strip, zeros};
-use crate::program::{Desc, Node, Origin, Program, Read, Step, run, trace::{self, Role, Traced, Tracer}};
+use crate::plan::Desc;
+use crate::program::{Node, Origin, Program, Read, Step, run, trace::{self, Role, Traced, Tracer}};
 use crate::{
-    Error, ErrorKind, Function, Span, Value, agreement::expand, array::Layout, error::Described, execution::check, number::Arithmetic,
+    Error, ErrorKind, Function, Span, Value, agreement::expand, array::Layout, error::Described, cancel::check, number::Arithmetic,
     primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, session, transform::{Carrier, Kind, Op, Pairing, walk}
 };
-use rustymath::{agreement::{Mapping, Missing, ReadAt, ReadPlan}, buffer::DType, gather::{Steps, Writes as Places}};
+use rustymath::{agreement::{Mapping, Missing, ReadPlan, Run}, buffer::DType, gather::{Steps, Writes as Places}};
 use std::{collections::HashMap, sync::Arc};
 
 const PLUS: Primitive = Primitive::Arithmetic(Arithmetic::Plus);
@@ -243,6 +244,44 @@ impl Back<'_> {
         self.add_at(read, Places::Walk { base, steps: &kept }, &u)
     }
 
+    /// A structural step's plan on its inputs' layouts, with its parameters' held values (`structural::plan`).
+    fn planned(&self, inputs: &[Read], form: &crate::primitive::structural::Form, params: &[Read]) -> Result<ReadPlan, Error> {
+        let params = params.iter().map(|r| self.held(r)).collect::<Result<Vec<_>, _>>()?;
+        let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
+        Ok(crate::primitive::structural::plan(form, &params, &layouts)?.1)
+    }
+
+    /// The input that node `j` reads by affine axes, with the map that it reads through: a copy's source, or the one input that a structural step's plan reads positionally, as windows, a transpose or a reshape reads it. `None` for any other node, and where the plan reads its fill.
+    fn walked(&self, j: usize) -> Result<Option<(Read, Mapping)>, Error> {
+        Ok(match &self.nodes[j].origin {
+            Origin::Step(Step::Copy { of, map }) => Some((Read::node(self.nodes, *of), map.clone())),
+            Origin::Step(Step::Structural { inputs, form, params, .. }) =>
+                self.planned(inputs, form, params)?.positional(self.nodes[j].desc.shape()).and_then(|(s, map)| Some((inputs.get(s)?.clone(), map))),
+            _ => None,
+        })
+    }
+
+    /// Adds the cotangent of a sum along `axis` of `of` straight to the input that `of` reads, where `of` reads windows that slide along that input's first axis (rustymath's `Slide`), as the forward fold reads them. Each input item takes the sum of the cotangents of the windows that read it: the windows of `u` with `width - 1` zeros at each end of its first axis, summed, which runs as the same sliding fold. Gives false, adding nothing, for any other node, whose fold and read then transpose in turn.
+    fn add_slid(&mut self, of: &Read, axis: usize, u: &Value) -> Result<bool, Error> {
+        use rustymath::reduce::{FoldRoute, fold_route};
+        let Some((source, map)) = self.walked(of.of)? else { return Ok(false) };
+        let copy = self.nodes[of.of].desc.shape();
+        if of.layout.shape() != copy { return Ok(false) }
+        let FoldRoute::Slide(s) = fold_route(&map, copy, Some(source.layout.shape()), false, &[axis]) else { return Ok(false) };
+        // The windows' frames, the copy's other axis along the same source axis, come first in `u`, which holds the folds' results in order.
+        let frames: Vec<usize> = s.walk.along[axis].map_or(vec![], |q| s.walk.walking(q).filter(|&r| r != axis).collect());
+        let (Ok([1, len, _]), [w], [1], [f]) = (<[usize; 3]>::try_from(&s.dims[..]), &s.widths[..], &s.every[..], &frames[..]) else { return Ok(false) };
+        if *f - usize::from(axis < *f) != 0 || !Steps::in_order(&s.tables) || u.shape().first() != Some(&(len + 1 - w)) { return Ok(false) }
+        let span = self.span;
+        let zeros = crate::primitive::reshape_to(&[&[w - 1][..], &u.shape()[1..]].concat(), &zero_of(u), span)?;
+        let first = Primitive::CatenateFirst;
+        let padded = first.call(Some(&first.call(Some(&zeros), u, span)?), &zeros, span)?;
+        let windows = Primitive::Windows.call(Some(&Value::integer(*w as i64)), &padded, span)?;
+        let summed = crate::eval::folded_along(PLUS, FoldKind::REDUCE, &[1], &windows, span)?;
+        self.add_at(&source, Places::Walk { base: s.region.start, steps: &[Steps::along(s.region.len(), 1)] }, &flat(&summed, span)?)?;
+        Ok(true)
+    }
+
     /// The value that `read` gives of a node that doesn't depend on a seed: a coefficient or a position.
     fn held(&self, read: &Read) -> Result<Value, Error> {
         match &self.values[read.of] {
@@ -277,6 +316,7 @@ impl Back<'_> {
                 self.add(of, u)
             }
             Step::Fold { p, kind, axis, seed: None, of } if *p == PLUS => {
+                if !kind.scan && self.add_slid(of, *axis, &u)? { return Ok(()); }
                 let v = if kind.scan { reversed_scan(*kind, *axis, &u, span)? } else { spread(&u, *axis, &of.layout, span)? };
                 self.add(of, v)
             }
@@ -297,9 +337,7 @@ impl Back<'_> {
                 self.add_walked(&Read::node(self.nodes, *of), base, &steps, u)
             }
             Step::Structural { inputs, form, params, .. } => {
-                let params = params.iter().map(|r| self.held(r)).collect::<Result<Vec<_>, _>>()?;
-                let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
-                let (_, plan) = crate::primitive::structural::plan(form, &params, &layouts)?;
+                let plan = self.planned(inputs, form, params)?;
                 // A plan that reads one input by affine axes, as a transpose, reversal or reshape does, writes back along its walk, as a copy's does.
                 if let Some((source, map)) = plan.positional(desc.shape()) {
                     // A source past the inputs is the fill, which takes no cotangent.
@@ -311,7 +349,7 @@ impl Back<'_> {
                 let mut supplied = vec![(Vec::new(), Vec::new()); inputs.len()];
                 for i in 0..plan.len() {
                     // A source past the inputs is the fill, which takes no cotangent.
-                    if let ReadAt::Input { source, position } = plan.at(i) && inputs.get(source).is_some_and(|input| self.live(input.of)) {
+                    if let Run::Source { source, first: position, .. } = plan.at(i) && inputs.get(source).is_some_and(|input| self.live(input.of)) {
                         supplied[source].0.push(i);
                         supplied[source].1.push(position);
                     }
@@ -428,11 +466,20 @@ pub(crate) fn swapped(c: &Value) -> Result<Value, Error> {
 fn product_back(c: &Value, u: &Value, layout: &Layout, coefficient_left: bool, span: &Span) -> Result<Value, Error> {
     let (csize, tsize) = (c.len(), layout.count());
     let reshaped = |shape: [usize; 2], v: &Value| crate::primitive::reshape_to(&shape, v, span);
+    let flip = |v: &Value| Primitive::Transpose.call(None, v, span);
     let k = if coefficient_left { c.shape().last() } else { c.shape().first() }.copied().unwrap_or(1).max(1);
-    // `c` as a matrix whose rows run along its contracted axis, in the order of the keys on the tape operand's, as `+.×` pairs them (`Mapping::contract`).
-    let rows = if coefficient_left { Primitive::Transpose.call(None, &reshaped([csize / k, k], c)?, span)? } else { reshaped([k, csize / k], c)? };
+    let (m, n) = (csize / k, tsize / k);
     let (c_axis, t_axis) = if coefficient_left { (c.shape().len().saturating_sub(1), 0) } else { (0, layout.shape().len().saturating_sub(1)) };
-    let rows = match Mapping::contract(layout, t_axis, c.layout(), c_axis)? {
+    let contract = Mapping::contract(layout, t_axis, c.layout(), c_axis)?;
+    // Where the contraction keeps `c`'s order and `c` holds more items than `u` and the result together, `u` and the result transpose in its place: `(⍉c)+.×u` is `⍉(⍉u)+.×c`, and `u+.×⍉c` is `⍉c+.×⍉u`. A matrix of one row or column transposes without moving items.
+    if !matches!(contract, Mapping::Steps { .. }) && csize > u.len() + tsize {
+        let result = if coefficient_left { plus_times(&flip(&reshaped([m, n], u)?)?, &reshaped([m, k], c)?, false, span)? }
+            else { plus_times(&reshaped([k, m], c)?, &flip(&reshaped([n, m], u)?)?, false, span)? };
+        return laid(&flip(&result)?, layout, span);
+    }
+    // `c` as a matrix whose rows run along its contracted axis, in the order of the keys on the tape operand's, as `+.×` pairs them (`Mapping::contract`).
+    let rows = if coefficient_left { flip(&reshaped([m, k], c)?)? } else { reshaped([k, m], c)? };
+    let rows = match contract {
         Mapping::Steps { steps, .. } => {
             let positions: Vec<i64> = Steps::combined(0, &steps).into_iter().map(|p| p as i64).collect();
             let positions = Value::integers(vec![positions.len()], positions).described("invalid positions")?;
@@ -440,8 +487,8 @@ fn product_back(c: &Value, u: &Value, layout: &Layout, coefficient_left: bool, s
         }
         _ => rows,
     };
-    let result = if coefficient_left { plus_times(&rows, &reshaped([csize / k, tsize / k], u)?, false, span)? }
-        else { plus_times(&reshaped([tsize / k, csize / k], u)?, &Primitive::Transpose.call(None, &rows, span)?, false, span)? };
+    let result = if coefficient_left { plus_times(&rows, &reshaped([m, n], u)?, false, span)? }
+        else { plus_times(&reshaped([n, m], u)?, &flip(&rows)?, false, span)? };
     laid(&result, layout, span)
 }
 
@@ -476,13 +523,13 @@ impl Ids {
 
     /// The tape value that `ids` reads, laid out as `ids`: each id's item from the source it numbers, and 0 for id 0, each source's read by a copy of the items that its ids read (`Traced::copied`), added at their places. Ids that hold arrays as items give an array of the tape values that each reads. Ids that read no source give zeros.
     pub(crate) fn assembled(&self, ids: Value, span: &Span) -> Value {
-        if !ids.is_atom() && ids.elements().any(|e| !e.is_atom()) {
+        if ids.holds_values() && ids.elements().any(|e| !e.is_atom()) {
             let items: Vec<Value> = ids.elements().map(|e| self.assembled(e, span)).collect();
             return ids.layout().collect(items, || Value::integer(0)).expect("ids keep their layout");
         }
         let layout = ids.layout().clone();
         let id = |e: &Value| e.as_number().and_then(|n| n.integer().ok()).expect("an id is a whole number");
-        let offsets: Vec<i64> = if ids.is_atom() { vec![id(&ids)] } else { ids.elements().map(|e| id(&e)).collect() };
+        let offsets: Vec<i64> = if ids.is_atom() { vec![id(&ids)] } else { ids.as_items().integers().expect("an id is a whole number").into_owned() };
         // An id's source is the last block that starts at or before it. Each source that some id reads then adds those items into the result at their places, in one pass over the ids. The work follows the ids, not the count of sources, which each item of a nested value would otherwise pay.
         let mut reads: std::collections::BTreeMap<usize, (Vec<usize>, Vec<usize>)> = Default::default();
         for (k, &id) in offsets.iter().enumerate().filter(|&(_, &id)| id > 0) {

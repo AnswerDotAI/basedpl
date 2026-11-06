@@ -1,11 +1,11 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{
     Described, Error, ErrorKind, Number, display::{Elide, positions}, element::{Stored, Whole}, fusion::Pending, keyed::Keys, number::{Numeric, int::Int, real},
     transform::Carrier
 };
 use num_complex::{Complex32, Complex64};
 use rustymath::{
-    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, Element, Fill, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind,
+    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, Element, Fill, FloatBuf, FloatWidth, Floats, IntBuf, View, Width}, domain::Range, error::Kind,
     gather::Writes, with_float_width, with_width
 };
 use std::{borrow::Cow, fmt, sync::Arc};
@@ -113,7 +113,7 @@ impl Layout {
     }
     /// The array with this layout holding `cells`, as `Value::assemble` gives it.
     pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> {
-        Value::assemble_layout(self, cells, empty_cell, Widening::Items, None)
+        Value::assemble_layout(self, cells, empty_cell, Widening::Items, None, None)
     }
 }
 
@@ -126,9 +126,9 @@ impl<F: FnOnce() -> Value> Prototype for F { fn value(self) -> Value { self() } 
 #[derive(Clone, Debug)]
 pub(crate) enum Frame { Direct, Array(Layout) }
 impl Frame {
-    pub fn of(value: &Value) -> Self { if value.is_atom() { Self::Direct } else { Self::Array(value.layout().clone()) } }
-    pub fn shape(&self) -> &[usize] { match self { Self::Direct => &[], Self::Array(layout) => layout.shape() } }
-    pub fn collect(self, items: impl IntoIterator<Item = Value>, prototype: impl Prototype) -> Result<Value, ErrorKind> {
+    pub(crate) fn of(value: &Value) -> Self { if value.is_atom() { Self::Direct } else { Self::Array(value.layout().clone()) } }
+    pub(crate) fn shape(&self) -> &[usize] { match self { Self::Direct => &[], Self::Array(layout) => layout.shape() } }
+    pub(crate) fn collect(self, items: impl IntoIterator<Item = Value>, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         match self {
             Self::Direct => {
                 let mut items = items.into_iter();
@@ -138,20 +138,20 @@ impl Frame {
         }
     }
     /// Positions on this frame, each below `bound`. `bound` gives their width, with no pass over them to find it. A direct application gives its one position as an atom.
-    pub fn positions(self, mut items: impl ExactSizeIterator<Item = usize>, bound: usize) -> Result<Value, ErrorKind> {
+    pub(crate) fn positions(self, mut items: impl ExactSizeIterator<Item = usize>, bound: usize) -> Result<Value, ErrorKind> {
         match (self, items.len()) {
             (Self::Direct, 1) => Ok(Value::integer(items.next().unwrap() as i64)), (Self::Direct, _) => Err(Kind::Length.into()),
             (Self::Array(layout), _) => Value::positions(layout, bound, items)
         }
     }
     /// `positions` from a buffer of `u32`s. 32-bit results keep the buffer, with no pass over it.
-    pub fn positions_u32(self, data: Vec<u32>, bound: usize) -> Result<Value, ErrorKind> {
+    pub(crate) fn positions_u32(self, data: Vec<u32>, bound: usize) -> Result<Value, ErrorKind> {
         match self {
             Self::Direct => Self::Direct.positions(data.into_iter().map(|p| p as usize), bound),
             Self::Array(layout) => Value::positions_u32(layout, bound, data),
         }
     }
-    pub fn booleans(self, data: Vec<bool>) -> Result<Value, ErrorKind> {
+    pub(crate) fn booleans(self, data: Vec<bool>) -> Result<Value, ErrorKind> {
         match (self, data.as_slice()) {
             (Self::Direct, &[b]) => Ok(Value::Number(Number::from_bool(b))), (Self::Direct, _) => Err(Kind::Length.into()),
             (Self::Array(layout), _) => Value::booleans(layout, data)
@@ -162,33 +162,36 @@ impl Frame {
 // Retains cell metadata even when the frame has no cells.
 pub(crate) struct Cells<'a> { array: &'a Value, split: usize, count: usize, size: usize, cell_layout: Layout }
 impl Cells<'_> {
-    pub fn frame(&self) -> &[usize] { &self.array.shape()[..self.split] }
-    pub fn frame_layout(&self) -> Layout { self.array.layout().axes(0..self.split) }
-    pub fn shape(&self) -> &[usize] { &self.array.shape()[self.split..] }
-    pub fn len(&self) -> usize { self.count }
-    pub fn get(&self, i: usize) -> Result<Value, ErrorKind> { self.read(i, Value::at) }
+    pub(crate) fn frame(&self) -> &[usize] { &self.array.shape()[..self.split] }
+    pub(crate) fn frame_layout(&self) -> Layout { self.array.layout().axes(0..self.split) }
+    pub(crate) fn shape(&self) -> &[usize] { &self.array.shape()[self.split..] }
+    pub(crate) fn len(&self) -> usize { self.count }
+    pub(crate) fn get(&self, i: usize) -> Result<Value, ErrorKind> { self.read(i, Value::at) }
     /// Cell `i`, with `item` reading a rank-0 cell's one item: the whole array where there is no frame, or else a part of it.
     fn read(&self, i: usize, item: impl Fn(&Value, usize) -> Value) -> Result<Value, ErrorKind> {
         if self.split == 0 { return Ok(self.array.clone()); }
         if self.shape().is_empty() { return item(self.array, i).unit(); }
         self.array.part(i * self.size..(i + 1) * self.size, self.cell_layout.clone())
     }
-    pub fn prototype(&self) -> Result<Value, ErrorKind> {
+    pub(crate) fn prototype(&self) -> Result<Value, ErrorKind> {
         if self.shape().is_empty() { return self.array.prototype().unit(); }
         let len = generated_len(self.shape())?;
         self.cell_layout.collect(vec![self.array.prototype(); len], self.array.prototype())
     }
-    pub fn framed(&self) -> Result<Value, ErrorKind> {
+    pub(crate) fn framed(&self) -> Result<Value, ErrorKind> {
         if self.split > 0 && self.shape().is_empty() && self.array.is_simple() { return Ok(self.array.clone()); }
         let values = (0..self.len()).map(|i| self.get(i)).collect::<Result<Vec<_>, _>>()?;
         self.frame_layout().collect(values, self.prototype()?)
     }
     /// Every cell, as bulk iteration reads items (`Value::element`).
-    pub fn collect(&self) -> Result<Vec<Value>, ErrorKind> { (0..self.len()).map(|i| self.read(i, Value::element)).collect() }
+    pub(crate) fn collect(&self) -> Result<Vec<Value>, ErrorKind> { (0..self.len()).map(|i| self.read(i, Value::element)).collect() }
 }
 
+/// An array: its layout, its items, and `range`, a bound on owned integer items under dynamic kinds from the steps that stored them, coarsened (`plan::coarse`), or `Range::ANY` where none is known. Writes reset it (`storage_mut`, `take_buffer`).
 #[derive(Clone, Debug)]
-pub struct ArrayData { layout: Layout, data: Data }
+pub struct ArrayData { layout: Layout, data: Data, range: Range }
+/// The range of the positions below `bound`.
+fn below(bound: usize) -> Range { Range { lo: 0.0, hi: bound.saturating_sub(1) as f64 } }
 
 /// An array's items. `Of` shares the items in a range of a base array's, with no copy: the whole base for a view under a new layout, or one part's range (`Value::part`). A view keeps its whole base alive, as a NumPy view does. `Node` holds the pending call that computes them on the first read (`fusion::Pending`). `Carried` holds a running level's data in their place (`transform::Carrier`): a dual's primal and tangent, or a record of linear calls, whose items are never computed. A base holds `Own` or `Node`.
 #[derive(Clone, Debug)]
@@ -207,6 +210,8 @@ impl ArrayData {
             Data::Own(storage) => storage.dtype(), Data::Of(base, ..) => base.dtype(), Data::Node(p) => Some(p.dtype()), Data::Carried(_) => None
         }
     }
+    /// The bound on the items: the one stored with owned items, a view's base's, or a pending array's planned one.
+    fn range(&self) -> Range { match &self.data { Data::Own(_) => self.range, Data::Of(base, ..) => base.range(), Data::Node(p) => p.range, Data::Carried(_) => Range::ANY } }
     /// Whether mixed storage holds the items, directly or as a view's base's. A pending array computes compact items, and a carrier holds a running level's data.
     fn mixed(&self) -> bool {
         match &self.data {
@@ -255,6 +260,7 @@ impl ArrayData {
     }
     /// This array's storage, to change in place. A view or pending array takes its items where it holds the only reference to them, and copies them otherwise.
     fn storage_mut(&mut self) -> &mut Storage {
+        self.range = Range::ANY;
         if !matches!(self.data, Data::Own(_)) {
             self.data = Data::Own(Self::owned(std::mem::replace(&mut self.data, Data::Own(Storage::Compact(Buffer::Booleans(Vec::new()))))));
         }
@@ -270,7 +276,7 @@ impl ArrayData {
     fn part(this: &Arc<Self>, range: std::ops::Range<usize>, layout: Layout, fixed: bool) -> Value {
         debug_assert_eq!(layout.count(), range.len());
         let (base, start) = match &this.data { Data::Of(base, of, _) => (base.clone(), of.start), _ => (this.clone(), 0) };
-        Value::Array(Arc::new(Self { layout, data: Data::Of(base, start + range.start..start + range.end, fixed) }))
+        Value::Array(Arc::new(Self { layout, data: Data::Of(base, start + range.start..start + range.end, fixed), range: Range::ANY }))
     }
     /// The call that computes this array's items, while they haven't been computed. A view answers for its base.
     fn pending(&self) -> Option<&Arc<Pending>> {
@@ -347,9 +353,6 @@ pub(crate) fn float_width_of(dtype: DType) -> Option<FloatWidth> {
 pub(crate) fn compact_match(x: View<'_>, y: View<'_>, t: Numeric) -> Option<bool> {
     rustymath::search::view_matches(x, y, crate::search::compared_at(float_width_of(x.dtype()).max(float_width_of(y.dtype())), t).1)
 }
-
-/// The count `n` as a size, or `usize::MAX` when `usize` can't hold it, which every limit on sizes then rejects.
-pub(crate) fn saturated(n: u64) -> usize { usize::try_from(n).unwrap_or(usize::MAX) }
 
 impl Value {
     fn exact_domain(&self) -> Option<bool> {
@@ -452,7 +455,7 @@ impl Value {
         (!pending.is_forced()).then(|| (pending, view_shared || Arc::strong_count(array) != 1 || Arc::strong_count(pending) != 1))
     }
     /// An array of `layout` whose items `pending` computes when they're first read.
-    pub(crate) fn deferred(layout: Layout, pending: Arc<Pending>) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Node(pending) })) }
+    pub(crate) fn deferred(layout: Layout, pending: Arc<Pending>) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Node(pending), range: Range::ANY })) }
     /// The pending array that this value alone holds, taken out of it, as a held value of a pending program holds one (`fusion::held`). `None` for any other value, which drops as usual.
     pub(crate) fn into_pending(self) -> Option<Arc<Pending>> {
         let Self::Array(a) = self else { return None };
@@ -463,7 +466,7 @@ impl Value {
         Self::from_carrier(primal.layout().clone(), Carrier::Dual(Arc::new(crate::derivative::Dual::new(tag, primal, tangent))))
     }
     /// An array of `layout` that holds `carrier` in place of its items.
-    pub(crate) fn from_carrier(layout: Layout, carrier: Carrier) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Carried(carrier) })) }
+    pub(crate) fn from_carrier(layout: Layout, carrier: Carrier) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Carried(carrier), range: Range::ANY })) }
     /// The running level's data that this value carries: an array's, in place of its items, or a carried atom's (`transform::Carrier`).
     #[inline]
     pub(crate) fn carrier(&self) -> Option<&Carrier> { match self { Self::Array(a) => a.carrier(), Self::Carried(carrier) => Some(carrier), _ => None } }
@@ -513,7 +516,7 @@ impl Value {
     pub(crate) fn from_storage(layout: impl Into<Layout>, data: Storage) -> Result<Self, ErrorKind> {
         let layout = layout.into().unique_names();
         if generated_len(layout.shape())? != data.len() { return Err(Kind::Length.into()); }
-        Ok(Value::Array(Arc::new(ArrayData { layout, data: Data::Own(data) })))
+        Ok(Value::Array(Arc::new(ArrayData { layout, data: Data::Own(data), range: Range::ANY })))
     }
     pub fn booleans(layout: impl Into<Layout>, data: Vec<bool>) -> Result<Self, ErrorKind> { Self::from_storage(layout, Storage::Compact(Buffer::Booleans(data))) }
 
@@ -525,7 +528,7 @@ impl Value {
     }
     /// The positions `items`, each below `bound`, written straight to the width that stores them: the narrowest that holds every position below `bound`, or the `int` width under static kinds (`ordinary_width`).
     pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(layout: impl Into<Layout>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
-        Self::integers_at(layout, ordinary_width(Width::below(bound)), false, items)
+        Self::integers_at(layout, ordinary_width(Width::below(bound)), false, items).map(|v| v.ranged(below(bound)))
     }
     /// Fixed integers of `width`, written straight from `items`. An item that `width` doesn't hold wraps to its low bits.
     pub(crate) fn fixed_integers<P: num_traits::AsPrimitive<i64>>(layout: impl Into<Layout>, width: Width, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
@@ -538,12 +541,12 @@ impl Value {
     /// `positions` from a buffer of them. Stored as 32-bit integers, they keep the buffer, with no pass over it.
     pub(crate) fn positions_u32(layout: impl Into<Layout>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
         match ordinary_width(Width::below(bound)) {
-            Width::I32 => Self::from_storage(layout, Storage::Compact(Buffer::Integers(IntBuf::I32(bytemuck::allocation::cast_vec(data))))),
+            Width::I32 => Self::from_storage(layout, Storage::Compact(Buffer::Integers(IntBuf::I32(bytemuck::allocation::cast_vec(data))))).map(|v| v.ranged(below(bound))),
             _ => Self::positions(layout, bound, data.into_iter()),
         }
     }
     /// Ordinary integers at the width that stores them (`ordinary_width`).
-    pub fn integers(layout: impl Into<Layout>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(layout, Storage::narrowed(data)) }
+    pub fn integers(layout: impl Into<Layout>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_buffer(layout, i64::buffer(data)) }
     /// The exact integer `n`, as an atom.
     pub fn integer(n: i64) -> Self { Value::Number(Number::from_integer(n)) }
     /// The exact integer `n` as a weak atom, as the literal `nₓ` writes it: beside a strong number, it takes that number's kind where it fits (NEP 50).
@@ -561,8 +564,21 @@ impl Value {
     /// An array of `layout` holding `buffer`. Integer storage takes the width that stores ordinary integers (`ordinary_width`).
     pub fn from_buffer(layout: impl Into<Layout>, buffer: Buffer) -> Result<Self, ErrorKind> { Self::from_buffer_at(layout, buffer, None) }
     /// An array of `buffer`, as fixed integers of width `fixed` where that's given, and otherwise as `from_buffer` gives it (`Storage::at`).
-    pub(crate) fn from_buffer_at(layout: impl Into<Layout>, buffer: Buffer, fixed: Option<Width>) -> Result<Self, ErrorKind> {
-        Self::from_storage(layout, Storage::at(buffer, fixed))
+    pub(crate) fn from_buffer_at(layout: impl Into<Layout>, buffer: Buffer, fixed: Option<Width>) -> Result<Self, ErrorKind> { Self::from_bounded(layout, buffer, fixed, Range::ANY) }
+    /// `from_buffer_at`'s array, for the results of a computation that `range` bounds. Ordinary integers under dynamic kinds take the narrowest width that holds the coarsened bound where it's finite, with no pass over them (`Storage::narrowed`), and record it.
+    pub(crate) fn from_bounded(layout: impl Into<Layout>, buffer: Buffer, fixed: Option<Width>, range: Range) -> Result<Self, ErrorKind> {
+        let range = crate::plan::coarse(range);
+        let (storage, range) = Storage::at(buffer, fixed, (range.lo.is_finite() && range.hi.is_finite()).then_some(range));
+        Self::from_storage(layout, storage).map(|v| v.ranged(range))
+    }
+    /// This new array with `range`, coarsened (`plan::coarse`), as the bound on its items, where it holds ordinary integers under dynamic kinds. Any other value as it is.
+    pub(crate) fn ranged(mut self, range: Range) -> Self {
+        if let Self::Array(a) = &mut self && let Some(a) = Arc::get_mut(a) && crate::settings::int_storage().is_none() && matches!(a.data, Data::Own(Storage::Compact(Buffer::Integers(_)))) { a.range = crate::plan::coarse(range); }
+        self
+    }
+    /// The bound on this array's items: the one the steps that made it recorded (`ArrayData::range`), within [0, 1] for Booleans, whose items always lie there. `Range::ANY` for any other value.
+    pub(crate) fn range(&self) -> Range {
+        match self { Self::Array(a) if self.dtype() == Some(DType::Boolean) => a.range().meet(Range::of_dtype(DType::Boolean)), Self::Array(a) => a.range(), _ => Range::ANY }
     }
     /// This array with its ordinary integers stored at `dtype` where they're stored narrower, as a program stores each step's items at the dtype its plan describes (`program::run`); any other value as it is. An atom keeps its number, which has no storage width.
     pub(crate) fn stored_at(self, dtype: DType) -> Self {
@@ -592,17 +608,19 @@ impl Value {
     /// The compact storage's buffer, taken to write in place, where only this value holds it: `None` where the items are shared, pending, mixed, fixed integers, carried, or a view's. The value then holds no items, so build the result from the buffer.
     pub(crate) fn take_buffer(&mut self) -> Option<Buffer> {
         let Self::Array(a) = self else { return None };
-        let Data::Own(Storage::Compact(buffer)) = &mut Arc::get_mut(a)?.data else { return None };
+        let a = Arc::get_mut(a)?;
+        a.range = Range::ANY;
+        let Data::Own(Storage::Compact(buffer)) = &mut a.data else { return None };
         Some(std::mem::replace(buffer, Buffer::Booleans(Vec::new())))
     }
     /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. A weak number takes this array's width, as in arithmetic (`Gather`). Storage that can't hold an item widens or turns mixed by the rule for writes (`Widening::Items`). Under static kinds the whole array takes the compact dtype that holds both kinds. Under dynamic kinds each number keeps its exactness, as a literal of the same items would, and a Boolean stays apart from other numbers. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, writes every cell at once (`transform::written`).
-    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Offsets(offsets), source) }
+    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) -> Result<(), crate::error::Stop> { self.written(Writes::Offsets(offsets), source) }
     /// `scatter` at the positions that `steps` reach from `base`, in the order `walk` reads them, without listing them (`Gather::scatter_walk`).
-    pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) -> Result<(), crate::transform::Stop> {
+    pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) -> Result<(), crate::error::Stop> {
         self.written(Writes::Walk { base, steps }, source)
     }
     /// The items of `source` written in place where `writes` says, as `scatter` writes them.
-    fn written(&mut self, writes: Writes<'_>, source: &Value) -> Result<(), crate::transform::Stop> {
+    fn written(&mut self, writes: Writes<'_>, source: &Value) -> Result<(), crate::error::Stop> {
         // Writes only at fills change nothing, so storage doesn't widen for them.
         if writes.only_fills() { return Ok(()); }
         if let Some(result) = crate::transform::written(self, source, Some(writes), |t, s| t.written(writes, s)) { return result; }
@@ -621,7 +639,7 @@ impl Value {
         Ok(())
     }
     /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array. A write into a batch, or of one, writes every cell at once (`transform::written`).
-    pub(crate) fn write_path(&mut self, path: &[usize], item: Value) -> Result<(), crate::transform::Stop> {
+    pub(crate) fn write_path(&mut self, path: &[usize], item: Value) -> Result<(), crate::error::Stop> {
         let Some((&last, outer)) = path.split_last() else { *self = item; return Ok(()); };
         let dependent = item.environment().is_some();
         let source = if item.is_atom() { item } else { item.enclose().expect("a unit holds any item") };
@@ -826,8 +844,6 @@ impl Value {
         match self { Self::Array(a) => a.as_ref().footprint_in(&mut Seen::default()), _ => self.footprint_in(&mut Seen::default()) }
     }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Compact(View::Floats(Floats::F64(v))) => Some(v), _ => None } }
-    pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items().ints() { Some(Ints::I64(v)) => Some(v), _ => None } }
-    pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
     /// Item `i`, or `fill` as an item of this value where `i` is `Steps::FILL` (`fill_item`). A pending array gives the item without computing the rest.
     pub(crate) fn at_or_fill(&self, i: usize, fill: Option<&Value>) -> Value {
@@ -998,12 +1014,14 @@ impl Value {
         if self.is_atom() { return self.relaid(Layout::from(Vec::<usize>::new())); }
         if self.is_simple() { return Ok(self.clone()); }
         let cells: Vec<_> = self.elements().collect();
-        Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening, chosen)
+        Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening, chosen, None)
     }
-    fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Value>) -> Result<Self, ErrorKind> {
+    /// `cells` assembled by trailing-axis agreement into an array whose frame is `frame`, as `Layout::assemble` and `mix` assemble them. The cells' layout is `cell_layout` where the caller knows it, and otherwise the layout that the cells agree on (`Layout::assembled`).
+    pub(crate) fn assemble_layout(
+        frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Value>, cell_layout: Option<&Layout>) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
-        if cells.is_empty() { return frame.concat(empty_cell.layout()).collect(vec![], empty_cell.prototype()); }
-        let cell_layout = Layout::assembled(cells.iter().map(Value::layout))?;
+        if cells.is_empty() { return frame.concat(cell_layout.unwrap_or(empty_cell.layout())).collect(vec![], empty_cell.prototype()); }
+        let cell_layout = match cell_layout { Some(layout) => layout.clone(), None => Layout::assembled(cells.iter().map(Value::layout))? };
         let cell_shape = cell_layout.shape();
         let rank = cell_shape.len();
         let shape = [frame.shape(), cell_shape].concat();
@@ -1048,7 +1066,7 @@ impl Value {
             }
             (_, Items::Compact(View::Characters(_))) => Storage::Compact(Buffer::Characters(vec![char::FILL; a.len()])),
             (_, Items::Values(_)) => unreachable!("mixed storage fills above"),
-        }), layout: a.layout.clone() }))
+        }), layout: a.layout.clone(), range: Range::ANY }))
     }
 }
 

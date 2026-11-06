@@ -1,4 +1,4 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Items, data::{Options, imported, text}, keyed};
 use rustymath::error::Kind;
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -76,10 +76,10 @@ impl<'de> serde::de::Visitor<'de> for ReadVisitor {
 }
 
 /// `•json⁻¹`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
-pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn serialize(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let opts = Options::new("•json⁻¹", left, None, &["fill"])?;
     let fill = opts.fill()?;
-    Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill), span)?.to_string()))
+    Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill))?.to_string()))
 }
 
 /// A copy of `value` without keyed-vector entries that hold functions, at any depth. A value with nothing to drop comes back as it is.
@@ -128,7 +128,7 @@ fn import(value: &Read, name: &str, reading: &mut Reading) -> Result<Value, Erro
     Ok(value)
 }
 
-fn export(value: &Value, fill: Option<&Number>, span: &Span) -> Result<Json, Error> {
+fn export(value: &Value, fill: Option<&Number>) -> Result<Json, Error> {
     check()?;
     match value {
         Value::Number(n) => {
@@ -141,16 +141,16 @@ fn export(value: &Value, fill: Option<&Number>, span: &Span) -> Result<Json, Err
         Value::Function(_) | Value::Operator(_) => Err(Error::domain("JSON cannot encode functions or operators")),
         // A value that `∂` carries writes as its plain value, as `⍕` writes it (`Carrier::observed`). A batch stops its run.
         Value::Carried(carrier) => match carrier.observed()? {
-            Some(plain) => export(plain, fill, span),
+            Some(plain) => export(plain, fill),
             None => Err(Error::from(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read"))),
         },
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value)?)),
-        _ if value.shape().is_empty() => export(&value.at(0), fill, span),
+        _ if value.shape().is_empty() => export(&value.at(0), fill),
         _ => {
             let cells = value.cells(value.shape().len() - 1).described("invalid JSON array")?;
             let values = (0..cells.len()).map(|i| {
                 let cell = cells.get(i).described("invalid JSON cell")?;
-                export(&cell, fill, span)
+                export(&cell, fill)
             }).collect::<Result<Vec<_>, _>>()?;
             let Some(keys) = value.keys(0) else { return Ok(Json::Array(values)) };
             if !keys.complete() { return Err(Error::domain("JSON objects need a key for every entry")); }

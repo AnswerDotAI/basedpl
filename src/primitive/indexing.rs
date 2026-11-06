@@ -295,10 +295,10 @@ fn claims(parts: &[IndexPart<Option<Value>>]) -> Vec<IndexPart<(Option<&str>, us
     parts.iter().map(|p| p.as_ref().map(|v| v.as_ref().map_or((None, 1), |v| (rustymath::structure::sole_name(v.layout()), v.index_width())))).collect()
 }
 
-/// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a value outside the axis, one that isn't a whole number or a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
+/// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a value outside the axis, one that isn't a whole number within the comparison tolerance in force (which only Mathish makes nonzero) or a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
 pub(crate) fn positions(a: &Value, size: usize) -> Result<Vec<usize>, Error> {
     match a.view() {
-        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size).map_err(Error::from),
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size, crate::number::Numeric::current().tolerance).map_err(Error::from),
         _ => Ok(rustymath::structure::counted_positions(&a.as_items().positions().described(rustymath::structure::NOT_WHOLE)?, size)),
     }
 }
@@ -401,28 +401,28 @@ impl Selection {
     /// The value of target `i`. A direct target takes the whole value.
     pub(crate) fn item(&self, values: &Value, i: usize) -> Value { if matches!(self.frame, Frame::Direct) { values.clone() } else { selected(values, i) } }
     /// This selection without its targets at a fill, which write nothing, and `values`, as `checked` gives them, cut to the targets kept. `None` where no target is at a fill.
-    pub(crate) fn without_fills(&self, values: &Value, span: &Span) -> Result<Option<(Selection, Value)>, Error> {
+    pub(crate) fn without_fills(&self, values: &Value) -> Result<Option<(Selection, Value)>, Error> {
         if !self.targets.at_fill() { return Ok(None); }
-        if let Some(listed) = self.listed() { return listed.without_fills(values, span); }
+        if let Some(listed) = self.listed() { return listed.without_fills(values); }
         let kept: Vec<usize> = (0..self.targets.len()).filter(|&i| !self.targets.path(i).contains(&Steps::FILL)).collect();
         let mut targets = Targets::Offsets(Vec::with_capacity(kept.len()));
         for &i in &kept { targets.push(self.targets.path(i)); }
         let values = if kept.is_empty() { Value::integers(vec![0], Vec::new()).described("invalid replacement")? }
         else if values.is_singleton() { values.clone() } else {
-            Selection::offsets(kept.clone()).read(&values.clone().with_shape(vec![values.len()]).described("invalid replacement")?, None, span)?
+            Selection::offsets(kept.clone()).read(&values.clone().with_shape(vec![values.len()]).described("invalid replacement")?, None)?
         };
         Ok(Some((Selection { frame: Frame::Array(vec![kept.len()].into()), targets }, values)))
     }
 
     /// The items that the selection reads from `array`, with `fill` where a target reaches no item, or the prototype where there's none.
-    pub(crate) fn read(&self, array: &Value, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn read(&self, array: &Value, fill: Option<&Value>) -> Result<Value, Error> {
         let invalid = |k| Error::new(k, "invalid selection");
         let layout = match (&self.targets, &self.frame) {
             (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at_or_fill(offsets[0], fill)),
             (Targets::Paths(paths), Frame::Direct) => {
                 return Frame::Direct.collect(paths.iter().map(|p| item_at(array, p, fill)), || array.prototype()).map_err(invalid);
             }
-            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, fill, span),
+            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, fill),
             (Targets::Cells(cells), Frame::Direct) => return cells.read(array, &Default::default()),
             (_, Frame::Array(layout)) => layout,
         };
@@ -476,35 +476,28 @@ impl Selection {
     }
     /// Replaces each target of `array` with its value, in place. A target at a fill writes nothing. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, but a weak integer that doesn't fit fixed integers is DOMAIN, as in arithmetic (`plan::Kind::fits`). Exact and approximate numbers stay apart, and so do Booleans and other numbers, as in a literal (`Widening::Items`), so writing one kind among another leaves the array mixed. Mixed storage stays mixed. While `•explain` records, a write that leaves compact storage mixed records the call (`explain::mixed`).
     pub(crate) fn write_into(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
-        if !crate::explain::recording() { return self.write_targets(array, values, span); }
+        if !crate::explain::recording() { return self.write_targets(array, values); }
         let numeric = crate::number::Numeric::current();
         let target = array.dtype().map(|_| array.storage_kind(numeric));
-        self.write_targets(array, values, span)?;
+        self.write_targets(array, values)?;
         if let (Some(target), None) = (target, array.dtype()) { crate::explain::mixed(span, target, values.storage_kind(numeric), array.len()); }
         Ok(())
     }
-    fn write_targets(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
+    fn write_targets(&self, array: &mut Value, values: &Value) -> Result<(), Error> {
         let values = self.checked(values)?;
         // The scatter skips a fill offset itself. Paths, and the targets of an atom, drop theirs here.
         if array.is_atom() || matches!(self.targets, Targets::Paths(_)) {
-            if let Some((kept, values)) = self.without_fills(&values, span)? { return kept.write_targets(array, &values, span); }
+            if let Some((kept, values)) = self.without_fills(&values)? { return kept.write_targets(array, &values); }
         }
         let offsets = match &self.targets {
             Targets::Offsets(offsets) => offsets,
             Targets::Paths(paths) => {
-                let updates: Vec<(&[usize], Value)> = paths.iter().enumerate().map(|(i, p)| (p.as_slice(), self.item(&values, i))).collect();
-                let mut sorted: Vec<_> = updates.iter().map(|&(p, _)| p).collect();
-                sorted.sort_unstable();
-                sorted.dedup();
-                // Writing a target can remove a path inside it, so a selection with such paths writes into a copy.
-                if sorted.windows(2).any(|w| w[1].starts_with(w[0])) { *array = write_paths(array, &updates, span)?; } else {
-                    for (path, item) in updates { array.write_path(path, item)? }
-                }
+                for (i, path) in paths.iter().enumerate() { array.write_path(path, self.item(&values, i))? }
                 return Ok(());
             }
             Targets::Walk { base, steps } => {
                 if array.is_atom() || matches!(self.frame, Frame::Direct) {
-                    return self.listed().expect("a walk lists its targets").write_targets(array, &values, span);
+                    return self.listed().expect("a walk lists its targets").write_targets(array, &values);
                 }
                 array.scatter_walk(*base, steps, &values)?;
                 return Ok(());
@@ -530,27 +523,6 @@ impl Selection {
         };
         Ok(Self { targets, ..self })
     }
-}
-
-/// `array` with the item at each path replaced by its value. A later update to the same path wins.
-fn write_paths(array: &Value, updates: &[(&[usize], Value)], span: &Span) -> Result<Value, Error> {
-    let replacement;
-    let (array, updates) = if let Some(last) = updates.iter().rposition(|(p, _)| p.is_empty()) {
-        replacement = updates[last].1.clone();
-        (&replacement, &updates[last + 1..])
-    } else { (array, updates) };
-    if updates.is_empty() { return Ok(array.clone()); }
-    let mut items: Vec<_> = array.elements().collect();
-    let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
-    for (path, value) in updates { groups.entry(path[0]).or_default().push((&path[1..], value.clone())); }
-    for (i, edits) in groups {
-        if i >= items.len() { return Err(Error::new(Kind::Index, "replacement changed a selected path")); }
-        items[i] = write_paths(&items[i].clone(), &edits, span)?;
-    }
-    if array.is_atom() { return Ok(items.remove(0)); }
-    let mut data = Gather::new(&[array], items.len());
-    for item in items { data.add(item) }
-    data.finish(array.layout().clone(), || array.prototype()).described("invalid amended array")
 }
 
 /// The selection that the array `indices` makes as the positions of `@`, as one selector of `⌷`: major cells for positions, or where its items are vectors, the item or cell at each coordinate.
@@ -683,7 +655,7 @@ pub(crate) fn select(
     }
     if axes.is_none() && let Some(offset) = item_offset(right, parts) { return Ok(crate::fusion::item(right, offset)); }
     let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, axes, paired, span)? {
-        Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, fill.as_ref(), span)
+        Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, fill.as_ref())
     };
     planned_read(right, plan, direct, fill)
 }
@@ -795,7 +767,7 @@ fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> 
     let size = layout.shape()[axis];
     let selector = match value.view() {
         Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => AxisSelector::Indices {
-            layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size)? },
+            layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size, crate::number::Numeric::current().tolerance)? },
         _ => {
             let positions = positions(&value, size)?;
             match positions[..] {

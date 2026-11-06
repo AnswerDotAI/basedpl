@@ -1,5 +1,5 @@
 //! `text •r pattern` gives a table of the matches of a regular expression in a text, and `text •replace [pattern template]` replaces them. Each thread keeps the patterns it compiled last, so a pattern that a loop uses compiles once (`compiled`). The host owns pattern syntax and matching for this API and help search: fancy-regex natively, JavaScript in the browser.
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Described, Error, Span, Value, array::generated_len, data::text, host::Regex, keyed};
 use std::{cell::RefCell, sync::Arc};
 

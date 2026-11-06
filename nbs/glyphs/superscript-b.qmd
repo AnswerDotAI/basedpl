@@ -11,7 +11,7 @@ Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
 ~ᵇ6                ⍝ ¯7ₓ
 ```
 
-Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate): a float within `1E¯14` of a whole number, such as bare `6`, stands for that integer, whatever the `mathish` setting. Results are exact integers at any size, or Booleans when every argument is Boolean. Agreement is pervasive.
+Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate): a whole float, such as bare `6`, stands for that integer, and with Mathish on so does a float within `1E¯14` of a whole number. Results are exact integers at any size, or Booleans when every argument is Boolean. Agreement is pervasive.
 
 ```bpl
 6 3∧ᵇ5             ⍝ [4 1]ₓ
@@ -26,4 +26,4 @@ In Python, `f.bitwise` constructs `fᵇ`. Array and Function `&`, `|` and `~` us
 
 ## Errors
 
-- `DOMAIN`: a character argument, or a float that isn't within `1E¯14` of a whole number.
+- `DOMAIN`: a character argument, or a float that isn't a whole number (within `1E¯14` with Mathish on).

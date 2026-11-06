@@ -1,4 +1,4 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::session;
 use crate::{
     Described, Error, ErrorKind, Function, Span, Value, array::generated_len, number::Numeric, primitive::{
@@ -263,7 +263,7 @@ pub(crate) fn terminal_size() -> Option<(usize, usize)> { None }
 /// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
 #[cfg(not(web))]
 fn delay(_: Option<&Value>, right: &Value, _: &Span) -> Result<(Value, bool), Error> {
-    use {crate::host::Instant, std::time::Duration};
+    use {crate::cancel::Instant, std::time::Duration};
     let seconds = crate::primitive::real(right)?;
     if seconds.is_nan() || seconds < 0.0 { return Err(Error::domain("•delay needs a nonnegative number of seconds")); }
     let start = Instant::now();
@@ -271,7 +271,7 @@ fn delay(_: Option<&Value>, right: &Value, _: &Span) -> Result<(Value, bool), Er
     loop {
         let now = Instant::now();
         if end.is_some_and(|end| now >= end) { break; }
-        crate::execution::pause(end.map_or(Duration::MAX, |end| end - now))?;
+        crate::cancel::pause(end.map_or(Duration::MAX, |end| end - now))?;
     }
     Ok((Value::Number(crate::Number::float(start.elapsed().as_secs_f64(), FloatWidth::F64)), true))
 }
@@ -356,7 +356,7 @@ pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value) -> R
     use rustymath::structure::Edged;
     let n = n.as_number().and_then(|n| n.nonnegative_integer().ok()).ok_or_else(|| Error::domain("•edge takes a nonnegative whole length"))?;
     let edged = match p.as_items().view() {
-        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => mode.positions(view, n).ok(),
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => mode.positions(view, n, crate::number::Numeric::current().tolerance).ok(),
         _ => p.as_items().positions().ok().map(|signed| mode.mapped(n, signed.contains(&None), signed.into_iter())),
     };
     let result = match edged.ok_or_else(|| Error::domain("•edge takes whole positions"))? {
@@ -408,18 +408,18 @@ fn signal(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error>
     Err(Error::new(kind, message))
 }
 
-fn case_convert(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+fn case_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let mode = match left {
         None => -3, Some(a) if a.is_singleton() => numeric(&a.at(0))?.integer().described("•c mode must be 1, ¯1 or ¯3")?,
         _ => return Err(Error::domain("•c needs one case mode"))
     };
     if !matches!(mode, -3 | -1 | 1) { return Err(Error::domain("•c mode must be 1, ¯1 or ¯3")); }
     let text: fn(&str) -> String = match mode { 1 => str::to_uppercase, -1 => str::to_lowercase, _ => |s| s.to_uppercase().to_lowercase() };
-    cased(right, text, span)
+    cased(right, text)
 }
 
 /// `value` with each character vector mapped as a string by `text`, and each other character mapped on its own. A character whose mapping has more than one character stays as it is.
-fn cased(value: &Value, text: fn(&str) -> String, span: &Span) -> Result<Value, Error> {
+fn cased(value: &Value, text: fn(&str) -> String) -> Result<Value, Error> {
     check()?;
     match value {
         Value::Character(c) => {
@@ -433,7 +433,7 @@ fn cased(value: &Value, text: fn(&str) -> String, span: &Span) -> Result<Value, 
                 if mapped.shape() != value.shape() { return Ok(mapped); }
                 mapped.with_layout(value.layout().clone()).described("invalid result")
             }
-            None => Value::new(value.layout().clone(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?).described("invalid result"),
+            None => Value::new(value.layout().clone(), value.elements().map(|e| cased(&e, text)).collect::<Result<_, _>>()?).described("invalid result"),
         },
         _ => Ok(value.clone()),
     }

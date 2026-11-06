@@ -3,7 +3,9 @@
 //! The rewriter reads what a function computes, and what an expression computes, as one tree of calls (`Form`). It replaces each subtree that a rule matches, inner subtrees first, with a call of the rule's function. `Function::new` rewrites a function's monadic and dyadic forms (`function`), and `dispatch` calls the results in the function's place. The binder rewrites each list of nodes before it walks it, after dot access and joins (`expression`). So `⍟1+x`, `⍟ 1+x`, `⍟(x+1)`, the train `⍟1+` and `⍟∘(1+)` all compute through `log1p`, from the first call on. An expression is read as far as its functions are constant and its arguments are arrays, as `Session::static_category` reads them, which keeps what it read about names in the recording's facts.
 //!
 //! A combination's function gives the combination's results. Where its algorithm doesn't suit the arguments, or a running level carries one, it calls the functions it combines (`combined`), which the level then sees. `•explain` reports each combination that its own algorithm computes.
-use super::*;
+use super::{Binding, Bound, Function, FunctionNode, Operand, Session, Step, binder::{Binder, Category, Tine}, operators::{grouped, primitive_expansion}, session};
+use crate::{Described, Error, Span, Value, name::Name, primitive::{FoldKind, OperatorKind, Primitive}};
+use std::{borrow::Cow, convert::Infallible};
 use crate::primitive::{Folding, Order, Pick, Special};
 use crate::syntax::{Node, NodeKind, cover};
 use rustymath::events::Route;

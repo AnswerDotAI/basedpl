@@ -7,62 +7,10 @@ pub(crate) mod run;
 pub(crate) mod trace;
 pub(crate) mod verify;
 
-use crate::{Number, Value, array::Layout, number::Numeric, plan::{Kind, Operand}, primitive::{FoldKind, Operation, Primitive, structural::Form}};
-use rustymath::{agreement::Mapping, buffer::DType, gather::Steps, hashing::{HashMap, Hashing}, layout::strides, structure::IndexPart};
+use crate::{Value, array::Layout, number::Numeric, plan::Desc, primitive::{FoldKind, Operation, Primitive, structural::Form}};
+use rustymath::{agreement::Mapping, gather::Steps, hashing::{HashMap, Hashing}, layout::strides, structure::IndexPart};
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex, PoisonError};
-
-/// What a program knows of a value without its items: its kind (`plan::Kind`), whether it's an atom, its layout (its shape, keys and axis names), and whether no item is negative or ¯0, as the steps that made it show (`rustymath::facts`). A description's kind leaves out the narrowest width that holds a number's value. Two atoms of one type therefore share a program's key, whatever their magnitudes. `of`, which describes a program's arguments, gives the range fact by type alone (`Kind::unsigned`), so that no key depends on an argument's sign.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Desc { pub(crate) kind: Kind, pub(crate) atom: bool, pub(crate) layout: Layout, pub(crate) nonnegative: bool }
-
-impl Desc {
-    /// The description of `value`, or `None` for a value that a program can't hold (`describes`).
-    pub(crate) fn of(value: &Value) -> Option<Self> {
-        let kind = Self::kind_of(value)?;
-        Some(Self { kind, atom: value.is_atom(), layout: value.layout().clone(), nonnegative: kind.unsigned() })
-    }
-    /// The description of `value` as a program holds it, fixed when the value enters the program: `of`'s, with a number's own sign, and with a pending array's fact that no item is negative (`Pending::nonnegative`), which the array loses once it's computed. `of` keeps the sign fact by type alone, so that no recording's key depends on an argument's sign.
-    pub(crate) fn held(value: &Value) -> Option<Self> {
-        let desc = Self::of(value)?;
-        let pending = value.pending().is_some_and(|p| p.nonnegative);
-        Some(Self { nonnegative: pending || crate::plan::nonnegative_operand(desc.kind, value.as_real()), ..desc })
-    }
-    /// What a plan reads of `value`, a held value that this describes: a plain atom itself, whose number can pick a kernel as a constant, and otherwise this description, whose facts stay fixed while the value's items are computed or carry a level. The trace plans each step with it (`trace::Arg::operand`), and verification plans again with it (`verify::planned`).
-    pub(crate) fn operand<'a>(&'a self, value: &'a Value) -> Operand<'a> { if value.is_atom() && !value.carried() { Operand::Held(value) } else { Operand::Traced(self) } }
-    /// Whether a program can hold `value`: numbers in compact storage that carry no running level's data and whose layout has no renderer.
-    pub(crate) fn describes(value: &Value) -> bool { Self::kind_of(value).is_some() }
-    /// The kind of `value`'s description, or `None` where a program can't hold it (`describes`).
-    fn kind_of(value: &Value) -> Option<Kind> {
-        if value.carrier().is_some() || value.renderer().is_some() { return None; }
-        let kind = Kind::value(value);
-        let dtype = kind.dtype.filter(|&d| d != DType::Character)?;
-        Some(Kind::stored(Some(dtype), kind.fixed, kind.weak))
-    }
-    /// The type of the described items. Only a pending copy's program holds characters, and no step reads them (`fusion::held`).
-    pub(crate) fn dtype(&self) -> DType { self.kind.dtype.expect("a description has a type") }
-    /// The shape of the described value.
-    pub(crate) fn shape(&self) -> &[usize] { self.layout.shape() }
-    /// Whether `value` matches this description's kind in every way that later steps' plans read: its type, its fixed width, and whether it's an atom. A weak flag doesn't count, because an array is never weak and an atom's flag changes no kind that a plan gave. Nor does the width of an ordinary integer atom, a number with no storage width (`Number::dtype` gives the narrowest that holds it): it matches any planned width that holds it, as a count by `+` of one item does. An array's dtype matches exactly, because a program stores each step's items at its planned dtype (`run::node`, `Value::stored_at`). Nor does a running level's data on `value`, whose kind its template gives, as where a tape's coefficients carry an outer `∂`'s duals. Nor does the layout: a recording replays at new lengths, each step computing its own layout.
-    fn matches(&self, value: &Value) -> bool {
-        let kind = Kind::value(value);
-        let dtype = match (kind.dtype, self.kind.dtype) {
-            (Some(DType::Integer(w)), Some(DType::Integer(planned))) if value.is_atom() && kind.fixed.is_none() => w.join(planned) == planned,
-            (dtype, planned) => dtype == planned,
-        };
-        value.is_atom() == self.atom && dtype && kind.fixed == self.kind.fixed
-    }
-    /// A zero of this description's type, weak where the description is: the template of a traced value.
-    pub(crate) fn zero(&self) -> Value {
-        let n = match self.dtype() {
-            DType::Boolean => Number::from_bool(false), DType::Integer(w) if self.kind.fixed.is_some() => Number::fixed(0, w),
-            DType::Integer(_) => Number::from_integer(0), DType::Float(w) => Number::float(0.0, w),
-            DType::Complex(w) => Number::complex(num_complex::Complex64::new(0.0, 0.0), w.into()),
-            DType::Character => unreachable!("a program holds no characters")
-        };
-        Value::Number(n.marked(self.kind.weak))
-    }
-}
 
 /// A program: its values in order, each made by an input, a held value or a step, the read of its values that it gives, and the values it gives beside that.
 #[derive(Debug)]

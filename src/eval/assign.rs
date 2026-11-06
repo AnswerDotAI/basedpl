@@ -1,7 +1,10 @@
 //! Assignment: plain, destructuring, modified and selective.
 
 use super::tree::{Fact, Facts};
-use super::*;
+use super::{ArrayBinding, Binding, Function, INVALID_SELECTION, NO_TARGET, OperatorNode, STRAND_TARGET, Session, binder::{Binder, Category, Entity, Rule, Term, atop, narrow}, bindings::Place, fusion_report, undefined};
+use crate::{At, Described, Error, ErrorKind, Span, Value, array::Frame as ResultFrame, name::Name, primitive::{Builtin, OperatorKind, Primitive, Selection, Superscript, Targets}, syntax::{DefinitionKind, ListForm, Node, NodeKind}};
+use rustymath::hashing::{HashMap, HashMapExt};
+use std::sync::Arc;
 use rustymath::error::Kind;
 
 impl Session {
@@ -369,7 +372,7 @@ impl Session {
                 // The labelled value holds the array too, so dropping it lets the write change the array in place.
                 drop(selected);
                 let read = read.ok_or_else(|| Error::domain("function is not valid for selective assignment").at(&span))?;
-                let (selection, values) = labels.replacements(read, right, &span).at(&span)?;
+                let (selection, values) = labels.replacements(read, right).at(&span)?;
                 (binding, selection, values)
             }
         };
@@ -455,7 +458,7 @@ impl Session {
         let (binding, labels, selected) = match &nodes[root].kind {
             NodeKind::Name(name, _) => {
                 let binding = self.array_binding(*name, span)?;
-                let (labels, selected) = crate::selection::labelled(&binding.value, level, span)?;
+                let (labels, selected) = crate::selection::labelled(&binding.value, level)?;
                 (binding, labels, selected)
             }
             NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner, level)?,
@@ -484,7 +487,7 @@ impl Session {
         }
         // Each target's path is read below, and the modifier never runs for a target at a fill.
         if let Some(listed) = selection.listed() { return self.write_modified(binding, &listed, f, &right, span); }
-        if let Some((kept, right)) = selection.without_fills(&right, span).at(span)? { return self.write_modified(binding, &kept, f, &right, span); }
+        if let Some((kept, right)) = selection.without_fills(&right).at(span)? { return self.write_modified(binding, &kept, f, &right, span); }
         let original = &binding.value;
         let mut results: Vec<Value> = Vec::with_capacity(selection.targets.len());
         let mut latest: HashMap<&[usize], usize> = HashMap::new();

@@ -1,7 +1,7 @@
 //! A check of each program's contracts before it runs, as milestone 2 in section 7 of `meta/graphreview.md` asks: every step reads values before its own, every read lays out as many items as its node holds, and every node's description is the one that planning its step on its operands gives (`plan`), as the trace and fusion plan them. The reference harness turns the check on for every case and page (`settings::verifies`).
 
-use super::{Desc, Node, Origin, Program, Read, Step};
-use crate::{number::Numeric, plan::{self, Operand, Pervasive}};
+use super::{Node, Origin, Program, Read, Step};
+use crate::{number::Numeric, plan::{self, Desc, Operand, Pervasive}};
 
 /// Panics with the program's listing where `program` breaks a contract (`broken`).
 pub(crate) fn check(program: &Program) {

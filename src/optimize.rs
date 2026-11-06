@@ -2,7 +2,6 @@
 use crate::{
     Described, Error, ErrorKind, Function, Number, Span, Value, array::Layout, data::Options, derivative::Linearized, element::Float, keyed, primitive::real,
 };
-use num_traits::ToPrimitive;
 use rustymath::{Native, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
 use rustymath::{buffer::FloatWidth, error::Kind};
 use std::borrow::Cow;
@@ -235,6 +234,6 @@ fn bracket<F: Native + Float>(value: &Value) -> Result<(Vec<F>, Vec<F>), Error> 
 
 /// The whole number at least `least` in option `key`.
 fn count(options: &Options, key: &str, least: usize) -> Result<Option<usize>, Error> {
-    let whole = |v: f64| (v.fract() == 0.0 && v >= least as f64).then(|| v.to_usize()).flatten();
+    let whole = |v: f64| crate::number::real::nonnegative_integer::<usize>(v).ok().filter(|&n| n >= least);
     options.number(key)?.map(|v| whole(v).ok_or_else(|| Error::domain(format!("⇄ {key} must be a whole number of at least {least}")))).transpose()
 }

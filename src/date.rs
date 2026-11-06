@@ -30,7 +30,7 @@ impl Zone {
         let Some(zone) = opts.values.get("zone") else { return Ok(Self::Fixed(Utc.fix())) };
         if keyed::name(zone).as_deref() == Some("local") { return Ok(Self::Local); }
         let offset = real(zone)?;
-        FixedOffset::east_opt(offset as i32).filter(|_| offset.fract() == 0.0).map(Self::Fixed)
+        crate::number::real::whole(offset).and_then(|s| FixedOffset::east_opt(s as i32)).map(Self::Fixed)
             .ok_or_else(|| Error::domain("•date zone must be \"local\" or whole seconds east of UTC, less than a day"))
     }
     /// The date and time at moment `t` in this zone.

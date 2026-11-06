@@ -67,7 +67,7 @@ pub fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, Str
 pub(crate) enum Selector { One(Arc<str>), Many(Vec<Arc<str>>) }
 impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
-    pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
+    pub(crate) fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
         // Only characters, alone or among mixed items, can be names (`name`), so numbers in any storage hold none.
         if !matches!(value.as_items(), Items::Compact(View::Characters(_)) | Items::Values(_)) { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }

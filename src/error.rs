@@ -24,8 +24,8 @@ pub enum ErrorKind {
     Unsupported,
     Interrupt,
     Timeout,
-    /// A batched run's stop, which holds the id of the level that owns the run and whether a later run of the same operand would stop again (`transform::Stop`). Only that level catches it.
-    Stop(crate::transform::Stop),
+    /// A batched run's stop, which holds the id of the level that owns the run and whether a later run of the same operand would stop again (`Stop`). Only that level catches it.
+    Stop(Stop),
     /// An error of a kind that rustymath's functions on arrays share: Length, Rank, Index, Limit, Domain or Overflow.
     Array(rustymath::error::Error),
     /// A kind that a program names when it signals an error, in upper case.
@@ -121,9 +121,88 @@ impl Error {
 
 impl From<rustymath::error::Error> for Error { fn from(e: rustymath::error::Error) -> Self { Self::new(e, "") } }
 /// A batched run's stop. Only the level that owns the run catches it, so its span never shows.
-impl From<crate::transform::Stop> for Error { fn from(stop: crate::transform::Stop) -> Self { Self::new(stop, crate::transform::STOPPED) } }
+impl From<Stop> for Error { fn from(stop: Stop) -> Self { Self::new(stop, STOPPED) } }
+impl From<Stop> for ErrorKind { fn from(stop: Stop) -> Self { ErrorKind::Stop(stop) } }
 /// A message from numeric code, which reports a DOMAIN error as its message alone.
 impl From<&'static str> for Error { fn from(message: &'static str) -> Self { Self::domain(message) } }
+
+/// A batched run's stop: a point where the run can't go on for all its cells at once, such as an observing read, an effect or a call with no rule for whole arrays. The level that owns the run then runs its cells one at a time. No other code catches a stop (`ErrorKind::Stop`). Its cause says how long a dfn operand remembers it (`Cause::kept`).
+///
+/// The level's id, the cause and a detail share one `u64`, which keeps `ErrorKind` at 16 bytes in wasm32. With a separate field it takes 24 bytes. Every frame that moves an evaluation result then holds a larger local on the browser's stack, which leaves room for less recursion (`tests/wasm.mjs`). The detail's meaning depends on the cause, and each cause that keeps one reads it through its own accessor: `glyph` for `Cause::Rule`, `chunk` for `Cause::Memory`.
+#[derive(Clone, Copy, Debug)]
+pub struct Stop(u64);
+
+impl Stop {
+    /// The stop of batched run `level`, for `cause`.
+    pub(crate) fn new(level: u64, cause: Cause) -> Self { Self::with_detail(level, cause, 0) }
+    /// The stop of batched run `level`, for `cause`, with `detail` in the stop's 7 bits of detail.
+    pub(crate) fn with_detail(level: u64, cause: Cause, detail: u64) -> Self { Self(level << 10 | detail << 3 | cause as u64) }
+    /// The stop of batched run `level` at a call that would hold too many items (`Cause::Memory`), where runs on chunks of `chunk` cells, a power of two, wouldn't. A chunk of one cell gives no chunks, and the run's cells then run one at a time.
+    pub(crate) fn oversized(level: u64, chunk: usize) -> Self { Self::with_detail(level, Cause::Memory, chunk.ilog2().into()) }
+    /// The id of the level that owns the run.
+    pub(crate) fn level(self) -> u64 { self.0 >> 10 }
+    /// Why the run stopped.
+    pub(crate) fn cause(self) -> Cause { Cause::from_bits(self.0 & 7) }
+    pub(crate) fn detail(self) -> u64 { self.0 >> 3 & 127 }
+    /// The cells of each chunk that the run can go on in, where the stop is for too many items and gives chunks (`oversized`).
+    pub(crate) fn chunk(self) -> Option<usize> { (self.cause() == Cause::Memory && self.detail() > 0).then(|| 1 << self.detail()) }
+}
+
+/// Why a batched run stopped, which says how long a dfn operand remembers the stop (`kept`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Cause {
+    /// Output, input, `⍕` of a carried value, or a system function's act (`transform::acts`), which the operand does on every call (`Effect::Acts`).
+    Effect = 0,
+    /// A write to a binding outside the map's frames (`Effect::Writes`).
+    Write = 1,
+    /// An observing read of a batch, as a count or a position that comes from the cell makes (`Value::observed`).
+    Observed = 2,
+    /// A call with no rule for batches of its arguments: a primitive with an axis or with no rule for cells, a rule that declines these arguments, a kernel's read of a cell's number (`Value::computed`), or `∂` with respect to cells that are arrays.
+    Rule = 3,
+    /// A call that would repeat constants over so many cells that it holds far more items than its arguments (`batch::CHUNK`). The run goes on in chunks of cells where the stop gives them (`Stop::chunk`).
+    Memory = 4,
+    /// A guard or a call on prototypes that would catch an error (`Effect::Catches`).
+    Caught = 5,
+    /// A guard on a batched value in a dfn whose guard already splits the run's cells, as a recursive call makes (`Levels::case`).
+    Recursion = 6,
+}
+
+/// How long a dfn operand remembers a stop of its batched run (`batch::tried`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kept {
+    /// For every later call, because the stop depends only on what the operand does.
+    Always,
+    /// While later calls repeat the arguments' kinds and cell shapes, and the frame's shape too where `frame` is set. A branch can depend on a cell's shape, through an observing read of a plain value such as `≢⍵`, so a call with no rule in one branch may not recur for other shapes.
+    Arguments { frame: bool },
+    /// Never, because whether the stop recurs depends on the cells' values.
+    Never,
+}
+
+impl Cause {
+    /// How long a dfn operand remembers a stop for this cause.
+    pub(crate) fn kept(self) -> Kept {
+        match self {
+            Cause::Effect | Cause::Write | Cause::Observed | Cause::Recursion => Kept::Always, Cause::Rule => Kept::Arguments { frame: false },
+            Cause::Memory => Kept::Arguments { frame: true }, Cause::Caught => Kept::Never
+        }
+    }
+    /// The cause that `bits` encode, as a stop and a dfn operand's memory of a stop hold it.
+    pub(crate) fn from_bits(bits: u64) -> Cause {
+        match bits {
+            0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, 5 => Cause::Caught, _ => Cause::Recursion
+        }
+    }
+    /// What `•explain` reports in `fallbacks` for a stop for this cause.
+    pub(crate) fn reason(self) -> &'static str {
+        match self {
+            Cause::Effect => "an effect", Cause::Write => "a write", Cause::Observed => "a cell's value", Cause::Rule => "no batch rule",
+            Cause::Memory => "too many items", Cause::Caught => "a caught error", Cause::Recursion => "a recursive call"
+        }
+    }
+}
+
+/// The message of a batched run's stop (`Stop`).
+pub(crate) const STOPPED: &str = "a batched run can't do this for all its cells at once";
 
 impl Span {
     /// The whole of `source`.

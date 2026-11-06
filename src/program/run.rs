@@ -1,6 +1,7 @@
 //! Replaying a program on a call's values, one step at a time on today's kernels. It is the reference that compiled code matches.
 
-use super::{Desc, Node, Origin, Program, Read, Step};
+use crate::plan::Desc;
+use super::{Node, Origin, Program, Read, Step};
 use crate::{At, Described, Error, Span, Value, primitive::Operation, transform::Pairing};
 use rustymath::structure::IndexPart;
 use std::borrow::Cow;

@@ -1,10 +1,30 @@
 //! The settings that `•prefs` changes, held once for the whole process. Code on any thread reads them, and a computation reads the settings in force when it runs. `•prefs` writes them, the lexer writes the settings in a source's leading `•prefs` header as it reads them, and `reset` restores the defaults, as `]clear` does. Nothing keeps a setting to put back later, except that a pending array computes its items under the numeric settings that planned it (`under`). Rustymath holds the thread count, the one setting that it reads itself (`rustymath::parallel::set_threads`).
 //!
 //! Each setting that calls and scalar operations read is an atomic, read with a relaxed load. A read of several settings can see some of them from before a concurrent write and some from after it. The display settings, which only display reads, sit behind a lock.
-pub use crate::fusion::Sizes;
 use crate::{display, number::{Kinds, Numeric}};
 use rustymath::buffer::{FloatWidth, Width};
 use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}};
+
+/// The sizes that decide which calls wait and how a block stage splits its items. `set_sizes` sets them for the whole process, and a block stage reads them when it runs.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Sizes {
+    /// The fewest result items of a call that dispatch defers. A call with a smaller result runs at once.
+    pub min_items: usize,
+    /// The items in a block, which a block stage computes step by step while their buffers stay in the cache.
+    pub block: usize,
+    /// The shortest repeat of an input that splits a block into runs, each read in place.
+    pub run: usize,
+}
+impl Sizes {
+    /// The sizes that `reset` restores.
+    ///
+    /// - `min_items`, 2^16: smaller arrays stay in the cache between calls.
+    /// - `block`, 2^12: a block's buffers fit in `fusion::BUFFERED` bytes where its inputs don't skip items. Each step's results for a block stay in the cache until the steps that read them have run.
+    /// - `run`, 256: within a run, the input reads its one item in place. A shorter repeat copies into a buffer for each block. A cycle shorter than a block never splits it: a block stage repeats its period once, then reads each run from that buffer in place.
+    pub const DEFAULT: Self = Self { min_items: 1 << 16, block: 1 << 12, run: 256 };
+    /// Sizes under which every fusible call that gives items waits, and a block stage splits its items into blocks of 7 and reads repeats of 3 or more in place. The reference suite runs each case under them too, so that small arrays take the paths that large ones take.
+    pub const SMALL: Self = Self { min_items: 1, block: 7, run: 3 };
+}
 
 /// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, and whether each program is checked before it runs.
 const HANZI: bool = false;
@@ -53,7 +73,7 @@ pub(crate) fn under<T>(numeric: Numeric, f: impl FnOnce() -> T) -> T {
     f()
 }
 
-/// The numeric settings in force: a running force's (`under`), or the process's.
+/// The numeric settings in force: a running force's (`under`), or the process's. Callers read them through `Numeric::current`.
 #[inline]
 pub(crate) fn numeric() -> Numeric {
     if let Some(numeric) = planned() { return numeric; }
@@ -141,7 +161,6 @@ pub(crate) fn compiles() -> Compiles {
     match COMPILES.load(Relaxed) { 0 => Compiles::Policy, 1 => Compiles::Always, 2 => Compiles::Never, _ => Compiles::from_env() }
 }
 pub fn set_compiles(compiles: Compiles) { COMPILES.store(compiles as u8, Relaxed) }
-pub use crate::program::blocks::compiled_runs;
 
 /// Restores every setting's default, with the display defaults that `set_display_defaults` gave, and rustymath's default thread count. `]clear` does this, and the test harnesses do it before each test.
 pub fn reset() {

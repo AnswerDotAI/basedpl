@@ -63,7 +63,7 @@ class _Printer:
         if kind in ('/', '⌿', '\\', '⍀'):
             axis = f'[{r(args[1])}]' if len(args) == 2 else ''
             return f'{r(a, True, 100)}.{_method(kind, dyad)}{axis}', 100
-        if kind in ('⍠', 'axis'): return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
+        if kind == '⍠': return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
         if kind == 'inverse': return f'{r(a, dyad, 100)}.undo', 100
         if kind in _marks: return f'{r(a, dyad, 100)}.{_marks[kind]}', 100
         if kind == 'fork' and len(args) == 3:

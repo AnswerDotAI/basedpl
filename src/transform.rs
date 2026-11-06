@@ -1,5 +1,6 @@
 //! The core that running transformations share: one stack of running levels, the routing that hands a call to the newest level among its arguments, and the read point for code that isn't a call. The levels are `∂` calls, the record levels of `∂` calls in reverse mode, and the batched runs of maps such as Each. One counter numbers every level, so a level inside another has the larger id. A `∂` call's id is the tag its duals carry, and a record level's id is the level its records carry. A reader outside a call sees a value through `Value::observed` or `Value::computed`, never past a level's data. A batched run stops (`Stop`) where it can't go on for all its cells at once, as at an observing read. Only the try that began the run catches the stop (`batch::tried`).
 
+use crate::error::{Cause, Stop};
 use crate::array::{Footprint, Seen};
 use crate::session;
 use crate::program::trace::Role;
@@ -49,8 +50,8 @@ impl Kind {
     fn stop(&self, id: u64, effect: Effect) -> Option<Stop> {
         match self { Kind::Batched(_) | Kind::Trace(_) => Some(effect.stop(id)), Kind::Derivative | Kind::Tape | Kind::Label => None }
     }
-    /// Whether a batched run may begin while a level of this kind runs. A `∂` call and reverse mode's record allow one, because the run's level is newer than theirs, so the batch rules take each call first. A batched run doesn't: a map inside it widens it instead (`Levels::widens`). A label level doesn't, because a batch can't hold labelled items, and Under and selective assignment read a map's cells one at a time under it. A trace doesn't, because a map's cells under it are traced values, which a program holds whole.
-    fn admits_batch(&self) -> bool { match self { Kind::Derivative | Kind::Tape => true, Kind::Batched(_) | Kind::Label | Kind::Trace(_) => false } }
+    /// Whether a batched run may begin while a level of this kind runs. A `∂` call, reverse mode's record and a trace allow one. The batch rules take each call first, because the run's level is newer than theirs. Under a trace, the program records each primitive's call on the batch's whole. A batched run doesn't: a map inside it widens it instead (`Levels::widens`). A label level doesn't, because a batch can't hold labelled items, and Under and selective assignment read a map's cells one at a time under it.
+    fn admits_batch(&self) -> bool { match self { Kind::Derivative | Kind::Tape | Kind::Trace(_) => true, Kind::Batched(_) | Kind::Label => false } }
 }
 
 /// Code that must run once for each cell, which a level may stop before it runs (`Levels::effect`).
@@ -160,38 +161,18 @@ impl Plain<'_> {
     pub(crate) fn infinity(&self) -> Option<bool> { match self { Plain::Number(n) if n.is_infinite() => n.as_float().map(|f| f < 0.), _ => None } }
 }
 
-/// A batched run's stop: a point where the run can't go on for all its cells at once, such as an observing read, an effect or a call with no rule for whole arrays. The level that owns the run then runs its cells one at a time. No other code catches a stop (`ErrorKind::Stop`). Its cause says how long a dfn operand remembers it (`Cause::kept`).
-///
-/// The level's id, the cause and a detail share one `u64`, which keeps `ErrorKind` at 16 bytes in wasm32. With a separate field it takes 24 bytes. Every frame that moves an evaluation result then holds a larger local on the browser's stack, which leaves room for less recursion (`tests/wasm.mjs`). The detail's meaning depends on the cause, and each cause that keeps one reads it through its own accessor: `glyph` for `Cause::Rule`, `chunk` for `Cause::Memory`.
-#[derive(Clone, Copy, Debug)]
-pub struct Stop(u64);
-
 impl Stop {
-    /// The stop of batched run `level`, for `cause`.
-    pub(crate) fn new(level: u64, cause: Cause) -> Self { Self::with_detail(level, cause, 0) }
-    /// The stop of batched run `level`, for `cause`, with `detail` in the stop's 7 bits of detail.
-    fn with_detail(level: u64, cause: Cause, detail: u64) -> Self { Self(level << 10 | detail << 3 | cause as u64) }
     /// The stop of batched run `level` at a call of `p` with no rule for batches of its arguments (`Cause::Rule`). It keeps `p`'s glyph as the position of the first primitive in `Primitive::all()` with that glyph, because `Bracket` shares `⌷` with `Index` and isn't listed.
     pub(crate) fn refusing(level: u64, p: Primitive) -> Self {
         let glyph = Primitive::all().position(|q| q.glyph() == p.glyph()).map_or(0, |i| i as u64 + 1);
         Self::with_detail(level, Cause::Rule, glyph)
     }
-    /// The stop of batched run `level` at a call that would hold too many items (`Cause::Memory`), where runs on chunks of `chunk` cells, a power of two, wouldn't. A chunk of one cell gives no chunks, and the run's cells then run one at a time.
-    pub(crate) fn oversized(level: u64, chunk: usize) -> Self { Self::with_detail(level, Cause::Memory, chunk.ilog2().into()) }
-    /// The id of the level that owns the run.
-    pub(crate) fn level(self) -> u64 { self.0 >> 10 }
-    /// Why the run stopped.
-    pub(crate) fn cause(self) -> Cause { Cause::from_bits(self.0 & 7) }
-    fn detail(self) -> u64 { self.0 >> 3 & 127 }
     /// The glyph of the primitive whose call refused, where the stop keeps one (`refusing`).
     fn glyph(self) -> Option<&'static str> {
         if self.cause() != Cause::Rule { return None; }
         self.detail().checked_sub(1).and_then(|i| Primitive::all().nth(i as usize)).map(Primitive::glyph)
     }
-    /// The cells of each chunk that the run can go on in, where the stop is for too many items and gives chunks (`oversized`).
-    pub(crate) fn chunk(self) -> Option<usize> { (self.cause() == Cause::Memory && self.detail() > 0).then(|| 1 << self.detail()) }
 }
-
 /// What `•explain` reports in `fallbacks` for a stop: its cause (`Cause::reason`), then the glyph of the primitive that refused, where the stop keeps one.
 impl std::fmt::Display for Stop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -202,60 +183,7 @@ impl std::fmt::Display for Stop {
 /// How a batched run or a trace ended without a result: a stop at its own level, a fallback for a reason that `•explain` names, or an error that passes through, such as an interrupt, a timeout or an older level's stop. A trace's stop holds the reason that the trace noted for `•explain`, where it noted one. Where the level noted none, as a batched run never does, `•explain` names the stop's cause.
 pub(crate) enum Ended { Stopped(Stop, Option<&'static str>), Fell(&'static str), Passed(Error) }
 
-/// Why a batched run stopped, which says how long a dfn operand remembers the stop (`kept`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Cause {
-    /// Output, input, `⍕` of a carried value, or a system function's act (`transform::acts`), which the operand does on every call (`Effect::Acts`).
-    Effect = 0,
-    /// A write to a binding outside the map's frames (`Effect::Writes`).
-    Write = 1,
-    /// An observing read of a batch, as a count or a position that comes from the cell makes (`Value::observed`).
-    Observed = 2,
-    /// A call with no rule for batches of its arguments: a primitive with an axis or with no rule for cells, a rule that declines these arguments, a kernel's read of a cell's number (`Value::computed`), or `∂` with respect to cells that are arrays.
-    Rule = 3,
-    /// A call that would repeat constants over so many cells that it holds far more items than its arguments (`batch::CHUNK`). The run goes on in chunks of cells where the stop gives them (`Stop::chunk`).
-    Memory = 4,
-    /// A guard or a call on prototypes that would catch an error (`Effect::Catches`).
-    Caught = 5,
-    /// A guard on a batched value in a dfn whose guard already splits the run's cells, as a recursive call makes (`Levels::case`).
-    Recursion = 6,
-}
 
-/// How long a dfn operand remembers a stop of its batched run (`batch::tried`).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kept {
-    /// For every later call, because the stop depends only on what the operand does.
-    Always,
-    /// While later calls repeat the arguments' kinds and cell shapes, and the frame's shape too where `frame` is set. A branch can depend on a cell's shape, through an observing read of a plain value such as `≢⍵`, so a call with no rule in one branch may not recur for other shapes.
-    Arguments { frame: bool },
-    /// Never, because whether the stop recurs depends on the cells' values.
-    Never,
-}
-
-impl Cause {
-    /// How long a dfn operand remembers a stop for this cause.
-    pub(crate) fn kept(self) -> Kept {
-        match self {
-            Cause::Effect | Cause::Write | Cause::Observed | Cause::Recursion => Kept::Always, Cause::Rule => Kept::Arguments { frame: false },
-            Cause::Memory => Kept::Arguments { frame: true }, Cause::Caught => Kept::Never
-        }
-    }
-    /// The cause that `bits` encode, as a stop and a dfn operand's memory of a stop hold it.
-    pub(crate) fn from_bits(bits: u64) -> Cause {
-        match bits {
-            0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, 5 => Cause::Caught, _ => Cause::Recursion
-        }
-    }
-    /// What `•explain` reports in `fallbacks` for a stop for this cause.
-    pub(crate) fn reason(self) -> &'static str {
-        match self {
-            Cause::Effect => "an effect", Cause::Write => "a write", Cause::Observed => "a cell's value", Cause::Rule => "no batch rule",
-            Cause::Memory => "too many items", Cause::Caught => "a caught error", Cause::Recursion => "a recursive call"
-        }
-    }
-}
-
-impl From<Stop> for ErrorKind { fn from(stop: Stop) -> Self { ErrorKind::Stop(stop) } }
 
 impl Value {
     /// This value as a reader sees it when it's an atom with no level's data on it: a number, character, function or operator.
@@ -406,7 +334,7 @@ fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Optio
         Mark::Dual(tag) => crate::derivative::call(op, left, right, tag, span),
         Mark::Batch(level) => crate::batch::call(op, left, right, level, span),
         Mark::Label(level) => match op {
-            Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => crate::selection::call(p, axis, left, right, level, span), _ => None
+            Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => Some(crate::selection::call(p, axis, left, right, level, span)), _ => None
         },
         Mark::Trace(level) => crate::program::trace::call(op, left, right, level),
     }
@@ -424,8 +352,6 @@ pub(crate) fn formats(left: Option<&Value>, right: &Value) -> Result<(), Error> 
 /// The message of the UNSUPPORTED error that a value `∂` carries gives where it reaches code that reads numbers directly (`number::Failure::Carried`).
 pub(crate) const UNSUPPORTED: &str = "∂ can't differentiate this here";
 
-/// The message of a batched run's stop (`Stop`).
-pub(crate) const STOPPED: &str = "a batched run can't do this for all its cells at once";
 
 /// A running level's data, on an array in place of its items, or on an atom (`Value::Carried`): a dual of a `∂` call (`derivative::Dual`), a batch of a batched map's cells (`batch::Batch`), a selection's values with their labels (`selection::Labelled`), or a value that a tape or a trace records (`program::trace::Traced`). An array keeps the layout that code outside the level sees: a batch's is one cell's.
 #[derive(Clone, Debug)]
@@ -665,7 +591,7 @@ impl Join {
         match self { Join::Dual(j) => j.each(source, replaces, op), Join::Label(j) => j.each(source, replaces, op) }
     }
     pub(crate) fn add(&mut self, item: Value) { match self { Join::Dual(j) => j.add(item), Join::Label(j) => j.add(item) } }
-    pub(crate) fn finish(self, layout: crate::array::Layout, prototype: impl crate::array::Prototype) -> Result<Value, crate::ErrorKind> {
+    pub(crate) fn finish(self, layout: crate::array::Layout, prototype: &mut dyn FnMut() -> Value) -> Result<Value, crate::ErrorKind> {
         match self { Join::Dual(j) => j.finish(layout, prototype), Join::Label(j) => j.finish(layout, prototype) }
     }
 }

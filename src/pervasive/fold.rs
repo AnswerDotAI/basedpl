@@ -5,13 +5,12 @@ use super::*;
 pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value>) -> Option<Value> {
     use rustymath::operation::{Direction, Seed};
     if seed.is_some() && !seed_last(p, right) { return None; }
-    let plan = plan::fold(p, FoldKind::REDUCE, seed.map(Kind::value), Kind::value(right), Numeric::current()).ok()?;
+    let plan = plan::fold(p, FoldKind::REDUCE, seed.map(Kind::value), Kind::value(right), Numeric::current());
     let numeric = plan.numeric;
     let floats = match plan.floated() { Some(width) => Some(right.to_float_width(width).ok()?), None => None };
     let copy = floats.is_none().then(|| crate::fusion::source(right)).flatten()
         .filter(|(_, mapping)| !crate::fusion::held_copy(right) || reduce::rereads_cheaply(mapping, right.shape()));
     let items = copy.as_ref().map_or_else(|| floats.as_ref().unwrap_or(right), |(source, _)| source);
-    if !matches!(items.as_items(), Items::Compact(_)) { return None }
     let dtype = plan.computes_in()?;
     let settings = numeric.settings_for(dtype);
     let mut shape = right.shape().to_vec();
@@ -20,30 +19,33 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     let fill = mapping.fills().then(|| crate::array::Layout::from([1]).filled(&right.prototype()));
     let args: Vec<_> = std::iter::once((items, &mapping, right.len())).chain(fill.as_ref().map(|f| (f, &Mapping::Single, 1))).collect();
     let missing = if fill.is_some() { Missing::Scalar(1) } else { Missing::Default };
-    let (out, _) = with_reads(&args, missing, |reads, types| computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
-        let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), shape.iter().product());
-        kernel.fold_read(right.shape(), axis, Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|()| out)
+    let ((out, order), _) = with_reads(&args, missing, |reads, types| computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
+        let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), 0);
+        kernel.fold_read(right.shape(), axis, Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|order| (out, order))
     }))?.ok().flatten()?;
-    let result = settled(halved(Value::from_buffer_at(shape, out, numeric.fixed).ok()?, plan.halve), || right.dtype(), numeric);
+    // A copy lays out folds left in their source's order, pending where it's large, so that a later fold of windows can slide over them.
+    let laid = if order.is_some() { vec![out.len()] } else { shape.clone() };
+    let result = wrapped(rounded(Value::from_bounded(laid, out, numeric.fixed, plan.range(right.range(), None, len)).ok()?, plan.halve), || right.dtype(), numeric);
+    let result = match order { Some(order) => crate::fusion::copied(&result, crate::array::Layout::from(shape), &Mapping::from(order), None).ok()?, None => result };
     let Some(seed) = seed else { return Some(result) };
     let agreement = Agreement::new(result.layout(), seed.layout()).ok()?;
-    plan::pervasive_on(p, Some(&result), seed, numeric).ok().and_then(|plan| map(&plan, Some(&result), seed, &agreement))
+    map(&plan::pervasive_on(p, Some(&result), seed, numeric), Some(&result), seed, &agreement)
 }
 
 /// The fold by `p` of each group of the vector `right` that `groups` gives, by `p`'s reduction (`Reduce::run_groups`) at the kind the fold computes in. Each group's fold combines its items in their order, or in four interleaved parts among few groups (`Grouping::fold`), where the reduction may combine them in another order. `None` for a function with no reduction, for storage it doesn't fold, and where a checked total doesn't fit.
 pub(crate) fn fold_groups(p: Primitive, right: &Value, groups: &Numbered) -> Option<Value> {
-    let plan = plan::fold(p, FoldKind::REDUCE, None, Kind::value(right), Numeric::current()).ok()?;
+    let plan = plan::fold(p, FoldKind::REDUCE, None, Kind::value(right), Numeric::current());
     let numeric = plan.numeric;
-    planned_halves(&[Some(right)], plan.halve, |v| {
+    copied_halves(&[Some(right)], plan.halve, |v| {
         let right = v[0]?;
-        let view = match right.as_items() { Items::Compact(view) => view, Items::Fixed(ints) => View::Integers(ints), _ => return None };
+        let view = right.view()?;
         let dtype = view.dtype();
         let reduce = kernel_at(p, None, dtype, 2, numeric)?.fold()?;
         let mut out = Buffer::with_capacity(dtype, 0);
         with_ints!(groups.numbers.view(), |numbers| {
             reduce.run_groups(variant(dtype, numeric), &rustymath::search::ClassNumbers { count: groups.firsts.len(), numbers }, view, &mut out)
         }).ok()?;
-        Some(settled(Value::from_buffer_at(vec![groups.firsts.len()], out, numeric.fixed).ok()?, || right.dtype(), numeric))
+        Some(wrapped(Value::from_buffer_at(vec![groups.firsts.len()], out, numeric.fixed).ok()?, || right.dtype(), numeric))
     })
 }
 

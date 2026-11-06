@@ -1,4 +1,4 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::session;
 use crate::{
     Described, Error, Number, Span, Value, array::generated_len, element::{Stored, read_as}, keyed, number::Numeric, primitive::{numeric, pervade, real},
@@ -114,18 +114,18 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value) -> Result<Value, Err
         }));
         if let Some(result) = computed { return result; }
     }
-    pervade(right, &|e| point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width)))
+    pervade(right, &|e| Ok(point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width))))
 }
 
 /// The density, cdf or quantile of `d` at one number x, computed at `width` as an array's items are, as a float of `width`. A discrete quantile is computed in `f64` and gives a machine integer where it's finite, because its integers can pass the largest that narrower floats hold exactly. A quantile past `i64` saturates, as Rust's `as` does.
-fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
+fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Value {
     let quantile = op == Operation::Quantile;
     if quantile && d.is_discrete() {
         let y = d.quantile(x);
-        return Ok(if y.is_finite() { Value::integer(y as i64) } else { Value::Number(Number::float(y, width)) });
+        return if y.is_finite() { Value::integer(y as i64) } else { Value::Number(Number::float(y, width)) };
     }
     let y = with_float_width!(width, F => { let x = F::narrow(x); match op { Operation::Density => Pdf(*d).one(x), Operation::Cdf => Cdf(*d).one(x), _ => Quantile(*d).one(x) }.wide() });
-    Ok(Value::Number(Number::float(y, width)))
+    Value::Number(Number::float(y, width))
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {

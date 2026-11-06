@@ -1,9 +1,9 @@
-use crate::execution::check;
-use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len, saturated}};
+use crate::cancel::check;
+use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len}};
 use num_bigint::{BigInt, BigUint};
 use num_rational::BigRational;
 use num_traits::{One, ToPrimitive, Zero};
-use rustymath::error::Kind;
+use rustymath::{convert::saturated, error::Kind};
 use rustymath::number_theory as nt;
 
 fn number(e: &Value) -> Result<Number, Error> {
@@ -13,7 +13,7 @@ fn number(e: &Value) -> Result<Number, Error> {
 fn integer(n: impl Into<BigInt>, unbounded: bool) -> Value {
     let n = n.into();
     if unbounded { return Value::Number(Number::rational(BigRational::from_integer(n))); }
-    Value::integer(n.to_i64().unwrap_or(if n < BigInt::zero() { i64::MIN } else { i64::MAX }))
+    Value::integer(saturated(&n))
 }
 fn array(shape: Vec<usize>, data: Vec<Value>, unbounded: bool) -> Result<Value, Error> {
     Value::from_parts(shape, data, integer(0, unbounded)).described("number theory result exceeds array limits")

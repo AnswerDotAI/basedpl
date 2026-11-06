@@ -4,74 +4,67 @@
 //!
 //! `copied_halves` runs a call with 16-bit floats on 32-bit copies of them, because the CPU runs 16-bit floats only for testing. Such a call rounds a function of several steps, such as `|`, once, where a 16-bit computation would round each step.
 use crate::{
-    Number, Value, agreement::{Agree, Agreement}, array::{Items, Lanes, Promotion, Widening}, number::{Arithmetic, Math, Numeric},
+    Number, Value, agreement::{Agree, Agreement}, array::{Lanes, Promotion, Widening}, number::{Arithmetic, Halving, Math, Numeric},
     plan::{self, Kind, Pervasive}, primitive::{Comparison, Exact, FoldKind, Primitive, Real, Special}
 };
 use rustymath::{
-    agreement::{Mapping, Missing, Read}, buffer::{Buffer, DType, FloatWidth, Floats, View, Width}, gather::Writes, operation::Kernel, reduce,
+    agreement::{Mapping, Missing, Read}, facts::{Op, Visit}, buffer::{Buffer, DType, FloatWidth, Floats, View, Width}, gather::Writes, operation::Kernel, reduce,
     search::Numbered, with_floats, with_ints
 };
 use std::borrow::Cow;
 
-/// A use of the rustymath formula object that a primitive computes, through `formula`.
-pub(crate) trait Visit { type Out; fn visit<K: rustymath::facts::Formula<N>, const N: usize>(self, object: K) -> Self::Out; }
-
-/// `v` on the formula that `p` computes with `arity` arguments, or `None` where `p` has none. This is the one map from a primitive to its rustymath formula. `mathish` picks the Mathish forms, `integral` the floor quotient for `÷` on integers, and approximate forms compare within `t`. `○` and `○⁻¹` pick their formula by their code, which only `resolve` reads.
-pub(crate) fn formula<V: Visit>(p: Primitive, arity: usize, mathish: bool, integral: bool, t: rustymath::tolerant::Tolerance, v: V) -> Option<V::Out> {
+/// The formula that `p` computes with `arity` arguments, or `None` where `p` has none. This is the one map from a primitive to its rustymath formula. `mathish` picks the Mathish forms, `integral` the floor quotient for `÷` on integers, and approximate forms compare within `t`. `○` and `○⁻¹` pick their formula by their code, which only `resolve` reads.
+pub(crate) fn formula(p: Primitive, arity: usize, mathish: bool, integral: bool, t: rustymath::tolerant::Tolerance) -> Option<Op> {
     use crate::number::{Arithmetic::*, Math::*};
-    use rustymath::{self as rm, tolerant as tol};
     use Comparison::*;
     Some(match (p, arity == 2) {
-        (Primitive::Arithmetic(Plus), false) => v.visit(rm::Conj),
-        (Primitive::Arithmetic(Plus), true) => v.visit(rm::Add),
-        (Primitive::Arithmetic(Minus), false) => v.visit(rm::Negate),
-        (Primitive::Arithmetic(Minus), true) => v.visit(rm::Subtract),
-        (Primitive::Arithmetic(Times), false) => v.visit(rm::Sign),
-        (Primitive::Arithmetic(Times), true) => v.visit(rm::Multiply),
-        (Primitive::Arithmetic(Divide), false) => v.visit(rm::Reciprocal),
+        (Primitive::Arithmetic(Plus), false) => Op::Conj,
+        (Primitive::Arithmetic(Plus), true) => Op::Add,
+        (Primitive::Arithmetic(Minus), false) => Op::Negate,
+        (Primitive::Arithmetic(Minus), true) => Op::Subtract,
+        (Primitive::Arithmetic(Times), false) => Op::Sign,
+        (Primitive::Arithmetic(Times), true) => Op::Multiply,
+        (Primitive::Arithmetic(Divide), false) => Op::Reciprocal,
         (Primitive::Arithmetic(Divide) | Primitive::Exact(Exact::Quotient), true) if integral || p == Primitive::Exact(Exact::Quotient) =>
-            if mathish { v.visit(tol::MathishFloorDivide(t)) } else { v.visit(tol::FloorDivide(t)) },
-        (Primitive::Arithmetic(Divide), true) => if mathish { v.visit(rm::MathishDivide) } else { v.visit(rm::Divide) },
-        (Primitive::Math(Magnitude), false) => v.visit(rm::Abs),
-        (Primitive::Math(Magnitude), true) => v.visit(tol::Residue(t)),
-        (Primitive::Math(Floor) | Primitive::Exact(Exact::Floor), false) => v.visit(tol::Floor(t)),
-        (Primitive::Math(Floor), true) => v.visit(rm::reduce::Minimum),
-        (Primitive::Math(Ceiling) | Primitive::Exact(Exact::Ceiling), false) => v.visit(tol::Ceil(t)),
-        (Primitive::Math(Ceiling), true) => v.visit(rm::reduce::Maximum),
-        (Primitive::Math(Power), false) => v.visit(rm::Exp),
-        (Primitive::Math(Power), true) => v.visit(rm::Pow),
-        (Primitive::Math(Log), false) => v.visit(rm::Ln),
-        (Primitive::Math(Log), true) => if mathish { v.visit(rm::MathishLogb) } else { v.visit(rm::Logb) },
-        (Primitive::Math(Circle), false) => v.visit(rm::Cis),
-        (Primitive::Math(Pi), false) => v.visit::<_, 1>(rm::PiTimes),
-        (Primitive::Math(Pi), true) => v.visit::<_, 2>(rm::PiTimes),
-        (Primitive::Math(Root), false) => v.visit(rm::Sqrt),
-        (Primitive::Math(Root), true) => v.visit(rm::Root),
-        (Primitive::Real(Real::Sqrt), false) => v.visit(rm::RealSqrt),
-        (Primitive::Real(Real::Ln), false) => v.visit(rm::RealLn),
-        (Primitive::Real(Real::Pow), true) => v.visit(rm::RealPow),
-        (Primitive::Math(Factorial), false) => v.visit(rm::Factorial),
-        (Primitive::Math(Factorial), true) => v.visit(rm::Flipped(rm::Binom)),
-        (Primitive::Math(Gcd), true) => v.visit(tol::Gcd(t)),
-        (Primitive::Math(Lcm), true) => v.visit(tol::Lcm(t)),
-        (Primitive::Math(Nand), true) => v.visit(rm::Nand),
-        (Primitive::Math(Nor), true) => v.visit(rm::Nor),
-        (Primitive::Math(Not), false) => v.visit(rm::Not),
-        (Primitive::Compare(Equal), true) => v.visit(tol::Equal(t)),
-        (Primitive::Compare(NotEqual), true) => v.visit(tol::NotEqual(t)),
-        (Primitive::Compare(Less), true) => v.visit(tol::Less(t)),
-        (Primitive::Compare(LessEqual), true) => v.visit(tol::LessEqual(t)),
-        (Primitive::Compare(Greater), true) => v.visit(tol::Greater(t)),
-        (Primitive::Compare(GreaterEqual), true) => v.visit(tol::GreaterEqual(t)),
-        (Primitive::Bitwise(table), false) => v.visit::<_, 1>(rm::Bitwise(table)),
-        (Primitive::Bitwise(table), true) => v.visit::<_, 2>(rm::Bitwise(table)),
+            if mathish { Op::MathishFloorDivide(t) } else { Op::FloorDivide(t) },
+        (Primitive::Arithmetic(Divide), true) => if mathish { Op::MathishDivide } else { Op::Divide },
+        (Primitive::Math(Magnitude), false) => Op::Abs,
+        (Primitive::Math(Magnitude), true) => Op::Residue(t),
+        (Primitive::Math(Floor) | Primitive::Exact(Exact::Floor), false) => Op::Floor(t),
+        (Primitive::Math(Floor), true) => Op::Minimum,
+        (Primitive::Math(Ceiling) | Primitive::Exact(Exact::Ceiling), false) => Op::Ceil(t),
+        (Primitive::Math(Ceiling), true) => Op::Maximum,
+        (Primitive::Math(Power), false) => Op::Exp,
+        (Primitive::Math(Power), true) => Op::Pow,
+        (Primitive::Math(Log), false) => Op::Ln,
+        (Primitive::Math(Log), true) => if mathish { Op::MathishLogb } else { Op::Logb },
+        (Primitive::Math(Circle), false) => Op::Cis,
+        (Primitive::Math(Pi), _) => Op::PiTimes,
+        (Primitive::Math(Root), false) => Op::Sqrt,
+        (Primitive::Math(Root), true) => Op::Root,
+        (Primitive::Real(Real::Sqrt), false) => Op::RealSqrt,
+        (Primitive::Real(Real::Ln), false) => Op::RealLn,
+        (Primitive::Real(Real::Pow), true) => Op::RealPow,
+        (Primitive::Math(Factorial), false) => Op::Factorial,
+        (Primitive::Math(Factorial), true) => Op::FlippedBinom,
+        (Primitive::Math(Gcd), true) => Op::Gcd(t),
+        (Primitive::Math(Lcm), true) => Op::Lcm(t),
+        (Primitive::Math(Nand), true) => Op::Nand,
+        (Primitive::Math(Nor), true) => Op::Nor,
+        (Primitive::Math(Not), false) => Op::Not,
+        (Primitive::Compare(Equal), true) => Op::Equal(t),
+        (Primitive::Compare(NotEqual), true) => Op::NotEqual(t),
+        (Primitive::Compare(Less), true) => Op::Less(t),
+        (Primitive::Compare(LessEqual), true) => Op::LessEqual(t),
+        (Primitive::Compare(Greater), true) => Op::Greater(t),
+        (Primitive::Compare(GreaterEqual), true) => Op::GreaterEqual(t),
+        (Primitive::Bitwise(table), _) => Op::Bitwise(table),
         (Primitive::Special(special), _) => match special {
-            Special::Log1p => v.visit(rm::Log1p), Special::Expm1 => v.visit(rm::Expm1), Special::LambertW => v.visit(rm::LambertW), Special::Gammaln => v.visit(rm::Lgamma),
-            Special::Digamma => v.visit(rm::Digamma), Special::Erf => v.visit(rm::Erf), Special::Erfc => v.visit(rm::Erfc),
-            Special::Erfinv => v.visit(rm::Erfinv), Special::Polygamma => v.visit(rm::Polygamma), Special::Beta => v.visit(rm::Beta),
-            Special::Gammainc => v.visit(rm::Gammainc), Special::Betainc => v.visit(rm::Betainc), Special::Sign => v.visit(rm::Sign),
-            Special::BetaincAt([a, b]) => v.visit(rm::BetaincAt(f64::from_bits(a), f64::from_bits(b))),
-            Special::BinomDn => v.visit(rm::BinomDn), Special::BinomDk => v.visit(rm::BinomDk), _ => return None,
+            Special::Log1p => Op::Log1p, Special::Expm1 => Op::Expm1, Special::LambertW => Op::LambertW, Special::Gammaln => Op::Lgamma,
+            Special::Digamma => Op::Digamma, Special::Erf => Op::Erf, Special::Erfc => Op::Erfc, Special::Erfinv => Op::Erfinv,
+            Special::Polygamma => Op::Polygamma, Special::Beta => Op::Beta, Special::Gammainc => Op::Gammainc, Special::Betainc => Op::Betainc,
+            Special::Sign => Op::Sign, Special::BetaincAt([a, b]) => Op::BetaincAt(f64::from_bits(a), f64::from_bits(b)),
+            Special::BinomDn => Op::BinomDn, Special::BinomDk => Op::BinomDk, _ => return None,
         },
         _ => return None,
     })
@@ -87,7 +80,7 @@ pub(crate) fn fold_identity(p: Primitive) -> Option<f64> {
             id.last().copied().flatten().or(id.first().copied().flatten())
         }
     }
-    formula(p, 2, false, false, rustymath::tolerant::Tolerance::DEFAULT, Of).flatten()
+    formula(p, 2, false, false, rustymath::tolerant::Tolerance::DEFAULT)?.visit(2, Of)
 }
 
 /// Whether `p` with two arguments, or with one where not `dyadic`, gives Booleans, from its formula (`Formula::BOOLEAN`).
@@ -97,32 +90,29 @@ pub(crate) fn booleans(p: Primitive, dyadic: bool) -> bool {
         type Out = bool;
         fn visit<K: rustymath::facts::Formula<N>, const N: usize>(self, _: K) -> bool { K::BOOLEAN }
     }
-    formula(p, 1 + usize::from(dyadic), false, false, rustymath::tolerant::Tolerance::DEFAULT, Of).unwrap_or(false)
+    let arity = 1 + usize::from(dyadic);
+    formula(p, arity, false, false, rustymath::tolerant::Tolerance::DEFAULT).is_some_and(|op| op.visit(arity, Of))
 }
 
 /// The formula that `p` computes, resolved for arguments of types `types` in `variant` and compared within the tolerance of `variant`'s kind (`Numeric::tolerance_of`): the one rule that turns a call into a kernel. `code` is a constant left argument that picks the formula, as `○`'s does. A resolution depends on nothing else, so each one is kept and reused, and a call doesn't resolve its kernel again. `None` where `p` has no formula for them.
-fn resolved(p: Primitive, code: Option<i64>, variant: rustymath::facts::Variant, types: &[DType], numeric: Numeric) -> Option<Kernel> {
+fn resolved(p: Primitive, code: Option<i64>, variant: rustymath::domain::Variant, types: &[DType], numeric: Numeric) -> Option<Kernel> {
     use crate::number::Math;
-    type Key = (Primitive, Option<i64>, rustymath::facts::Variant, bool, [Option<DType>; 3], u64);
+    type Key = (Primitive, Option<i64>, rustymath::domain::Variant, bool, [Option<DType>; 3], u64);
     thread_local! { static KERNELS: std::cell::RefCell<rustymath::hashing::HashMap<Key, Option<Kernel>>> = Default::default(); }
-    struct At<'a>(rustymath::facts::Variant, &'a [DType]);
-    impl Visit for At<'_> {
-        type Out = Option<Kernel>;
-        fn visit<K: rustymath::facts::Formula<N>, const N: usize>(self, object: K) -> Self::Out {
-            Kernel::try_resolve(object, self.0, <[DType; N]>::try_from(self.1).ok()?).ok().flatten()
-        }
-    }
+    thread_local! { static LAST: std::cell::RefCell<Option<(Key, Option<Kernel>)>> = const { std::cell::RefCell::new(None) }; }
     let tolerance = numeric.tolerance_of(variant.dtype);
     let mathish = numeric.mathish_at(variant.dtype);
     let key = (p, code, variant, mathish, std::array::from_fn(|i| types.get(i).copied()), tolerance.value().to_bits());
-    if let Some(kernel) = KERNELS.with_borrow(|kernels| kernels.get(&key).cloned()) { return kernel; }
+    // The last resolution is checked before the hash: one call's resolutions repeat their key back to back.
+    if let Some(kernel) = LAST.with_borrow(|last| last.as_ref().filter(|(k, _)| *k == key).map(|(_, kernel)| kernel.clone())) { return kernel; }
+    if let Some(kernel) = KERNELS.with_borrow(|kernels| kernels.get(&key).cloned()) { LAST.set(Some((key, kernel.clone()))); return kernel; }
     let circle = match p {
         Primitive::Math(Math::Circle) => Some((false, false)), Primitive::Math(Math::Arc) => Some((true, false)),
         Primitive::Real(Real::Circle) => Some((false, true)), Primitive::Real(Real::Arc) => Some((true, true)), _ => None,
     };
     let kernel = match (circle, code) {
         (Some((inverse, real_part)), Some(code)) => types.last().and_then(|&kind| Kernel::circle(code, inverse, real_part, variant, [kind]).ok().flatten()),
-        _ => formula(p, types.len(), mathish, types.iter().all(|kind| kind.is_integral()), tolerance, At(variant, types)).flatten(),
+        _ => formula(p, types.len(), mathish, types.iter().all(|kind| kind.is_integral()), tolerance).and_then(|op| Kernel::of(op, variant, types).ok().flatten()),
     };
     KERNELS.with_borrow_mut(|kernels| kernels.insert(key, kernel.clone()));
     kernel
@@ -134,9 +124,9 @@ pub(crate) use rustymath::reduce::Reduce;
 pub(crate) fn settles(kernel: &Kernel) -> bool { !kernel.may_raise() }
 
 /// The variant that a call computes in at `dtype` under `numeric`: checked under dynamic kinds and wrapping where `dtype`'s integers wrap (`Numeric::wraps`). Mathish is the formula's own fact: `resolved` picks the Mathish formula.
-pub(crate) fn variant(dtype: DType, numeric: Numeric) -> rustymath::facts::Variant {
+pub(crate) fn variant(dtype: DType, numeric: Numeric) -> rustymath::domain::Variant {
     let wrapping = dtype.is_integral() && numeric.wraps(Some(dtype), numeric.fixed);
-    rustymath::facts::Variant { dtype, checked: !numeric.is_static(), wrapping }
+    rustymath::domain::Variant { dtype, checked: !numeric.is_static(), wrapping }
 }
 
 /// Whether `p` gives whole-number results from floats of `kind` under `numeric`, which `whole` makes integers: `⌊`, `⌈` and monadic `×` under dynamic kinds, and the `ₓ` forms of `⌊`, `⌈` and dyadic `÷` under either. Static kinds keep `⌊`, `⌈` and `×` in floats.
@@ -169,35 +159,31 @@ fn whole_number(p: Primitive, dyadic: bool, kind: DType, n: Number, numeric: Num
     match Value::from_buffer_at(Vec::<usize>::new(), whole(View::Floats(Floats::F64(&[x])), numeric), numeric.fixed).map(|v| v.at(0)) { Ok(Value::Number(m)) => m, _ => n }
 }
 
-/// The circle code that the constant `c` is, for the kernels of `○`, when it's a whole number.
-pub(crate) fn circle_code(c: f64) -> Option<i64> { (c.fract() == 0.0).then_some(c as i64) }
+/// The circle code that the constant `c` is, for the kernels of `○`, when it stands for a whole number (`real::integer`).
+pub(crate) fn circle_code(c: f64) -> Option<i64> { crate::number::real::integer(c).ok() }
 /// The code that `left`, the left argument of a function whose left argument picks its formula, as `○`'s does, gives: a real whole number, as `circle_code` reads it. The one reader of such a code, for eager calls and `∂` alike. `None` for anything else.
 pub(crate) fn code_of(left: &Value) -> Option<i64> { left.as_real().and_then(circle_code) }
 
-/// `run` on `values` with their 16-bit floats copied as 32-bit floats, rounding float results back to 16 bits where `halve` holds. Copies are needed because basedpl's kernel tables, folds, scans, inner products and scatters have no 16-bit instances, and one conversion here serves them all. rustymath's function objects have 16-bit forms, which compute each item in 32 bits, and Python's functions use those. `Number::halves` applies the same rule to numbers.
-fn copied_halves(values: &[Option<&Value>], halve: bool, run: impl FnOnce(&[Option<&Value>]) -> Option<Value>) -> Option<Value> {
-    let single =
-        |v: &Value| crate::fusion::at_width(v, FloatWidth::F32).unwrap_or_else(|| v.to_float_width(FloatWidth::F32).expect("reals convert to 32-bit floats"));
-    let copies: Vec<_> =
-        values.iter().map(|v| v.map(|v| if v.float_width() == Some(FloatWidth::F16) { Cow::Owned(single(v)) } else { Cow::Borrowed(v) })).collect();
-    let result = run(&copies.iter().map(|v| v.as_deref()).collect::<Vec<_>>());
-    result.map(|value| halved(value, Some(halve)))
-}
-/// `run` on `values`, or, where a plan computes their 16-bit floats in 32 bits (`halve`), on 32-bit copies of them (`copied_halves`).
-#[inline(always)]
-fn planned_halves(values: &[Option<&Value>], halve: Option<bool>, run: impl FnOnce(&[Option<&Value>]) -> Option<Value>) -> Option<Value> {
-    match halve { Some(halve) => copied_halves(values, halve, run), None => run(values) }
+/// `run` on `values` with their 16-bit floats copied as 32-bit floats (`Halving::operand`), and its result rounded as `halving` rounds it (`rounded`). A call that runs at its own width (`Halving::Off`) runs on `values` themselves. Scatters and grouped folds run this way, because basedpl has no 16-bit instances of them. rustymath's function objects have 16-bit forms, which compute each item in 32 bits, and Python's functions use those. `Number::halves` applies the same rules to numbers.
+fn copied_halves(values: &[Option<&Value>], halving: Halving, run: impl FnOnce(&[Option<&Value>]) -> Option<Value>) -> Option<Value> {
+    if halving == Halving::Off { return run(values); }
+    let copies: Vec<_> = values.iter().map(|v| v.map(|v| at_kind(v, |d| halving.operand(d)).map_or(Cow::Borrowed(v), Cow::Owned))).collect();
+    run(&copies.iter().map(|v| v.as_deref()).collect::<Vec<_>>()).map(|value| rounded(value, halving))
 }
 
-/// `value` with its 32-bit floats rounded to 16 bits where `halve` says that the call's float results do, as `plan::halved` gives its kind.
-fn halved(value: Value, halve: Option<bool>) -> Value {
-    if halve == Some(true) && matches!(value.as_items(), Items::Compact(View::Floats(Floats::F32(_)))) { value.to_float_width(FloatWidth::F16).expect("32-bit floats narrow") }
-    else { value }
+/// `value` with its floats at the width of the kind that `rule` gives its kind: 16-bit floats as a call that `Numeric::halving` widens reads them (`Halving::operand`), or 32-bit float results as the call rounds them (`Halving::result`). A pending copy converts its source (`fusion::at_width`). `None` where the kind stays.
+fn at_kind(value: &Value, rule: impl Fn(DType) -> DType) -> Option<Value> {
+    let dtype = value.dtype()?;
+    let DType::Float(width) = rule(dtype) else { return None };
+    (DType::Float(width) != dtype).then(|| crate::fusion::at_width(value, width).unwrap_or_else(|| value.to_float_width(width).expect("reals convert to another float width")))
 }
+
+/// `value` with its 32-bit float results rounded to 16 bits where `halving` rounds them (`Halving::result`).
+fn rounded(value: Value, halving: Halving) -> Value { at_kind(&value, |d| halving.result(d)).unwrap_or(value) }
 
 /// The kind search that `map`, `number` and `scatter` share. From `dtype`, it gets a kernel from `kernel` for each kind's variant and runs `attempt` through it. A Boolean kind with no kernel tries the next kind. Under dynamic kinds, an `Overflow` reruns at the next integer kind (`next_kind`). At 64 bits the variant wraps (`variant`) and reports no overflow. A `Domain` failure at a float kind reruns complex. A failure at an integer kind never reruns as floats. Gives `attempt`'s result and the kind it ran at, `None` where no kind has a kernel, or the failure that ended the search, which under static kinds is any failure.
 fn searched<R>(
-    mut dtype: DType, numeric: Numeric, kernel: impl Fn(rustymath::facts::Variant) -> Option<Kernel>,
+    mut dtype: DType, numeric: Numeric, kernel: impl Fn(rustymath::domain::Variant) -> Option<Kernel>,
     mut attempt: impl FnMut(&Kernel) -> Result<R, rustymath::error::Error>,
 ) -> Result<Option<(R, DType)>, rustymath::error::Error> {
     use rustymath::error::Kind;
@@ -249,6 +235,9 @@ fn applied(kernel: &Kernel, reads: &[Read<'_>], len: usize, settings: rustymath:
 pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Value> {
     let (p, numeric, len) = (plan.p, plan.numeric, agreement.len);
     let code = match left { Some(left) if p.info().dyad.code => Some(code_of(left)?), _ => None };
+    // A comparison's constant that stands for an integer (`Pervasive::narrowed`) reads as that integer, stored at its narrowest width, so its kernel resolves at the plan's integer kind.
+    let narrow = plan.narrowed().and_then(|(side, n)| Some((side, Value::integers(Vec::<usize>::new(), vec![n]).ok()?)));
+    let (left, right) = match &narrow { Some((0, n)) => (Some(n), right), Some((_, n)) => (left, n), None => (left, right) };
     let args: Vec<(&Value, &Mapping, usize)> = match left.filter(|_| code.is_none()) {
         Some(left) => vec![(left, &agreement.left, len), (right, &agreement.right, len)], None => vec![(right, &agreement.right, len)]
     };
@@ -258,8 +247,9 @@ pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreeme
         computed(p, code, types, at, numeric, |kernel| applied(kernel, reads, len, settings)).ok().flatten()
     })??;
     let out = whole_results(p, plan.dyadic, dtype, out, numeric);
-    let value = settled(Value::from_buffer_at(agreement.layout.clone(), out, numeric.fixed).ok()?, || Some(dtype), numeric);
-    Some(halved(value, plan.halve))
+    let known = [left, Some(right)].into_iter().flatten().all(|v| v.is_atom() || v.range() != rustymath::domain::Range::ANY);
+    let value = wrapped(Value::from_bounded(agreement.layout.clone(), out, numeric.fixed, if known { plan.result_range() } else { rustymath::domain::Range::ANY }).ok()?, || Some(dtype), numeric);
+    Some(rounded(value, plan.halve))
 }
 
 /// `p` on two items, one or both characters, as a one-item call through `computed`: the character policy of `p`'s formula decides the result. An `ᵣ` number reads as the machine number it stands for, a whole one as an ordinary integer and a fraction as a float, and where the policy picks one argument, as `⌊` does between a number and a character, the result is that argument itself. `None` where `p` takes no characters, or none of these items.
@@ -296,13 +286,18 @@ pub(crate) fn scatter(p: Primitive, z: &mut Value, writes: Writes<'_>, values: &
     use {Arithmetic::*, Math::*};
     if !matches!(p, Primitive::Arithmetic(Plus | Minus | Times | Divide) | Primitive::Math(Ceiling | Floor)) || !matches!(z, Value::Array(_)) { return None; }
     if z.carries_here() || values.carries_here() { return None; }
-    let weak = p.weaken_value(values, z);
+    let weak = crate::primitive::weakened_beside(values, plan::Kind::value(z));
     let values = weak.as_ref().unwrap_or(values);
-    let plan = plan::pervasive_on(p, Some(&*z), values, Numeric::current()).ok()?;
-    let Some(halve) = plan.halve else { return scatter_under(&plan, z, writes, values, meets) };
-    let wide = copied_halves(&[Some(&*z), Some(values)], halve, |v| {
+    let numeric = Numeric::current();
+    // A repeated place applies `p` to the result of the one before, as a scan of the values onto `z` does, so `z`'s items range over that scan's bound, which the result keeps.
+    let constant = constants(Some(&*z), values)[1];
+    let items = constant.map_or_else(|| values.range(), |c| rustymath::domain::Range::of(Some(c)));
+    let held = scan::scan_plan(p, values, Some(&*z)).range(items, Some(z.range()), writes.len());
+    let plan = plan::pervasive(p, Some(plan::Kind::value(z)), plan::Kind::value(values), [None, constant], [held, values.range()], numeric);
+    if plan.halve == Halving::Off { return scatter_under(&plan, held, z, writes, values, meets) }
+    let wide = copied_halves(&[Some(&*z), Some(values)], plan.halve, |v| {
         let mut wide = v[0]?.clone();
-        scatter_under(&plan, &mut wide, writes, v[1]?, meets).map(|_| wide)
+        scatter_under(&plan, held, &mut wide, writes, v[1]?, meets).map(|_| wide)
     });
     wide.map(|wide| { *z = wide; Route::Copied })
 }
@@ -336,12 +331,12 @@ pub(crate) fn combine_at(p: Primitive, base: &mut Value, writes: Writes<'_>, val
     if let Some(route) = scatter(p, base, writes, values, Widening::Items) { report(route.name()); return Ok(()); }
     let listed = writes.listed().into_owned();
     let all = Selection::offsets(listed);
-    let kept = all.without_fills(values, span)?;
+    let kept = all.without_fills(values)?;
     let (selection, values) = match &kept { Some((kept, values)) => (kept, values), None => (&all, values) };
     let Targets::Offsets(offsets) = &selection.targets else { unreachable!("listed targets are offsets") };
     let Some((counts, rounds)) = rustymath::search::occurrences(offsets, size) else {
         report("one call");
-        let items = selection.read(base, None, span)?;
+        let items = selection.read(base, None)?;
         let results = p.call(Some(&items), values, span)?;
         return selection.write_into(base, &results, span);
     };
@@ -351,9 +346,9 @@ pub(crate) fn combine_at(p: Primitive, base: &mut Value, writes: Writes<'_>, val
     let mut current = base.clone();
     for targets in order.each() {
         let round = Selection::offsets(targets.iter().map(|&t| offsets[t as usize]).collect());
-        let items = round.read(&current, None, span)?;
+        let items = round.read(&current, None)?;
         let values =
-            if unit.is_some() { values.clone() } else { Selection::offsets(targets.iter().map(|&t| t as usize).collect()).read(values, None, span)? };
+            if unit.is_some() { values.clone() } else { Selection::offsets(targets.iter().map(|&t| t as usize).collect()).read(values, None)? };
         let results = p.call(Some(&items), &values, span)?;
         round.write_into(&mut current, &results, span)?;
     }
@@ -362,7 +357,7 @@ pub(crate) fn combine_at(p: Primitive, base: &mut Value, writes: Writes<'_>, val
 }
 
 /// `scatter` as `plan` plans it, where no argument holds 16-bit floats: one call of rustymath's `operation::at` on `z`'s items, at the kind the plan computes in, with `computed`'s reruns. Converting `z` to that kind gives what writing each result into it gives only where `meets` joins the two kinds to that one. A call that picks an argument by its order class (`Pervasive::picking`), as `z.[p]⌊←∞` does, takes the general path, which keeps the picked items' kind.
-fn scatter_under(plan: &Pervasive, z: &mut Value, writes: Writes<'_>, values: &Value, meets: Widening) -> Option<Route> {
+fn scatter_under(plan: &Pervasive, held: rustymath::domain::Range, z: &mut Value, writes: Writes<'_>, values: &Value, meets: Widening) -> Option<Route> {
     use rustymath::operation::{Positions, WriteRoot};
     let (p, numeric, computes) = (plan.p, plan.numeric, plan.computes()?);
     if z.dtype()?.join(computes, meets) != Some(computes) { return None; }
@@ -374,19 +369,21 @@ fn scatter_under(plan: &Pervasive, z: &mut Value, writes: Writes<'_>, values: &V
     let map = if values.len() == 1 { Mapping::Single } else { Mapping::Linear(1) };
     let settings = numeric.settings_for(computes);
     // A kernel that can't fail an item runs once, so it writes into `z`'s own items where `z` holds them alone (`Value::take_buffer`).
-    if z.dtype() == Some(computes) && plan.never_fails() {
+    // An accumulation that no finite bound holds can overflow a checked integer kind, which only the copy below reruns wider.
+    let unbounded = computes.is_integral() && variant(computes, numeric).fails_on_overflow() && !(held.lo.is_finite() && held.hi.is_finite());
+    if z.dtype() == Some(computes) && plan.never_fails() && !unbounded {
         let written = with_reads(&[(values, &map, n)], Missing::Default, |reads, types| {
             let mut root = Some(z.take_buffer()?);
             Some(computed(p, None, &[computes, types[0]], computes, numeric, |kernel| {
-                let mut out = Buffer::with_capacity(kernel.result_dtype(), len);
+                let mut out = Buffer::with_capacity(kernel.result_dtype(), 0);
                 let root = WriteRoot::Owned(root.take().expect("a kernel that can't fail an item runs once"));
                 let ids = Positions::Offsets(&listed);
                 rustymath::operation::at(Some(kernel), root, reads[0], ids, kernel.variant.checked, settings, &mut out).map(|()| out)
             }).ok().flatten().expect("a write by a kernel that can't fail an item succeeds"))
         }).flatten();
         if let Some((out, dtype)) = written {
-            let written = Value::from_buffer_at(z.layout().clone(), out, numeric.fixed).ok().expect("an in-place write keeps its layout");
-            *z = settled(written, || Some(dtype), numeric);
+            let written = Value::from_bounded(z.layout().clone(), out, numeric.fixed, held).ok().expect("an in-place write keeps its layout");
+            *z = wrapped(written, || Some(dtype), numeric);
             return Some(Route::InPlace);
         }
     }
@@ -397,21 +394,21 @@ fn scatter_under(plan: &Pervasive, z: &mut Value, writes: Writes<'_>, values: &V
             rustymath::operation::at(Some(kernel), WriteRoot::Read(reads[0]), reads[1], ids, kernel.variant.checked, settings, &mut out).map(|()| out)
         }).ok().flatten()
     })??;
-    *z = settled(Value::from_buffer_at(z.layout().clone(), out, numeric.fixed).ok()?, || Some(dtype), numeric);
+    *z = wrapped(Value::from_bounded(z.layout().clone(), out, numeric.fixed, held).ok()?, || Some(dtype), numeric);
     Some(Route::Copied)
 }
 
-/// The kind that `p` computes in on arguments stored as `kind` under `numeric`, where `constants` gives the arguments that are one real number: the first kind on rustymath's ladder (`DType::computes_in`) whose kernel table has `p`. Exact numbers compute exactly, through the integer table or the `Number` path, where `p`'s formula computes integers: its kernel at an integer kind stays at an integer kind, where `Kernel::try_resolve` would otherwise promote to a float (`Formula::computing_dtype`). Otherwise they compute as floats at `Numeric::exact_width`, as for `⍟`, `√`, monadic `*`, `π` and dyadic `○` at every code. Integer `÷` floors, at every kind. An integer kind is the narrowest from `kind` upward at which no result can fail (`total`), without reading `constants`. Booleans compute as Booleans only where `p` is `logical`, and otherwise as exact numbers do, at the narrowest integer kind that holds every result, from the one that `next_kind` gives, as `-` on Booleans computes at 16 bits. `None` where no kind on the way has `p`, as for `○` with no constant code.
-pub(crate) fn computes(p: Primitive, dyadic: bool, constants: [Option<f64>; 2], kind: DType, numeric: Numeric) -> Option<DType> {
+/// The kind that `p` computes in on arguments stored as `kind` under `numeric`, where `constants` gives the arguments that are one real number: the first kind on rustymath's ladder (`DType::computes_in`) whose kernel table has `p`. Exact numbers compute exactly, through the integer table or the `Number` path, where `p`'s formula computes integers: its kernel at an integer kind stays at an integer kind, where `Kernel::try_resolve` would otherwise promote to a float (`Formula::computing_dtype`). Otherwise they compute as floats at `Numeric::exact_width`, as for `⍟`, `√`, monadic `*`, `π` and dyadic `○` at every code. Integer `÷` floors, at every kind. An integer kind is the narrowest from `kind` upward at which no result can fail on arguments within `ranges` (`total`). Booleans compute as Booleans only where `p` is `logical`, and otherwise as exact numbers do, at the narrowest integer kind that holds every result, from the one that `next_kind` gives, as `-` on Booleans computes at 16 bits. It also gives the kernel that `total` settled on at that kind, for the plan to keep (`plan::Pervasive::kernel`). `None` where no kind on the way has `p`, as for `○` with no constant code.
+pub(crate) fn computes(p: Primitive, dyadic: bool, constants: [Option<f64>; 2], kind: DType, ranges: &[rustymath::domain::Range], numeric: Numeric) -> Option<(DType, Option<Kernel>)> {
     let Some(DType::Integer(int)) = next_kind(DType::Boolean, numeric) else { unreachable!("a Boolean's next kind is an integer") };
     let stored = kind;
     let exact = || table_kernel(p, dyadic, DType::Integer(int), stored, constants, numeric).is_some_and(|k| k.variant.dtype.is_integral());
     let kind = numeric.kind(kind);
-    if matches!(kind, DType::Integer(_)) && exact() { return Some(total(p, dyadic, stored, kind, numeric)); }
+    if matches!(kind, DType::Integer(_)) && exact() { return Some(total(p, dyadic, stored, kind, ranges, numeric)); }
     let at = kind.computes_in(int, numeric.exact_width(kind), |d| match d {
         DType::Integer(_) => exact(), DType::Boolean if !logical(p, dyadic) => false, d => table_kernel(p, dyadic, d, stored, constants, numeric).is_some()
     })?;
-    Some(if matches!(at, DType::Integer(_)) { total(p, dyadic, stored, at, numeric) } else { at })
+    Some(if matches!(at, DType::Integer(_)) { total(p, dyadic, stored, at, ranges, numeric) } else { (at, None) })
 }
 
 /// Whether `p` computes on Booleans as Booleans: comparisons, `~`, `⊼`, `⊽`, bitwise functions, and dyadic `∧`, `∨`, `⌊` and `⌈`. Other functions read Booleans as the integers 0 and 1.
@@ -421,7 +418,7 @@ fn logical(p: Primitive, dyadic: bool) -> bool {
 /// `items`, which a fold or scan by `p` gives as they are because each of their lanes holds one item, at the kind that a longer lane gives. Booleans become the integers that `p` computes from them (`plan::Fold::result`), as a count by `+` does. Where integers wrap, under static kinds or at a fixed width, integers become the floats that `p` computes from them (`plan::Fold::floated`). Dynamic kinds keep ordinary integers as they are.
 pub(crate) fn lone(p: Primitive, items: Value) -> Value {
     let numeric = Numeric::current();
-    let Ok(plan) = plan::fold(p, FoldKind::REDUCE, None, Kind::value(&items), numeric) else { return items };
+    let plan = plan::fold(p, FoldKind::REDUCE, None, Kind::value(&items), numeric);
     match (plan.floated(), items.dtype(), plan.result()) {
         (Some(width), ..) => items.to_float_width(width).unwrap_or(items),
         (None, Some(DType::Boolean), Some(DType::Integer(width))) => items.to_integers(width, numeric).unwrap_or(items), _ => items
@@ -439,24 +436,24 @@ pub(crate) fn seed_last(p: Primitive, right: &Value) -> bool {
 fn next_kind(kind: DType, numeric: Numeric) -> Option<DType> {
     match (numeric.wrapping(), kind) { (true, DType::Boolean) => Some(DType::Integer(numeric.integer_width())), (false, kind) => kind.wider(), _ => None }
 }
-/// The narrowest integer kind, from `from` upward (`next_kind`), at which `p`'s formula on arguments stored as `stored` can't fail, as rustymath's validity facts at their types' ranges say (`settles`): `-` on Booleans or bytes computes at 16 bits, and `+` on bytes too. `from` where integers wrap, and where no width settles.
-fn total(p: Primitive, dyadic: bool, stored: DType, from: DType, numeric: Numeric) -> DType {
-    if numeric.wrapping() { return from; }
+/// The narrowest integer kind, from `from` upward (`next_kind`), at which `p`'s formula on arguments stored as `stored`, within `ranges`, can't fail, as rustymath's validity facts say (`Kernel::may_raise_on`): `-` on Booleans or bytes computes at 16 bits, and `+` on bytes too, unless their ranges keep the results narrower. `from` where integers wrap, and where no width settles. Gives the kernel at the kind it picks, where one settles there.
+fn total(p: Primitive, dyadic: bool, stored: DType, from: DType, ranges: &[rustymath::domain::Range], numeric: Numeric) -> (DType, Option<Kernel>) {
+    if numeric.wrapping() { return (from, None); }
     std::iter::successors(Some(from), |&k| next_kind(k, numeric))
-        .find(|&k| table_kernel(p, dyadic, k, stored, [None; 2], numeric).is_some_and(|kernel| settles(&kernel)))
-        .unwrap_or(from)
+        .find_map(|k| Some((k, Some(table_kernel(p, dyadic, k, stored, [None; 2], numeric).filter(|kernel| !kernel.may_raise_on(ranges))?))))
+        .unwrap_or((from, None))
 }
 
-/// The kind that an exact call of `p` on operands of storage kinds `left` and `right` tries first, where their kinds join to `dtype`: the kind that `Numeric::kind` computes `dtype` in, which static kinds widen to the `int` width. A comparison computes at `dtype` itself, which its plan gives (`Pervasive::computes`). Other functions whose integer results are the same at every width that holds their arguments compute at their storage width instead, and read the storage as it is: a function that gives Booleans (`booleans`), `⌈` and `⌊`, which give one of their arguments (`picks`), and a bitwise function, whose high bits copy its arguments' sign bits. This refines the plan's kind (`computes`), which sets the results' kind and what a deferred call reads: these functions give the same integers at every width that holds their arguments, and `settled` wraps the results back to the plan's width, so an eager call and its deferred form give the same results. The two kinds agree under dynamic kinds, and under a fixed width, where the operands' storage widths join to the fixed width.
+/// The kind that an exact call of `p` on operands of storage kinds `left` and `right` tries first, where their kinds join to `dtype`: the kind that `Numeric::kind` computes `dtype` in, which static kinds widen to the `int` width. A comparison computes at `dtype` itself, which its plan gives (`Pervasive::computes`). Other functions whose integer results are the same at every width that holds their arguments compute at their storage width instead, and read the storage as it is: a function that gives Booleans (`booleans`), `⌈` and `⌊`, which give one of their arguments (`picks`), and a bitwise function, whose high bits copy its arguments' sign bits. This refines the plan's kind (`computes`), which sets the results' kind and what a deferred call reads: these functions give the same integers at every width that holds their arguments, and `wrapped` wraps the results back to the plan's width, so an eager call and its deferred form give the same results. The two kinds agree under dynamic kinds, and under a fixed width, where the operands' storage widths join to the fixed width.
 fn first_kind(p: Primitive, dyadic: bool, left: Option<DType>, right: Option<DType>, dtype: DType, numeric: Numeric) -> DType {
     if matches!(p, Primitive::Compare(_)) { return dtype; }
     let free = booleans(p, dyadic) || dyadic && p.info().dyad.picks || matches!(p, Primitive::Bitwise(_));
     let stored = || if dyadic { left?.join(right?, Widening::Arrays) } else { right };
-    match free.then(stored).flatten() { Some(kind @ DType::Integer(_)) => total(p, dyadic, kind, kind, numeric), _ => numeric.kind(dtype) }
+    match free.then(stored).flatten() { Some(kind @ DType::Integer(_)) => total(p, dyadic, kind, kind, &[rustymath::domain::Range::ANY; 2], numeric).0, _ => numeric.kind(dtype) }
 }
 
 /// `result` as a call under `numeric` gives it, where `kind` gives its arguments' kind, which only static kinds read. Under static kinds, folds, scans and inner products total integers at 64 bits. Where integers wrap, an integer result wraps to the call's width through `Value::wrapped_at`, as `whole` wraps an elementwise result: the fixed width, or under static kinds the width of the arguments' kind, where Booleans count as integers of the `int` width. Wrapping once at the end gives the same low bits as wrapping at each step of `+`, `-` and `×`. Under dynamic kinds, `result` is unchanged.
-fn settled(result: Value, kind: impl FnOnce() -> Option<DType>, numeric: Numeric) -> Value {
+fn wrapped(result: Value, kind: impl FnOnce() -> Option<DType>, numeric: Numeric) -> Value {
     if !numeric.wrapping() { return result; }
     let width = numeric.fixed.unwrap_or_else(|| match kind().map(|k| numeric.kind(k)) { Some(DType::Integer(width)) => width, _ => numeric.int });
     result.wrapped_at(width, numeric).expect("an integer result wraps to its width")
@@ -487,7 +484,7 @@ pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Valu
 pub(crate) fn expected(p: Primitive, left: Option<&Value>, right: &Value) -> Option<DType> {
     let numeric = Numeric::current();
     if numeric.is_static() { return None; }
-    plan::pervasive_on(p, left, right, numeric).ok()?.kernel().map(|k| k.result_dtype())
+    plan::pervasive_on(p, left, right, numeric).kernel().map(|k| k.result_dtype())
 }
 
 /// `p` on the number `y`, and on `x` where it's dyadic: the one path for functions on numbers, through `p`'s formula as `map` computes arrays. Machine numbers compute at the kind `map` chooses, with its reruns (`computed`). Exact numbers, rationals and unbounded integers, compute through the formula's exact form. Where the formula has no exact form or gives no exact result, as for an irrational root, they compute at the widest float argument's width, as a machine integer beside it does, or at `numeric`'s float width beside no float.
@@ -510,13 +507,16 @@ pub(crate) fn number(p: Primitive, x: Option<&Number>, y: &Number, numeric: Nume
         }
     }
     let width = args.iter().filter_map(|n| match n.dtype() { Some(DType::Float(w)) => Some(w), _ => None }).max().unwrap_or(numeric.width);
-    let types: Vec<DType> = args.iter().map(|n| n.dtype().unwrap_or(DType::Float(width))).collect();
+    let mut types = [DType::Boolean; 2];
+    for (t, n) in types.iter_mut().zip(args) { *t = n.dtype().unwrap_or(DType::Float(width)); }
     let none = || Failure::Domain("this function has no formula for these numbers");
-    let dtype = if exact { DType::Float(width) } else {
-        let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
-        crate::plan::pervasive(p, x.map(crate::plan::Kind::number), crate::plan::Kind::number(y), constants, numeric).map_err(Failure::Domain)?.computes().ok_or_else(none)?
-    };
-    match computed(p, code, &types, dtype, numeric, |kernel| one(kernel, args, numeric.settings_for(dtype), numeric)) {
+    let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
+    let plan = (!exact).then(|| crate::plan::pervasive(p, x.map(crate::plan::Kind::number), crate::plan::Kind::number(y), constants, [rustymath::domain::Range::ANY; 2], numeric));
+    let dtype = match &plan { Some(plan) => plan.computes().ok_or_else(none)?, None => DType::Float(width) };
+    let attempt = |kernel: &Kernel| one(kernel, args, numeric.settings_for(dtype), numeric);
+    // The plan's kernel runs first; `computed`'s search reruns where it fails.
+    if let Some(Ok(n)) = plan.as_ref().and_then(crate::plan::Pervasive::kernel).map(&attempt) { return Ok(whole_number(p, args.len() == 2, dtype, n, numeric)); }
+    match computed(p, code, &types[..args.len()], dtype, numeric, attempt) {
         Ok(result) => result.map(|(n, kind)| whole_number(p, args.len() == 2, kind, n, numeric)).ok_or_else(none),
         Err(e) => Err(failure(e)),
     }
@@ -537,13 +537,13 @@ fn one(kernel: &Kernel, args: &[&Number], settings: rustymath::operation::Settin
     match (kernel.variant.dtype, kernel.result_dtype()) {
         (DType::Character, _) | (_, DType::Character) => Err(unread()),
         (DType::Boolean | DType::Integer(_), result) => {
-            let read = |n: &&Number| -> Result<i64, Error> { match n.as_integer() { Some(i) => Ok(i), None => Ok(rustymath::operation::whole_numbers(&[n.to_float().map_err(|_| unread())?])?[0]) } };
-            let x = args.iter().map(read).collect::<Result<Vec<_>, Error>>()?;
-            Ok(integer(kernel.integers(&x)?, result))
+            let read = |n: &&Number| -> Result<i64, Error> { match n.as_integer() { Some(i) => Ok(i), None => Ok(rustymath::operation::whole_numbers(numeric.tolerance, &[n.to_float().map_err(|_| unread())?])?[0]) } };
+            let mut x = [0; 2]; for (x, n) in x.iter_mut().zip(args) { *x = read(n)?; }
+            Ok(integer(kernel.integers(&x[..args.len()])?, result))
         }
         (DType::Float(_), result) => {
-            let x = args.iter().map(|n| n.to_float().map_err(|_| unread())).collect::<Result<Vec<_>, _>>()?;
-            let v = kernel.real(&x, settings)?;
+            let mut x = [0.0; 2]; for (x, n) in x.iter_mut().zip(args) { *x = n.to_float().map_err(|_| unread())?; }
+            let v = kernel.real(&x[..args.len()], settings)?;
             Ok(match result {
                 DType::Float(w) => Number::float(v, w), DType::Complex(w) => Number::complex(num_complex::Complex64::new(v, 0.0), w.into()),
                 DType::Boolean => Number::from_bool(v != 0.0), _ => integer(v as i64, result),

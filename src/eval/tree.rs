@@ -5,7 +5,9 @@ use super::binder::{
 use super::bindings::Address;
 use super::operators::{calls_tines, train_call, train_readers};
 use super::session::Within;
-use super::*;
+use super::{Application, Binding, Bound, Function, OperatorNode, Session, Step, depth_error};
+use crate::{At, Error, Source, Span, Value, syntax::{Node, NodeKind}};
+use std::sync::Arc;
 use std::{borrow::Cow, ops::Range, sync::OnceLock};
 
 /// The registers that a recording holds inline while it evaluates. A recording that needs more holds them on the heap.
@@ -540,7 +542,7 @@ impl Recording {
     pub(super) fn evaluate(&self, nodes: &[Node], session: &Session, tail: bool) -> Result<Step, Error> {
         if self.facts.iter().any(|fact| fact.changed(session)) { return Binder::evaluate(nodes, session, tail); }
         let nodes = self.rewrite.as_deref().unwrap_or(nodes);
-        crate::execution::check().at(&nodes[0].span)?;
+        crate::cancel::check().at(&nodes[0].span)?;
         let mut inline: [Option<Entity>; INLINE];
         let mut heap: Vec<Option<Entity>>;
         let registers: &mut [Option<Entity>] = if self.registers <= INLINE { inline = Default::default(); &mut inline }

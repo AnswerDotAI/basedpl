@@ -4,8 +4,6 @@ use js_sys::Uint8Array;
 use std::{cell::RefCell, io, path::{Path, PathBuf}};
 use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
 
-pub(crate) use web_time::Instant;
-
 /// The browser build takes no timing lock. `basedpl.bpltests` takes it around the module's timings.
 pub(crate) fn timing_lock() -> Result<(), String> { Ok(()) }
 

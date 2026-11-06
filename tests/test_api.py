@@ -203,6 +203,8 @@ def test_array_surface():
     np.testing.assert_array_equal(bpl('m₀ ₀←0 ⋄ m', m=a), [[0, 2, 3], [4, 5, 6]])
     np.testing.assert_array_equal(a, [[1, 2, 3], [4, 5, 6]])
     assert len(a) == 2
+    assert Array([4, 5, 6]) in a and Array([4, 5, 7]) not in a and Array(2) in Array([1, 2, 3])
+    assert 'bb' in Array(['aa', 'bb']) and 'b' not in Array(['aa', 'bb']) and 'b' in Array('abc')
     np.testing.assert_array_equal(a + [10, 20], [[11, 12, 13], [24, 25, 26]])
     np.testing.assert_array_equal(10 - a, [[9, 8, 7], [6, 5, 4]])
     np.testing.assert_array_equal(a[1, :], [4, 5, 6])

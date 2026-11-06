@@ -1,9 +1,7 @@
 //! What the native build takes from its operating system and crates: the clock, files, the environment, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host_web.rs` gives the browser's versions of the same functions. Each passes straight through to its host, and keeps the host's own behaviour and syntax.
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Error, array::generated_len, data::{Request, Response}, regex::Match};
 use std::{io, path::{Path, PathBuf}, time::Duration};
-
-pub(crate) use std::time::Instant;
 
 /// Takes the machine's timing lock exclusively, as `rustymath::timing::exclusive` describes, then writes `started` to stderr. A worker's caller counts a timing's deadline from that note (`basedpl.worker`).
 pub(crate) fn timing_lock() -> Result<rustymath::timing::Hold, String> {
@@ -61,7 +59,7 @@ fn curl(args: &[String], body: Option<Vec<u8>>, url: &str) -> Result<Vec<u8>, Er
     if let (Some(body), Some(mut input)) = (body, child.stdin.take()) { std::thread::spawn(move || input.write_all(&body)); }
     let mut output = child.stdout.take().expect("stdout is piped");
     let reader = std::thread::spawn(move || { let mut out = Vec::new(); output.read_to_end(&mut out).map(|_| out) });
-    while !reader.is_finished() { if let Err(e) = crate::execution::pause(Duration::MAX) { let _ = child.kill(); return Err(e); } }
+    while !reader.is_finished() { if let Err(e) = crate::cancel::pause(Duration::MAX) { let _ = child.kill(); return Err(e); } }
     let out = reader.join().expect("the reader doesn't panic").map_err(|e| Error::io(url, e))?;
     let status = child.wait().map_err(|e| Error::io(url, e))?;
     if status.success() { return Ok(out); }

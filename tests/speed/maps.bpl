@@ -82,8 +82,8 @@ v×v+1
 {+/⍵}¨nest
 ⍝⍝: 5	5	5
 
-⍝ Each over a nested array whose 4,096 items are matrices of 2 rows and 1 to 15 columns, ragged cells in mixed storage, with a constant vector added along each item's rows. The first batched map gathers the cells into one leaf, which the array's storage keeps for every later map (main's decision 52), and runs the pervasive call once on it: each item of the constant repeats over its cell's row through one `#`, as leading-axis agreement pairs a lower-rank argument (`batch::leaf_call`).
-⍝ Expected: 10 copies. About 5 go to the batched map over the kept leaf, as `{⍵+⍵}¨rag` costs 4.6 (1 November 2026). About 5 go to the pairing, mostly per-cell work over the 4,096 cells, then one `#` of the constant's 8,192 cell items and the add. Before decision 52 each call gathered the cells again, at 19.9; before the pairing it ran once for each cell, at 276.
+⍝ Each over a nested array whose 4,096 items are matrices of 2 rows and 1 to 15 columns, ragged cells in mixed storage, with a constant vector added along each item's rows. The batched try declines on ragged cells, which aren't compact (`batch::mapped`: "an argument that isn't compact"). The dfn then runs once for each of the 4,096 cells, at about 18,600 instructions a call.
+⍝ Expected: 10 copies, from a batched map that gathers the cells into one leaf and runs the pervasive call once on it, with each item of the constant repeated over its cell's row through one `#`. That route is Later work.
 ⍝⍝⍝ route batching
 {⍵+10 20}¨rag
 ⍝⍝: 20	20	20

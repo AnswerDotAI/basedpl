@@ -2,7 +2,6 @@ use basedpl::{
     EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value, buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
 };
 use num_bigint::BigInt;
-use num_rational::BigRational;
 use pyo3::{
     IntoPyObjectExt, exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
     types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}
@@ -108,12 +107,6 @@ fn numpy(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Option<Value>> {
     Value::imported(obj.getattr("shape")?.extract()?, data, prototype).map(Some).map_err(value_error)
 }
 
-/// Python's `fractions.Fraction`.
-fn fraction(py: Python<'_>) -> PyResult<&Bound<'_, PyType>> {
-    static FRACTION: PyOnceLock<Py<PyType>> = PyOnceLock::new();
-    FRACTION.import(py, "fractions", "Fraction")
-}
-
 /// The BPL value of `obj` as an item of an array, converted by `items`. A Python float or complex number is weak, a complex number follows the current settings' kinds, and `None` reads as NaN. A `dict` and a data frame give keyed vectors, and a list gives a nested array.
 fn element(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
     let width = items.width;
@@ -137,10 +130,7 @@ fn element(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
         return record(keys, data, None, width);
     }
     if obj.is_instance_of::<PyList>() || obj.is_instance_of::<PyTuple>() || obj.is_instance_of::<PyRange>() { return import(obj, items); }
-    if obj.is_instance(fraction(obj.py())?)? {
-        let rational = BigRational::new_raw(obj.getattr("numerator")?.extract()?, obj.getattr("denominator")?.extract()?);
-        return Number::try_from(rational).map(Value::Number).map_err(value_error);
-    }
+    if let Some(rational) = rustymath_buffer::rational(obj)? { return Number::try_from(rational).map(Value::Number).map_err(value_error); }
     if let Some(value) = numpy(obj, items)? { return Ok(value); }
     if let Some(frame) = rustymath_buffer::frame::frame(obj)? {
         let ([rows, cols], [row, col]) = (frame.keys, frame.names);

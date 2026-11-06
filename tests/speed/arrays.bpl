@@ -362,8 +362,8 @@ i (+/⊢)⌸ v
 ∨ᵇ\jv
 ⍝⍝: 3	3	4
 
-⍝ After a lane's first result, a comparison scan's totals are 0 or 1. The kernel computes each item's result at both, and rustymath picks between them 64 at a time.
-⍝ Expected: `<\v` and `=⍀m` 3 copies: two tolerant comparisons an item, picked 64 at a time; `≠\jv` and `0ₓ=\jv` 1 copy: an exact comparison an item, picked 64 at a time. That misses half the work of `≠\jv` and `0ₓ=\jv`: each item is compared at both totals, into two vectors of Booleans, which `chosen` packs into words, composes and unpacks. On x86-64 the pack's 64-bit multiplies become sequences of `vpmuludq`, because AVX2 has no 64-bit multiply in its lanes.
+⍝ After a lane's first result, a comparison scan's results are 0 or 1. Comparing each item at both, then picking between the results 64 at a time, lets items compare side by side and gives Booleans directly. Rustymath's ordered scan doesn't do that yet. It steps each item from the result before it, at the items' kind (`operation.rs` `chained`). A seeded scan's results then convert to Booleans.
+⍝ Expected, from the pick 64 at a time: `<\v`, `0<\v` and `=⍀m` 3 copies: two tolerant comparisons an item; `≠\jv` and `0ₓ=\jv` 1 copy: an exact comparison an item.
 <\v
 ⍝⍝: 6	6	12
 
@@ -376,8 +376,11 @@ i (+/⊢)⌸ v
 0ₓ=\jv
 ⍝⍝: 2	2	4
 
+0<\v
+⍝⍝: 6	6	12
+
 ⍝ Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]⍴v` 3.4 against 2. Scans along a leading axis make no call for each row: `+⍀[16384 4]⍴v` cost 28 copies while each row of 4 items made two calls that stayed out of line.
-⍝ Expected: `=\[32768 2]⍴jv` 4 copies: one exact comparison for each lane of two items, about 1, and two further costs: each lane's first item keeps its value, so basedpl's `Scan::compared` builds the result as integers, and the lanes' first and second items are gathered into two vectors first, by one strided copy (`lane_items` in rustymath's `comparison_scan`). On 22 October 2026 these took this Mac from 9.8 copies to 3.9, about two fifths of it now building the result; `<\[16384 4]⍴v` 6 copies: as `<\v`, 3, and the same two costs, about 3: the result keeps each lane's first item, so `Scan::compared` builds it as floats, and each lane's first two items are gathered first; `≠\[16384 4]⍴b` 0.5 copies: word-wide bit operations; `+\[16384 4]⍴v` 2 copies: eight lanes run side by side, about 1 cycle an item; `+⍀[16384 4]⍴v` 3 copies: each row waits on the row before, which it reads back from the output through a store-to-load forwarding before it adds, about 6 cycles for each row of 4 items.
+⍝ Expected: `=\[32768 2]⍴jv` 4 copies and `<\[16384 4]⍴v` 6, set on the Mac on 22 October 2026 by a route for comparison scans along short lanes that's since gone (basedpl's `Scan::compared` through rustymath's `comparison_scan`). Both now run rustymath's ordered scan: `scan_read`, then `ordered_scan` with one kernel step for each item; `≠\[16384 4]⍴b` 0.5 copies: word-wide bit operations; `+\[16384 4]⍴v` 2 copies: eight lanes run side by side, about 1 cycle an item; `+⍀[16384 4]⍴v` 3 copies: each row waits on the row before, which it reads back from the output through a store-to-load forwarding before it adds, about 6 cycles for each row of 4 items.
 =\[32768 2]⍴jv
 ⍝⍝: 8	8	8
 
@@ -490,7 +493,7 @@ lut.[ux]
 }0
 ⍝⍝: 6	6	6
 
-⍝ A write that fails restores from a copy of the 10 counters rather than from a record of every write (`gather::Writes::try_combine`), and its offsets combine a run at a time without a list.
+⍝ Its offsets combine a run at a time without a list.
 ⍝⍝⍝ held macos 7.93 linux 7.71 wasm 9.3: the histograms' gap (open.md, "Kernels, memory and threads")
 {
   h←10⍴0ₓ
@@ -547,6 +550,14 @@ cnt⍚[- ⊢ 10×] v
 ⍟v
 ⍝⍝: 13	13	26
 
+⍝ A dynamic square root or logarithm of a real array with negatives gives complex results. The checked real kernel fails at the first negative item, and the call runs again at the complex type (`pervasive::searched`), computing each result from its real item (`Formula::real_complex`): √|x| placed by the sign, or ln|x| with 0 or π.
+⍝ Expected, as timed on 6 November 2026: `√s` 6 copies: about 4.4 instructions an item for the failed real pass and 4.5 for the complex results; `⍟s` 16 copies: about 16.4 for the failed real pass and 17 for the complex results. Wasm: twice each, without fused multiply-add. They were 35 and 115 copies while the rerun promoted each item to complex.
+√s
+⍝⍝: 12.5	12.5	25
+
+⍟s
+⍝⍝: 33	33	66
+
 ⍝ rustymath's sine and cosine reduce each item by π in three fused multiply-adds, and evaluate a polynomial of 7 terms. Tangent reduces by π/2, evaluates a polynomial of 9 terms at half the angle, and divides once.
 ⍝ Expected: `1○v` and `2○v` 7 copies: about 28 vector operations an item, for the range check, the reduction, the polynomial, the sign flip, the select at 0 and the test that sends rare items to the second pass; `3○v` 8 copies: about 32 vector operations an item, for the range check, the reduction, the polynomial at half the angle, the selects that pick the quotient's terms and the test, with a division that overlaps them. `1○v` and `2○v` were 4 copies, from a count of 16 that took in only the reduction and the polynomial, then 7.3 copies until sine stopped setting the sign of a zero result, which the select at 0 already gives. `3○v` was 6.3 copies, from a count of 17 that left out the range check, the selects and the test, and charged the division 2 copies.
 1○v
@@ -588,8 +599,8 @@ cnt⍚[- ⊢ 10×] v
 4○v
 ⍝⍝: 8	8	16
 
-⍝ Monadic `○`, cis, runs rustymath's `Cis` on the reals at their own width: through vForce's `vvcosisin` on macOS, and through the slice forms of `Cos` and `Sin` elsewhere.
-⍝ Expected: 14 copies: sine's 26 and cosine's 28 vector operations, as rustymath's speed test counts them for `Sin` and `Cos`, and 16-byte writes. It was 6 copies, from a shared reduction that rustymath doesn't have, which would save only the reduction's few operations.
+⍝ Monadic `○`, cis, computes each result from its real item through `Cis`'s real-argument body (`Formula::real_complex`): the cosine and sine formulas, with arguments past 2^23 taking the complex form.
+⍝ Expected: 14 copies: sine's 26 and cosine's 28 vector operations, as rustymath's speed test counts them for `Sin` and `Cos`, and 16-byte writes. It measured 24 copies on 6 November 2026: the complex pairs it writes keep the loop at two lanes, where `1○v` runs four.
 ⍝ In wasm, CI's runner gave 47 under Node 22's V8 on 25 October 2026, and 55 to 58 under Node 26's from 28 October 2026. V8's newer x86-64 code caused the rise: under Node 26 on Apple silicon, the 0.1.75 release and a build of 29 October 2026 cost the same. Its wasm budget is set from Node 26's 57.
 ○v
 ⍝⍝: 28	28	86

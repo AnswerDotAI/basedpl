@@ -102,7 +102,7 @@ Pervasion repeats these rules inside nested items. Each and Rank frames also use
 
 ## Axes and indices
 
-Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be a whole number, or a float within `1E¯14` of one, whatever the `mathish` setting.
+Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be a whole number. With Mathish on, a float within `1E¯14` of one also counts.
 
 [Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has the shape of the positions, followed by the shape of each selected cell. `:` selects one whole axis; `∞` keeps the remaining axes. [Dot indexing](glyphs/dot.qmd) writes the same selection after an array: `m.[: 1]` is `[: 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects one position on the leading axis.
 

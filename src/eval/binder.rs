@@ -1,7 +1,9 @@
 //! The binder: the right-to-left reduction of a run's items by their categories, and the rewriting of dot access.
 
 use super::tree::{Facts, Recorder, Reduction};
-use super::*;
+use super::{ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, bindings::Place, dissect::Expression, tree::Recording};
+use crate::{At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript}, syntax::{ListForm, Node, NodeKind}};
+use std::{borrow::Cow, sync::Arc};
 
 impl Session {
     fn has_members(nodes: &[Node]) -> bool {
@@ -590,7 +592,7 @@ impl Binder {
         if let Some(seed) = seed { binder.push(seed); }
         loop {
             if !after_call {
-                crate::execution::check().at(&nodes[0].span)?;
+                crate::cancel::check().at(&nodes[0].span)?;
                 let next = if let Some(entity) = held.take() { Some(entity) }
                 else if pending.is_empty() && assignment.is_none() && cursor > 0 {
                     cursor -= 1;
@@ -709,7 +711,7 @@ impl Binder {
                 if matches!(binder.stack[m - 1].category, Category::Operator) || Self::shifts(&binder.stack[m - 1], &binder.stack[..m - 1]) { break; }
                 pending.push(binder.stack.pop().unwrap());
                 log(&mut rec, |rc| rc.pend());
-                crate::execution::check().at(&nodes[0].span)?;
+                crate::cancel::check().at(&nodes[0].span)?;
             }
         }
         let entity = binder.stack.pop().expect("nonempty expression");

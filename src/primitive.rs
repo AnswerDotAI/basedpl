@@ -1,21 +1,24 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::transform::Plain;
 use crate::{
     Described, Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement},
-    array::{Frame, Gather, Items, Lanes, Layout, Steps, Storage, Widening, generated_len, or_and_sum, saturated}, keyed::Selector,
+    array::{Frame, Gather, Items, Lanes, Layout, Steps, Storage, Widening, generated_len, or_and_sum}, keyed::Selector,
     number::{Arithmetic, Mark, Math, Numeric, int::Int}, search::{Cells, classify, first_matches, firsts, grouped}
 };
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{agreement::Mapping, buffer::{FloatWidth, Width}, error::Kind, layout::{shown, strides}, with_width};
+use rustymath::{agreement::Mapping, buffer::{FloatWidth, Width}, convert::saturated, error::Kind, layout::{shown, strides}, with_width};
 use std::{borrow::Cow, cmp::Ordering};
 
+mod facts;
 mod indexing;
+mod inverse;
 mod numeric;
 mod search;
 pub(crate) mod structural;
 use search::*;
 pub(crate) use search::{matched_cells, ordered_cells, searched_cells};
-pub(crate) use {indexing::*, numeric::*, structural::*};
+pub(crate) use {facts::*, indexing::*, inverse::*, numeric::*, structural::*};
+pub(crate) use facts::Form;
 
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,26 +93,7 @@ impl Operation {
 pub(crate) enum Superscript { Power(i64), Transpose, Unit, Mark(crate::number::Mark) }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OperatorKind {
-    Each,
-    Bitwise,
-    Commute,
-    Before,
-    Rank,
-    Atop,
-    Axis,
-    Over,
-    After,
-    Product,
-    Outer,
-    Key,
-    Power,
-    Optimize,
-    Valences,
-    Under,
-    Differentiate,
-    Agenda,
-    Stencil,
-    Fold(FoldKind),
+    Each, Bitwise, Commute, Before, Rank, Atop, Axis, Over, After, Product, Outer, Key, Power, Optimize, Valences, Under, Differentiate, Agenda, Stencil, Fold(FoldKind),
     /// A superscript after an item: `²` or `⁻¹` repeats or inverts a function and raises an array to a power. `ᵀ` transposes an array, `ᵘ` makes a scalar that holds a function, and a number marker makes an array's numbers, or a function's results, exact integers or floats of a width (`Superscript::Mark`). It binds as a monadic operator does.
     Super(Superscript),
 }
@@ -247,10 +231,23 @@ impl Primitive {
             _ => None,
         }
     }
-    /// The primitive that `x p⁻¹ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, and `⍟` and `*` for each other. The binder's `p⁻¹` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`).
+    /// The primitive that `x p⁻¹ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, `⍟` and `*` for each other, `⊥` for `⊤`, and `-` and `π` for themselves. `÷` isn't one: `0÷⁻¹y` has no inverse, where `0÷y` gives a value. The binder's `p⁻¹` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`), and `inverse` calls it for `(x↣p)⁻¹ y`.
     pub(crate) fn left_inverse(self) -> Option<Primitive> {
         use Math::*;
-        match self { Self::Math(Circle) => Some(Self::Math(Arc)), Self::Math(Power) => Some(Self::Math(Log)), Self::Math(Log) => Some(Self::Math(Power)), _ => None }
+        match self {
+            Self::Math(Circle) => Some(Self::Math(Arc)), Self::Math(Power) => Some(Self::Math(Log)), Self::Math(Log) => Some(Self::Math(Power)),
+            Self::Encode => Some(Self::Decode), Self::Arithmetic(Arithmetic::Minus) | Self::Math(Pi) => Some(self), _ => None,
+        }
+    }
+    /// The primitive whose monad undoes this one's monad. The pairs in `PAIRS` undo each other, and the primitives in the first arm undo themselves.
+    pub(crate) fn monadic_inverse(self) -> Option<Primitive> {
+        use {Arithmetic::*, Math::*};
+        const PAIRS: [(Primitive, Primitive); 4] =
+            [(Primitive::Math(Power), Primitive::Math(Log)), (Primitive::Math(Root), Primitive::Math(Nand)), (Primitive::Encode, Primitive::Decode), (Primitive::Enclose, Primitive::Take)];
+        match self {
+            Self::Arithmetic(Plus | Minus | Divide) | Self::Reverse(_) | Self::Transpose | Self::Identity(_) | Self::Math(Not) | Self::Index | Self::MatrixDivide => Some(self),
+            _ => PAIRS.iter().find_map(|&(p, q)| if p == self { Some(q) } else if q == self { Some(p) } else { None }),
+        }
     }
 }
 
@@ -313,214 +310,6 @@ impl Builtin {
     }
 }
 
-/// A natural rank: the rank of the cells a function applies to. `WHOLE` is the whole argument.
-pub(crate) type Rank = u8;
-pub(crate) const WHOLE: Rank = Rank::MAX;
-
-/// A reduction's identity, the result for an empty axis.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Identity {
-    /// The identity of the primitive's formula (`pervasive::fold_identity`): a Boolean where the formula gives Booleans, a float at the weak width where it's infinite, and otherwise in the numeric domain of the prototype.
-    Formula,
-    /// As `Formula`, except that a Boolean prototype gives `$t` or `$f`, as `∧` and `∨` give.
-    Logical,
-    /// `n` in the numeric domain of the prototype, for a function with no formula, such as `⌽` or `⊤`.
-    Number(i32),
-    /// An empty cell along the first or last axis, as `0⌿` or `0/` gives.
-    Empty(bool),
-}
-
-/// How a form treats its arguments' items, which decides how a level runs the form on carried values (`derivative::call`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Form {
-    /// Each result item is a function of the argument items at its position, with the partial derivatives that `derivative::partials` gives.
-    Pervasive,
-    /// The result carries no tangent. Its items change in steps, as comparisons and `⌊` give, or depend only on the arguments' shapes or values, as `⍳`, `≢` and monadic `⍷` give.
-    Constant,
-    /// Moves items to positions that don't depend on their values, as the structural glyphs do. `selects` says how Under and selective assignment write back through the form. A `planned` form copies its right argument through one plan that reads only that argument's layout, so a record copies as one `linear::Op::Copy` (`primitive::copied`), not through ids (`linear::through`).
-    Moves { selects: Selects, planned: bool },
-    /// Moves items to positions that depend on their values: sorting, `∪`, `∩` and `~`.
-    Orders,
-    /// Its code calls other primitives, whose rules then apply: monadic `≤`, `≥`, `⊼` and `⊽`.
-    Defined,
-    /// A rule of its own in each kind's module, as `⌻`, `⌹`, `⊥` and the folds and products in `Operation::facts` have. Monadic `#` has one because its counts sit beside the items it takes.
-    Own,
-    /// No kind runs it on carried values: `⍎`, monadic `⌻`, and monadic `○`, which gives complex numbers.
-    Unsupported,
-}
-
-/// The linear map that a form is. Reverse mode records it, in place of computing it, when an argument is a tape value (`derivative::tape::taped`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LinearMap {
-    /// `+y`, which leaves the real numbers that tangents hold unchanged.
-    Same,
-    /// `-y`.
-    Negation,
-    /// `x+y`, or a fold's sum along an axis. A plain argument beside a record is an inactive tangent, all zeros.
-    Sum,
-    /// `x-y`, of two records.
-    Difference,
-    /// `x×y`, of a record and a coefficient that doesn't depend on it, on either side.
-    Product,
-    /// `x÷y`, of a record and a divisor that doesn't depend on it.
-    Quotient,
-}
-
-/// How a form that moves items selects its right argument's items.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Selects {
-    /// The form makes new structure, or reads its left argument's items too, so nothing writes back through it.
-    No,
-    /// The form rearranges the items of its right argument and keeps every one, as `⌽` and `,` do.
-    Whole,
-    /// The form selects some items of its right argument, as `↑` and `⌷` do. An inverse can't restore the items it drops.
-    Part,
-}
-
-/// Where the items that a form orders come from (`Primitive::taken`). `Both` is all of the left argument followed by the right argument's items at the positions, along the first axis, as union takes them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Origin { Left, Right, Both }
-
-/// How a form runs on every rank-k cell of an argument as one call on the whole argument, where `extends` doesn't already let it run on the whole argument unchanged. Rank's whole-array rules read it (`whole` in `eval/operators.rs`), and so do batched maps (`batch::call`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CellRule {
-    /// No rule: Rank calls the form once for each cell.
-    No,
-    /// The form along each cell's first axis: monadic `⊖`, and dyadic `⊖` with a scalar left argument.
-    First,
-    /// The form along each cell's first axis, with a left argument of any shape that applies along that axis: dyadic `#`.
-    Along,
-    /// The form along all of each cell's axes, which it joins into one: monadic `,`.
-    Every,
-    /// The form along the leading cell axes that its left argument has an item for: dyadic `↑`, `↓` and `⌷`.
-    Leading,
-    /// Each cell's length along its first axis, the same for every cell: `≢`.
-    Length,
-    /// Each cell's shape, the same for every cell whose axes have no names: monadic `⍴`.
-    Shape,
-    /// A view of the whole argument, for a reshape that keeps each cell's items in order: dyadic `⍴`.
-    Reshape,
-    /// Each cell's axes sent to destinations among the cell's own axes: `⍉`, whose left argument gives every cell the same destinations.
-    Axes,
-    /// Each cell enclosed, as the form along all of the cell's axes encloses it: monadic `⊂`. A rank-0 cell takes the path through cells.
-    Encloses,
-    /// The form joining its arguments' cells along each cell's last axis, as dyadic `,` does where `last` is true, or along its first, as dyadic `⍪` does. Either argument can differ from cell to cell (`paired_cells` in `eval/operators.rs`).
-    Join { last: bool },
-    /// The form ordering each cell's major cells along the cell's first axis: monadic `<`, `>`, `⍋` and `⍒` (`ordered_cells`).
-    Orders,
-    /// The form looking up its needles' cells among the major cells of its other argument, the haystack, where the haystack is the same in every cell and each cell holds whole needles: dyadic `⍳` and `⍸`, with the haystack on the left, and `∊`, with it on the right.
-    Searches { haystack_left: bool },
-    /// Each pair of cells compared as `≡` compares them, giving one Boolean for each cell: dyadic `≡`, and dyadic `≢` where `not` is true (`matched_cells`).
-    Matches { not: bool },
-    /// Each rank-0 cell itself, for a form that extends to cells of higher rank: monadic `⌽`.
-    Same,
-    /// Each cell as a matrix of its first axis by the rest, a view of the whole argument: monadic `⍪`.
-    Table,
-    /// Each cell's first major cell, as `0⌷` selects it from simple items: monadic `↑`. A rank-0 cell is its own first.
-    Head,
-    /// Each cell's items in order, as monadic `,` gives them from simple items: monadic `∊`.
-    Enlist,
-}
-
-/// The facts of a form: either form of a primitive, or a derived operation's row (`Operation::facts`). `extension` says how the form extends past its rank. An `axes` form has its own meaning with `⍠`, where other functions take the general cell rule. `form` says how levels run the form on carried values, and `linear` is the linear map it is, if any. `cost` is what the form's float kernel costs in copies per item, as timed on 19 October 2026 on this Mac, an Apple M5 Max: 1 for arithmetic and more for transcendental functions. A kernel that its left argument chooses, as `○`'s circle code does, has a typical cost. `cells` says how Rank runs the form on each cell of a larger argument as one call on the whole argument, where its extension doesn't cover it (`whole` in `eval/operators.rs`). Whether a form gives Booleans, and whether its exact arguments compute as floats, are its formula's facts (`pervasive::booleans`, `pervasive::computes`).
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Facts {
-    pub name: &'static str, pub extension: Extension, pub axes: bool, pub form: Form, pub linear: Option<LinearMap>, pub cost: u16, pub cells: CellRule
-}
-
-/// How a builtin function extends past its natural argument: a primitive's form, or a system function. A `Pervasive` form pairs its arguments' items and gives the same result under Each. A `Whole` form's own code takes arguments of any rank. A `Rank` form applies to cells of its rank, through Rank, where an argument's rank is higher. A function that takes `Items` maps over a right argument that holds several of its items, with its left argument whole for each (`eval::each_whole_left`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Extension { Pervasive, Whole, Rank, Items(Item) }
-
-/// What a function that takes items takes as one item on the right.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Item {
-    /// A number. An array maps.
-    Number,
-    /// A vector of numbers or characters, such as code points or bytes. A deeper array maps.
-    Vector,
-    /// A string. A deeper array maps, and so does an empty array without characters, as an empty list of strings. A character array of rank 2 or more maps over its rows.
-    Text,
-}
-impl Item {
-    /// Whether `right` holds several items as items of its own, not one.
-    pub(crate) fn maps(self, right: &Value) -> bool {
-        match self {
-            Self::Number => depth(right) > 0, Self::Vector => depth(right) > 1, Self::Text => depth(right) > 1 || (right.is_empty() && !characters(right))
-        }
-    }
-    /// The cell ranks of a call that maps over the text items that `right` holds as the rows of a character array: each row, with `left` whole.
-    pub(crate) fn rows(self, left: Option<&Value>, right: &Value) -> Option<Vec<Rank>> {
-        (self == Self::Text && right.shape().len() > 1 && characters(right)).then(|| if left.is_some() { vec![WHOLE, 1] } else { vec![1] })
-    }
-}
-/// Whether `value` is compact storage of characters.
-fn characters(value: &Value) -> bool { matches!(value.as_items(), Items::Compact(rustymath::buffer::View::Characters(_))) }
-
-/// A primitive's monadic form. It gives the same results as its Rank at `rank`.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Monad { pub facts: Facts, pub rank: Rank }
-
-/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` serves reductions. A form that `picks` gives one of its arguments for each item: `⌈`, `⌊`, `⊢` and `⊣`. A `code` form's left argument chooses the function that each item gets, as `○`'s circle code does.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Dyad {
-    pub facts: Facts,
-    // Rank's shortcut reads only monadic ranks, because a dyadic Rank call can't skip its cell loop in general. A call on a form that doesn't extend reads these ranks, and so do the glyph pages and a test that checks them against Rank.
-    pub ranks: [Rank; 2],
-    pub identity: Option<Identity>,
-    pub picks: bool,
-    pub code: bool,
-}
-
-/// One primitive's facts: its glyph, the glyph's name, and its two forms.
-pub(crate) struct Info { pub glyph: &'static str, pub name: &'static str, pub monad: Monad, pub dyad: Dyad }
-
-/// The facts of a form with `form`, before `monad` or `dyad` names it: its own code takes arguments of any rank, and it has no meaning of its own with `⍠`.
-const fn of(form: Form) -> Facts {
-    Facts { name: "", extension: Extension::Whole, axes: false, form, linear: None, cost: 1, cells: CellRule::No }
-}
-/// The facts of a pervasive form.
-const PERVASIVE: Facts = Facts { extension: Extension::Pervasive, ..of(Form::Pervasive) };
-/// The facts of a form that moves items, selects none of its right argument's, and copies through no plan.
-const MOVES: Facts = of(Form::Moves { selects: Selects::No, planned: false });
-const fn monad(name: &'static str, rank: Rank, facts: Facts) -> Monad { Monad { facts: Facts { name, ..facts }, rank } }
-const fn dyad(name: &'static str, ranks: [Rank; 2], facts: Facts) -> Dyad {
-    Dyad { facts: Facts { name, ..facts }, ranks, identity: None, picks: false, code: false }
-}
-impl Facts {
-    /// A form whose own code handles only arguments up to its rank or ranks.
-    const fn cellwise(self) -> Self { Self { extension: Extension::Rank, ..self } }
-    /// A form that maps over the items of kind `item` that its right argument holds.
-    const fn items(self, item: Item) -> Self { Self { extension: Extension::Items(item), ..self } }
-    /// Whether the form pairs its arguments' items and gives the same result under Each.
-    pub(crate) fn pervasive(&self) -> bool { self.extension == Extension::Pervasive }
-    /// Whether the form's own code takes arguments of any rank.
-    pub(crate) fn extends(&self) -> bool { matches!(self.extension, Extension::Pervasive | Extension::Whole) }
-    const fn axes(self) -> Self { Self { axes: true, ..self } }
-    /// A pervasive form that isn't `Form::Pervasive`.
-    const fn form(self, form: Form) -> Self { Self { form, ..self } }
-    const fn linear(self, map: LinearMap) -> Self { Self { linear: Some(map), ..self } }
-    /// A form whose float kernel costs `copies` per item, where that's more than one copy.
-    const fn cost(self, copies: u16) -> Self { Self { cost: copies, ..self } }
-    /// A form that runs on each cell of a larger argument as `cells` says.
-    const fn cells(self, cells: CellRule) -> Self { Self { cells, ..self } }
-    /// A form that moves items and copies its right argument through one plan.
-    const fn planned(self) -> Self {
-        let Form::Moves { selects, .. } = self.form else { panic!("only a form that moves items copies through a plan") };
-        Self { form: Form::Moves { selects, planned: true }, ..self }
-    }
-    /// A form that moves items and selects `selects` of its right argument's.
-    const fn selects(self, selects: Selects) -> Self {
-        let Form::Moves { planned, .. } = self.form else { panic!("only a form that moves items selects them") };
-        Self { form: Form::Moves { selects, planned }, ..self }
-    }
-}
-impl Dyad {
-    const fn identity(self, identity: Identity) -> Self { Self { identity: Some(identity), ..self } }
-    const fn picks(self) -> Self { Self { picks: true, ..self } }
-    const fn code(self) -> Self { Self { code: true, ..self } }
-}
-
 /// The number `e` holds, as a kernel reads it (`Value::computed`). A dual number is UNSUPPORTED, and any other value is DOMAIN.
 #[inline]
 pub(crate) fn numeric<'a>(e: &'a Value) -> Result<&'a Number, Error> {
@@ -535,7 +324,7 @@ pub(crate) fn real(value: &Value) -> Result<f64, Error> {
 /// The float width that a constant combined with `like` takes, so that it doesn't widen `like`: the float width of `like`, or of its template where it's carried (`Value::template`), or for integers that wrap, under static kinds or at a fixed width, the width that their division gives (`plan::Kind::approximate`). Beside other exact numbers, it's the default width.
 fn width_like(like: &Value) -> FloatWidth {
     let t = Numeric::current();
-    crate::plan::Kind::approximate([crate::plan::Kind::value(like)], t).ok().flatten().unwrap_or_else(|| t.width_of([like.template().float_width()]))
+    crate::plan::Kind::approximate([crate::plan::Kind::value(like)], t).unwrap_or_else(|| t.width_of([like.template().float_width()]))
 }
 /// The float `n` at the width that a constant combined with `like` takes (`width_like`).
 pub(crate) fn float_like(n: f64, like: &Value) -> Value { Value::Number(Number::float(n, width_like(like))) }
@@ -551,7 +340,7 @@ pub(crate) fn counted(value: &Value) -> Mark {
 fn generated(n: u64, mark: Mark) -> Value {
     match mark {
         Mark::Width(width) => Value::Number(Number::float(n as f64, width)), Mark::Fixed(width) => Value::Number(Number::fixed(n as i64, width)),
-        Mark::Exact => Value::integer(i64::try_from(n).unwrap_or(i64::MAX)),
+        Mark::Exact => Value::integer(saturated(n)),
         Mark::Real => Value::Number(Number::float(n as f64, Numeric::current().width)),
         Mark::Rational => Value::Number(Number::rational(num_bigint::BigInt::from(n).into())),
     }
@@ -606,351 +395,6 @@ pub(crate) fn axes(axis: &Value, rank: usize) -> Result<Vec<usize>, Error> {
 }
 /// Singleton extension is shared selection, not a universal broadcasting policy.
 impl Primitive {
-    const ALL: [Self; 61] = {
-        use {Arithmetic::*, Comparison::*, Math::*};
-        [
-            Self::Arithmetic(Plus), Self::Arithmetic(Minus), Self::Arithmetic(Times), Self::Arithmetic(Divide), Self::Math(Ceiling), Self::Math(Floor),
-            Self::Math(Magnitude), Self::Math(Power), Self::Math(Log), Self::Math(Circle), Self::Math(Pi), Self::Math(Root), Self::Math(Factorial),
-            Self::Math(Lcm), Self::Math(Gcd), Self::Math(Nand), Self::Math(Nor), Self::Math(Not), Self::Compare(Equal), Self::Compare(NotEqual),
-            Self::Compare(Less), Self::Compare(LessEqual), Self::Compare(Greater), Self::Compare(GreaterEqual), Self::Iota, Self::Range, Self::Keys,
-            Self::Shape, Self::Tally, Self::Depth, Self::Ravel, Self::CatenateFirst, Self::Enclose, Self::Mix, Self::Nest, Self::Member, Self::Union,
-            Self::Intersection, Self::Grade(false), Self::Grade(true), Self::Take, Self::Drop, Self::Reverse(false), Self::Reverse(true), Self::Transpose,
-            Self::Encode, Self::Decode, Self::Execute, Self::Format, Self::Index, Self::MatrixDivide, Self::Replicate, Self::Windows, Self::Prime, Self::Factor,
-            Self::Polynomial, Self::Where, Self::Find, Self::Identity(false), Self::Identity(true), Self::Random,
-        ]
-    };
-    /// This primitive's row in the glyph table, built once, at compile time.
-    pub(crate) fn info(self) -> &'static Info {
-        use {Arithmetic::*, Comparison::*, self::Form::*, Identity::*, Math::*, Selects::*};
-        const W: Rank = WHOLE;
-        const fn row(glyph: &'static str, name: &'static str, monad: Monad, dyad: Dyad) -> Info { Info { glyph, name, monad, dyad } }
-        // `⌷`'s forms, which bracket indexing (`A.[I J]`) shares. Rank runs only `⌷` along leading cell axes, because bracket indexing pairs its index arrays.
-        const MATERIALISE: Monad = monad("materialise", W, MOVES.axes().selects(Whole));
-        const INDEX: Dyad = dyad("index", [1, W], MOVES.cellwise().axes().selects(Part));
-        // The other valence of a function that `•special` makes, which `run_axis` refuses before any form runs.
-        const NO_MONAD: Monad = monad("", 0, of(Unsupported));
-        const NO_DYAD: Dyad = dyad("", [0, 0], of(Unsupported));
-        match self {
-            Self::Arithmetic(Plus) => {
-                &const {
-                    row(
-                        "+", "plus", monad("conjugate", 0, PERVASIVE.linear(LinearMap::Same)),
-                        dyad("add", [0, 0], PERVASIVE.axes().linear(LinearMap::Sum)).identity(Formula))
-                }
-            }
-            Self::Arithmetic(Minus) => {
-                &const {
-                    row(
-                        "-", "minus", monad("negate", 0, PERVASIVE.linear(LinearMap::Negation)),
-                        dyad("subtract", [0, 0], PERVASIVE.axes().linear(LinearMap::Difference)).identity(Formula))
-                }
-            }
-            Self::Arithmetic(Times) => {
-                &const {
-                    row(
-                        "×", "times", monad("sign", 0, PERVASIVE.form(Constant)),
-                        dyad("multiply", [0, 0], PERVASIVE.axes().linear(LinearMap::Product)).identity(Formula))
-                }
-            }
-            Self::Arithmetic(Divide) => {
-                &const {
-                    row(
-                        "÷", "obelus", monad("reciprocal", 0, PERVASIVE),
-                        dyad("divide", [0, 0], PERVASIVE.axes().linear(LinearMap::Quotient)).identity(Formula))
-                }
-            }
-            Self::Bitwise(_) => {
-                &const { row("ᵇ", "superscript-b", monad("bitwise", 0, PERVASIVE.form(Constant)), dyad("bitwise", [0, 0], PERVASIVE.form(Constant))) }
-            }
-            Self::Math(Ceiling) => {
-                &const {
-                    row(
-                        "⌈", "upstile", monad("ceiling", 0, PERVASIVE.form(Constant).cost(3)),
-                        dyad("maximum", [0, 0], PERVASIVE.axes()).identity(Formula).picks())
-                }
-            }
-            Self::Math(Floor) => {
-                &const {
-                    row(
-                        "⌊", "downstile", monad("floor", 0, PERVASIVE.form(Constant).cost(3)),
-                        dyad("minimum", [0, 0], PERVASIVE.axes()).identity(Formula).picks())
-                }
-            }
-            Self::Math(Magnitude) => {
-                &const { row("|", "stile", monad("magnitude", 0, PERVASIVE), dyad("residue", [0, 0], PERVASIVE.axes().cost(6)).identity(Formula)) }
-            }
-            Self::Math(Power) => {
-                &const {
-                    row(
-                        "*", "star", monad("exponential", 0, PERVASIVE.cost(7)),
-                        dyad("exponent", [0, 0], PERVASIVE.axes().cost(25)).identity(Formula))
-                }
-            }
-            Self::Math(Log) => {
-                &const {
-                    row(
-                        "⍟", "circle-star", monad("natural-log", 0, PERVASIVE.cost(12)),
-                        dyad("logarithm", [0, 0], PERVASIVE.axes().cost(12)))
-                }
-            }
-            Self::Math(Circle | Arc) => {
-                &const {
-                    row(
-                        "○", "circle", monad("cis", 0, PERVASIVE.form(Unsupported).cost(12)),
-                        dyad("circular", [0, 0], PERVASIVE.axes().cost(8)).code())
-                }
-            }
-            Self::Math(Pi) => {
-                &const { row("π", "pi", monad("pi-times", 0, PERVASIVE), dyad("pi-ratio", [0, 0], PERVASIVE.axes())) }
-            }
-            Self::Math(Root) => {
-                &const { row("√", "radical", monad("sqrt", 0, PERVASIVE.cost(2)), dyad("root", [0, 0], PERVASIVE.axes().cost(10))) }
-            }
-            Self::Math(Factorial) => {
-                &const {
-                    row(
-                        "!", "exclamation", monad("factorial", 0, PERVASIVE.cost(160)),
-                        dyad("binomial", [0, 0], PERVASIVE.axes().cost(900)).identity(Formula))
-                }
-            }
-            Self::Math(Lcm) => {
-                &const { row("∧", "wedge", monad("polar", 0, of(Own)), dyad("and", [0, 0], PERVASIVE.axes().form(Constant)).identity(Logical)) }
-            }
-            Self::Math(Gcd) => {
-                &const { row("∨", "vee", monad("real-imag", 0, of(Own)), dyad("or", [0, 0], PERVASIVE.axes().form(Constant)).identity(Logical)) }
-            }
-            Self::Math(Nand) => {
-                &const { row("⊼", "wedge-bar", monad("square", 0, PERVASIVE.form(Defined)), dyad("nand", [0, 0], PERVASIVE.axes().form(Constant))) }
-            }
-            Self::Math(Nor) => {
-                &const { row("⊽", "vee-bar", monad("double", 0, PERVASIVE.form(Defined)), dyad("nor", [0, 0], PERVASIVE.axes().form(Constant))) }
-            }
-            Self::Math(Not) => &const { row("~", "tilde", monad("not", 0, PERVASIVE.form(Constant)), dyad("without", [W, W], of(Orders))) },
-            Self::Compare(Equal) => {
-                &const {
-                    row(
-                        "=", "equals", monad("classify", W, of(Constant)),
-                        dyad("equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
-            }
-            Self::Compare(NotEqual) => {
-                &const {
-                    row(
-                        "≠", "not-equals", monad("unique-mask", W, of(Constant)),
-                        dyad("not-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
-            }
-            Self::Compare(Less) => {
-                &const {
-                    row(
-                        "<", "less-than", monad("sort-up", W, of(Orders).cells(CellRule::Orders)),
-                        dyad("less", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
-            }
-            Self::Compare(LessEqual) => {
-                &const {
-                    row(
-                        "≤", "less-than-or-equal", monad("decrement", 0, PERVASIVE.form(Defined)),
-                        dyad("less-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
-            }
-            Self::Compare(Greater) => {
-                &const {
-                    row(
-                        ">", "greater-than", monad("sort-down", W, of(Orders).cells(CellRule::Orders)),
-                        dyad("greater", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
-            }
-            Self::Compare(GreaterEqual) => {
-                &const {
-                    row(
-                        "≥", "greater-than-or-equal", monad("increment", 0, PERVASIVE.form(Defined)),
-                        dyad("greater-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
-            }
-            Self::Iota => {
-                &const {
-                    row(
-                        "⍳", "iota", monad("indices", 1, of(Constant).cellwise().axes()),
-                        dyad("index-of", [W, W], of(Constant).cells(CellRule::Searches { haystack_left: true })))
-                }
-            }
-            Self::Range => &const { row("↦", "right-arrow-from-bar", monad("range", 0, of(Constant).cellwise()), dyad("to", [0, 0], of(Own).cellwise())) },
-            Self::Keys => &const { row(":", "colon", monad("unkey", W, MOVES.axes()), dyad("keyed", [1, W], MOVES.cellwise().axes())) },
-            Self::Shape => {
-                &const {
-                    row(
-                        "⍴", "rho", monad("shape", W, of(Constant).cells(CellRule::Shape)),
-                        dyad("reshape", [1, W], MOVES.cellwise().planned().selects(Part).cells(CellRule::Reshape)))
-                }
-            }
-            Self::Tally => {
-                &const {
-                    row(
-                        "≢", "equal-underbar-slash", monad("tally", W, of(Constant).cells(CellRule::Length)),
-                        dyad("not-match", [W, W], of(Constant).cells(CellRule::Matches { not: true })))
-                }
-            }
-            Self::Depth => {
-                &const { row("≡", "equal-underbar", monad("depth", W, of(Constant)), dyad("match", [W, W], of(Constant).cells(CellRule::Matches { not: false }))) }
-            }
-            Self::Ravel => {
-                &const {
-                    row(
-                        ",", "comma", monad("ravel", W, MOVES.axes().selects(Whole).cells(CellRule::Every)),
-                        dyad("catenate", [W, W], MOVES.axes().cells(CellRule::Join { last: true })).identity(Empty(false)))
-                }
-            }
-            Self::CatenateFirst => {
-                &const {
-                    row(
-                        "⍪", "comma-bar", monad("table", W, MOVES.selects(Whole).cells(CellRule::Table)),
-                        dyad("catenate-first", [W, W], MOVES.axes().cells(CellRule::Join { last: false })).identity(Empty(true)))
-                }
-            }
-            Self::Enclose => {
-                &const {
-                    row(
-                        "⊂", "left-shoe", monad("enclose", W, MOVES.axes().cells(CellRule::Encloses)),
-                        dyad("partitioned-enclose", [1, W], MOVES.cellwise().axes().selects(Part)))
-                }
-            }
-            Self::Mix => &const { row("⊃", "right-shoe", monad("mix", 0, MOVES.axes()), dyad("pick", [1, W], MOVES.cellwise().selects(Part))) },
-            Self::Nest => {
-                &const { row("⊆", "left-shoe-underbar", monad("nest", W, MOVES.axes()), dyad("partition", [1, W], MOVES.cellwise().axes().selects(Part))) }
-            }
-            Self::Member => {
-                &const {
-                    row(
-                        "∊", "epsilon", monad("enlist", W, MOVES.selects(Whole).cells(CellRule::Enlist)),
-                        dyad("member", [W, W], of(Constant).cells(CellRule::Searches { haystack_left: false })))
-                }
-            }
-            Self::Union => &const { row("∪", "down-shoe", monad("unique", W, of(Orders)), dyad("union", [W, W], of(Orders)).identity(Empty(false))) },
-            Self::Intersection => &const { row("∩", "up-shoe", monad("duplicates", W, of(Orders)), dyad("intersection", [W, W], of(Orders))) },
-            Self::Grade(false) => {
-                &const { row("⍋", "delta-stile", monad("grade-up", W, of(Constant).cells(CellRule::Orders)), dyad("grade-up-by", [W, W], of(Constant))) }
-            }
-            Self::Grade(true) => {
-                &const { row("⍒", "del-stile", monad("grade-down", W, of(Constant).cells(CellRule::Orders)), dyad("grade-down-by", [W, W], of(Constant))) }
-            }
-            Self::Take => {
-                &const {
-                    row(
-                        "↑", "up-arrow", monad("first", W, MOVES.selects(Part).cells(CellRule::Head)),
-                        dyad("take", [1, W], MOVES.cellwise().axes().planned().selects(Part).cells(CellRule::Leading)))
-                }
-            }
-            Self::Drop => {
-                &const {
-                    row(
-                        "↓", "down-arrow", monad("split", 1, MOVES.axes()),
-                        dyad("drop", [1, W], MOVES.cellwise().axes().planned().selects(Part).cells(CellRule::Leading)))
-                }
-            }
-            Self::Reverse(false) => {
-                &const {
-                    row(
-                        "⌽", "circle-stile", monad("reverse", 1, MOVES.axes().planned().selects(Whole).cells(CellRule::Same)),
-                        dyad("rotate", [0, 1], MOVES.axes().planned().selects(Whole)).identity(Identity::Number(0)))
-                }
-            }
-            Self::Reverse(true) => {
-                &const {
-                    row(
-                        "⊖", "circle-bar", monad("reverse-first", W, MOVES.axes().planned().selects(Whole).cells(CellRule::First)),
-                        dyad("rotate-first", [W, W], MOVES.axes().planned().selects(Whole).cells(CellRule::First)).identity(Identity::Number(0)))
-                }
-            }
-            Self::Transpose => {
-                &const {
-                    row(
-                        "⍉", "circle-backslash", monad("transpose", W, MOVES.planned().selects(Whole).cells(CellRule::Axes)),
-                        dyad("reorder-axes", [1, W], MOVES.cellwise().planned().selects(Part).cells(CellRule::Axes)))
-                }
-            }
-            Self::Encode => {
-                &const { row("⊤", "down-tack", monad("binary-encode", W, of(Constant)), dyad("encode", [1, 0], of(Constant)).identity(Identity::Number(0))) }
-            }
-            Self::Decode => &const { row("⊥", "up-tack", monad("binary-decode", 1, of(Own)), dyad("decode", [1, 1], of(Own))) },
-            Self::Execute => {
-                &const {
-                    row("⍎", "hydrant", monad("execute", 1, of(Unsupported).items(Item::Text)), dyad("execute-in", [W, W], of(Unsupported).items(Item::Text)))
-                }
-            }
-            Self::Format => &const { row("⍕", "thorn", monad("format", W, of(Constant)), dyad("format-spec", [1, W], of(Constant).cellwise())) },
-            Self::Index => &const { row("⌷", "squad", MATERIALISE, Dyad { facts: INDEX.facts.cells(CellRule::Leading), ..INDEX }) },
-            Self::Bracket => &const { row("⌷", "squad", MATERIALISE, INDEX) },
-            // The functions that `•special` makes. Each displays as the call that makes it, and its other valence has no form.
-            Self::Special(Special::Gammaln) => &const { row("•special\"gammaln\"", "gammaln", monad("gammaln", 0, PERVASIVE.cost(100)), NO_DYAD) },
-            Self::Special(Special::Digamma) => &const { row("•special\"digamma\"", "digamma", monad("digamma", 0, PERVASIVE.cost(100)), NO_DYAD) },
-            Self::Special(Special::Erf) => &const { row("•special\"erf\"", "erf", monad("erf", 0, PERVASIVE.cost(25)), NO_DYAD) },
-            Self::Special(Special::Erfc) => &const { row("•special\"erfc\"", "erfc", monad("erfc", 0, PERVASIVE.cost(25)), NO_DYAD) },
-            Self::Special(Special::Erfinv) => &const { row("•special\"erfinv\"", "erfinv", monad("erfinv", 0, PERVASIVE.cost(60)), NO_DYAD) },
-            Self::Special(Special::Gammainc) => {
-                &const { row("•special\"gammainc\"", "gammainc", NO_MONAD, dyad("gammainc", [0, 0], PERVASIVE.axes().cost(400))) }
-            }
-            Self::Special(Special::Polygamma) => {
-                &const { row("•special\"polygamma\"", "polygamma", NO_MONAD, dyad("polygamma", [0, 0], PERVASIVE.axes().cost(200))) }
-            }
-            Self::Special(Special::Beta) => &const { row("•special\"beta\"", "beta", NO_MONAD, dyad("beta", [0, 0], PERVASIVE.axes().cost(300))) },
-            // Slopes that `∂` records and `•special` doesn't name: `|`'s sign in floats, and `!`'s binomial's in n and in k.
-            Self::Special(Special::Sign) => &const { row("∂|", "sign", monad("sign", 0, PERVASIVE.form(Constant)), NO_DYAD) },
-            Self::Special(Special::BinomDn) => &const { row("∂!n", "binom_dn", NO_MONAD, dyad("binom_dn", [0, 0], PERVASIVE.axes().cost(900))) },
-            Self::Special(Special::BinomDk) => &const { row("∂!k", "binom_dk", NO_MONAD, dyad("binom_dk", [0, 0], PERVASIVE.axes().cost(900))) },
-            // Fast combinations, which the form rewriter puts in place of their spellings. `log1p` and `expm1` map their argument. `eval::combined` runs the others, before any running level, which then sees the functions they combine.
-            Self::Special(Special::Log1p) => &const { row("⍟1+", "log1p", monad("log1p", 0, PERVASIVE.cost(12)), NO_DYAD) },
-            Self::Special(Special::Expm1) => &const { row("¯1+*", "expm1", monad("expm1", 0, PERVASIVE.cost(7)), NO_DYAD) },
-            Self::Special(Special::LambertW) => &const { row("(×↢*)⁻¹", "lambertw", monad("lambertw", 0, PERVASIVE.cost(100)), NO_DYAD) },
-            Self::Special(Special::Selected(..)) => &const { row("↑⍋", "selected", monad("selected", W, of(Own)), dyad("selected", [W, W], of(Own))) },
-            Self::Special(Special::Ranks(_)) => &const { row("⍋⍋", "ranks", monad("ranks", W, of(Own)), NO_DYAD) },
-            Self::Special(Special::GroupCounts) => &const { row("≢⊢⌸", "group_counts", monad("group_counts", W, of(Own)), dyad("group_counts", [W, W], of(Own))) },
-            Self::Special(Special::GroupFolds(..)) => &const { row("f/⊢⌸", "group_folds", NO_MONAD, dyad("group_folds", [W, W], of(Own))) },
-            Self::Special(Special::Determinant) => &const { row("-.×", "determinant", monad("determinant", W, of(Own)), NO_DYAD) },
-            Self::Special(Special::Permanent) => &const { row("+.×", "permanent", monad("permanent", W, of(Own)), NO_DYAD) },
-            // `[a b] betainc x` reads its pair, then calls `BetaincAt` with it on x, which maps x as any function of one argument does.
-            Self::Special(Special::Betainc) => &const { row("•special\"betainc\"", "betainc", NO_MONAD, dyad("betainc", [1, 0], of(Own))) },
-            Self::Special(Special::BetaincAt(_)) => &const { row("•special\"betainc\"", "betainc", monad("betainc", 0, PERVASIVE.cost(600)), NO_DYAD) },
-            Self::Exact(e) => e.primitive().info(),
-            Self::Real(r) => r.primitive().info(),
-            Self::MatrixDivide => {
-                &const { row("⌹", "domino", monad("matrix-inverse", 2, of(Own).cellwise()), dyad("matrix-divide", [W, 2], of(Own).cellwise())) }
-            }
-            Self::Replicate => {
-                &const {
-                    row(
-                        "#", "hash", monad("runs", W, of(Own)),
-                        dyad("replicate", [1, W], MOVES.cellwise().axes().selects(Part).cells(CellRule::Along)).identity(Identity::Number(1)))
-                }
-            }
-            Self::Windows => &const { row("↕", "up-down-arrow", monad("pairs", W, MOVES.planned()), dyad("windows", [W, W], MOVES.planned().selects(Part))) },
-            Self::Prime => &const { row("⍭", "stile-tilde", monad("prime", 0, of(Constant)), dyad("prime-mode", [0, 0], of(Constant))) },
-            Self::Factor => {
-                &const { row("⨸", "circle-divide", monad("factors", 0, of(Constant).cellwise()), dyad("factor-spec", [0, 0], of(Constant).cellwise())) }
-            }
-            Self::Polynomial => &const { row("⌻", "quad-jot", monad("roots", 1, of(Unsupported)), dyad("polyval", [1, 0], of(Own))) },
-            Self::Where => {
-                &const {
-                    row(
-                        "⍸", "iota-underbar", monad("where", W, of(Constant)),
-                        dyad("interval-index", [W, W], of(Constant).cells(CellRule::Searches { haystack_left: true })))
-                }
-            }
-            Self::Find => &const { row("⍷", "epsilon-underbar", monad("groups", W, of(Constant)), dyad("find", [W, W], of(Constant))) },
-            Self::Identity(false) => {
-                &const { row("⊢", "right-tack", monad("same", W, MOVES.selects(Whole)), dyad("right", [W, W], MOVES.selects(Whole)).picks()) }
-            }
-            Self::Identity(true) => &const { row("⊣", "left-tack", monad("same-left", W, MOVES.selects(Whole)), dyad("left", [W, W], MOVES).picks()) },
-            Self::Random => &const { row("¿", "inverted-question", monad("roll", 0, of(Constant)), dyad("deal", [0, 0], of(Constant))) },
-        }
-    }
-    pub(crate) fn glyph(self) -> &'static str { self.info().glyph }
-    /// The primitive a glyph names.
-    pub(crate) fn from_glyph(c: char) -> Option<Self> {
-        static GLYPHS: std::sync::OnceLock<HashMap<char, Primitive>> = std::sync::OnceLock::new();
-        GLYPHS.get_or_init(|| Self::ALL.into_iter().map(|p| (p.info().glyph.chars().next().unwrap(), p)).collect()).get(&c).copied()
-    }
-    pub(crate) fn all() -> impl Iterator<Item = Self> { Self::ALL.into_iter() }
     pub(crate) fn call(self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> { self.call_axis(left, right, None, span) }
     /// `items` combined by this primitive into `base` at `writes`, in place, as `Pairing::At` pairs them. `+` paired this way is accumulation. When a running level that `base` or `items` carries takes the call (`Operation::call`), its result replaces `base`. Otherwise the operation's own code combines into `base` (`pervasive::combine_at`). An error leaves `base` unchanged.
     pub(crate) fn at(self, base: &mut Value, writes: rustymath::gather::Writes<'_>, items: &Value, span: &Span) -> Result<(), Error> {
@@ -959,45 +403,6 @@ impl Primitive {
         *base = result;
         Ok(())
     }
-    /// The facts of this primitive's form for a call with `dyadic` arguments.
-    pub(crate) fn facts(self, dyadic: bool) -> &'static Facts { let info = self.info(); if dyadic { &info.dyad.facts } else { &info.monad.facts } }
-    /// Whether this primitive's monadic form orders its argument's major cells, as `Some((grade, down))`: a grade where `grade` is true, or a sort, `<` or `>`, where it's false. `down` is true for `⍒` and `>`.
-    pub(crate) fn orders(self) -> Option<(bool, bool)> {
-        match self {
-            Self::Grade(down) => Some((true, down)), Self::Compare(Comparison::Less) => Some((false, false)),
-            Self::Compare(Comparison::Greater) => Some((false, true)), _ => None
-        }
-    }
-    /// Whether this form, with left argument `left`, gives on each rank-`k` cell what it gives on its whole right argument. A form that `extends` does at any cell rank from its own up, with a left argument of at most its left rank.
-    pub(crate) fn extends_at(self, left: Option<&Value>, k: usize) -> bool {
-        let Info { monad, dyad, .. } = self.info();
-        match left {
-            None => monad.facts.extends() && k >= usize::from(monad.rank),
-            Some(x) => dyad.facts.extends() && x.shape().len() <= usize::from(dyad.ranks[0]) && k >= usize::from(dyad.ranks[1]),
-        }
-    }
-    /// The cell ranks that a call of this form on `left` and `right` applies the form to, through Rank: the form's ranks, where it applies through Rank (`Extension::Rank`) and an argument's rank is above them. `None` where the form's own code takes the whole arguments.
-    pub(crate) fn cells(self, left: Option<&Value>, right: &Value) -> Option<Vec<Rank>> {
-        let Info { monad, dyad, .. } = self.info();
-        let above = |a: &Value, rank: Rank| a.shape().len() > usize::from(rank);
-        match left {
-            None => (monad.facts.extension == Extension::Rank && above(right, monad.rank)).then(|| vec![monad.rank]),
-            Some(x) => (dyad.facts.extension == Extension::Rank && (above(x, dyad.ranks[0]) || above(right, dyad.ranks[1]))).then(|| dyad.ranks.to_vec()),
-        }
-    }
-    /// Whether this form, called with `dyadic` arguments, applies a kernel to each pair of items (`pervasive_apply`). Arithmetic, math functions, the `Exact` functions, dyadic comparisons and the functions that `•special` makes, called with their valence, do, except the forms that `run_axis` gives code of their own: monadic `⊼`, `⊽`, `∨` and `∧`, and dyadic `~`. `run_axis` and `scalar_call` both decide by it.
-    #[inline]
-    pub(crate) fn scalar(self, dyadic: bool) -> bool {
-        match self {
-            Self::Arithmetic(_) | Self::Exact(_) | Self::Real(_) => true, Self::Math(Math::Nand | Math::Nor | Math::Gcd | Math::Lcm) => dyadic,
-            Self::Math(Math::Not) => !dyadic, Self::Math(_) => true, Self::Compare(_) => dyadic, Self::Special(Special::Betainc) => false,
-            Self::Special(s) => !s.combines() && s.dyadic() == dyadic, _ => false
-        }
-    }
-    /// Whether this form only selects or rearranges the items of its right argument. Under and selective assignment write back through such a form.
-    pub(crate) fn selects(self, dyadic: bool) -> bool { matches!(self.facts(dyadic).form, Form::Moves { selects: Selects::Whole | Selects::Part, .. }) }
-    /// Whether this form can drop items of its right argument. An inverse can't restore a dropped item, and Under uses an inverse only for a function with no such form.
-    pub(crate) fn discards(self, dyadic: bool) -> bool { matches!(self.facts(dyadic).form, Form::Moves { selects: Selects::Part, .. }) }
     /// The items that a form that orders items takes: positions along the first axis of its right argument (`Origin::Right`) or its left (`Origin::Left`), or for union all of its left argument followed by its right argument's items at the positions (`Origin::Both`). Taking them from the form's own grade or mask makes the form's argument errors arise here too. `∂` builds a dual's result and its tangent from these positions (`derivative::ordered`).
     pub(crate) fn taken(self, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<(Origin, Value), Error>> {
         use {Comparison::{Greater, Less}, Primitive as P};
@@ -1121,7 +526,7 @@ impl Primitive {
             (Self::Range, _) => range(left, right, span),
             (Self::Where, Some(x)) => interval_index(x, right),
             (Self::Where, None) => where_indices(right),
-            (Self::Random, _) => drawn_value(None, left, right, span),
+            (Self::Random, _) => drawn_value(None, left, right),
             (Self::Replicate, Some(x)) => replicate(x, right, axis, false, None),
             (Self::Replicate, None) => runs(right, span),
             (Self::Reverse(first), _) => rotate(left, right, axis.unwrap_or(if first { 0 } else { right.shape().len().saturating_sub(1) })),
@@ -1174,7 +579,7 @@ impl Primitive {
     /// This form on each pair of items of `left` and `right`, once `weakened` converts their weak numbers: on two atoms through `pervasive_item`, and on arrays through `plan`, where a program's trace planned the call (`program::run`), and otherwise through `pervasive_mapped`, which plans it and can defer it.
     pub(crate) fn pervasive_apply(
         self, plan: Option<&crate::plan::Pervasive>, left: Option<&Value>, right: &Value, span: &Span, fill: bool) -> Result<Value, Error> {
-        self.weakened(left, right, |left, right| {
+        weakened(left, right, |left, right| {
             if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
             let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("array shapes do not agree")?;
             match plan {
@@ -1240,7 +645,7 @@ impl Primitive {
     }
     /// This function on the pairs that `agree` gives for `left` and `right`, once their weak numbers convert: through a running level, which lays both arguments over the pairs' layout (`transform::Pairing::Agreed`), or through the kernels.
     fn agreed(self, left: &Value, right: &Value, agree: impl FnOnce(&Value, &Value) -> Result<Agreement, Error>, span: &Span) -> Result<Value, Error> {
-        self.weakened(Some(left), right, |left, right| {
+        weakened(Some(left), right, |left, right| {
             let left = left.expect("a paired call is dyadic");
             let agreement = agree(left, right)?;
             if let Some(result) = crate::transform::call(
@@ -1262,7 +667,7 @@ impl Primitive {
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result, as the call's plan plans it (`plan::Pervasive`).
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
-        let plan = crate::plan::pervasive_on(self, left, right, Numeric::current()).map_err(Error::domain)?;
+        let plan = crate::plan::pervasive_on(self, left, right, Numeric::current());
         if let Some(kept) = crate::pervasive::unchanged(&plan, left, right) { return Ok(kept.clone()); }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
         let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(plan.fuses(), agreement.len) {
@@ -1340,11 +745,11 @@ impl Primitive {
     #[inline(always)]
     fn number_value(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         use crate::number::Failure::Domain;
-        // A weak operand beside a strong number takes the width that NEP 50 gives it (`weak_beside`), before any function decides. Every call on numbers meets this point: scalar calls, the superscript power of a literal, folds of numbers and items that mixed storage holds. Beside a fixed operand, the call settles at the fixed width below instead, as `weak_beside` expects.
+        // A weak operand beside a strong number converts as it would beside a strong array (`weak_beside`), before any function decides. Every call on numbers meets this point: scalar calls, the superscript power of a literal, folds of numbers and items that mixed storage holds. A weak integer that doesn't fit a fixed operand stays weak, and the call settles at the wider fixed width below.
         if let Some(x) = x && x.is_weak() != y.is_weak() {
             if x.is_weak() {
-                if y.fixed_width().is_none() && let Some(x) = weak_beside(x, y.dtype()) { return self.number(Some(&x.map_err(Domain)?), y, t); }
-            } else if x.fixed_width().is_none() && let Some(y) = weak_beside(y, x.dtype()) { return self.number(Some(x), &y.map_err(Domain)?, t); }
+                if let Some(x) = weak_beside(x, crate::plan::Kind::number(y)) { return self.number(Some(&x.map_err(Domain)?), y, t); }
+            } else if let Some(y) = weak_beside(y, crate::plan::Kind::number(x)) { return self.number(Some(x), &y.map_err(Domain)?, t); }
         }
         let fixed = y.fixed_width().is_some() || x.is_some_and(|x| x.fixed_width().is_some());
         if let Self::Exact(e) = self {
@@ -1352,8 +757,8 @@ impl Primitive {
             let (x, y) = (x.map(Number::ordinary), y.ordinary());
             return e.number(x.as_ref(), &y, t);
         }
-        let t = if fixed && let Some(width) = Number::fixed_promotion(x, y).map_err(Domain)? { t.with_fixed(width) } else { t };
-        if let Some((x, y, t, halve)) = Number::halves(x, y, t) { return self.number(x.as_ref(), &y, t).map(|n| if halve { n.halved() } else { n }); }
+        let t = if fixed && let Some(width) = Number::fixed_promotion(x, y) { t.with_fixed(width) } else { t };
+        if let Some((x, y, t, halve)) = Number::halves(x, y, t) { return self.number(x.as_ref(), &y, t).map(|n| n.halved(|d| halve.result(d))); }
         crate::pervasive::number(self, x, y, t)
     }
 }
@@ -1381,38 +786,32 @@ pub(crate) fn pervade(right: &Value, f: &dyn Fn(&Value) -> Result<Value, Error>)
     pairwise(None, right, agreement, &|_, y| pervade(y, f))
 }
 
-/// Weak `n` at the width that NEP 50 gives it beside a strong operand of dtype `strong` (`plan::Kind::beside`), or `None` where it keeps its own. A weak number is never fixed. Callers settle a fixed strong operand before this. The conversion fails for an exact number beyond the range of floats.
-fn weak_beside(n: &Number, strong: Option<rustymath::buffer::DType>) -> Option<Result<Number, &'static str>> {
-    let kind = crate::plan::Kind::stored(n.dtype(), None, true);
-    let to = kind.beside(crate::plan::Kind::stored(strong, None, false));
-    if to.dtype == kind.dtype { return None; }
-    Some(n.to_float_width(to.float_width()?))
+/// Weak `n` as it converts beside an operand of kind `other` (`plan::Kind::beside`): at the width that NEP 50 gives it beside strong floats, or at the width of fixed integers that it fits. `None` where it keeps its own kind. The conversion fails for an exact number beyond the range of floats.
+fn weak_beside(n: &Number, other: crate::plan::Kind) -> Option<Result<Number, &'static str>> {
+    let kind = crate::plan::Kind::number(n);
+    let to = kind.beside(other);
+    if to == kind { return None; }
+    Some(match to.fixed { Some(width) => Ok(Number::fixed(n.as_integer()?, width)), None => n.to_float_width(to.float_width()?) })
 }
 
-impl Primitive {
-    /// A weak `value` at the width that this function gives it beside `other`: the width that `plan::Kind::beside` gives it beside strong floats, or the width of fixed integers where a weak integer fits them. A weak integer that doesn't fit stays weak, for the call's promotion to report (`plan::Kind::fixed`).
-    #[inline]
-    pub(crate) fn weaken_value(self, value: &Value, other: &Value) -> Option<Value> {
-        let Value::Number(n) = value else { return None };
-        if !n.is_weak() || matches!(other, Value::Number(o) if o.is_weak()) { return None; }
-        if matches!(self, Self::Ravel | Self::CatenateFirst | Self::Union) && other.is_empty() { return None; }
-        if let (Some(width), Some(i), None) = (other.fixed_width(), n.as_integer(), n.as_bool()) {
-            return (Width::narrowest(i, i).join(width) == width).then(|| Value::Number(Number::fixed(i, width)));
-        }
-        weak_beside(n, other.dtype())?.ok().map(Value::Number)
-    }
+/// Weak `value` as it converts beside an operand of kind `other` (`weak_beside`), or `None` where it keeps its own kind. A weak integer that doesn't fit fixed integers beside it stays weak, for the call's promotion to widen (`plan::Kind::fixed`).
+#[inline]
+pub(crate) fn weakened_beside(value: &Value, other: crate::plan::Kind) -> Option<Value> {
+    let Value::Number(n) = value else { return None };
+    weak_beside(n, other)?.ok().map(Value::Number)
+}
 
-    /// `f` with weak numeric operands converted before array mapping or scalar calls.
-    #[inline]
-    pub(crate) fn weakened<R>(self, left: Option<&Value>, right: &Value, f: impl FnOnce(Option<&Value>, &Value) -> R) -> R {
-        let weak = |v: &Value| matches!(v, Value::Number(n) if n.is_weak());
-        match left {
-            Some(x) if weak(x) != weak(right) => {
-                let (wl, wr) = (self.weaken_value(x, right), self.weaken_value(right, x));
-                f(Some(wl.as_ref().unwrap_or(x)), wr.as_ref().unwrap_or(right))
-            }
-            _ => f(left, right),
+/// `f` with weak numeric operands converted before array mapping or scalar calls.
+#[inline]
+pub(crate) fn weakened<R>(left: Option<&Value>, right: &Value, f: impl FnOnce(Option<&Value>, &Value) -> R) -> R {
+    let weak = |v: &Value| matches!(v, Value::Number(n) if n.is_weak());
+    match left {
+        Some(x) if weak(x) != weak(right) => {
+            let kind = crate::plan::Kind::value;
+            let (wl, wr) = (weakened_beside(x, kind(right)), weakened_beside(right, kind(x)));
+            f(Some(wl.as_ref().unwrap_or(x)), wr.as_ref().unwrap_or(right))
         }
+        _ => f(left, right),
     }
 }
 
@@ -1430,235 +829,6 @@ fn pairwise(left: Option<&Value>, right: &Value, agreement: Agreement, f: &dyn F
 /// The empty result that `agreement` lays out, each cell `prototype`.
 fn empty_result(agreement: Agreement, prototype: Value) -> Result<Value, Error> {
     Value::empty(agreement.layout, prototype).described("invalid empty result")
-}
-
-pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Span) -> Result<Value, Error> {
-    use crate::number::{Arithmetic::*, Math::{Circle, Gcd, Lcm, Log, Nand, Nor, Not, Pi, Power, Root}};
-    use Primitive::*;
-    if let Some(axis) = axis {
-        if axis.shape().len() > 1 { return Err(Error::new(Kind::Rank, "axes must be a unit or vector")); }
-        if bound.is_none() {
-            return match p {
-                Reverse(_) => p.call_axes(None, right, axis, span), Enclose => mix_axes(right, axis, span), Drop => mix_axes(right, axis, span),
-                Mix => { let axes = axes(axis, right.shape().len())?; enclose_axes(right, &axes) }
-                _ => Err(Error::domain("this axis-qualified primitive has no known inverse"))
-            };
-        }
-        if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse(_) | Replicate | Ravel | CatenateFirst) {
-            return Err(Error::domain("this axis-qualified primitive has no known inverse"));
-        }
-    }
-    let call = |p: Primitive, x: Option<&Value>, y: &Value| match axis { Some(axis) => p.call_axes(x, y, axis, span), None => p.call(x, y, span) };
-    if let Some((a, first)) = bound {
-        if matches!(p, Arithmetic(Times | Divide))
-            && a.elements().try_fold(false, |zero, e| Ok::<_, crate::transform::Stop>(zero || matches!(e.observed()?, Plain::Number(n) if n.is_zero())))? {
-                return Err(Error::domain("zero multiplier/divisor has no inverse"));
-            }
-        return match p {
-            p if first && let Some(q) = p.left_inverse() => call(q, Some(a), right),
-            Replicate if first => {
-                let axis = axis.map(|a| single_axis(&resolve_axes(a, right)?, right.shape().len())).transpose()?;
-                replicate(a, right, axis, true, None)
-            }
-            Arithmetic(Plus) => call(Arithmetic(Minus), Some(right), a),
-            Arithmetic(Minus) if first => call(p, Some(a), right),
-            Arithmetic(Minus) => call(Arithmetic(Plus), Some(right), a),
-            Arithmetic(Times) => call(Arithmetic(Divide), Some(right), a),
-            Arithmetic(Divide) if first => call(p, Some(a), right),
-            Arithmetic(Divide) => call(Arithmetic(Times), Some(right), a),
-            Compare(Comparison::NotEqual) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
-            Compare(Comparison::Equal) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
-            Math(Power) => call(Math(Root), Some(a), right),
-            Math(Root) if first => call(Math(Power), Some(right), a),
-            Math(Root) => call(Math(Log), Some(right), a),
-            Math(Pi) if first => call(p, Some(a), right),
-            Math(Pi) => {
-                let product = call(Arithmetic(Times), Some(right), a)?;
-                call(Arithmetic(Divide), Some(&product), &float_like(std::f64::consts::PI, &product))
-            }
-            Math(Log) => call(Math(Root), Some(right), a),
-            Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
-            Transpose if first => inverse_transpose(a, right),
-            Decode if first => inverse_decode(a, right),
-            Encode if first => Decode.call(Some(a), right, span),
-            Identity(left) => {
-                if left == first && !a.matches(right, span)? { return Err(Error::domain("the result must match the fixed argument")); }
-                Ok(right.clone())
-            }
-            Ravel | CatenateFirst => {
-                let axis = axis.map(|x| single_axis(&resolve_axes(x, right)?, right.shape().len())).transpose()?;
-                inverse_catenate(a, first, right, axis, matches!(p, CatenateFirst), span)
-            }
-            Shape if first => checked(p, Some(a), Ravel.call(None, right, span), right, span),
-            Iota if first => {
-                let positions = Value::new(vec![1], vec![right.clone()]).described("invalid positions")?;
-                checked(p, Some(a), Index.call(Some(&positions), a, span), right, span)
-            }
-            Keys if first => checked(p, Some(a), crate::keyed::deconstruct(a, right).described("invalid axis keys"), right, span),
-            Windows if first => inverse_windows(a, right, span),
-            Enclose | Nest if first => checked(p, Some(a), joined(right, span), right, span),
-            _ => Err(Error::domain("this bound function has no known inverse")),
-        };
-    }
-    match p {
-        Prime => crate::number_theory::index(right),
-        Factor => crate::number_theory::product(right),
-        Polynomial => crate::polynomial::coefficients(right),
-        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span),
-        Arithmetic(Times) => {
-            if !p.call(None, right, span)?.matches(right, span)? { return Err(Error::domain("× gives only ¯1, 0, 1 and unit complex numbers")); }
-            Ok(right.clone())
-        }
-        Math(Power) => Math(Log).call(None, right, span),
-        Math(Log) => Math(Power).call(None, right, span),
-        Math(Pi) => Arithmetic(Divide).call(Some(right), &float_like(std::f64::consts::PI, right), span),
-        Math(Circle) => {
-            let log = Math(Log).call(None, right, span)?;
-            Arithmetic(Times).call(Some(&complex_like(num_complex::Complex64::new(0., -1.), &log)), &log, span)
-        }
-        Math(Root) => Math(Nand).call(None, right, span),
-        Math(Nand) => Math(Root).call(None, right, span),
-        Math(Nor) => Arithmetic(Divide).call(Some(right), &Value::weak_integer(2), span),
-        Compare(Comparison::LessEqual) => Arithmetic(Plus).call(Some(right), &Value::weak_integer(1), span),
-        Compare(Comparison::GreaterEqual) => Arithmetic(Minus).call(Some(right), &Value::weak_integer(1), span),
-        Encode => Decode.call(None, right, span),
-        Decode => Encode.call(None, right, span),
-        Enclose => Take.call(None, right, span),
-        Take => Enclose.call(None, right, span),
-        Nest => Ok(if right.is_unit() { right.disclose().clone() } else { right.clone() }),
-        Iota => {
-            let counter = if right.shape().len() == 1 && matches!(right.prototype(), Value::Number(_)) { Tally } else { Shape };
-            let candidate = counter.call(None, right, span)?;
-            Ravel.call(None, &candidate, span)
-        }
-        Mix => split(right, None),
-        Drop => Mix.call(None, right, span),
-        Where => inverse_where(right),
-        Replicate => match right.shape() {
-            [2] | [3] => {
-                let mut items = right.elements();
-                let (lengths, values) = (items.next().expect("lengths"), items.next().expect("values"));
-                // `#` writes the atom `1ₓ` as the length only for a unit, which then needs no replicate.
-                let decoded = if matches!(&lengths, Value::Number(n) if n.integer_items().is_some_and(|i| i.get(0) == 1)) { values }
-                else { replicate(&lengths, &values, None, false, None)? };
-                match items.next() { Some(keys) => Primitive::Keys.call(Some(&keys), &decoded, span), None => Ok(decoded) }
-            }
-            _ => Err(Error::new(Kind::Length, "run-length decoding needs lengths and values, and optionally keys")),
-        },
-        Math(Lcm | Gcd) => {
-            // The two parts are on the last axis, which reversing the axes brings to the front.
-            let parts = Transpose.call(None, right, span)?;
-            if parts.shape().first() != Some(&2) { return Err(Error::new(Kind::Length, "the last axis must hold two parts")); }
-            let (x, y) = (Index.call(Some(&Value::integer(0)), &parts, span)?, Index.call(Some(&Value::integer(1)), &parts, span)?);
-            let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span)? }
-            else { Arithmetic(Times).call(Some(&complex_like(num_complex::Complex64::new(0., 1.), &y)), &y, span)? };
-            let number = if matches!(p, Math(Lcm)) { Arithmetic(Times) } else { Arithmetic(Plus) }.call(Some(&x), &y, span)?;
-            Transpose.call(None, &number, span)
-        }
-        Grade(down) => {
-            let ranks = Grade(false).call(None, right, span);
-            let candidate = if down { ranks.and_then(|r| Arithmetic(Minus).call(Some(&Value::integer(right.len() as i64 - 1)), &r, span)) } else { ranks };
-            checked(p, None, candidate, right, span)
-        }
-        Execute => crate::system::write_literal(None, right, span),
-        Ravel => checked(p, None, Ok(right.clone()), right, span),
-        CatenateFirst => checked(p, None, if matches!(right.shape(), [_, 1]) { Ravel.call(None, right, span) } else { Ok(right.clone()) }, right, span),
-        Windows => inverse_windows(&Value::integer(2), right, span),
-        _ => Err(Error::domain("this primitive has no known inverse")),
-    }
-}
-
-fn boolean_array(a: &Value) -> bool {
-    a.elements().all(|e| match e { Value::Number(n) => n.boolean().is_ok(), a @ Value::Array(_) => boolean_array(&a), _ => false })
-}
-
-/// `candidate` if it can be built and `p` maps it back to `right`, with the fixed left argument `a` if there is one. Otherwise no argument gives `right`. An interrupt, a timeout or a stop passes through (`ErrorKind::is_control`).
-fn checked(p: Primitive, a: Option<&Value>, candidate: Result<Value, Error>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let back = |c: &Value| p.call(a, c, span).and_then(|back| back.matches(right, span));
-    match candidate.and_then(|c| Ok((back(&c)?, c))) {
-        Ok((true, c)) => Ok(c), Err(e) if e.kind.is_control() => Err(e), _ => Err(Error::domain("no argument gives this result"))
-    }
-}
-
-/// The parts of a partition joined along their leading axis.
-fn joined(parts: &Value, span: &Span) -> Result<Value, Error> {
-    let mut items = parts.elements();
-    let Some(first) = items.next() else { return Primitive::Take.call(Some(&Value::integer(0)), &parts.prototype(), span) };
-    items.try_fold(first, |joined, part| Primitive::CatenateFirst.call(Some(&joined), &part, span))
-}
-
-/// The array whose windows of size `a`, moving one cell at a time, are `right`: each window's first cell, then the rest of the last window.
-fn inverse_windows(a: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    use Primitive::*;
-    let candidate = || {
-        let whole_first =
-            Value::new(vec![2], vec![Value::Number(Number::float(f64::INFINITY, FloatWidth::F64)), Value::integer(0)]).described("invalid window selector")?;
-        let firsts = Index.call(Some(&whole_first), right, span)?;
-        if right.shape().first() == Some(&0) { return Ok(firsts); }
-        let rest = Drop.call(Some(&Value::integer(1)), &Index.call(Some(&Value::integer(-1)), right, span)?, span)?;
-        CatenateFirst.call(Some(&firsts), &rest, span)
-    };
-    checked(Windows, Some(a), candidate(), right, span)
-}
-
-/// The argument that catenates with the fixed `a` to give `right`, checked by catenating again.
-fn inverse_catenate(a: &Value, first: bool, right: &Value, axis: Option<usize>, leading: bool, span: &Span) -> Result<Value, Error> {
-    let rank = right.shape().len();
-    let k = axis.unwrap_or(if leading { 0 } else { rank.saturating_sub(1) });
-    let n = if a.shape().len() == rank { a.shape()[k] as i64 } else { 1 };
-    let counts = (0..rank).map(|i| { if i != k { 0 } else if first { n } else { -n } }).collect();
-    let y = Primitive::Drop.call(Some(&Value::integers(vec![rank], counts).described("invalid catenate inverse")?), right, span)?;
-    let back = if first { catenate(a, &y, axis, leading)? } else { catenate(&y, a, axis, leading)? };
-    if !back.matches(right, span)? { return Err(Error::domain("no argument catenates with the fixed one to give this result")); }
-    Ok(y)
-}
-
-fn inverse_decode(base: &Value, right: &Value) -> Result<Value, Error> {
-    if !base.is_unit() {
-        if base.shape().len() != 1 { return Err(Error::new(Kind::Rank, "inverse decode needs a unit or vector base")); }
-        return radix(base, right, true);
-    }
-    let b = numeric(&base.at(0))?.clone();
-    if b.order(&b.one())? != Ordering::Greater { return Err(Error::domain("inverse decode base must exceed one")); }
-    let mut digits = 0;
-    for e in right.elements() {
-        let mut n = numeric(&e)?.clone();
-        if n.order(&n.zero())?.is_lt() { return Err(Error::domain("inverse decode requires nonnegative values")); }
-        let mut count = 0;
-        while !n.is_zero() {
-            check()?;
-            if n.order(&n.one())?.is_lt() { return Err(Error::domain("inverse decode cannot represent this value")); }
-            n = crate::pervasive::number(Primitive::Exact(Exact::Quotient), Some(&n), &b, Numeric::current())?;
-            count += 1;
-            generated_len(&[count])?;
-        }
-        digits = digits.max(count);
-    }
-    let bases = Value::from_parts(vec![digits], vec![Value::Number(b); digits], base.prototype().clone()).described("invalid inverse decode base")?;
-    radix(&bases, right, true)
-}
-
-fn inverse_where(right: &Value) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "inverse where needs a vector")); }
-    let mut coordinates = Vec::new();
-    let mut shape = Vec::new();
-    for e in right.elements() {
-        let a = e.clone();
-        if a.shape().len() > 1 { return Err(Error::new(Kind::Rank, "inverse where coordinates must be vectors")); }
-        let coordinate = a.elements().map(|e| e.observed_number().and_then(|n| n.nonnegative_integer::<usize>()).described("invalid position"))
-            .collect::<Result<Vec<_>, _>>()?;
-        if coordinates.is_empty() { shape.resize(coordinate.len(), 0); }
-        if coordinate.len() != shape.len() { return Err(Error::new(Kind::Length, "coordinate lengths differ")); }
-        for (size, &c) in shape.iter_mut().zip(&coordinate) { *size = (*size).max(c + 1); }
-        coordinates.push(coordinate);
-    }
-    if coordinates.is_empty() { shape = vec![0]; }
-    let mut data = vec![0i64; generated_len(&shape)?];
-    for coordinate in coordinates {
-        let index = coordinate.iter().zip(&shape).fold(0, |i, (&c, &d)| i * d + c);
-        data[index] += 1;
-    }
-    Value::integers(shape, data).described("invalid inverse where")
 }
 
 /// The agreement of a pervasive call along the axes that `spec` lists in its higher-rank argument, which the lower-rank argument's axes pair with in order.

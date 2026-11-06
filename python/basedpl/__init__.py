@@ -35,11 +35,16 @@ def _numpy(raw, dtype=None, copy=True):
     return np.array(raw, dtype=raw.export_dtype if dtype is None else dtype, copy=copy)
 
 
+# Numbers that `protocol.rs` sends as one-entry maps, by tag
+_TAGGED = dict(rational=lambda q: Fraction(int(q[0]), int(q[1])), complex=lambda z: complex(*z), nan=lambda _: math.nan, infinity=lambda sign: sign*math.inf)
+
+
 def _value(raw, as_array=False):
     def item(o):
         if isinstance(o, tuple): return Fraction(*o)
         if isinstance(o, _Function): return Function(o)
         if isinstance(o, _Operator): return Operator(o)
+        if isinstance(o, dict) and len(o) == 1 and (tag := next(iter(o))) in _TAGGED: return _TAGGED[tag](o[tag])
         return _value(o) if isinstance(o, (dict, _Array)) else o
     if isinstance(raw, _Array):
         if not as_array and (text := raw.text) is not None: return text

@@ -182,16 +182,16 @@ impl Storage {
             (Self::Compact(Buffer::Integers(v)), true) => Self::Fixed(v), (Self::Fixed(v), false) => Self::Compact(Buffer::Integers(v)), (storage, _) => storage
         }
     }
-    /// `buffer` as storage: integers fixed at `fixed` where that's given, and otherwise ordinary integers at the width that stores them (`narrowed`). Other items stay compact.
-    pub(crate) fn at(buffer: Buffer, fixed: Option<Width>) -> Self {
+    /// `buffer` as storage, with the range that picks its width (`narrowed`, given the range `known` that the step that computed it gives, if any) and `Range::ANY` otherwise: integers fixed at `fixed` where that's given, and otherwise ordinary integers at the width that stores them. Other items stay compact.
+    pub(crate) fn at(buffer: Buffer, fixed: Option<Width>, known: Option<Range>) -> (Self, Range) {
         match (buffer, fixed) {
-            (Buffer::Integers(v), Some(width)) if v.view().tag() == width => Self::Fixed(v),
+            (Buffer::Integers(v), Some(width)) if v.view().tag() == width => (Self::Fixed(v), Range::ANY),
             (Buffer::Integers(v), Some(width)) => {
-                Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true)
+                (Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true), Range::ANY)
             }
-            (Buffer::Integers(IntBuf::U8(v)), None) => Self::narrowed(v), (Buffer::Integers(IntBuf::I16(v)), None) => Self::narrowed(v),
-            (Buffer::Integers(IntBuf::I32(v)), None) => Self::narrowed(v), (Buffer::Integers(IntBuf::I64(v)), None) => Self::narrowed(v),
-            (buffer, _) => Self::Compact(buffer),
+            (Buffer::Integers(IntBuf::U8(v)), None) => Self::narrowed(v, known), (Buffer::Integers(IntBuf::I16(v)), None) => Self::narrowed(v, known),
+            (Buffer::Integers(IntBuf::I32(v)), None) => Self::narrowed(v, known), (Buffer::Integers(IntBuf::I64(v)), None) => Self::narrowed(v, known),
+            (buffer, _) => (Self::Compact(buffer), Range::ANY),
         }
     }
     pub(super) fn set_fixed(&mut self, fixed: bool) {
@@ -200,13 +200,14 @@ impl Storage {
         *self = storage.fixed(fixed);
     }
     pub(super) fn into_buffer(self) -> Option<Buffer> { match self { Self::Compact(b) => Some(b), Self::Fixed(b) => Some(Buffer::Integers(b)), _ => None } }
-    /// The ordinary integers `data` at the width that stores them (`ordinary_width`). Under dynamic kinds that's the narrowest width that holds them, from their minimum and maximum, which rustymath finds together in one pass at the width of `T`. Under static kinds the `int` width holds them with no pass, unless `T` is wider.
-    pub(crate) fn narrowed<T: Whole>(data: Vec<T>) -> Self where rustymath::reduce::Max: rustymath::reduce::Reduction<T, Total = T>,
+    /// The ordinary integers `data` at the width that stores them (`ordinary_width`), with the range that picks it. Under dynamic kinds that's the narrowest width that holds `known`, where a step that computed them gives that range, or else that holds their least and greatest items, which rustymath finds together in one pass at the width of `T`. They keep `T` where it's narrower. Under static kinds the `int` width holds them with no pass, unless `T` is wider, and the range is `Range::ANY`.
+    pub(crate) fn narrowed<T: Whole>(data: Vec<T>, known: Option<Range>) -> (Self, Range) where rustymath::reduce::Max: rustymath::reduce::Reduction<T, Total = T>,
         rustymath::reduce::Min: rustymath::reduce::Reduction<T, Total = T> {
         let int = crate::settings::int_storage();
-        if let Some(int) = int && int.join(T::WIDTH) == int { return Self::within(data, int); }
-        let (min, max) = rustymath::reduce::extremes(&data);
-        Self::within(data, ordinary_width(Width::narrowest(min, max)))
+        if let Some(int) = int && int.join(T::WIDTH) == int { return (Self::within(data, int), Range::ANY); }
+        let range = known.unwrap_or_else(|| { let (min, max) = rustymath::reduce::extremes(&data); Range { lo: min.to_i64() as f64, hi: max.to_i64() as f64 } });
+        let width = ordinary_width(Width::narrowest(range.lo as i64, range.hi as i64));
+        (Self::within(data, if T::WIDTH.join(width) == T::WIDTH { width } else { T::WIDTH }), range)
     }
     /// The integers `data` at `width`, which holds them all. Integers that have the width already keep their buffer.
     pub(crate) fn within<T: Whole>(data: Vec<T>, width: Width) -> Self {
@@ -374,23 +375,26 @@ impl<'a> Items<'a> {
             Self::Compact(View::Characters(_)) => Err(Kind::Domain.into()), Self::Values(d) => d.iter().map(|v| other(v.observed_number()?)).collect()
         }
     }
-    /// Each item as an integer. 64-bit integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside `i64` is LIMIT.
+    /// Each item as an integer. 64-bit integer storage is borrowed. A float stands for the whole number it equals within the comparison tolerance in force, which only Mathish makes nonzero. A fraction, an infinity or a non-number is DOMAIN, and a value outside `i64` is LIMIT.
     pub(crate) fn integers(&self) -> Result<Cow<'a, [i64]>, ErrorKind> {
         if let Some(ints) = self.ints() { return Ok(ints.widened()); }
-        // Floats that all stand for integers inside `i64` convert in one pass, by the rule of an integer computation's float arguments (`whole_numbers`). Others go item by item, which gives the error.
+        // Booleans, and floats that all stand for integers inside `i64`, convert in one pass (`whole_numbers` for floats). Others go item by item, which gives the error.
+        let t = crate::number::Numeric::current().tolerance;
         let converted = match *self {
-            Self::Compact(View::Floats(Floats::F64(d))) => rustymath::operation::whole_numbers(d).ok(),
-            Self::Compact(View::Floats(Floats::F32(d))) => rustymath::operation::whole_numbers(d).ok(), _ => None
+            Self::Compact(View::Floats(Floats::F64(d))) => rustymath::operation::whole_numbers(t, d).ok(),
+            Self::Compact(View::Floats(Floats::F32(d))) => rustymath::operation::whole_numbers(t, d).ok(),
+            Self::Compact(View::Booleans(b)) => Some(b.iter().map(|&x| x as i64).collect()), _ => None
         };
         if let Some(n) = converted { return Ok(Cow::Owned(n)); }
         self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
-    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Compact storage decodes through rustymath's `structure::signed_positions`, and every float as `structure::float_position` reads it. A fraction or an infinity also gives `None`. A non-number is DOMAIN.
+    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. A float names the whole number it equals within the comparison tolerance in force, which only Mathish makes nonzero (`structure::float_position`); a fraction or an infinity also gives `None`. A non-number is DOMAIN.
     pub(crate) fn positions(&self) -> Result<Vec<Option<i64>>, ErrorKind> {
+        let t = crate::number::Numeric::current().tolerance;
         if let Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) = self.view() {
-            return Ok(rustymath::structure::signed_positions(view));
+            return Ok(rustymath::structure::signed_positions(view, t));
         }
-        let real = |y: f64| -> Result<Option<i64>, ErrorKind> { Ok(rustymath::structure::float_position(y)) };
+        let real = |y: f64| -> Result<Option<i64>, ErrorKind> { Ok(rustymath::structure::float_position(y, t)) };
         self.each(|n| Ok(Some(n)), real, |n| match n.as_float() { Some(y) => real(y), None => n.integer().map(Some) })
     }
     /// The items of Boolean or integer storage as integers. `None` for any other storage.
@@ -596,9 +600,14 @@ impl Gather {
     }
     /// The gathered array, laid out by `layout`. Mixed items that one compact dtype holds, under the rule for items gathered one at a time (`Widening::Items`), are held compact, as the same items written in brackets are. An empty array takes `prototype`, and the storage `prototype`'s kind gives it. A buffer with a join gives what the join finishes (`transform::Join::finish`).
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
+        let mut prototype = Some(prototype);
+        self.finished(layout, &mut || prototype.take().expect("an empty result reads its prototype once").value())
+    }
+    /// `finish` with the prototype as a function, so this body and the joins' compile once, whatever prototype a caller passes.
+    pub(crate) fn finished(self, layout: Layout, prototype: &mut dyn FnMut() -> Value) -> Result<Value, ErrorKind> {
         if let Some(join) = self.join { return join.finish(layout, prototype); }
         match self.data {
-            data if data.len() == 0 => Value::empty(layout, prototype.value()),
+            data if data.len() == 0 => Value::empty(layout, prototype()),
             Storage::Mixed(items, _) => Value::from_storage(layout, Storage::compact(items, Widening::Items)), data => Value::from_storage(layout, data)
         }
     }

@@ -4330,6 +4330,9 @@ a←¿[256 256 4]⍴0 ⋄ j←(¿[130 130 2]⍴100)ₓ ⋄ r←¿[16 64 64 4]⍴
 ⍝ — Under `∂`, a maximum or minimum of windows takes each window's first extreme from the source, as the fold of built windows does
 w←¿1000⍴0 ⋄ t←⌊10×w ⋄ ∧/[({+/,⌈/50↕⍵}∂ w)≡{+/,⌈/1×50↕⍵}∂ w;({+/,⌊/50↕⍵}∂ t)≡{+/,⌊/1×50↕⍵}∂ t;({+/,⌈/3↕⍵}∂ t)≡{+/,⌈/1×3↕⍵}∂ t]   ⍝ $t
 
+⍝ window-sum-gradient-slides — Under `∂`, a sum along the windows' axis gives each item the sum of the cotangents of the windows that read it, at both ends and along a matrix's first axis, as summing built windows does
+x←1.0×⍳10 ⋄ m←[6 4]⍴1.0×⍳24 ⋄ c←[4 4]⍴1.0+⍳16 ⋄ [{+/(1+⍳8)×+/3↕⍵}∂ x ; ({+/,c×+/⍠1⊢3↕⍵}∂ m)≡{+/,c×+/⍠1⊢1×3↕⍵}∂ m ; ({+/(1+⍳6)×+/5↕⍵}∂ x)≡{+/(1+⍳6)×+/1×5↕⍵}∂ x]   ⍝ [[1 3 6 9 12 15 18 21 15 8] $t $t]
+
 ⍝ — With an edge mode in an options record, every windowed axis is centred, and its edges read by that mode
 ["size":3 "edge":"wrap"]↕1 2 3 4   ⍝ [4 1 2⋄1 2 3⋄2 3 4⋄3 4 1]
 
@@ -4985,11 +4988,11 @@ x←[[1 2 6]ₓ÷[1 2 3]ₓ;⍳3ₓ;1ₓ+[2 3]ₓ;10ₓ-[2 3]ₓ;[2 3]ₓ×4ₓ;
 ⍝ — Truth values are Booleans, whatever the arguments
 x←["ab"∊"b";~0 1;0 1⊼1 1;0 1⊽0 0] ⋄ [x {(•storage ⍵).kind}¨x]   ⍝ [[[$f $t] [$t $f] [$t $f] [$t $f]];4⍴⊂"bool"]
 
-⍝ logical-numeric-truth — Boolean conversion keeps its default tolerance when Mathish is off
-•prefs ["mathish":$f] ⋄ n←1-1e¯15
-r←[~[0 n];(1+1e¯15)⊼n;0⊽n] ⋄ •prefs ["mathish":$t] ⋄ r
+⍝ logical-numeric-truth — a float stands for a Boolean within tolerance only under Mathish
+n←1-1e¯15 ⋄ on←[~[0 n];(1+1e¯15)⊼n;0⊽n]
+•prefs ["mathish":$f] ⋄ off←{"DOMAIN"::1 ⋄ ~n ⋄ 0}0 ⋄ •prefs ["mathish":$t] ⋄ [on;off]
 ⍝ =>
-[[$t $f] $f $f]
+[[[$t $f] $f $f] 1]
 
 ⍝ — Structural functions keep machine storage. A rational prototype stays unbounded
 x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3ₓ;1 0 1#⁻¹[1 2]ₓ;+\⍳3ₓ;-¨⍳3ₓ;[1 2]ₓ∪[2 3]ₓ;[1 2]ₓ∩[2]ₓ;
@@ -5842,6 +5845,18 @@ x←¿[1000 32]⍴0 ⋄ y←¿[100 32]⍴0 ⋄ walked←{e←•explain ⍵ ⋄ 
 ⍝ dynamic-integer-fold-storage — Integer reductions compact their array result
 r←+/[1 2 3⋄4 5 6]ₓ
 (•memory r).bytes=(•memory [6 15]ₓ).bytes   ⍝ $t
+
+⍝ dynamic-integer-range-edges — The widths that operands' ranges choose hold every result: negation and magnitude of the 16-bit minimum, products across signs, a negated copy, a full-range difference, a floored quotient below the real quotient's range, and the 64-bit minimum, which wraps
+v←[¯32768 32767]ₓ ⋄ [-[¯32768 5]ₓ ; |[¯32768 1]ₓ ; [¯300 200]ₓ×[300 ¯200]ₓ ; -⌽[¯32768 5]ₓ ; v-v ; [¯7 7]ₓ÷2ₓ ; |[¯9223372036854775808 1]ₓ]   ⍝ (32768 ¯5⋄32768 1⋄¯90000 ¯40000⋄¯5 32768⋄0 0⋄¯4 3⋄¯9223372036854775808 1)ₓ
+
+⍝ dynamic-integer-fold-bounds — Fold and scan bounds hold sums at the 32-bit limit
+[+/[30000 30000]ₓ ; +/65536⍴32767ₓ ; ¯1↑+\65536⍴32767ₓ ; +/65537⍴32767ₓ]   ⍝ [60000ₓ 2147418112ₓ [2147418112]ₓ 2147450879ₓ]
+
+⍝ dynamic-integer-chain-range — A chain over positions takes its widths from the ranges it plans: negation and magnitude past the 16-bit range, and a sum of squares past 32 bits
+x←¯32768ₓ+⍳65536ₓ ⋄ [⌈/-x ; ⌊/-x ; ⌈/|x ; +/x×x]   ⍝ [32768 ¯32767 32768 23456248070144]ₓ
+
+⍝ dynamic-integer-repeated-writes — A modified assignment at a repeated place applies its function to the result of the one before, at a width that holds every result: sums, differences and products past 8 bits, and a second assignment into the widened array
+h←3⍴0ₓ ⋄ h.[300⍴0ₓ]+←1ₓ ⋄ g←3⍴0ₓ ⋄ g.[300⍴1ₓ]-←1ₓ ⋄ k←2⍴1ₓ ⋄ k.[20⍴0ₓ]×←2ₓ ⋄ h.[300⍴0ₓ]+←1ₓ ⋄ [h ; g ; k]   ⍝ (600 0 0⋄0 ¯300 0⋄1048576 1)ₓ
 
 ⍝ — •storage's kind names the storage that holds an array's items
 {(•storage ⍵).kind}¨[⍳3ₓ;⍳3;1j2 3;"abc";1ₓ 0.5;[1 2;3]]
@@ -6734,6 +6749,9 @@ m←[17 503]⍴3ₓ|⍳8551ₓ ⋄ b←m=1
 [(<\m)≡{⍺<⍵}\m (<⍀m)≡{⍺<⍵}⍀m (0.5<⍀m)≡0.5{⍺<⍵}⍀m (+⍀⁻¹+⍀m)≡m (1ₓ<\b)≡1ₓ{⍺<⍵}\b (¯1ₓ≥⍀b)≡¯1ₓ{⍺≥⍵}⍀b (0.5≠\b)≡0.5{⍺≠⍵}\b ($t<⍀b)≡$t{⍺<⍵}⍀b]
 ⍝ =>
 $t $t $t $t $t $t $t $t
+
+⍝ seeded-comparison-scan-kinds — A seeded comparison scan gives Booleans on every route
+[0ₓ=\0 2 0ₓ ; 0=\$t $f $t]   ⍝ ($t $f $t⋄$f $t $t)
 
 ⍝ — A sum of zeros is 0 at each float width, as is an empty sum
 x←16•float -3⍴0 ⋄ [+/ -3⍴0; +/x; +/16•float⍬]   ⍝ 0 0 0
@@ -9748,6 +9766,9 @@ v←[200 100]ₓ₁ ⋄ [v<300ₓ;v=¯1ₓ;200ₓ₁<300ₓ]   ⍝ [$t $t;$f $f;
 ⍝ sized-weak — A weak literal widens a fixed type only as far as its value needs
 [1ₓ₁+256ₓ ; 1ₓ₂+32768ₓ ; 1ₓ₄+2147483648ₓ]   ⍝ [257ₓ₂ 32769ₓ₄ 2147483649ₓ₈]
 
+⍝ sized-weak-routes — A weak literal takes the same type beside a fixed atom as beside a fixed array
+[1ₓ+3ₓ₁ ; 1ₓ+[3]ₓ₁ ; 300ₓ+3ₓ₁ ; 300ₓ+[3]ₓ₁]   ⍝ [4ₓ₁ [4]ₓ₁ 303ₓ₂ [303]ₓ₂]
+
 ⍝ sized-construction — The widest fixed item determines the vector's type in either order
 [(•storage [0ₓ₁ 256ₓ 0ₓ₈]).kind;(•storage [0ₓ₈ 256ₓ 0ₓ₁]).kind;(•storage [256ₓ 0ₓ₁ 0ₓ₈]).kind]   ⍝ ["int64";"int64";"int64"]
 
@@ -9819,11 +9840,17 @@ b←(9⍴1ₓ)ₓ₁ ⋄ m←(2 2⍴[16 0 0 16]ₓ)ₓ₁ ⋄ [2ₓ⊥b;⊥b;([0
 ⍝ sized-no-kernel — A function with no kernel at the fixed width gives what static kinds give at that width
 [(•storage ○[1]ₓ₁).kind;!6ₓ₁]   ⍝ ["complex64";208ₓ₁]
 
-⍝ sized-join — Catenation, union and appends give a weak integer the fixed width, while an item of a bracket literal is strong
-u←[0 1]ₓ₁ ⋄ x←u ⋄ x,←9ₓ ⋄ [u,9ₓ;9ₓ⍪u;u∪9ₓ;x;(•storage ⊃[u;9ₓ]).kind]   ⍝ [[0 1 9]ₓ₁;[9 0 1]ₓ₁;[0 1 9]ₓ₁;[0 1 9]ₓ₁;"integer"]
+⍝ sized-join — Catenation, union and appends give a weak integer the fixed width, widened as far as its value needs, while an item of a bracket literal is strong
+u←[0 1]ₓ₁ ⋄ x←u ⋄ x,←9ₓ ⋄ y←u ⋄ y,←300ₓ ⋄ [u,9ₓ;9ₓ⍪u;u∪9ₓ;x;u,300ₓ;u∪300ₓ;y;(•storage ⊃[u;9ₓ]).kind]   ⍝ [[0 1 9]ₓ₁;[9 0 1]ₓ₁;[0 1 9]ₓ₁;[0 1 9]ₓ₁;[0 1 300]ₓ₂;[0 1 300]ₓ₂;[0 1 300]ₓ₂;"integer"]
 
 ⍝ sized-join-weak — Joining widens a fixed type for a weak literal
 [0 1]ₓ₁,¯1ₓ   ⍝ [0 1 ¯1]ₓ₂
+
+⍝ sized-fold-is-its-calls — A fold by `*` of fixed-width integers wraps at each call, as the dyadic calls do
+*/[2 4 4]ₓ₁   ⍝ 1ₓ₁
+
+⍝ power-fold-widens — Folds and scans by `*` of ordinary integers widen as the dyadic calls do
+[*/[4 4]ₓ ; */[300 2]ₓ ; */[2 4 4]ₓ ; *\[300 2]ₓ ; *\[2 4 4]ₓ]   ⍝ [256ₓ 90000ₓ 0ₓ [300 90000]ₓ [2 16 65536]ₓ]
 
 ⍝ sized-write-weak — A weak integer widens the fixed array when written
 x←[0 1]ₓ₁ ⋄ x₀←300ₓ ⋄ [(•storage x).kind;x]   ⍝ ["int16";[300 1]ₓ₂]
@@ -10687,6 +10714,9 @@ n←10ᵣ*400ₓ ⋄ [n<∞;n=∞;∞≤n;¯∞<-n]   ⍝ [$t $f $f $t]
 
 ⍝ weak-infinity-float — Explicit float conversion and computed IEEE infinity still promote
 [3ₓ⌊∞ₛ;3ₓ⌊*1000;3ₓ⌊∞ₐ;(∞⌈1ₓ₁)⌊3ₓ]   ⍝ [3ₛ;3;3;3]
+
+⍝ weak-infinity-half — A call that computes 16-bit floats in 32 bits reads a bound as a bound, on numbers as on arrays
+•prefs ["float":16] ⋄ r←[3ₓ⌊∞;[3 4]ₓ⌊∞;[3ₓ [4ₓ 5ₓ]]⌊∞] ⋄ •prefs ["float":64] ⋄ r   ⍝ [3ₓ [3 4]ₓ [3ₓ [4 5]ₓ]]
 
 ⍝ weak-infinity-static — Static calls preserve exact arrays and their ordinary empty prototypes
 •prefs ["kinds":"static"] ⋄ f←{⍵⌊∞} ⋄ [f[1 2]ₓ;f(0⍴0ₓ)]   ⍝ [[1 2]ₓ;0⍴0ₓ]

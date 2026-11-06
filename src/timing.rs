@@ -24,18 +24,23 @@ pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
 
 pub fn items(session: &Session) -> Option<usize> { let n = session.eval("n").value?.as_real()?; (n >= 0.0 && n.fract() == 0.0).then_some(n as usize) }
 
+/// A run of `code` as timings run it: evaluated at top level with no echo, then its value forced in full through `Session::forced`, which the interrupt and deadline stop as they stop the evaluation. Each call keeps the first failed evaluation in its argument. `time` and `steps_request` run cases through it.
+fn runner(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<impl FnMut(&mut Option<Evaluation>), Evaluation> {
+    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
+    let options = move || EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
+    Ok(move |failed: &mut Option<Evaluation>| {
+        let result = session.eval_parsed(&parsed, options());
+        let forced = result.value.as_ref().map_or(Ok(()), |value| session.forced(value, options()));
+        if result.error.is_some() { failed.get_or_insert(result); } else if let Err(error) = forced { failed.get_or_insert(Evaluation::failed(error)); }
+    })
+}
+
 /// Parse once, warm once, then take the fastest of five evaluations, forcing the result each time. Gives that time, the most bytes that the five evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first evaluation left.
 pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
-    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
-    let mut failed = None;
-    let mut run = || {
-        let result = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
-        if let Some(value) = &result.value { value.force(); }
-        if result.error.is_some() { failed.get_or_insert(result); }
-    };
-    run();
+    let (mut run, mut failed) = (runner(session, code, interrupt)?, None);
+    run(&mut failed);
     let start = rustymath::memory::held();
-    let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run()));
+    let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run(&mut failed)));
     let left = rustymath::memory::held().saturating_sub(start);
     failed.map_or(Ok((seconds, held, left)), Err)
 }
@@ -193,10 +198,10 @@ impl Capture {
 /// `code` parsed once and run twice in `session`, each run as `•explain` runs its text, with its value forced: a warm-up, then the run that a route check reads. Gives that run's evaluation and events and the warm-up's events, or the evaluation that failed. The route test (`route`) and the worker's `route` request (`route_request`) both capture through it.
 fn warmed(session: &Session, code: &str, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<(Evaluation, crate::explain::Events, crate::explain::Events), Evaluation> {
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
+    let options = || EvalOptions { timeout, echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let run = || {
-        let evaluation = session.eval_parsed(&parsed, EvalOptions { timeout, echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
-        if let Some(value) = &evaluation.value { value.force(); }
-        evaluation
+        let evaluation = session.eval_parsed(&parsed, options());
+        match evaluation.value.as_ref().map_or(Ok(()), |value| session.forced(value, options())) { Err(error) if evaluation.error.is_none() => Evaluation::failed(error), _ => evaluation }
     };
     let (warm, warmup) = crate::explain::explained(run);
     if warm.error.is_some() { return Err(warm); }
@@ -300,6 +305,24 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
         }
     }
     Ok(json!({"n":n, "costs":costs, "output":[], "error":null}))
+}
+
+/// Runs each case `steps` times as `time` runs it, for an instruction count or a profile, and gives no timing. Unlike `request`, it takes no timing lock, so counts can run side by side under one shared hold.
+pub fn steps_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let text = |key| spec[key].as_str().ok_or_else(|| format!("steps needs {key} as a string"));
+    let steps = spec["steps"].as_u64().ok_or("steps needs steps as a count")?;
+    let cases = spec["cases"].as_array().ok_or("steps needs cases as an array")?;
+    let session = match session(text("prefs")?, text("setup")?) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
+    for code in cases {
+        let code = code.as_str().ok_or("each case must be a string")?;
+        let mut failed = None;
+        match runner(&session, code, interrupt) {
+            Ok(mut run) => for _ in 0..steps { run(&mut failed); if failed.is_some() { break } },
+            Err(error) => failed = Some(error),
+        }
+        if let Some(failed) = failed { return Ok(response(failed)); }
+    }
+    Ok(json!({"output":[], "error":null}))
 }
 
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {

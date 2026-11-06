@@ -1,7 +1,7 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
-use crate::execution::check;
+use crate::cancel::check;
 use crate::search::compact_view;
 use rustymath::{buffer::View, error::Kind};
 
@@ -39,10 +39,10 @@ impl Value {
 
 pub(super) fn unique(right: &Value, span: &Span) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false, None) }
 
-/// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array. A weak integer must fit fixed integers beside it, as in catenation (`Primitive::joined_weak`).
+/// `left` with the cells of `right` that it lacks, joined by catenation. An atom that `left` lacks joins as itself, keeping a weak number weak for the join.
 pub(super) fn union(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    let weak = Primitive::Union.weaken_value(right, left);
-    catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true)
+    let lacked = without(right, left, span)?;
+    catenate(left, if right.is_atom() && !lacked.is_empty() { right } else { &lacked }, None, true)
 }
 
 pub(super) fn intersection(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
@@ -51,9 +51,8 @@ pub(super) fn intersection(left: &Value, right: &Value, span: &Span) -> Result<V
 
 pub(super) fn find(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let shape = right.shape();
-    let (x, y) = (left.as_items(), right.as_items());
-    let compact = match (x, y) {
-        (Items::Compact(x), Items::Compact(y)) => rustymath::search::view_find(
+    let compact = match (left.view(), right.view()) {
+        (Some(x), Some(y)) => rustymath::search::view_find(
             x, left.shape(), y, shape, crate::search::compared_at(left.float_width().max(right.float_width()), Numeric::current()).1), _ => None
     };
     let data = match compact { Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))? };
@@ -114,6 +113,17 @@ pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
     let values = values.with_layout(layout).described("invalid runs")?;
     let all = positions(right, (0..right.shape()[0] as u32).collect()).described("invalid run keys")?;
     Value::new(vec![3], vec![lengths, values, all]).described("invalid runs")
+}
+
+/// The cells that `runs` encodes as `right`: each run's first cell repeated by its length, then the keys of every position where `right` has a third item (`#⁻¹`).
+pub(super) fn unruns(right: &Value, span: &Span) -> Result<Value, Error> {
+    if !matches!(right.shape(), [2] | [3]) { return Err(Error::new(Kind::Length, "run-length decoding needs lengths and values, and optionally keys")); }
+    let mut items = right.elements();
+    let (lengths, values) = (items.next().expect("lengths"), items.next().expect("values"));
+    // `runs` writes the atom `1ₓ` as the length only for a unit, which then needs no replicate.
+    let decoded = if matches!(&lengths, Value::Number(n) if n.integer_items().is_some_and(|i| i.get(0) == 1)) { values }
+        else { replicate(&lengths, &values, None, false, None)? };
+    match items.next() { Some(keys) => Primitive::Keys.call(Some(&keys), &decoded, span), None => Ok(decoded) }
 }
 
 /// The positions of each distinct major cell, in the order of `∪`.
@@ -177,7 +187,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<
         let whole = crate::pervasive::number(Primitive::Math(Math::Floor), None, &crate::pervasive::number(Primitive::Math(Math::Magnitude), None, distance, t)?, t)?;
         whole.nonnegative_integer().described("range needs a finite length")
     };
-    let mark = Numeric::for_values(left.into_iter().chain([right]))?.fixed.map_or(Mark::Exact, Mark::Fixed);
+    let mark = Numeric::for_values(left.into_iter().chain([right])).fixed.map_or(Mark::Exact, Mark::Fixed);
     let counts = |items: std::ops::Range<usize>| {
         let bound = items.end as u64;
         generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| generated_items(vec![len], items.map(|i| i as u64), bound, mark))
@@ -229,7 +239,7 @@ pub(super) fn where_indices(right: &Value) -> Result<Value, Error> {
             return built.described("invalid where result");
         }
     }
-    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) {
+    if let (Some(counts), [_]) = (right.as_items().ints(), right.shape()) {
         if right.keys(0).is_none() { return where_vector(&counts.widened()); }
     }
     let counts = right.as_items().nonnegative_integers().described("where needs nonnegative whole counts")?;
@@ -295,7 +305,7 @@ fn position_value(array: &Value, axis: usize, position: usize) -> Value {
 }
 
 /// The order of two items. `None` when the comparison reaches a function, which has no ordering. A carried item orders as the value that a reader outside every call sees (`Carrier::observed`): a dual as its primal. A batch stops its map's run, because no one value stands for all its cells.
-fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::transform::Stop> {
+fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::error::Stop> {
     Ok(Some(match (left, right) {
         (Value::Carried(x), y) => return x.observed()?.map_or(Ok(None), |x| element_order(x, y)),
         (x, Value::Carried(y)) => return y.observed()?.map_or(Ok(None), |y| element_order(x, y)),
@@ -312,7 +322,7 @@ fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate:
 }
 
 /// The order of two arrays: by rank, then item by item, then by length and shape. `None` when the comparison reaches a function, and a stop where it reaches a batch (`element_order`).
-fn array_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::transform::Stop> {
+fn array_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::error::Stop> {
     let rank_order = left.shape().len().cmp(&right.shape().len());
     if !rank_order.is_eq() { return Ok(Some(rank_order)); }
     for (x, y) in left.elements().zip(right.elements()) {
@@ -380,7 +390,7 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer_at(right.layout().clone(), sorted, right.fixed_width())
+            return Value::from_bounded(right.layout().clone(), sorted, right.fixed_width(), right.range())
                 .described("invalid sort");
         }
     }
@@ -399,7 +409,7 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let dims = [y.len() / width / n, n, 1];
     if !grade && k == 1 {
         return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| {
-            Value::from_buffer_at(y.layout().clone(), sorted?, y.fixed_width()).described("invalid sort")
+            Value::from_bounded(y.layout().clone(), sorted?, y.fixed_width(), y.range()).described("invalid sort")
         });
     }
     if width > 16 { return None; }

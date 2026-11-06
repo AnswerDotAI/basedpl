@@ -4,7 +4,7 @@ use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{
-    Binary as _, Float as _, Unary as _, buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, View, Width}, error::Kind,
+    Binary as _, Float as _, buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, View, Width}, error::Kind,
     tolerant::{Tolerance, Tolerant, TolerantComplex}, with_float_width
 };
 use std::{borrow::Cow, cmp::Ordering, fmt};
@@ -15,14 +15,14 @@ pub struct Number(Repr);
 
 /// Why an operation on numbers failed: a domain error with its message, a value that `∂` carries, which reached code that reads numbers directly (`Value::computed`), a batched run's stop at such a read, or an interrupt or a passed deadline that rustymath's interrupt check reported.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Failure { Domain(&'static str), Carried, Stop(crate::transform::Stop), Interrupt(rustymath::error::Kind) }
+pub(crate) enum Failure { Domain(&'static str), Carried, Stop(crate::error::Stop), Interrupt(rustymath::error::Kind) }
 
 impl From<&'static str> for Failure { fn from(message: &'static str) -> Self { Self::Domain(message) } }
 
 impl From<Failure> for &'static str {
     fn from(failure: Failure) -> Self {
         match failure {
-            Failure::Domain(message) => message, Failure::Carried => crate::transform::UNSUPPORTED, Failure::Stop(_) => crate::transform::STOPPED,
+            Failure::Domain(message) => message, Failure::Carried => crate::transform::UNSUPPORTED, Failure::Stop(_) => crate::error::STOPPED,
             Failure::Interrupt(_) => "evaluation interrupted"
         }
     }
@@ -192,20 +192,20 @@ impl Numeric {
         if width == FloatWidth::F64 { self.tolerance }
         else { Tolerance::new(self.units * width.epsilon()).expect("a few units in the last place lie far below 1") }
     }
-    /// The tolerance of a call that computes at `dtype`: `tolerance_at` its float width, and exact for a kind with no float width, whose items compare exactly. The one home of a kind's tolerance: a kernel's resolution and its run `Settings` both read it.
+    /// The tolerance of a call that computes at `dtype`: `tolerance_at` its float width, and exact for a kind with no float width, whose items compare exactly. A kernel's resolution reads it, and so do its run `Settings` at a float dtype (`settings_for`).
     pub(crate) fn tolerance_of(self, dtype: DType) -> Tolerance { crate::array::float_width_of(dtype).map_or(Tolerance::EXACT, |w| self.tolerance_at(w)) }
-    /// The run settings of a kernel that computes at `dtype`, carrying `tolerance_of(dtype)`. rustymath's recipes read this tolerance in place of the one the kernel was resolved with.
-    pub(crate) fn settings_for(self, dtype: DType) -> rustymath::operation::Settings { rustymath::operation::Settings { tolerance: Some(self.tolerance_of(dtype).value()) } }
+    /// The run settings of a kernel that computes at `dtype`. rustymath's recipes read their tolerance in place of the one the kernel was resolved with: `tolerance_of(dtype)` at a float dtype. At any other dtype it's the tolerance within which the kernel reads a float argument as a whole number, `self.tolerance`, which only Mathish makes nonzero; integer bodies don't read it.
+    pub(crate) fn settings_for(self, dtype: DType) -> rustymath::operation::Settings { rustymath::operation::Settings { tolerance: crate::array::float_width_of(dtype).map_or(self.tolerance, |w| self.tolerance_at(w)) } }
     /// These settings for a computation at `width` that runs at 32 bits or more. 16-bit floats run this way, because they have no kernels of their own. Comparisons keep the tolerance of `width`. New floats take at least 32 bits.
     pub(crate) fn widened(self, width: FloatWidth) -> Self {
         let run = width.max(FloatWidth::F32);
         Self { units: self.units * width.epsilon() / run.epsilon(), width: self.width.max(FloatWidth::F32), ..self }
     }
-    /// The settings that a call runs under when its operands' float widths are `widths`, with `None` for an exact operand, and whether it rounds its float results to 16 bits. A call with a 16-bit operand, or any call while the default width is 16, runs at 32 bits or more under `widened`, because basedpl has no 16-bit kernels. An exact operand then converts once, at that width. The call rounds its float results to 16 bits when they would be 16-bit floats. A call that runs at its own width keeps these settings, with `None` for the flag.
-    pub(crate) fn halving(self, widths: impl Iterator<Item = Option<FloatWidth>> + Clone) -> (Self, Option<bool>) {
-        if self.width != FloatWidth::F16 && !widths.clone().any(|w| w == Some(FloatWidth::F16)) { return (self, None); }
+    /// The settings that a call runs under when its operands' float widths are `widths`, with `None` for an exact operand, and how it reads and rounds 16-bit floats (`Halving`). A call with a 16-bit operand, or any call while the default width is 16, runs at 32 bits or more under `widened`, because basedpl has no 16-bit kernels. An exact operand then converts once, at that width. A call that runs at its own width keeps these settings, with `Halving::Off`.
+    pub(crate) fn halving(self, widths: impl Iterator<Item = Option<FloatWidth>> + Clone) -> (Self, Halving) {
+        if self.width != FloatWidth::F16 && !widths.clone().any(|w| w == Some(FloatWidth::F16)) { return (self, Halving::Off); }
         let width = self.width_of(widths);
-        (self.widened(width), Some(width == FloatWidth::F16))
+        (self.widened(width), if width == FloatWidth::F16 { Halving::Rounded } else { Halving::Widened })
     }
     /// The width of a float computed from values whose float widths are `widths`, with `None` for an exact value. It's the widest float width, or the default width when every value is exact.
     pub(crate) fn width_of(self, widths: impl IntoIterator<Item = Option<FloatWidth>>) -> FloatWidth {
@@ -214,6 +214,7 @@ impl Numeric {
     /// Whether every result's kind follows from kinds alone.
     #[inline]
     pub(crate) fn is_static(self) -> bool { self.kinds == Kinds::Static }
+    /// Whether integer results wrap at a fixed width under these settings: where they carry a fixed width, or under static kinds. `fixes` and `wraps` answer for one operand's kind.
     pub(crate) fn wrapping(self) -> bool { self.fixed.is_some() || self.is_static() }
     /// Whether integers of `dtype`, fixed at `fixed`, have a fixed width under these settings: a declared fixed width, or any integer under static kinds. A weak number beside them converts to that width only if its value fits.
     pub(crate) fn fixes(self, dtype: Option<DType>, fixed: Option<Width>) -> bool { fixed.is_some() || self.is_static() && matches!(dtype, Some(DType::Integer(_))) }
@@ -224,14 +225,14 @@ impl Numeric {
     pub(crate) fn integer_width(self) -> Width { self.fixed.unwrap_or(self.int) }
     pub(crate) fn with_fixed(self, width: Width) -> Self { Self { fixed: Some(width), ..self } }
     /// These settings for a call on operands of `kinds`, with the fixed width that their fixed integers give them (`plan::Kind::fixed`).
-    pub(crate) fn for_kinds(self, kinds: impl IntoIterator<Item = crate::plan::Kind, IntoIter: Clone>) -> Result<Self, &'static str> {
+    pub(crate) fn for_kinds(self, kinds: impl IntoIterator<Item = crate::plan::Kind, IntoIter: Clone>) -> Self {
         let kinds = kinds.into_iter();
-        if !kinds.clone().any(|k| k.fixed.is_some()) { return Ok(self); }
-        Ok(crate::plan::Kind::fixed(kinds).map_or(self, |w| self.with_fixed(w)))
+        if !kinds.clone().any(|k| k.fixed.is_some()) { return self; }
+        crate::plan::Kind::fixed(kinds).map_or(self, |w| self.with_fixed(w))
     }
-    /// The session's settings for a call on `values`, as `for_kinds` gives them for their kinds, with its error as a DOMAIN error.
-    pub(crate) fn for_values<'a>(values: impl IntoIterator<Item = &'a Value, IntoIter: Clone>) -> Result<Self, crate::Error> {
-        Self::current().for_kinds(values.into_iter().map(crate::plan::Kind::value)).map_err(crate::Error::domain)
+    /// The session's settings for a call on `values`, as `for_kinds` gives them for their kinds.
+    pub(crate) fn for_values<'a>(values: impl IntoIterator<Item = &'a Value, IntoIter: Clone>) -> Self {
+        Self::current().for_kinds(values.into_iter().map(crate::plan::Kind::value))
     }
     /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes, except in a call whose results are the same at every width that holds its arguments (`pervasive::first_kind`). Other dtypes, and every dtype under dynamic kinds, are their own.
     pub(crate) fn kind(self, dtype: DType) -> DType {
@@ -250,6 +251,16 @@ impl Numeric {
     pub(crate) fn float(self, x: f64) -> Number { Number::float(x, self.width) }
     /// Whether the integer `n` fits the `int` width.
     pub(crate) fn fits(self, n: i64) -> bool { self.int == Width::I64 || i32::try_from(n).is_ok() }
+}
+
+/// How a call reads and rounds 16-bit floats, as `Numeric::halving` decides: `Off` where none takes part, `Rounded` where its float results would be 16-bit floats, and `Widened` otherwise. basedpl has no 16-bit kernels. Plans, stored values (`pervasive::copied_halves`) and numbers (`Number::halves`) read a widened call's 16-bit floats at the kind that `operand` gives, and round its results to the kind that `result` gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Halving { Off, Widened, Rounded }
+impl Halving {
+    /// The kind at which the call reads an operand of `dtype`: a 16-bit float as a 32-bit one.
+    pub(crate) fn operand(self, dtype: DType) -> DType { if self != Self::Off && dtype == DType::Float(FloatWidth::F16) { DType::Float(FloatWidth::F32) } else { dtype } }
+    /// The kind of a result that the call computes as `dtype`: a 32-bit float as a 16-bit one where the call rounds.
+    pub(crate) fn result(self, dtype: DType) -> DType { if self == Self::Rounded && dtype == DType::Float(FloatWidth::F32) { DType::Float(FloatWidth::F16) } else { dtype } }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -275,10 +286,6 @@ pub(crate) enum Math {
     Not,
 }
 
-/// The whole number that `y` stands for where one is needed, as a count, an index or a Boolean. The f64 default tolerance decides, whatever the pref. An f32 value lies within it of a whole number only when it is one.
-#[inline]
-fn near_integer(y: f64) -> Option<f64> { Tolerance::DEFAULT.whole(y) }
-
 /// `n` as a count of type `T`, such as a length, a bound or a seed. A count that `T` can't hold is LIMIT.
 pub(crate) fn count_as<T: TryFrom<u64>>(n: u64) -> Result<T, ErrorKind> { T::try_from(n).map_err(|_| Kind::Limit.into()) }
 
@@ -301,15 +308,19 @@ impl From<Complex32> for Number { fn from(n: Complex32) -> Self { Self(Complex32
 
 /// Real cases that rustymath doesn't hold: conversions of floats to integers and counts, and grade order. They follow IEEE 754.
 pub(crate) mod real {
-    use super::{ErrorKind, Kind, count_as, near_integer};
+    use super::{ErrorKind, Kind, Numeric, count_as};
     use num_traits::ToPrimitive;
     use std::cmp::Ordering;
+    use rustymath::tolerant::Tolerant;
+    /// The whole number that `y` stands for where one is needed, as a count, an index or a Boolean: within the comparison tolerance in force (`Numeric::current`), which only Mathish makes nonzero. An f32 value lies within it of a whole number only when it is one.
+    #[inline]
+    pub(crate) fn whole(y: f64) -> Option<f64> { Numeric::current().tolerance.whole(y) }
 
-    /// The integer that a float stands for, as `near_integer` decides. A fraction, an infinity or NaN is DOMAIN, and a value outside `i64` is LIMIT.
-    pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { near_integer(n).ok_or(Kind::Domain)?.to_i64().ok_or_else(|| Kind::Limit.into()) }
+    /// The integer that a float stands for, as [`whole`] decides. A fraction, an infinity or NaN is DOMAIN, and a value outside `i64` is LIMIT.
+    pub(crate) fn integer(n: f64) -> Result<i64, ErrorKind> { whole(n).ok_or(Kind::Domain)?.to_i64().ok_or_else(|| Kind::Limit.into()) }
     /// The integer that a float stands for, as a count of type `T`. A negative value is also DOMAIN.
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(n: f64) -> Result<T, ErrorKind> {
-        near_integer(n).filter(|&n| n >= 0.0).ok_or(Kind::Domain)?.to_u64().ok_or_else(|| Kind::Limit.into()).and_then(count_as)
+        whole(n).filter(|&n| n >= 0.0).ok_or(Kind::Domain)?.to_u64().ok_or_else(|| Kind::Limit.into()).and_then(count_as)
     }
     /// The order of `x` and `y` for grading: `¯0` equals `0`, and NaN equals itself and follows everything else.
     pub(crate) fn grade(x: f64, y: f64) -> Ordering { x.partial_cmp(&y).unwrap_or_else(|| x.is_nan().cmp(&y.is_nan())) }
@@ -390,7 +401,7 @@ impl Domain {
     /// `(domain, width)`, as `of` or `of_arrays` gives it for operands of `kinds`, with machine integers and Booleans as floats (`plan::Kind::approximate`).
     fn approximated((domain, width): (Self, FloatWidth), kinds: impl IntoIterator<Item = crate::plan::Kind, IntoIter: Clone>) -> (Self, FloatWidth) {
         if domain != Self::Exact { return (domain, width); }
-        crate::plan::Kind::approximate(kinds, Numeric::current()).ok().flatten().map_or((domain, width), |w| (Self::Exact.inexact(w), w))
+        crate::plan::Kind::approximate(kinds, Numeric::current()).map_or((domain, width), |w| (Self::Exact.inexact(w), w))
     }
 }
 
@@ -536,14 +547,14 @@ impl Number {
     pub(crate) fn fixed_literal(text: &str, width: Width) -> Result<Self, ErrorKind> {
         let (text, _) = plain_suffixes(text);
         let text = text.strip_suffix(['x', 'ₓ']).unwrap_or(&text).replace('¯', "-");
-        let n = Self::decimal(&text).ok_or(ErrorKind::Syntax)?.ok().filter(|&n| Width::narrowest(n, n).join(width) == width)
+        let n = Self::decimal(&text).ok_or(ErrorKind::Syntax)?.ok().filter(|&n| width.holds(n))
             .ok_or_else(|| ErrorKind::from(rustymath::error::Error::new(Kind::Limit, "integer literal doesn't fit its fixed width")))?;
         Ok(Self::fixed(n, width))
     }
-    pub(crate) fn fixed_promotion(left: Option<&Self>, right: &Self) -> Result<Option<Width>, &'static str> {
-        if left.is_none_or(|n| n.fixed_width().is_none()) && right.fixed_width().is_none() { return Ok(None); }
+    pub(crate) fn fixed_promotion(left: Option<&Self>, right: &Self) -> Option<Width> {
+        if left.is_none_or(|n| n.fixed_width().is_none()) && right.fixed_width().is_none() { return None; }
         let right = crate::plan::Kind::number(right);
-        Ok(match left { Some(left) => crate::plan::Kind::fixed([crate::plan::Kind::number(left), right]), None => crate::plan::Kind::fixed([right]) })
+        match left { Some(left) => crate::plan::Kind::fixed([crate::plan::Kind::number(left), right]), None => crate::plan::Kind::fixed([right]) }
     }
     /// This number as a fixed integer of `width`, converted as `element::Converts` converts it, with a float floored within the tolerance that `numeric` gives its width. A complex number is DOMAIN.
     pub(crate) fn to_fixed(&self, width: Width, numeric: Numeric) -> Result<Self, ErrorKind> {
@@ -678,11 +689,11 @@ impl Number {
     fn exact_integer(n: f64) -> Self {
         Self::from_integer(n as i64)
     }
-    /// This number written with `ₓ`: exact as it is, or a whole float, an infinity or NaN made a machine integer (`exact_integer`). `None` for a fraction or a complex number.
+    /// This number written with `ₓ`: exact as it is, or a float that stands for a whole number (`real::whole`), an infinity or NaN made a machine integer (`exact_integer`). `None` for a fraction or a complex number.
     pub(crate) fn marked_exact(&self) -> Option<Self> {
         match (&self.0, self.as_float()) {
             (Fixed(n), _) => Some(Self::from_integer(n.value())),
-            (_, Some(n)) if !n.is_finite() || n.fract() == 0.0 => Some(Self::exact_integer(n).marked(self.is_weak())),
+            (_, Some(n)) if let Some(w) = if n.is_finite() { real::whole(n) } else { Some(n) } => Some(Self::exact_integer(w).marked(self.is_weak())),
             (Half(..) | Single(..) | Float(..) | Complex(..), _) => None, _ => Some(self.clone())
         }
     }
@@ -857,14 +868,14 @@ impl Number {
     pub(crate) fn big_integer(&self) -> Result<BigInt, ErrorKind> {
         if let Some(n) = self.as_integer() { return Ok(n.into()); }
         match &self.0 {
-            Half(..) | Single(..) | Float(..) => self.as_float().and_then(near_integer).and_then(BigInt::from_f64).ok_or_else(|| Kind::Domain.into()),
+            Half(..) | Single(..) | Float(..) => self.as_float().and_then(real::whole).and_then(BigInt::from_f64).ok_or_else(|| Kind::Domain.into()),
             Exact(n, _) if n.is_integer() => Ok(n.to_integer()), _ => Err(Kind::Domain.into())
         }
     }
 
     /// The zero of a pervasive result on `left` and this number, as an empty result's prototype. Beside an approximate `left` it's a float, at the wider of their float widths.
     pub(crate) fn result_zero(&self, left: Option<&Self>) -> Self {
-        if let Some(width) = Self::fixed_promotion(left, self).ok().flatten() { return Self::fixed(0, width); }
+        if let Some(width) = Self::fixed_promotion(left, self) { return Self::fixed(0, width); }
         match left {
             Some(x) if x.float_width().is_some() || x.as_complex().is_some() => {
                 Self::float(0.0, x.float_width().max(self.float_width()).unwrap_or(FloatWidth::F64))
@@ -902,12 +913,12 @@ impl Number {
         let width = self.float_width().unwrap_or(t.width);
         if polar {
             let kind = crate::plan::Kind::number(self);
-            if t.for_kinds([kind])?.wrapping() && let Some(w) = crate::plan::Kind::approximate([kind], t)? {
+            if t.for_kinds([kind]).wrapping() && let Some(w) = crate::plan::Kind::approximate([kind], t) {
                 let x = self.real_as::<f64>()?;
-                return Ok([Self::float(x.abs(), w), Self::float(rustymath::Angle.one(x), w)]);
+                return Ok([Self::float(x.abs(), w), Self::float(rustymath::atan2(0.0, x), w)]);
             }
             let magnitude = crate::pervasive::number(crate::primitive::Primitive::Math(Math::Magnitude), None, self, t).map_err(|_| "a magnitude of this number")?;
-            return Ok([magnitude, Self::float(rustymath::Angle.one(self.to_complex()?), width)]);
+            return Ok([magnitude, Self::float(self.to_complex().map(|z| rustymath::atan2(z.im, z.re))?, width)]);
         }
         match self.as_complex() { Some(z) => Ok([Self::float(z.re, width), Self::float(z.im, width)]), None => Ok([self.clone(), self.zero()]) }
     }
@@ -951,22 +962,26 @@ impl Number {
         if self.equal(&self.zero(), t)? { Ok(false) } else if self.equal(&self.one(), t)? { Ok(true) } else { Err("expected a Boolean") }
     }
 
-    /// The operands of a call that `Numeric::halving` widens, with its 16-bit floats as the 32-bit floats it runs on, the settings it runs under, and whether it rounds its float results back to 16 bits. It's the rule `pervasive::copied_halves` applies to arrays. An exact operand stays exact, and converts once, at the width the call runs at. `None` for a call that runs at its own width.
+    /// The operands of a call that `Numeric::halving` widens, at the kinds that it reads them (`Halving::operand`), with the settings it runs under and its `Halving`, which rounds its results (`Halving::result`). It's the rule `pervasive::copied_halves` applies to arrays. An exact operand stays exact, and converts once, at the width the call runs at. `None` for a call that runs at its own width.
     #[inline(always)]
-    pub(crate) fn halves(x: Option<&Self>, y: &Self, t: Numeric) -> Option<(Option<Self>, Self, Numeric, bool)> {
+    pub(crate) fn halves(x: Option<&Self>, y: &Self, t: Numeric) -> Option<(Option<Self>, Self, Numeric, Halving)> {
         // Most calls have no 16-bit operand, and a tag test decides that before the iterator that `halving` takes.
         if t.width != FloatWidth::F16 && !matches!(y.0, Half(..)) && !x.is_some_and(|x| matches!(x.0, Half(..))) { return None; }
         Self::widened(x, y, t)
     }
     /// `halves` for a call that has a 16-bit operand or runs at 16 bits.
     #[inline(never)]
-    fn widened(x: Option<&Self>, y: &Self, t: Numeric) -> Option<(Option<Self>, Self, Numeric, bool)> {
-        let (t, Some(halve)) = t.halving([x.and_then(Self::float_width), y.float_width()].into_iter()) else { return None };
-        let single = |n: &Self| if matches!(n.0, Half(..)) { n.to_float_width(FloatWidth::F32).expect("a 16-bit float widens") } else { n.clone() };
-        Some((x.map(single), single(y), t, halve))
+    fn widened(x: Option<&Self>, y: &Self, t: Numeric) -> Option<(Option<Self>, Self, Numeric, Halving)> {
+        let (t, halving @ (Halving::Widened | Halving::Rounded)) = t.halving([x.and_then(Self::float_width), y.float_width()].into_iter()) else { return None };
+        let read = |n: &Self| n.clone().halved(|d| halving.operand(d));
+        Some((x.map(read), read(y), t, halving))
     }
-    /// This number with a 32-bit float rounded to 16 bits, as a call that computes at 16 bits rounds its result. Other numbers stay as they are.
-    pub(crate) fn halved(self) -> Self { if let Single(n, mark) = self.0 { Self::float(n.into(), FloatWidth::F16).float_marked(mark) } else { self } }
+    /// This number at the kind that `rule` gives its kind, keeping its mark, as a call that `Numeric::halving` widens reads an operand (`Halving::operand`) and rounds a result (`Halving::result`). Only a real float changes.
+    pub(crate) fn halved(self, rule: impl Fn(DType) -> DType) -> Self {
+        let mark = match self.0 { Float(_, m) | Single(_, m) | Half(_, m) => m, _ => return self };
+        let (n, width) = self.0.float().expect("a float has a width");
+        match rule(DType::Float(width)) { DType::Float(w) if w != width => Self::float(n, w).float_marked(mark), _ => self }
+    }
 
     /// The order of the numbers, within the tolerance of the width they compare at. `None` when either is NaN, which IEEE leaves unordered. The tolerance is relative, with none absolute near zero, as Dyalog's `⎕CT` is.
     pub(crate) fn compare(&self, right: &Self, t: Numeric) -> Result<Option<Ordering>, &'static str> {

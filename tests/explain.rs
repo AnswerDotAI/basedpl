@@ -83,10 +83,10 @@ fn explain_and_memory() -> (Vec<timing::Capture>, Vec<String>) {
         ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0), ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0),
         ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
     ] { report(&mut wrong, &session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ")); }
-    // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn that isn't one primitive's spelling.
+    // Each path that adds a selection's items has a name: in place, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn that isn't one primitive's spelling. Exact integers whose sums can overflow widen on a copy once, then add in place.
     check(&session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zh←16 •float 1000⍴0 ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
     for (code, path) in [
-        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zh.[i]+←1", "on a copy"), ("zr.[i]+←1ᵣ3", "rounds"),
+        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "on a copy"), ("zx.[i]+←1ₓ", "in place"), ("zh.[i]+←1", "on a copy"), ("zr.[i]+←1ᵣ3", "rounds"),
         ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+2×⍵}←1", "item by item"),
     ] { report(&mut wrong, &session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t"); }
     // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
