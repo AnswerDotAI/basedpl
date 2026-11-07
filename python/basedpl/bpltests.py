@@ -1261,15 +1261,23 @@ class Report(str):
 
 def wasm_test(
     wasm, # A directory that `cargo wasm --out` wrote
-    speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` and `BASEDPL_COSTS` as CI runs it, in place of `tests/wasm.mjs`? Its report then lists every case's cost, which `logged_costs` reads
-    timeout:float=LIMIT # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`), counted while it holds the timing lock; None: no limit
+    speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` and `BASEDPL_COSTS`, in place of `tests/wasm.mjs`? Its report then lists every case's cost, which `logged_costs` reads
+    timeout:float=LIMIT # Seconds of work per selector batch, or a `Limit` to share (`worker.Limit`), counted while it holds the timing lock; None: no limit
 ):
-    "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM` and `BASEDPL_COSTS`. It holds the machine's timing lock, exclusively for the speed test and shared for the others. A failing test raises `ValueError` with the report, starting on a line of its own so that `logged_costs` reads every row of it."
-    test, limit = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs'), Limit.of(timeout)
-    with timing_lock(exclusive=speed), limit.running():
-        p = bounded([_node(), *(['--no-liftoff'] if speed else []), '--test', str(test)], limit.left(), cwd=_ROOT, env=_wasm_env(wasm) | (dict(BASEDPL_COSTS='1') if speed else {}))
-    report = Report(p.stdout + p.stderr)
-    if p.returncode: raise ValueError(f'\n{report}')
+    "Run the browser correctness suite, or all speed selector batches, under Node against `wasm`. Explicit `BASEDPL_SPEED_BATCH` runs only that batch. Each batch gets `timeout` while holding the timing lock (exclusive for speed, shared for correctness); a supplied `Limit` instead shares its budget. Nonzero exits are collected before raising `ValueError` with the complete report; timeout and cancellation propagate immediately."
+    test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
+    batches = _speed_batches([dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))]) if speed and 'BASEDPL_SPEED_BATCH' not in os.environ else [None]
+    reports, failed = [], False
+    for batch in batches:
+        env = _wasm_env(wasm) | (dict(BASEDPL_COSTS='1') if speed else {})
+        if batch is not None: env['BASEDPL_SPEED_BATCH'] = json.dumps(batch)
+        limit = Limit.of(timeout)
+        with timing_lock(exclusive=speed), limit.running():
+            p = bounded([_node(), *(['--no-liftoff'] if speed else []), '--test', str(test)], limit.left(), cwd=_ROOT, env=env)
+        reports.append(p.stdout + p.stderr)
+        failed |= p.returncode != 0
+    report = Report(''.join(reports))
+    if failed: raise ValueError(f'\n{report}')
     return report
 
 class StackUse(list):
@@ -1421,7 +1429,7 @@ def set_counts(
     return changes
 
 def _speed_batches(files, size=16):
-    "Partition budgeted cases by file and code, keeping repeated code in different sections together for native and browser selectors."
+    "Partition budgeted cases by file and code, keeping repeated code in different sections together for browser selectors."
     for f in files:
         cases = [c for c in parse(f['text']) if c.budgets]
         codes = list(dict.fromkeys(c.code for c in cases))
@@ -1452,15 +1460,12 @@ def _cargo_test(root, *args, profiles=('default',)):
 _UNTIMED = ('untimed',)
 
 def _steps(out, node, profile):
-    "The steps of `prerelease`. Its browser package goes in `out/'wasm'`. `node` is the Node binary that the editor tests run under (`_node`)."
+    "The parser-free commands of `prerelease`; installed fixture parsing belongs to their post-develop processes. Its browser package goes in `out/'wasm'`. `node` is the Node binary that the editor tests run under (`_node`)."
     B, R, wasm = _ROOT, _RUSTYMATH, str(out/'wasm')
     dev, rdev = 'basedpl: cargo develop', 'rustymath: cargo develop'
     develop_cmd = ['cargo', 'develop', '--profile', profile]
-    batches = list(_speed_batches([dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))]))
     kernels = ['-v', 'v+w', 'v×2']
-    native = [row for batch in batches if batch['file'] == 'arrays.bpl' for row in batch['rows'] if row[1] == 'copies' and row[2] in kernels]
-    assert [row[2] for row in native] == kernels, 'uncompiled kernel cases must exist exactly once'
-    native = dict(file='arrays.bpl', codes=kernels, rows=native)
+    native = dict(file='arrays.bpl', codes=kernels, rows=[['arrays.bpl', 'copies', code] for code in kernels])
     return [
         _Step(dev, develop_cmd, B, (rdev,), timeout=None),
         _Step(rdev, develop_cmd, R, timeout=None),
@@ -1477,8 +1482,7 @@ def _steps(out, node, profile):
         _Step('basedpl: uncompiled kernels', _cargo_test(B, '--profile', profile, '--test', 'speed'), B, (dev,),
             dict(BASEDPL_COSTS='1', BASEDPL_COMPILE='never', BASEDPL_SPEED_BATCH=json.dumps(native)), None, True),
         *(_Step(f'basedpl: thread scaling {code}', ['bpl-tests', 'thread_scaling', '--cases', code], B, (dev,), timing=True) for code in _SCALING),
-        *(_Step(f'basedpl: browser speed {i} {batch["file"]}', ['bpl-tests', 'wasm_test', wasm, '--speed'], B, ('target builds',),
-            dict(BASEDPL_SPEED_BATCH=json.dumps(batch)), timing=True) for i, batch in enumerate(batches, 1))]
+        _Step('basedpl: browser speed', ['bpl-tests', 'wasm_test', wasm, '--speed'], B, ('target builds',), timing=True)]
 
 def _preflight():
     "What `prerelease` reads before it starts: notes for its summary, the problems that stop it, and the Node binary that `_node` chooses."
