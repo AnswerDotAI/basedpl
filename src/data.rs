@@ -1,8 +1,7 @@
-use crate::execution::check;
-use crate::session;
-use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Storage, keyed, number::Numeric, primitive::{numeric, real}};
+use crate::cancel::check;
+use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Storage, keyed, number::Numeric, primitive::{numeric, real}, session};
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
+use rustymath::{buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use std::io::Read;
 
 pub(crate) fn text(value: &Value) -> Result<String, Error> { keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text")) }
@@ -54,7 +53,7 @@ pub(crate) struct Options { pub values: HashMap<String, Value>, name: &'static s
 
 impl Options {
     /// Options from a keyed vector, or from plain text given to `shorthand`. `None`, or `''` without a shorthand, gives no options.
-    pub fn new(name: &'static str, value: Option<&Value>, shorthand: Option<&str>, allowed: &[&str]) -> Result<Self, Error> {
+    pub(crate) fn new(name: &'static str, value: Option<&Value>, shorthand: Option<&str>, allowed: &[&str]) -> Result<Self, Error> {
         let mut values = HashMap::new();
         let Some(value) = value else { return Ok(Self { values, name }) };
         if let Some(keys) = value.keys(0) {
@@ -69,24 +68,24 @@ impl Options {
         Ok(Self { values, name })
     }
 
-    pub fn text(&self, key: &str, default: Option<&str>) -> Result<String, Error> {
+    pub(crate) fn text(&self, key: &str, default: Option<&str>) -> Result<String, Error> {
         match (self.values.get(key), default) {
             (Some(v), _) => text(v), (None, Some(d)) => Ok(d.into()), (None, None) => Err(Error::domain(format!("{} needs {key}", self.name)))
         }
     }
 
-    pub fn number(&self, key: &str) -> Result<Option<f64>, Error> {
+    pub(crate) fn number(&self, key: &str) -> Result<Option<f64>, Error> {
         self.values.get(key).map(|v| real(v).map_err(|_| Error::domain(format!("{} {key} must be a real number", self.name)))).transpose()
     }
 
-    pub fn boolean(&self, key: &str, default: bool) -> Result<bool, Error> {
+    pub(crate) fn boolean(&self, key: &str, default: bool) -> Result<bool, Error> {
         match self.values.get(key) {
             None => Ok(default), Some(Value::Number(n)) => n.boolean().map_err(Error::from),
             _ => Err(Error::domain(format!("{} {key} must be Boolean", self.name)))
         }
     }
 
-    pub fn fill(&self) -> Result<Number, Error> {
+    pub(crate) fn fill(&self) -> Result<Number, Error> {
         match self.values.get("fill") {
             None => Ok(Numeric::current().float(f64::NAN)), Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
             _ => Err(Error::domain(format!("{} fill must be a real number", self.name)))
@@ -94,7 +93,7 @@ impl Options {
     }
 
     /// The `types` option, as in `["types":["id":0ₓ₈ "zip":""]]`: a value of each column's type, from a record that names columns, or from a vector that holds one for each column in order. A number gives its type, and text, such as `""`, makes a column text.
-    pub fn types(&self) -> Result<Types, Error> {
+    pub(crate) fn types(&self) -> Result<Types, Error> {
         let Some(types) = self.values.get("types") else { return Ok(Types::Named(HashMap::new())) };
         let invalid = || Error::domain(format!("{} types must be a record or a vector of numbers and texts", self.name));
         let items: Vec<Value> = types.elements().collect();
@@ -147,9 +146,10 @@ pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Optio
             b.extend_from(Buffer::kept(n.view()?, dtype).ok()?.view(), 0..1).then_some(b)
         }),
     }.ok_or_else(lost)?;
-    let storage = if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) { Storage::Compact(buffer).fixed(fixed) }
-    else { Storage::narrowed(i64::of(buffer.view()).expect("integers at 64 bits").to_vec()) };
-    Value::from_storage([column.len()], storage).described("invalid column")
+    if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) {
+        return Value::from_storage([column.len()], Storage::Compact(buffer).fixed(fixed)).described("invalid column");
+    }
+    Value::from_buffer([column.len()], buffer).described("invalid column")
 }
 
 pub(crate) fn vfi(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {

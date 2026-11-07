@@ -1,4 +1,4 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Described, Error, Span, Value, display, keyed, system::{Call, Valence::Ambivalent, native}};
 fn valid_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
@@ -45,7 +45,7 @@ enum Markup { Xml, Html, Raw }
 
 const VOID: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
 
-fn write(value: &Value, output: &mut String, mode: Markup, span: &Span) -> Result<(), Error> {
+fn write(value: &Value, output: &mut String, mode: Markup) -> Result<(), Error> {
     check()?;
     if let Some(text) = keyed::name(value) {
         if mode == Markup::Raw { output.push_str(&text) }
@@ -54,7 +54,7 @@ fn write(value: &Value, output: &mut String, mode: Markup, span: &Span) -> Resul
     }
     if value.keys(0).is_none() {
         if value.is_atom() { return Err(Error::domain("XML children must be text or elements")); }
-        for child in value.elements() { write(&child, output, mode, span)?; }
+        for child in value.elements() { write(&child, output, mode)?; }
         return Ok(());
     }
     let tag = keyed::field(value, "tag").and_then(|v| keyed::name(&v)).filter(|s| valid_name(s)).ok_or_else(|| Error::domain("invalid XML element"))?;
@@ -74,30 +74,30 @@ fn write(value: &Value, output: &mut String, mode: Markup, span: &Span) -> Resul
     let inner = match html.as_deref() { None | Some("svg" | "math") => Markup::Xml, Some("script" | "style") => Markup::Raw, Some(_) => Markup::Html };
     if children.is_empty() && html.as_deref().is_none_or(|t| VOID.contains(&t)) { output.push_str("/>"); return Ok(()); }
     output.push('>');
-    write(&children, output, inner, span)?;
+    write(&children, output, inner)?;
     output.push_str("</");
     output.push_str(&tag);
     output.push('>');
     Ok(())
 }
 
-pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> { text(right, Markup::Xml, span) }
+pub(crate) fn serialize(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { text(right, Markup::Xml) }
 
-fn text(tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
+fn text(tree: &Value, mode: Markup) -> Result<Value, Error> {
     let mut output = String::new();
-    write(tree, &mut output, mode, span)?;
+    write(tree, &mut output, mode)?;
     Ok(keyed::text(&output))
 }
 
 /// `•xml text` reads XML into the elements that `•xml⁻¹` writes, with the same meaning. Comments, processing instructions and text that is only whitespace are dropped.
-pub(crate) fn parse(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn parse(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let text = crate::data::text(right)?;
     let document = roxmltree::Document::parse(&text).map_err(|e| Error::domain(format!("XML {e}")))?;
-    read(document.root_element(), span)
+    read(document.root_element())
 }
 
 /// The element `node`, with names written with their prefixes, and the namespaces it declares as `xmlns` attributes.
-fn read(node: roxmltree::Node<'_, '_>, span: &Span) -> Result<Value, Error> {
+fn read(node: roxmltree::Node<'_, '_>) -> Result<Value, Error> {
     check()?;
     let named = |space: Option<&str>, name: &str| match space.and_then(|uri| node.lookup_prefix(uri)).filter(|p| !p.is_empty()) {
         Some(prefix) => format!("{prefix}:{name}"), None => name.to_string()
@@ -108,7 +108,7 @@ fn read(node: roxmltree::Node<'_, '_>, span: &Span) -> Result<Value, Error> {
         .chain(node.attributes().map(|a| (named(a.namespace(), a.name()), a.value())));
     let (names, values) = attrs.map(|(name, value)| (name.into(), keyed::text(value))).unzip();
     let children = node.children().filter_map(|child| match child.text() {
-        _ if child.is_element() => Some(read(child, span)), Some(text) if child.is_text() && !text.trim().is_empty() => Some(Ok(keyed::text(text))), _ => None
+        _ if child.is_element() => Some(read(child)), Some(text) if child.is_text() && !text.trim().is_empty() => Some(Ok(keyed::text(text))), _ => None
     }).collect::<Result<Vec<_>, _>>()?;
     let children = Value::from_parts(vec![children.len()], children, keyed::text("")).described("XML element exceeds array limits")?;
     let attrs = keyed::vector(names, values).described("invalid XML attributes")?;
@@ -121,9 +121,7 @@ pub(crate) fn svg(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value
     element("svg", Some(&attrs), right)?.with_renderer(display::renderer("svg-renderer", render_svg)).described("SVG exceeds array limits")
 }
 
-fn render_html(_: Option<&Value>, tree: &Value, span: &Span) -> Result<Value, Error> { markup("text/html", tree, Markup::Html, span) }
-fn render_svg(_: Option<&Value>, tree: &Value, span: &Span) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml, span) }
+fn render_html(_: Option<&Value>, tree: &Value, _: &Span) -> Result<Value, Error> { markup("text/html", tree, Markup::Html) }
+fn render_svg(_: Option<&Value>, tree: &Value, _: &Span) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml) }
 /// The markup of `tree` as a MIME bundle of type `kind`.
-fn markup(kind: &str, tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
-    display::mime(kind, text(tree, mode, span)?).described("invalid XML MIME bundle")
-}
+fn markup(kind: &str, tree: &Value, mode: Markup) -> Result<Value, Error> { display::mime(kind, text(tree, mode)?).described("invalid XML MIME bundle") }

@@ -595,7 +595,7 @@ c parse "1+2×3"
 ⍝ =>
 ["    A    "⋄" ┌──┴──┐ "⋄"┌┴─┐  ┌┴┐"⋄"1 ┌┴┐ × 3"⋄"  + 2    "]
 
-⍝ — Dyalog dfns: parse
+⍝ dyalog:parse-grammar-table — Dyalog dfns: parse
 [parse:]←•load "lib/dyalog.bpl"
 g←"A 1 2 3" "F + ×" 'B' "" "F:A→B" "A:B→A"
 g parse ""

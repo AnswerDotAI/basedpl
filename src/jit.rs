@@ -37,7 +37,7 @@ impl Ty {
     fn float(self) -> bool { matches!(self, Ty::F32 | Ty::F64) }
 }
 
-/// An input: an array that the loop reads item by item, as its `Read` says, a scalar that every item pairs with, or a constant: a number fixed when the kernel is built, such as a reciprocal's 1, held as its bits at its type (`Input::constant`).
+/// An input: an array that the loop reads item by item, as its `Read` says, a scalar that every item pairs with, or a constant: a number that a recipe fixes, such as a reciprocal's 1, held in a scalar slot's form (`Input::constant`). Code reads a constant from a scalar slot, so kernels that differ only in their constants share one compile (`Kernel::key`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Input { Array(Ty, Read), Scalar(Ty), Constant(Ty, u64) }
 
@@ -56,19 +56,30 @@ impl Read {
 
 impl Input {
     fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) | Input::Constant(t, _) => t } }
-    /// The constant `x` at float or integer type `t`, as `x` converts to it.
+    /// The constant `x` at float or integer type `t`, as `x` converts to it, in a scalar slot's form (`float_slot`, `integer_slot`).
     pub fn constant(t: Ty, x: f64) -> Self {
-        Input::Constant(t, match t { Ty::F32 => (x as f32).to_bits().into(), Ty::F64 => x.to_bits(), _ => x as i64 as u64 })
+        Input::Constant(t, match t { Ty::F32 => float_slot((x as f32).into()), Ty::F64 => float_slot(x), _ => integer_slot(x as i64) })
     }
+    /// The number that constant bits `bits` hold at type `t`, the inverse of `float_slot` and `integer_slot`.
+    pub fn decoded(t: Ty, bits: u64) -> f64 { if t.float() { f64::from_bits(bits) } else { bits as i64 as f64 } }
 }
 
-/// A value that a step reads: the input of that number, or the result of the earlier step of that number. A program's constant is a scalar input, and a number fixed when the kernel is built is a constant input.
+/// A float in a scalar slot's form: its value as f64 bits, which code demotes to f32 where its type is f32 (`slot`). Every scalar and constant slot holds a float this way.
+pub(crate) fn float_slot(x: f64) -> u64 { x.to_bits() }
+
+/// An integer or Boolean in a scalar slot's form: its value as i64 bits, which code narrows to its type (`slot`).
+pub(crate) fn integer_slot(x: i64) -> u64 { x as u64 }
+
+/// A value that a step reads: the input of that number, or the result of the earlier step of that number. A program's constant is a scalar input, and a number that a recipe fixes is a constant input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Value { Input(usize), Step(usize) }
 
 /// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type as `element::Converts` does with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value), MultiplyAdd(Value) }
+pub enum Op {
+    Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value),
+    MultiplyAdd(Value)
+}
 
 /// A comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -113,8 +124,10 @@ fn isa() -> Result<OwnedTargetIsa, String> {
     }).clone()
 }
 
-/// Each kernel that ran or compiled so far, with its code once it compiled.
+/// Each kernel that ran or compiled so far, keyed with its constants cleared (`Kernel::key`), with its code once it compiled.
 static KERNELS: OnceLock<Mutex<HashMap<Kernel, Option<Arc<Compiled>>>>> = OnceLock::new();
+/// The most kernels the table keeps. A table that's full forgets them all before it takes a new one; code in use stays alive through its `Arc`.
+const KEPT: usize = 4096;
 
 /// The table of kernels, locked.
 fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compiled>>>> {
@@ -124,27 +137,52 @@ fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compil
 /// Forgets every kernel and its code, as a new process has none.
 pub(crate) fn forget_kernels() { kernels().clear() }
 
+/// The table `k`, emptied first where it's full and doesn't hold `key`.
+fn kept<'a>(k: &'a mut HashMap<Kernel, Option<Arc<Compiled>>>, key: &Kernel) -> &'a mut HashMap<Kernel, Option<Arc<Compiled>>> {
+    if k.len() >= KEPT && !k.contains_key(key) { k.clear(); }
+    k
+}
+
 impl Kernel {
-    /// This kernel's native code, compiled the first time and kept for the process, with the compile's time where this call compiled it.
+    /// This kernel's native code, compiled the first time and kept with at most `KEPT` others, with the compile's time where this call compiled it. Kernels that differ only in their constants share one code.
     pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> {
-        if let Some(Some(c)) = kernels().get(self) { return Ok((c.clone(), None)); }
+        let key = self.key();
+        if let Some(Some(c)) = kernels().get(&key) { return Ok((c.clone(), None)); }
         let start = Instant::now();
         let c = Arc::new(self.compile()?);
         let time = start.elapsed();
-        Ok((kernels().entry(self.clone()).or_default().get_or_insert(c).clone(), Some(time)))
+        Ok((kept(&mut kernels(), &key).entry(key).or_default().get_or_insert(c).clone(), Some(time)))
     }
 
-    /// Whether this kernel ran or compiled before. It counts as seen from now on.
-    pub fn seen(&self) -> bool { let mut k = kernels(); k.contains_key(self) || k.insert(self.clone(), None).is_some() }
+    /// Whether this kernel, or one that differs only in its constants, ran or compiled before. It counts as seen from now on.
+    pub fn seen(&self) -> bool { let (key, mut k) = (self.key(), kernels()); k.contains_key(&key) || kept(&mut k, &key).insert(key, None).is_some() }
+
+    /// This kernel with each constant's value cleared, as the table of kernels keys it.
+    fn key(&self) -> Kernel {
+        let inputs = self.inputs.iter().map(|&i| match i { Input::Constant(t, _) => Input::Constant(t, 0), i => i }).collect();
+        Kernel { inputs, steps: self.steps.clone(), stores: self.stores.clone(), folds: self.folds.clone() }
+    }
+
+    /// Each constant input's bits, in input order. A run passes them in the scalar slots after the others (`Compiled::run`).
+    pub fn constants(&self) -> impl Iterator<Item = u64> + '_ {
+        self.inputs.iter().filter_map(|i| match *i { Input::Constant(_, bits) => Some(bits), _ => None })
+    }
+
+    /// The scalar slots before the constants: one for each scalar input and each strided array's stride, then two for runs where an input reads runs.
+    fn scalar_slots(&self) -> usize {
+        let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
+        scalars + if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 }
+    }
 
     /// This kernel compiled afresh.
     pub fn compile(&self) -> Result<Compiled, String> {
         let (module, entry) = self.defined()?;
-        let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0 }).sum();
-        let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
-        let runs = if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 };
+        let arrays = self.inputs.iter().map(|i| match i {
+            Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0
+        }).sum();
+        let scalars = self.scalar_slots() + self.constants().count();
         let most = if self.folds.iter().any(|&(_, k)| self.steps[k].ty == Ty::Bool) { COUNTED } else { usize::MAX };
-        Ok(Compiled { _module: Mutex::new(module), entry, counts: [arrays, scalars + runs, self.stores.len(), self.folds.len()], most })
+        Ok(Compiled { _module: Mutex::new(module), entry, counts: [arrays, scalars, self.stores.len(), self.folds.len()], most })
     }
 
     /// A module holding this kernel's finalized code, and its entry point. With `BASEDPL_JIT_DISASM` set, it prints the kernel and its machine code to stderr.
@@ -156,7 +194,7 @@ impl Kernel {
         let ptr = module.target_config().pointer_type();
         ctx.func.signature.params.extend([ptr; 6].map(AbiParam::new));
         self.build(&mut ctx, module.target_config());
-        let id = module.declare_function("kernel", Linkage::Local, &ctx.func.signature).map_err(|e| e.to_string())?;
+        let id = module.declare_function("bpl_jit_stage", Linkage::Local, &ctx.func.signature).map_err(|e| e.to_string())?;
         module.define_function(id, &mut ctx).map_err(|e| format!("{e:?}"))?;
         if let Some(code) = ctx.compiled_code().and_then(|c| c.vcode.as_deref()) { eprintln!("{self:?}\n{code}"); }
         module.clear_context(&mut ctx);
@@ -182,9 +220,9 @@ impl Kernel {
         let fits = match s.op {
             Op::Convert => true, Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
             Op::And | Op::Or | Op::Xor => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
-            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
-            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
-            _ => s.ty != Ty::Bool && x == s.ty && same
+            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool,
+            Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
+            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same, _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
     }
@@ -224,7 +262,9 @@ impl Kernel {
         for (k, s) in self.steps.iter().enumerate() {
             let width = if s.ty != Ty::Bool { s.ty.bytes() } else {
                 let made = if matches!(s.op, Op::Convert) && self.ty(s.x) != Ty::Bool { 1 } else {
-                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v { Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j] }).max().unwrap_or(1)
+                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v {
+                        Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j]
+                    }).max().unwrap_or(1)
                 };
                 if wanted[k] == 0 { made } else { made.min(wanted[k]) }
             };
@@ -233,8 +273,11 @@ impl Kernel {
         widths
     }
 
-    /// The running totals of the kernel's float fold (`running`), where it has one. Each pass of the main loop steps every total once, one vector of totals for each vector of items, and the loops over single vectors and items step one vector of them.
-    pub fn totals(&self) -> Option<usize> { self.folds.iter().map(|&(_, k)| self.steps[k].ty).find(|t| t.float()).map(|t| running(t.bytes() as usize)) }
+    /// The running totals of the kernel's float sum or product (`running`), where it has one: a maximum or minimum is exact in any association, so it keeps `UNROLL` sets, as an integer fold does. Each pass of the main loop steps every total once, one vector of totals for each vector of items, and the loops over single vectors and items step one vector of them.
+    pub fn totals(&self) -> Option<usize> {
+        self.folds.iter().filter(|(fold, _)| matches!(fold, Fold::Sum | Fold::Product)).map(|&(_, k)| self.steps[k].ty).find(|t| t.float())
+            .map(|t| running(t.bytes() as usize))
+    }
 
     /// The type of value `v`.
     fn ty(&self, v: Value) -> Ty { match v { Value::Input(k) => self.inputs[k].ty(), Value::Step(k) => self.steps[k].ty } }
@@ -266,7 +309,8 @@ impl Kernel {
         let [n, block, arrays, scalars, outs, totals] = b.block_params(entry).try_into().expect("six parameters");
         let width = self.narrowest();
         let lanes = 16 / width;
-        let (mut a, mut s) = (0, 0);
+        // The constants take the scalar slots after every other scalar (`Kernel::constants`).
+        let (mut a, mut s, mut c, constants_at) = (0, 0, 0, self.scalar_slots() as i32);
         // Each run-by-run array, by its input's number, with its item 0, its table of runs' first items and its step within a run in bytes.
         let mut tabled: Vec<(usize, Ir, Ir, Ir)> = Vec::new();
         let inputs: Vec<(Ir, Option<Ir>)> = self.inputs.iter().enumerate().map(|(k, &input)| match input {
@@ -295,8 +339,9 @@ impl Kernel {
                     let x = slot(&mut b, t, scalars, (s - 1) * 8);
                     (b.ins().splat(t.vector(), x), None)
                 }
-                Input::Constant(t, bits) => {
-                    let x = constant(&mut b, t, bits);
+                Input::Constant(t, _) => {
+                    c += 1;
+                    let x = slot(&mut b, t, scalars, (constants_at + c - 1) * 8);
                     (b.ins().splat(t.vector(), x), None)
                 }
             })
@@ -335,7 +380,9 @@ impl Kernel {
         let outs: Vec<Ir> = (0..self.stores.len()).map(|k| b.ins().load(ptr, FLAGS, outs, k as i32 * 8)).collect();
         let widths = self.widths();
         let accs: Vec<Acc> = self.folds.iter().map(|&(fold, k)| Acc::new(fold, self.steps[k].ty, widths[k], width)).collect();
-        let group = self.totals().map_or(UNROLL, |r| r as i64 / lanes);
+        // A kernel whose folds are all float maxima or minima, exact in any association, steps twice as many groups a pass, so that the loop's own instructions weigh less. A count keeps `UNROLL`, the groups a pass that `COUNTED` allows its byte lanes.
+        let extremes = !self.folds.is_empty() && self.folds.iter().all(|&(f, k)| matches!(f, Fold::Max | Fold::Min) && self.steps[k].ty.float());
+        let group = self.totals().map_or(if extremes { 2 * UNROLL } else { UNROLL }, |r| r as i64 / lanes);
         let vector_totals: Vec<Vec<Variable>> = accs.iter().map(|acc| (0..acc.vectors()).map(|_| b.declare_var(acc.vector())).collect()).collect();
         let scalar_totals: Vec<Variable> = accs.iter().map(|acc| b.declare_var(acc.total())).collect();
         let (i, t) = (b.declare_var(ptr), b.declare_var(ptr));
@@ -395,13 +442,17 @@ impl Kernel {
             b.switch_to_block(head);
             let iv = b.use_var(i);
             let more = b.ins().icmp(IntCC::UnsignedLessThan, iv, end);
-            b.ins().brif(more, body, &[], next, &[]);
+            // The exit is a block of its own: the next loop's preheader, outside this loop, where Cranelift lifts that loop's bounds and constants.
+            let done = b.create_block();
+            b.ins().brif(more, body, &[], done, &[]);
             b.switch_to_block(body);
             let iv = b.use_var(i);
             run(b, iv);
             let step = b.ins().iadd_imm_s(iv, items);
             b.def_var(i, step);
             b.ins().jump(head, &[]);
+            b.switch_to_block(done);
+            b.ins().jump(next, &[]);
         };
         looped(&mut b, group_head, group_body, groups, single_head, group * lanes, &mut |b, iv| {
             let now = current(b);
@@ -548,14 +599,14 @@ impl Kernel {
     }
 }
 
-/// A fold's accumulators, in vectors of `lane`-byte lanes: `sets` sets of one vector for each vector of a group's items, of which unrolled group `u` steps set `u` modulo `sets`. A float fold keeps as many running results as rustymath's folds keep, one set for each group of an iteration. An integer sum and a count of Booleans keep enough sets that up to `UNROLL` groups step separate vectors, so that their adds don't wait on each other. A count keeps its counts in integer lanes as wide as the lanes its mask lies at (`Kernel::widths`). Byte lanes count at most 255 items in a block (`COUNTED`). `width` is the bytes of the kernel's narrowest type.
+/// A fold's accumulators, in vectors of `lane`-byte lanes: `sets` sets of one vector for each vector of a group's items, of which unrolled group `u` steps set `u` modulo `sets`. A float sum or product keeps as many running results as rustymath's folds keep, one set for each group of an iteration, so that its association matches theirs. A float maximum or minimum, exact in any association, an integer sum and a count of Booleans keep enough sets that up to `UNROLL` groups step separate vectors, so that their adds don't wait on each other. A count keeps its counts in integer lanes as wide as the lanes its mask lies at (`Kernel::widths`). Byte lanes count at most 255 items in a block (`COUNTED`). `width` is the bytes of the kernel's narrowest type.
 #[derive(Clone, Copy)]
 struct Acc { fold: Fold, ty: Ty, lane: i64, width: i64, sets: usize }
 
 impl Acc {
     fn new(fold: Fold, ty: Ty, lane: i64, width: i64) -> Self {
         let (bytes, per) = (lane as usize, (lane / width) as usize);
-        let sets = if ty.float() { running(bytes) / (16 / bytes) / per } else { (UNROLL as usize / per).max(1) };
+        let sets = if ty.float() && matches!(fold, Fold::Sum | Fold::Product) { running(bytes) / (16 / bytes) / per } else { (UNROLL as usize / per).max(1) };
         Acc { fold, ty, lane, width, sets }
     }
 
@@ -620,11 +671,6 @@ const FLAGS: MemFlagsData = MemFlagsData::new().with_notrap();
 
 /// The integer `v` of scalar type `ty`, as an immediate of `ty`'s width.
 fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir { let bits = ty.bits(); b.ins().iconst(ty, if bits < 64 { v & ((1 << bits) - 1) } else { v }) }
-
-/// The constant `bits`, as `Input::Constant` holds them, at scalar type `t`.
-fn constant(b: &mut FunctionBuilder, t: Ty, bits: u64) -> Ir {
-    match t { Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)), Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64) }
-}
 
 /// `v`'s bits as type `ty`.
 fn cast(b: &mut FunctionBuilder, ty: Type, v: Ir) -> Ir {
@@ -696,9 +742,19 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
         (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
         (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
         (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
-        _ => unreachable!("`check` gives each operation its arguments")
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => magnitude(b, x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x),
+        (Op::Floor, _) => b.ins().floor(x), _ => unreachable!("`check` gives each operation its arguments")
     }
+}
+
+/// `x`, floats, with the sign bit of each item cleared. A vector clears it with a constant mask, which a loop computes once, where `fabs` rebuilds the mask for each vector on x86-64.
+fn magnitude(b: &mut FunctionBuilder, x: Ir) -> Ir {
+    let t = b.func.dfg.value_type(x);
+    if !t.is_vector() { return b.ins().fabs(x); }
+    let lane = t.lane_type().bytes() as usize;
+    let mask = b.func.dfg.constants.insert(ConstantData::from((0..16).map(|i| if i % lane == lane - 1 { 0x7f } else { 0xff }).collect::<Vec<u8>>()));
+    let mask = b.ins().vconst(t, mask);
+    b.ins().band(x, mask)
 }
 
 /// `x × y`, wrapping for integers. A vector of bytes multiplies at 16 bits, because x86-64 has no vector multiply of bytes.

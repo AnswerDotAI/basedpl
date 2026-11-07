@@ -81,7 +81,7 @@ An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 10+/₁ ₂ 2 2 3⍴⍳6ₓ      ⍝ [25 25]
 ```
 
-Float sum and product reductions can reassociate their operands. Other reductions keep operand order.
+Algebraic reductions such as `+/` can reassociate their operands, as [Accuracy](../numbers.qmd#accuracy) describes. Other reductions keep operand order.
 
 ## Errors
 

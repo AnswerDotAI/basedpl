@@ -2,11 +2,13 @@
 
 Function. Keys: `Alt-d`. Hanzi: `下`. Ranks: `0` monadic, `0 0` dyadic
 
-`⌊Y` rounds down to an exact integer. Pervasive; tolerant near integers. An infinity or NaN stays a float.
+`⌊Y` rounds real numbers down. Pervasive; tolerant near integers. Under dynamic kinds, real float results become ordinary machine integers. Under static kinds they remain floats. `⌊ₓY` gives ordinary machine integers in both modes. Exact-domain inputs stay exact.
+
+Integer-producing real forms clamp to the selected integer range: positive infinity gives its maximum, negative infinity its minimum, and NaN gives zero. See [Static kinds](../numbers.qmd#static-kinds) for the integer width.
 
 ```bpl
 ⌊1.8 ¯1.8         ⍝ [1 ¯2]ₓ
-⌊3r2              ⍝ 1ₓ
+⌊3r2              ⍝ 1ᵣ
 ```
 
 Complex floor uses APL's Gaussian-integer rule.

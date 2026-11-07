@@ -44,9 +44,9 @@ rr←{  ⍝ Round-robin tournament.
 easter←{  ⍝ Easter Sunday, yyyymmdd.
   G←≥19ₓ|⍵
   C←≥⌊⍵÷100ₓ
-  X←¯12ₓ+⌊C×3ₓ÷4ₓ
-  Z←¯5ₓ + ⌊ 5ₓ+8ₓ×C ÷ 25ₓ
-  S←(⌊ 5ₓ×⍵ ÷ 4ₓ)-X+10ₓ
+  X←¯12ₓ+⌊C×3ₓ÷ₐ4ₓ
+  Z←¯5ₓ + ⌊ 5ₓ+8ₓ×C ÷ₐ 25ₓ
+  S←(⌊ 5ₓ×⍵ ÷ₐ 4ₓ)-X+10ₓ
   E←30ₓ | 11ₓ×G + 20ₓ+Z-X
   F←E + E=24ₓ ∨ E=25ₓ ∧ G>11ₓ
   N←30ₓ×F>23ₓ + 44ₓ-F
@@ -636,7 +636,7 @@ pack_4←{  ⍝ Quad-tree packing; ⍺=0 expands, ⍺>1 allows lossy packing.
   }
   exp←{
     [uniq shape stream]←⍵
-    split←{{[⌊⍵ ⌈⍵]}⍵÷≥maxk⍵}
+    split←{{[⌊⍵ ⌈⍵]}⍵÷ₐ≥maxk⍵}
     maxk←{⍳≢⍵ = maxx ⍵}
     exp←{≥|0ₓ⌊≥⍵⌊0ₓ # ¯1ₓ⌈⍵}
     i←↑shape{
@@ -1182,7 +1182,7 @@ tc←{  ⍝ Trace function application.
 
      reshape←{                       ⍝ ⍺-col reshape of ⍵.
          ⍺=0ₓ?max↑⍤1 col ⍵;          ⍝ item too wide: truncated single col.
-         nr←⌈ni÷⍺                    ⍝ number of rows.
+         nr←⌈ni÷ₐ⍺                    ⍝ number of rows.
          matr←[⍺ nr]⍴(⍺×nr)↑⍵,⍺#' '  ⍝ matrix blank-padded to whole no of cols.
          pads←⊃nr#↓gap#' '           ⍝ inter-column padding.
          {⍺,pads,⍵}/col¨↓matr       ⍝ gap-spaced cols.
@@ -1193,7 +1193,7 @@ tc←{  ⍝ Trace function application.
      [gap max]←2↑⍺,102ₓ              ⍝ inter-column-gap and max-width.
      ni←≢⍵                           ⍝ number of items.
      lens←⊽≢⍵ ↑ ,⊃⍴¨(⍬↣⍕)¨⍵          ⍝ item-lengths.
-     ulim←⌈max÷1ₓ⌈gap+⌊/ni↑lens      ⍝ cols: upper limit for search.
+     ulim←⌈max÷ₐ1ₓ⌈gap+⌊/ni↑lens      ⍝ cols: upper limit for search.
 
      maxcols⁝ulim reshape ⍵        ⍝ multi-column display.
  }

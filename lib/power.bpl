@@ -23,7 +23,7 @@ invr ← {  ⍝ Approx inverse of real-valued function.
 }
 
 ⍝ From http://dfns.dyalog.com/s_limit.htm
-GM ← ×/*÷∘≢  ⍝ Geometric mean.
+GM ← ×/*÷∘(≢ₐ)  ⍝ Geometric mean of floats: the count is a float too.
 AGM ← {↑(+/÷≢ , GM)⍣∞ ⍵}  ⍝ Arithmetic-geometric mean.
 
 ArcTan ← {
@@ -57,7 +57,7 @@ ArcTan ← {
 
 rl   ← {≤2ₓ*31ₓ | ⍵×7ₓ*5ₓ}  ⍝ next random link  LCG(7*5, ¯1+2*31)
 
-roll ← {⌊⍵×⍺÷≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
+roll ← {⌊⍵×⍺÷ₐ≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
 
 ⍝ From http://dfns.dyalog.com/c_traj.htm
 

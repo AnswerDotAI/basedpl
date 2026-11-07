@@ -38,7 +38,7 @@ if (isMainThread && process.argv[2] !== 'depths') {
         assert.deepEqual(run('⎕←"hi" ⋄ +/⍳4'), { outputs: ['"hi"', '6'], error: undefined });
     });
     test('matches with JavaScript regular expressions and templates, at character positions', () => {
-        const { outputs } = run('r←•r "(?<=é|\\s)(?<x>[bB])(\\d)?" ⋄ m←r.matches "éb1 B" ⋄ ⎕←m.position ⋄ ⎕←"<$<x>$2>" r.replace "éb1 B" ⋄ m.groups');
+        const { outputs } = run('p←"(?<=é|\\s)(?<x>[bB])(\\d)?" ⋄ m←"éb1 B" •r p ⋄ ⎕←m.position ⋄ ⎕←"éb1 B" •replace [p "<$<x>$2>"] ⋄ m.groups');
         assert.deepEqual(outputs, ['[1 4]ₓ', '"é<b1> <B>"', '("b" "1"⋄"B" "")']);
     });
     test('shows a picture as RGBA bytes with its width in the MIME type, and an animation as an animated PNG', () => {
@@ -62,7 +62,7 @@ if (isMainThread && process.argv[2] !== 'depths') {
         assert.equal(s.eval('draw 1 2'), undefined);
         assert.deepEqual(drawn, [{ shape: [2], data: Float64Array.of(1, 2) }]);
         assert.equal(s.eval('h←•js "Math.hypot" ⋄ 3 h 4'), 5);
-        assert.deepEqual(s.eval('(•js "s => s.toUpperCase()")¨"ab" "cd"'), { shape: [2], data: ['AB', 'CD'] });
+        assert.deepEqual(s.eval('upper←•js "s => s.toUpperCase()" ⋄ upper¨"ab" "cd"'), { shape: [2], data: ['AB', 'CD'] });
     });
     test('max and min beside NaN give NaN or the expected value, as the reference case max-min-nan checks natively', () => {
         // The case's code and its expected result are the two lines after its header in core.bpl.

@@ -1,10 +1,11 @@
 //! The core that running transformations share: one stack of running levels, the routing that hands a call to the newest level among its arguments, and the read point for code that isn't a call. The levels are `∂` calls, the record levels of `∂` calls in reverse mode, and the batched runs of maps such as Each. One counter numbers every level, so a level inside another has the larger id. A `∂` call's id is the tag its duals carry, and a record level's id is the level its records carry. A reader outside a call sees a value through `Value::observed` or `Value::computed`, never past a level's data. A batched run stops (`Stop`) where it can't go on for all its cells at once, as at an observing read. Only the try that began the run catches the stop (`batch::tried`).
 
 use crate::array::{Footprint, Seen};
-use crate::session;
+use crate::error::{Cause, Stop};
+use crate::program::trace::Role;
 use crate::{
     Error, ErrorKind, Function, Number, Operator, Span, Value, agreement::{Agree, Agreement}, number::Failure, primitive::{FoldKind, Operation, Primitive},
-    system::SystemFunction
+    session, system::SystemFunction
 };
 
 /// The running levels, innermost last, and the last id a level took.
@@ -18,8 +19,8 @@ pub(crate) struct Level { pub(crate) id: u64, pub(crate) kind: Kind, frames: usi
 pub(crate) enum Kind {
     /// A `∂` call.
     Derivative,
-    /// Reverse mode's record of linear calls, pushed just before its `∂` call, whose duals' tangents are records at this level (`linear::Linear`).
-    Record,
+    /// Reverse mode's tape of linear calls, pushed just before its `∂` call, whose duals' tangents are tape values at this level (`program::trace::Traced` with role `Tape`).
+    Tape,
     /// A batched run, which calls a map's operand once, on batches of all the cells of the map's frame (`batch::tried`). The map is an Each, Rank's general path, an outer product, or a dfn's fold, scan or inner product.
     Batched(Batched),
     /// Under or a selective assignment, while its selector runs on the root array's values, which carry their labels (`selection::Labelled`).
@@ -41,15 +42,15 @@ impl Kind {
     pub(crate) fn exit(&self) -> Option<fn(&Value, u64) -> Value> {
         match self {
             Kind::Derivative => Some(crate::derivative::strip), Kind::Label => Some(crate::selection::strip),
-            Kind::Record | Kind::Batched(_) | Kind::Trace(_) => None
+            Kind::Tape | Kind::Batched(_) | Kind::Trace(_) => None
         }
     }
     /// The stop that a level of this kind, with id `id`, gives before `effect`, or `None` where the effect runs as it is. A batched run and a trace stop it (`Effect::stop`).
     fn stop(&self, id: u64, effect: Effect) -> Option<Stop> {
-        match self { Kind::Batched(_) | Kind::Trace(_) => Some(effect.stop(id)), Kind::Derivative | Kind::Record | Kind::Label => None }
+        match self { Kind::Batched(_) | Kind::Trace(_) => Some(effect.stop(id)), Kind::Derivative | Kind::Tape | Kind::Label => None }
     }
-    /// Whether a batched run may begin while a level of this kind runs. A `∂` call and reverse mode's record allow one, because the run's level is newer than theirs, so the batch rules take each call first. A batched run doesn't: a map inside it widens it instead (`Levels::widens`). A label level doesn't, because a batch can't hold labelled items, and Under and selective assignment read a map's cells one at a time under it. A trace doesn't, because a map's cells under it are traced values, which a program holds whole.
-    fn admits_batch(&self) -> bool { match self { Kind::Derivative | Kind::Record => true, Kind::Batched(_) | Kind::Label | Kind::Trace(_) => false } }
+    /// Whether a batched run may begin while a level of this kind runs. A `∂` call, reverse mode's record and a trace allow one. The batch rules take each call first, because the run's level is newer than theirs. Under a trace, the program records each primitive's call on the batch's whole. A batched run doesn't: a map inside it widens it instead (`Levels::widens`). A label level doesn't, because a batch can't hold labelled items, and Under and selective assignment read a map's cells one at a time under it.
+    fn admits_batch(&self) -> bool { match self { Kind::Derivative | Kind::Tape | Kind::Trace(_) => true, Kind::Batched(_) | Kind::Label => false } }
 }
 
 /// Code that must run once for each cell, which a level may stop before it runs (`Levels::effect`).
@@ -108,13 +109,13 @@ impl Levels {
     /// The batched run, as its id and its batched state (`batched`).
     fn running(&self) -> Option<(u64, &Batched)> {
         self.stack.iter().find_map(|l| match &l.kind {
-            Kind::Batched(b) => Some((l.id, b)), Kind::Derivative | Kind::Record | Kind::Label | Kind::Trace(_) => None
+            Kind::Batched(b) => Some((l.id, b)), Kind::Derivative | Kind::Tape | Kind::Label | Kind::Trace(_) => None
         })
     }
     /// The batched run, for a guard case or a fresh name to change: its id, the frames that writes must stay inside, and its batched state.
     fn running_mut(&mut self) -> Option<(u64, &mut usize, &mut Batched)> {
         self.stack.iter_mut().find_map(|l| match &mut l.kind {
-            Kind::Batched(b) => Some((l.id, &mut l.frames, b)), Kind::Derivative | Kind::Record | Kind::Label | Kind::Trace(_) => None
+            Kind::Batched(b) => Some((l.id, &mut l.frames, b)), Kind::Derivative | Kind::Tape | Kind::Label | Kind::Trace(_) => None
         })
     }
     /// The running trace, as its id, its tracer and the number of frames when it began: the binding of a place in an earlier frame, or in a module, is a free name of the traced call (`program::trace::read`).
@@ -159,38 +160,18 @@ impl Plain<'_> {
     pub(crate) fn infinity(&self) -> Option<bool> { match self { Plain::Number(n) if n.is_infinite() => n.as_float().map(|f| f < 0.), _ => None } }
 }
 
-/// A batched run's stop: a point where the run can't go on for all its cells at once, such as an observing read, an effect or a call with no rule for whole arrays. The level that owns the run then runs its cells one at a time. No other code catches a stop (`ErrorKind::Stop`). Its cause says how long a dfn operand remembers it (`Cause::kept`).
-///
-/// The level's id, the cause and a detail share one `u64`, which keeps `ErrorKind` at 16 bytes in wasm32. With a separate field it takes 24 bytes. Every frame that moves an evaluation result then holds a larger local on the browser's stack, which leaves room for less recursion (`tests/wasm.mjs`). The detail's meaning depends on the cause, and each cause that keeps one reads it through its own accessor: `glyph` for `Cause::Rule`, `chunk` for `Cause::Memory`.
-#[derive(Clone, Copy, Debug)]
-pub struct Stop(u64);
-
 impl Stop {
-    /// The stop of batched run `level`, for `cause`.
-    pub(crate) fn new(level: u64, cause: Cause) -> Self { Self::with_detail(level, cause, 0) }
-    /// The stop of batched run `level`, for `cause`, with `detail` in the stop's 7 bits of detail.
-    fn with_detail(level: u64, cause: Cause, detail: u64) -> Self { Self(level << 10 | detail << 3 | cause as u64) }
     /// The stop of batched run `level` at a call of `p` with no rule for batches of its arguments (`Cause::Rule`). It keeps `p`'s glyph as the position of the first primitive in `Primitive::all()` with that glyph, because `Bracket` shares `⌷` with `Index` and isn't listed.
     pub(crate) fn refusing(level: u64, p: Primitive) -> Self {
         let glyph = Primitive::all().position(|q| q.glyph() == p.glyph()).map_or(0, |i| i as u64 + 1);
         Self::with_detail(level, Cause::Rule, glyph)
     }
-    /// The stop of batched run `level` at a call that would hold too many items (`Cause::Memory`), where runs on chunks of `chunk` cells, a power of two, wouldn't. A chunk of one cell gives no chunks, and the run's cells then run one at a time.
-    pub(crate) fn oversized(level: u64, chunk: usize) -> Self { Self::with_detail(level, Cause::Memory, chunk.ilog2().into()) }
-    /// The id of the level that owns the run.
-    pub(crate) fn level(self) -> u64 { self.0 >> 10 }
-    /// Why the run stopped.
-    pub(crate) fn cause(self) -> Cause { Cause::from_bits(self.0 & 7) }
-    fn detail(self) -> u64 { self.0 >> 3 & 127 }
     /// The glyph of the primitive whose call refused, where the stop keeps one (`refusing`).
     fn glyph(self) -> Option<&'static str> {
         if self.cause() != Cause::Rule { return None; }
         self.detail().checked_sub(1).and_then(|i| Primitive::all().nth(i as usize)).map(Primitive::glyph)
     }
-    /// The cells of each chunk that the run can go on in, where the stop is for too many items and gives chunks (`oversized`).
-    pub(crate) fn chunk(self) -> Option<usize> { (self.cause() == Cause::Memory && self.detail() > 0).then(|| 1 << self.detail()) }
 }
-
 /// What `•explain` reports in `fallbacks` for a stop: its cause (`Cause::reason`), then the glyph of the primitive that refused, where the stop keeps one.
 impl std::fmt::Display for Stop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -198,63 +179,8 @@ impl std::fmt::Display for Stop {
     }
 }
 
-/// How a batched run or a trace ended without a result: a stop at its own level, a fallback for a reason that `•explain` names, or an error that passes through, such as an interrupt, a timeout or an older level's stop. A trace's stop holds the reason that the trace noted for `•explain`, where it noted one. Where the level noted none, as a batched run never does, `•explain` names the stop's cause.
-pub(crate) enum Ended { Stopped(Stop, Option<&'static str>), Fell(&'static str), Passed(Error) }
-
-/// Why a batched run stopped, which says how long a dfn operand remembers the stop (`kept`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Cause {
-    /// Output, input, `⍕` of a carried value, or a system function's act (`transform::acts`), which the operand does on every call (`Effect::Acts`).
-    Effect = 0,
-    /// A write to a binding outside the map's frames (`Effect::Writes`).
-    Write = 1,
-    /// An observing read of a batch, as a count or a position that comes from the cell makes (`Value::observed`).
-    Observed = 2,
-    /// A call with no rule for batches of its arguments: a primitive with an axis or with no rule for cells, a rule that declines these arguments, a kernel's read of a cell's number (`Value::computed`), or `∂` with respect to cells that are arrays.
-    Rule = 3,
-    /// A call that would repeat constants over so many cells that it holds far more items than its arguments (`batch::CHUNK`). The run goes on in chunks of cells where the stop gives them (`Stop::chunk`).
-    Memory = 4,
-    /// A guard or a call on prototypes that would catch an error (`Effect::Catches`).
-    Caught = 5,
-    /// A guard on a batched value in a dfn whose guard already splits the run's cells, as a recursive call makes (`Levels::case`).
-    Recursion = 6,
-}
-
-/// How long a dfn operand remembers a stop of its batched run (`batch::tried`).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kept {
-    /// For every later call, because the stop depends only on what the operand does.
-    Always,
-    /// While later calls repeat the arguments' kinds and cell shapes, and the frame's shape too where `frame` is set. A branch can depend on a cell's shape, through an observing read of a plain value such as `≢⍵`, so a call with no rule in one branch may not recur for other shapes.
-    Arguments { frame: bool },
-    /// Never, because whether the stop recurs depends on the cells' values.
-    Never,
-}
-
-impl Cause {
-    /// How long a dfn operand remembers a stop for this cause.
-    pub(crate) fn kept(self) -> Kept {
-        match self {
-            Cause::Effect | Cause::Write | Cause::Observed | Cause::Recursion => Kept::Always, Cause::Rule => Kept::Arguments { frame: false },
-            Cause::Memory => Kept::Arguments { frame: true }, Cause::Caught => Kept::Never
-        }
-    }
-    /// The cause that `bits` encode, as a stop and a dfn operand's memory of a stop hold it.
-    pub(crate) fn from_bits(bits: u64) -> Cause {
-        match bits {
-            0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, 5 => Cause::Caught, _ => Cause::Recursion
-        }
-    }
-    /// What `•explain` reports in `fallbacks` for a stop for this cause.
-    pub(crate) fn reason(self) -> &'static str {
-        match self {
-            Cause::Effect => "an effect", Cause::Write => "a write", Cause::Observed => "a cell's value", Cause::Rule => "no batch rule",
-            Cause::Memory => "too many items", Cause::Caught => "a caught error", Cause::Recursion => "a recursive call"
-        }
-    }
-}
-
-impl From<Stop> for ErrorKind { fn from(stop: Stop) -> Self { ErrorKind::Stop(stop) } }
+/// How a batched run or trace ended without a result: its own level's stop, a fallback reason, a failed speculative call retaining its error for `•explain`, or a control error that passes through. A trace can name its stop more precisely; otherwise the stop's cause supplies its reason.
+pub(crate) enum Ended { Stopped(Stop, Option<&'static str>), Fell(&'static str), Failed(Error), Passed(Error) }
 
 impl Value {
     /// This value as a reader sees it when it's an atom with no level's data on it: a number, character, function or operator.
@@ -297,12 +223,12 @@ impl Value {
         self.marks(&mut |mark| { if newest.is_none_or(|n| mark.id() > n.id()) { newest = Some(mark); } false });
         newest
     }
-    /// Whether this value itself carries a running level's data, as a dual of a `∂` call or a record of linear calls, without looking at the items of a nested array.
+    /// Whether this value itself carries a running level's data, as a dual of a `∂` call or a tape value, without looking at the items of a nested array.
     pub(crate) fn carries_here(&self) -> bool { self.carrier().is_some() }
     /// Whether this value, or a value nested in it, carries a running level's data. Kernels that read items directly leave such a value to the general path. Only mixed storage holds nested values, so a compact value answers from two inline tests.
     #[inline]
     pub(crate) fn carried(&self) -> bool { self.carries_here() || self.holds_values() && self.marks(&mut |_| true) }
-    /// Whether this value carries only levels older than `level` at its outer layer, as a dual's parts and a record's coefficients must (`derivative::Dual::new`, `linear::node`).
+    /// Whether this value carries only levels older than `level` at its outer layer, as a dual's parts and a tape value's coefficients must (`derivative::Dual::new`, `program::trace::Traced`).
     pub(crate) fn older_than(&self, level: u64) -> bool { self.carrier().is_none_or(|c| c.level() < level) }
     /// The carrier at this value's outer layer that holds level `level`'s data. Level ids come from one counter, so the level alone names the carrier's kind.
     pub(crate) fn carrier_at(&self, level: u64) -> Option<&Carrier> { self.carrier().filter(|c| c.level() == level) }
@@ -331,11 +257,11 @@ pub(crate) fn offset_id(offset: usize) -> usize { if offset == rustymath::gather
 
 /// A level whose data a value carries, as routing compares levels: a `∂` call's tag, a record level's id, a batched map's id, or a label level's id. The newest level has the largest id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Mark { Dual(u64), Record(u64), Batch(u64), Label(u64), Trace(u64) }
+pub(crate) enum Mark { Dual(u64), Tape(u64), Batch(u64), Label(u64), Trace(u64) }
 
 impl Mark {
     /// The level's id.
-    pub(crate) fn id(self) -> u64 { match self { Mark::Dual(id) | Mark::Record(id) | Mark::Batch(id) | Mark::Label(id) | Mark::Trace(id) => id } }
+    pub(crate) fn id(self) -> u64 { match self { Mark::Dual(id) | Mark::Tape(id) | Mark::Batch(id) | Mark::Label(id) | Mark::Trace(id) => id } }
 }
 
 /// The newest level whose data `left` or `right` carries: at their outer layer, or inside their nested arrays where `within`. `None` where they carry nothing at their outer layer, the quick return that keeps a call on plain values cheap inside a running level. The newest level alone decides where a call goes. A newer level inside an argument held in mixed storage counts even without `within`, as in an array of dual atoms beside an older dual. A bare record never meets a newer dual, because records live only in the tangents of their `∂` call's duals. The check below stops the run if one does. `call`, `route` and `written` each call it once.
@@ -346,7 +272,8 @@ fn newest(left: Option<&Value>, right: &Value, within: bool) -> Option<Mark> {
     let newest = if within { outer } else { inner().filter(|m| m.id() > outer.id()).unwrap_or(outer) };
     if matches!(newest, Mark::Dual(_)) {
         assert!(
-            !left.into_iter().chain([right]).any(|v| matches!(v.carrier(), Some(Carrier::Record(_)))), "a record met a newer dual outside that dual's rules"
+            !left.into_iter().chain([right]).any(|v| matches!(v.carrier(), Some(Carrier::Traced(t)) if matches!(t.role, Role::Tape))),
+            "a record met a newer dual outside that dual's rules"
         );
     }
     Some(newest)
@@ -376,8 +303,8 @@ pub(crate) enum Op<'a> {
     System(&'a Function, &'a SystemFunction),
 }
 
-/// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A record level records the call (`linear::call`), unless only the right argument is a record and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. A level gives a seeded fold its rule only where the rule takes the seed. Otherwise the fold's own code runs, or the level refuses the fold. Callers test `Session::transforming` first.
-#[inline(never)]
+/// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A tape level records the call (`derivative::taped`), unless only the right argument is a tape value and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. A level gives a seeded fold its rule only where the rule takes the seed. Otherwise the fold's own code runs, or the level refuses the fold. Plain arguments give `None` without reading the session. Outside every level it gives `None` at once, so call sites test no level state.
+#[inline]
 pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
     let within = match op {
         Op::Operation(Operation::Primitive(p), _) => matches!(p, Primitive::Polynomial | Primitive::MatrixDivide | Primitive::Decode),
@@ -385,27 +312,38 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span)
         Op::Ruled(..) | Op::System(..) => true
     };
     let newest = newest(left, right, within)?;
+    if !session().transforming() { return None; }
+    routed(op, left, right, span, newest)
+}
+
+/// A call with a selected running level.
+#[inline(never)]
+fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span, newest: Mark) -> Option<Result<Value, Error>> {
     if let Op::Operation(operation, Pairing::Agreed(agreement)) = op {
         let (x, y) = agreement.laid(left, right);
         return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, span));
     }
     match newest {
-        Mark::Record(_) => {
+        Mark::Tape(_) => {
             let planned = matches!(op, Op::Operation(Operation::Primitive(p), _) if matches!(p.facts(left.is_some()).form, crate::primitive::Form::Moves { planned: true, .. }));
-            if planned && !left.is_some_and(|x| crate::linear::record_of(x).is_some()) { return None; }
-            crate::linear::call(op, left, right, span)
+            if planned && !left.is_some_and(|x| x.carrier().and_then(Carrier::traced).is_some_and(|t| matches!(t.role, Role::Tape))) { return None; }
+            crate::derivative::taped(op, left, right, span)
         }
         Mark::Dual(tag) => crate::derivative::call(op, left, right, tag, span),
         Mark::Batch(level) => crate::batch::call(op, left, right, level, span),
         Mark::Label(level) => match op {
-            Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => crate::selection::call(p, axis, left, right, level, span), _ => None
+            Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => Some(crate::selection::call(p, axis, left, right, level, span)), _ => None
         },
         Mark::Trace(level) => crate::program::trace::call(op, left, right, level),
     }
 }
 
 /// Whether a level that wraps values is running and `left` or `right` carries its data.
-pub(crate) fn carried(left: Option<&Value>, right: &Value) -> bool { session().transforming() && (right.carried() || left.is_some_and(Value::carried)) }
+pub(crate) fn carried(left: Option<&Value>, right: &Value) -> bool { (right.carried() || left.is_some_and(Value::carried)) && session().transforming() }
+/// The carrier of the newest level among `values`, as a structural call that reads them hands over to it (`fusion::copy`), or `None` where none carries any level's data.
+pub(crate) fn newest_carrier<'a>(values: impl IntoIterator<Item = &'a Value>) -> Option<&'a Carrier> {
+    values.into_iter().filter_map(Value::carrier).max_by_key(|c| c.level())
+}
 /// Asks the running levels before code that acts: code that reads or writes files, the network, the clock or the terminal, or that makes something new on each call, such as a random UUID. A batched run stops before it (`Effect::Acts`), because the code would act once for all its cells.
 pub(crate) fn acts() -> Result<(), Error> { Ok(session().effect(Effect::Acts)?) }
 /// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻¹` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
@@ -414,43 +352,53 @@ pub(crate) fn formats(left: Option<&Value>, right: &Value) -> Result<(), Error> 
 /// The message of the UNSUPPORTED error that a value `∂` carries gives where it reaches code that reads numbers directly (`number::Failure::Carried`).
 pub(crate) const UNSUPPORTED: &str = "∂ can't differentiate this here";
 
-/// The message of a batched run's stop (`Stop`).
-pub(crate) const STOPPED: &str = "a batched run can't do this for all its cells at once";
-
-/// A running level's data, on an array in place of its items, or on an atom (`Value::Carried`): a dual of a `∂` call (`derivative::Dual`), a record of linear calls (`linear::Linear`), which is always an array, a batch of a batched map's cells (`batch::Batch`), a selection's values with their labels (`selection::Labelled`), or a trace's traced value (`program::trace::Traced`). An array keeps the layout that code outside the level sees: a batch's is one cell's.
+/// A running level's data, on an array in place of its items, or on an atom (`Value::Carried`): a dual of a `∂` call (`derivative::Dual`), a batch of a batched map's cells (`batch::Batch`), a selection's values with their labels (`selection::Labelled`), or a value that a tape or a trace records (`program::trace::Traced`). An array keeps the layout that code outside the level sees: a batch's is one cell's.
 #[derive(Clone, Debug)]
 pub enum Carrier {
-    Dual(std::sync::Arc<crate::derivative::Dual>), Record(std::sync::Arc<crate::linear::Linear>), Batch(std::sync::Arc<crate::batch::Batch>),
-    Labelled(std::sync::Arc<crate::selection::Labelled>), Traced(std::sync::Arc<crate::program::trace::Traced>)
+    Dual(std::sync::Arc<crate::derivative::Dual>), Batch(std::sync::Arc<crate::batch::Batch>), Labelled(std::sync::Arc<crate::selection::Labelled>),
+    Traced(std::sync::Arc<crate::program::trace::Traced>)
 }
 
 impl Carrier {
+    /// The allocation that holds this carrier's data, which identifies it as a program's held value (`program::held_identity`).
+    pub(crate) fn identity(&self) -> *const () {
+        use std::sync::Arc;
+        match self {
+            Carrier::Dual(d) => Arc::as_ptr(d).cast(), Carrier::Batch(b) => Arc::as_ptr(b).cast(), Carrier::Labelled(l) => Arc::as_ptr(l).cast(),
+            Carrier::Traced(t) => Arc::as_ptr(t).cast()
+        }
+    }
     /// The level whose data this carrier holds, as routing compares levels.
     pub(crate) fn mark(&self) -> Mark {
         match self {
-            Carrier::Dual(dual) => Mark::Dual(dual.tag), Carrier::Record(t) => Mark::Record(t.level), Carrier::Batch(b) => Mark::Batch(b.level),
-            Carrier::Labelled(l) => Mark::Label(l.level), Carrier::Traced(t) => Mark::Trace(t.level)
+            Carrier::Dual(dual) => Mark::Dual(dual.tag), Carrier::Batch(b) => Mark::Batch(b.level), Carrier::Labelled(l) => Mark::Label(l.level),
+            Carrier::Traced(t) => match t.role { Role::Tape => Mark::Tape(t.level), Role::Trace => Mark::Trace(t.level) }
         }
     }
     /// The id of the level whose data this carrier holds: a dual's tag, or a record's level.
     pub(crate) fn level(&self) -> u64 { self.mark().id() }
     /// The dual this carrier is, if it is one.
     pub(crate) fn dual(&self) -> Option<&std::sync::Arc<crate::derivative::Dual>> { match self { Carrier::Dual(dual) => Some(dual), _ => None } }
-    /// The record this carrier is, if it is one.
-    pub(crate) fn record(&self) -> Option<&std::sync::Arc<crate::linear::Linear>> { match self { Carrier::Record(t) => Some(t), _ => None } }
     /// The batch this carrier is, if it is one.
     pub(crate) fn batch(&self) -> Option<&std::sync::Arc<crate::batch::Batch>> { match self { Carrier::Batch(b) => Some(b), _ => None } }
     /// The labelled value this carrier is, if it is one.
     pub(crate) fn labelled(&self) -> Option<&std::sync::Arc<crate::selection::Labelled>> { match self { Carrier::Labelled(l) => Some(l), _ => None } }
     /// The traced value this carrier is, if it is one.
     pub(crate) fn traced(&self) -> Option<&std::sync::Arc<crate::program::trace::Traced>> { match self { Carrier::Traced(t) => Some(t), _ => None } }
+    /// A structural primitive's result where an input or a parameter carries this carrier's level, as `fusion::copy` hands it over: the merged tape and trace type records the call (`Traced::structural`), a dual copies each part through `fusion::copy` (`Dual::structural`), a batch copies its cells alike (`Batch::structural`), and a labelled value carries its labels through (`Labelled::structural`).
+    pub(crate) fn structural(
+        &self, form: &crate::primitive::structural::Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
+        match self {
+            Carrier::Dual(dual) => dual.structural(form, params, inputs, fill), Carrier::Traced(t) => t.structural(form, params, inputs, fill),
+            Carrier::Batch(b) => b.structural(form, params, inputs, fill), Carrier::Labelled(l) => l.structural(form, params, inputs, fill)
+        }
+    }
     /// The value that the running trace holds in this carrier's place: a free name's value, or a value computed from free names alone, which each replay checks (`Traced::held`). `None` for any other value.
     pub(crate) fn held(&self) -> Option<&Value> { self.traced()?.held() }
     /// The items, as code with no rule for this level reads them (`ArrayData::storage`): a dual's items as dual atoms, or a batch's as batches of atoms. A record has none to give. A traced value's items are atoms outside its program, on which any call stops the trace.
     pub(crate) fn storage(&self) -> &crate::array::Storage {
         match self {
-            Carrier::Dual(dual) => dual.storage(), Carrier::Record(_) => crate::linear::storage(), Carrier::Batch(b) => b.storage(),
-            Carrier::Labelled(l) => l.storage(), Carrier::Traced(t) => t.storage()
+            Carrier::Dual(dual) => dual.storage(), Carrier::Batch(b) => b.storage(), Carrier::Labelled(l) => l.storage(), Carrier::Traced(t) => t.storage()
         }
     }
     /// The items as `ArrayData::items` reads them: a labelled value's values, which can be a range of their base's (`Value::part`), the value that a trace holds in a traced value's place (`held`), or else the items of `storage`.
@@ -470,33 +418,31 @@ impl Carrier {
     pub(crate) fn view(&self, layout: crate::array::Layout) -> Value {
         match self {
             Carrier::Dual(dual) => dual.map(|part| part.relaid(layout.clone())).expect("a view has as many items as its base"),
-            Carrier::Record(t) => crate::linear::view(t, layout), Carrier::Batch(b) => b.view(layout), Carrier::Labelled(l) => l.view(layout),
-            Carrier::Traced(t) => t.view(layout)
+            Carrier::Batch(b) => b.view(layout), Carrier::Labelled(l) => l.view(layout), Carrier::Traced(t) => t.view(layout)
         }
     }
     /// The value that answers, in this carrier's place, the queries that read no items, such as the layout, prototype, kind and exactness: a dual's primal, a record's zero, a batch's first cell, or a zero of a traced value's type. Display reads a dual's items from it too. An observing read goes through `Value::observed` instead, which stops a batch's run, because a batch's first cell doesn't stand for its other cells.
     pub(crate) fn template(&self) -> &Value {
         match self {
-            Carrier::Dual(dual) => &dual.primal, Carrier::Record(t) => &t.zero, Carrier::Batch(b) => b.template(), Carrier::Labelled(l) => l.template(),
-            Carrier::Traced(t) => &t.zero
+            Carrier::Dual(dual) => &dual.primal, Carrier::Batch(b) => b.template(), Carrier::Labelled(l) => l.template(), Carrier::Traced(t) => &t.zero
         }
     }
-    /// This carrier with its numbers converted to `to`, as `width•float` and width marks convert them to floats, and fixed marks to fixed integers. A dual converts both its primal and its tangent to floats, and a record converts to floats through `linear::cast`. Either gives DOMAIN for fixed integers. A batch stops its run. A traced value becomes a conversion step. No batch reaches `•float`, because it's a system function, which stops a batched run before it runs.
+    /// This carrier with its numbers converted to `to`. A dual converts its primal and tangent to floats; a tape value converts to floats through `Traced::cast`. Either gives DOMAIN for fixed integers. A batch converts its whole and retains its frame. A traced value becomes a conversion step.
     pub(crate) fn cast(&self, to: rustymath::buffer::DType, span: &Span) -> Result<Value, Error> {
         use rustymath::buffer::DType;
         match (self, to) {
             (Carrier::Dual(dual), DType::Float(_)) => dual.map(|part| crate::derivative::converted(part, to, span)),
-            (Carrier::Record(t), DType::Float(width)) => Ok(crate::linear::cast(t, width)),
-            (Carrier::Dual(_) | Carrier::Record(_), _) => Err(Error::domain("can't convert result to fixed integers")),
-            (Carrier::Batch(b), _) => Err(Stop::new(b.level, Cause::Rule).into()),
-            (Carrier::Labelled(l), _) => crate::derivative::converted(l.values(), to, span), (Carrier::Traced(t), _) => Ok(t.cast(to))
+            (Carrier::Dual(_), _) => Err(Error::domain("can't convert result to fixed integers")),
+            (Carrier::Batch(b), _) => crate::derivative::converted(b.whole(), to, span).map(|whole| crate::batch::batch(b.level, whole, b.frame)),
+            (Carrier::Labelled(l), _) => crate::derivative::converted(l.values(), to, span), (Carrier::Traced(t), _) => t.cast(to, span)
         }
     }
     /// The value that a reader outside every call sees in this carrier's place (`Value::observed`): a dual's primal. A record shows none, because only code that handles tangents meets one. A batch stops its map's run, because no one value stands for all its cells. A traced value computed from free names alone gives its value, and otherwise stops its trace, because it has no items to read (`Traced::observed`).
     pub(crate) fn observed(&self) -> Result<Option<&Value>, Stop> {
         match self {
-            Carrier::Dual(dual) => Ok(Some(&dual.primal)), Carrier::Record(_) => Ok(None), Carrier::Batch(b) => Err(Stop::new(b.level, Cause::Observed)),
-            Carrier::Labelled(l) => Ok(Some(l.values())), Carrier::Traced(t) => t.observed("a read of a traced value").map(Some)
+            Carrier::Dual(dual) => Ok(Some(&dual.primal)), Carrier::Batch(b) => Err(Stop::new(b.level, Cause::Observed)),
+            Carrier::Labelled(l) => Ok(Some(l.values())),
+            Carrier::Traced(t) => match t.role { Role::Tape => Ok(None), Role::Trace => t.observed("a read of a traced value").map(Some) }
         }
     }
     /// Whether this carrier reads a copy of other items, as a traced copy does (`Traced::copies`).
@@ -504,74 +450,66 @@ impl Carrier {
     /// What a kernel meets where it reads this carrier's number directly (`Value::computed`). A labelled value gives its values' read. A dual or a record is UNSUPPORTED, because no rule of `∂` covers the read. A batch stops its map's run, because each cell has its own number. The stop is for a call with no rule for batches (`Cause::Rule`). A traced value computed from free names alone gives its number, and otherwise stops its trace, because it has no number to read (`Traced::observed`).
     pub(crate) fn computed(&self) -> Result<Plain<'_>, Failure> {
         match self {
-            Carrier::Labelled(l) => l.values().computed(), Carrier::Batch(b) => Err(Failure::Stop(Stop::new(b.level, Cause::Rule))),
-            Carrier::Dual(_) | Carrier::Record(_) => Err(Failure::Carried),
-            Carrier::Traced(t) => t.observed("a kernel that reads a traced number").map_err(Failure::Stop)?.computed()
+            Carrier::Labelled(l) => l.values().computed(),
+            Carrier::Batch(b) => Err(Failure::Stop(Stop::new(b.level, Cause::Rule))),
+            Carrier::Dual(_) => Err(Failure::Carried),
+            Carrier::Traced(t) => match t.role {
+                Role::Tape => Err(Failure::Carried), Role::Trace => t.observed("a kernel that reads a traced number").map_err(Failure::Stop)?.computed()
+            },
         }
     }
     /// Whether code with no rule for this carrier's level has read its items one at a time, through `Carrier::storage`. A record's items are never read.
     pub(crate) fn items_built(&self) -> bool {
         match self {
-            Carrier::Dual(dual) => dual.items.get().is_some(), Carrier::Record(_) => false, Carrier::Batch(b) => b.items_built(), Carrier::Labelled(_) => false,
+            Carrier::Dual(dual) => dual.items.get().is_some(), Carrier::Batch(b) => b.items_built(), Carrier::Labelled(_) => false,
             Carrier::Traced(t) => t.items_built()
         }
     }
     /// Whether `Value::new` joins a strand of items that carry this level into one carried array as it builds the strand. Labelled items join there, because a selection reads labels only from a whole labelled array. Duals join when a rule reads them (`derivative::packed`). Batches join at a batched run's result.
     pub(crate) fn joins_at_once(&self) -> bool {
-        match self { Carrier::Labelled(_) => true, Carrier::Dual(_) | Carrier::Record(_) | Carrier::Batch(_) | Carrier::Traced(_) => false }
+        match self { Carrier::Labelled(_) => true, Carrier::Dual(_) | Carrier::Batch(_) | Carrier::Traced(_) => false }
     }
     /// Whether a `Gather` that copies values carrying this level joins them at the level, splitting its data off each item (`Join`). Duals and labelled values join there. A batch joins at its run's result instead (`batch::joined`).
-    pub(crate) fn joins(&self) -> bool {
-        match self { Carrier::Dual(_) | Carrier::Labelled(_) => true, Carrier::Record(_) | Carrier::Batch(_) | Carrier::Traced(_) => false }
-    }
+    pub(crate) fn joins(&self) -> bool { match self { Carrier::Dual(_) | Carrier::Labelled(_) => true, Carrier::Batch(_) | Carrier::Traced(_) => false } }
     /// Plain zeros in this carrier's layout, as `Value::zeroed` gives them.
     pub(crate) fn zeroed(&self) -> Value {
         match self {
-            Carrier::Dual(dual) => dual.primal.zeroed(), Carrier::Record(t) => t.layout.filled(&t.zero), Carrier::Batch(b) => b.template().zeroed(),
-            Carrier::Labelled(l) => l.values().zeroed(), Carrier::Traced(t) => t.zeroed()
+            Carrier::Dual(dual) => dual.primal.zeroed(), Carrier::Batch(b) => b.template().zeroed(), Carrier::Labelled(l) => l.values().zeroed(),
+            Carrier::Traced(t) => t.zeroed()
         }
     }
     /// Whether two carriers are the same: duals with the same tag and the same parts, or the same record or batch.
     pub(crate) fn same(&self, other: &Carrier) -> bool {
         match (self, other) {
             (Carrier::Dual(a), Carrier::Dual(b)) => a.tag == b.tag && a.primal.same(&b.primal) && a.full_tangent().same(b.full_tangent()),
-            (Carrier::Record(a), Carrier::Record(b)) => std::sync::Arc::ptr_eq(a, b), (Carrier::Batch(a), Carrier::Batch(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Carrier::Batch(a), Carrier::Batch(b)) => std::sync::Arc::ptr_eq(a, b),
             (Carrier::Labelled(a), Carrier::Labelled(b)) => std::sync::Arc::ptr_eq(a, b),
             (Carrier::Traced(a), Carrier::Traced(b)) => std::sync::Arc::ptr_eq(a, b), _ => false
         }
     }
     /// Item `i`: a dual of the parts' items, a record of the one item it reads, a batch of item `i` of every cell, or a traced value's copy of item `i` (`Traced::item`).
     pub(crate) fn at(&self, i: usize) -> Value {
-        match self {
-            Carrier::Dual(dual) => dual.at(i), Carrier::Record(t) => crate::linear::item(t, i), Carrier::Batch(b) => b.at(i), Carrier::Labelled(l) => l.at(i),
-            Carrier::Traced(t) => t.item(i)
-        }
+        match self { Carrier::Dual(dual) => dual.at(i), Carrier::Batch(b) => b.at(i), Carrier::Labelled(l) => l.at(i), Carrier::Traced(t) => t.item(i) }
     }
-    /// Item `i` as bulk iteration reads it (`Value::element`): `at`'s item, except a traced value's and a dual's. A traced value gives the item of the value that the trace holds in its place (`held`), or else an atom outside its program (`Traced::element`). A dual's parts are read the same way. A call on an atom outside the program stops the trace, so a primitive that reads every item stops at its first call, with no step for each item.
+    /// Item `i` as bulk iteration reads it (`Value::element`): `at`'s item, except a traced value's and a dual's. A traced value gives the item of the value that the trace holds in its place, or else an atom outside its program (`Traced::element`). A dual's parts are read the same way. A call on an atom outside the program stops the trace, so a primitive that reads every item stops at its first call, with no step for each item.
     pub(crate) fn element(&self, i: usize) -> Value {
-        match self {
-            Carrier::Traced(t) => t.held().map_or_else(|| t.element(), |v| v.element(i)), Carrier::Dual(dual) => dual.element(i), carrier => carrier.at(i)
-        }
+        match self { Carrier::Traced(t) => t.element(i), Carrier::Dual(dual) => dual.element(i), carrier => carrier.at(i) }
     }
-    /// The items laid out by `layout`, read through `map` as `primitive::copied` reads a value's: each part of a dual through the map its part reads (`Part::map`), with only the primal reading `fill`, a record as one copy node (`linear::copy`), each cell of a batch alike, through one copy of its whole frame, and a labelled value through `Labelled::copied`. A trace records a copy with a native fill. A fill of mixed data stops it.
+    /// The items laid out by `layout`, read through `map` as `fusion::copied` reads a value's: each part of a dual through `map`, with only the primal reading `fill`, a tape value as one copy node (`Traced::copied`), each cell of a batch alike, through one copy of its whole frame, and a labelled value through `Labelled::copied`. A fill of mixed data stops a trace.
     pub(crate) fn copied(&self, layout: crate::array::Layout, map: &rustymath::agreement::Mapping, fill: Option<&Value>) -> Result<Value, crate::ErrorKind> {
         match self {
             Carrier::Dual(dual) => Ok(crate::derivative::dual(
-                dual.tag, crate::primitive::copied_fill(&dual.primal, layout.clone(), map, fill)?,
-                crate::primitive::copied(dual.full_tangent(), layout, &Part::Derived.map(map))?)),
-            Carrier::Record(t) => Ok(crate::linear::copy(t, layout, &Part::Derived.map(map))), Carrier::Batch(b) => b.copied(layout, map, fill),
-            Carrier::Labelled(l) => l.copied(layout, map, fill),
-            Carrier::Traced(t) if fill.is_some() => crate::primitive::copied_fill(t.observed("a copy with a chosen fill")?, layout, map, fill),
-            Carrier::Traced(t) => Ok(t.copied(layout, map))
+                dual.tag, crate::fusion::copied(&dual.primal, layout.clone(), map, fill)?, crate::fusion::copied(dual.full_tangent(), layout, map, None)?)),
+            Carrier::Batch(b) => b.copied(layout, map, fill), Carrier::Labelled(l) => l.copied(layout, map, fill),
+            Carrier::Traced(t) => t.copied(layout, map, fill)
         }
     }
-    /// The items that `parts` select from `value`, this carrier's value, where a part holds positions that the running trace computes (`primitive::select`): each part of a dual alike, a record as one gather that adds its cotangent back at the same places (`linear::selected`), or a traced value as one step that selects at replay (`trace::gathered`). A batch or a labelled value stops the trace.
+    /// The items that `parts` select from `value`, this carrier's value, where a part holds positions that the running trace computes (`primitive::select`): each part of a dual alike, a tape value as one gather that adds its cotangent back at the same places (`Traced::selected`), or a traced value as one step that selects at replay (`trace::gathered`). A batch or a labelled value stops the trace.
     pub(crate) fn selected(&self, value: &Value, parts: &[rustymath::structure::IndexPart<Value>], paired: bool, span: &Span) -> Result<Value, Error> {
         let select = |v: &Value| crate::primitive::select(v, parts, None, paired, None, span);
         match self {
             Carrier::Dual(dual) => Ok(crate::derivative::dual(dual.tag, select(&dual.primal)?, select(dual.full_tangent())?)),
-            Carrier::Record(t) => crate::linear::selected(t, parts, paired, span),
-            Carrier::Traced(_) => crate::program::trace::gathered(value, parts, paired, span),
+            Carrier::Traced(t) => t.selected(value, parts, paired, span),
             Carrier::Batch(_) | Carrier::Labelled(_) => {
                 Err(crate::program::trace::stopped("a selection by computed positions from a value that another level carries"))
             }
@@ -579,7 +517,7 @@ impl Carrier {
     }
 }
 
-/// A part of a carried value that a copy writes: its values, such as a dual's primal or a selection's values, or a part derived from them, such as a tangent, a record or label ids. A chosen fill is a constant, with a tangent of 0 and no label, so only the values read it.
+/// A part of a carried value that a copy writes: its values, such as a dual's primal or a selection's values, or a part derived from them, such as a tangent, a record or label ids. A chosen fill is a constant, with a tangent of 0 and no label, so only the values read it (`fill`).
 #[derive(Clone, Copy)]
 pub(crate) enum Part { Values, Derived }
 
@@ -587,28 +525,24 @@ impl Part {
     /// The fill that this part reads where a copy chose `fill`.
     #[inline]
     pub(crate) fn fill(self, fill: Option<&Value>) -> Option<&Value> { match self { Part::Values => fill, Part::Derived => None } }
-    /// The mapping through which this part reads a copy through `map`: `map` itself for the values, and `map` without its chosen fill for a derived part.
-    pub(crate) fn map(self, map: &rustymath::agreement::Mapping) -> std::borrow::Cow<'_, rustymath::agreement::Mapping> {
-        match (self, map.chosen()) { (Part::Derived, Some(_)) => std::borrow::Cow::Owned(map.clone().filled(None)), _ => std::borrow::Cow::Borrowed(map) }
-    }
 }
 
 impl Footprint for Carrier {
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         match self {
-            Carrier::Dual(dual) => dual.footprint_in(seen), Carrier::Record(t) => t.footprint_in(seen), Carrier::Batch(b) => b.footprint_in(seen),
-            Carrier::Labelled(l) => l.footprint_in(seen), Carrier::Traced(_) => 0
+            Carrier::Dual(dual) => dual.footprint_in(seen), Carrier::Batch(b) => b.footprint_in(seen), Carrier::Labelled(l) => l.footprint_in(seen),
+            Carrier::Traced(t) => t.footprint_in(seen)
         }
     }
 }
 
-/// Writes `source` into `target` with `write`, as `Value::scatter` and `Value::append` do, where either carries a running level's data, at the newer of their levels. A dual writes each part into the matching part (`derivative::written`), and a record writes through its ids (`linear::written`). A tangent's write is itself such a write, so a dual whose tangent is a record writes the record through its ids. A scatter into a batch, or of one, writes every cell at once at `writes`, positions in a cell that every cell shares (`batch::written`). An append, which has no `writes`, stops the batched run, because it would happen once for all its cells. `None` where neither carries any data, which leaves the write to the caller. An error from `write` leaves `target` unchanged.
+/// Writes `source` into `target` with `write`, as `Value::scatter` and `Value::append` do, where either carries a running level's data, at the newer of their levels. A dual writes each part into the matching part (`derivative::written`), and a tape value writes as one tape node (`derivative::tape::written`). A tangent's write is itself such a write, so a dual whose tangent is a tape value writes it through its ids. A scatter into a batch, or of one, writes every cell at once at `writes`, positions in a cell that every cell shares (`batch::written`). An append, which has no `writes`, stops the batched run, because it would happen once for all its cells. `None` where neither carries any data, which leaves the write to the caller. An error from `write` leaves `target` unchanged.
 pub(crate) fn written<E: From<Stop>>(
     target: &mut Value, source: &Value, writes: Option<rustymath::gather::Writes<'_>>, write: impl Fn(&mut Value, &Value) -> Result<(), E>
 ) -> Option<Result<(), E>> {
     Some(match newest(Some(source), target, false)? {
         Mark::Dual(tag) => crate::derivative::written(target, source, tag, write),
-        Mark::Record(_) => crate::linear::written(target, source, write),
+        Mark::Tape(_) => crate::derivative::tape::written(target, source, write),
         Mark::Batch(level) => match writes {
             Some(writes) => crate::batch::written(target, source, level, writes).map_err(E::from), None => Err(Effect::Writes.stop(level).into())
         },
@@ -648,7 +582,7 @@ impl Join {
         match self { Join::Dual(j) => j.each(source, replaces, op), Join::Label(j) => j.each(source, replaces, op) }
     }
     pub(crate) fn add(&mut self, item: Value) { match self { Join::Dual(j) => j.add(item), Join::Label(j) => j.add(item) } }
-    pub(crate) fn finish(self, layout: crate::array::Layout, prototype: impl crate::array::Prototype) -> Result<Value, crate::ErrorKind> {
+    pub(crate) fn finish(self, layout: crate::array::Layout, prototype: &mut dyn FnMut() -> Value) -> Result<Value, crate::ErrorKind> {
         match self { Join::Dual(j) => j.finish(layout, prototype), Join::Label(j) => j.finish(layout, prototype) }
     }
 }

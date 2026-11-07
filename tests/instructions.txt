@@ -7,32 +7,46 @@ fib←{⍵<2ₓ?⍵;(∇⍵-1ₓ)+∇⍵-2ₓ} ⋄ g←{⍵<2ₓ?⍵;(g ⍵-1ₓ
 # A primitive call.
 +⍣N 0	392
 # A dfn call that returns its argument.
-{⍵}⍣N 0	1418
+{⍵}⍣N 0	1372
 # A dfn that reads a global.
 {⍵+k}⍣N 0	2499
 # A local assignment and read.
 {x←⍵+1 ⋄ x}⍣N 0	2970
-# A spaced run that builds a train and applies it at once.
-{(⍵)+⊢ ⍵}⍣N 0	4233
-# A bracket literal. It counted 5,620 on 24 October 2026. Joining its items' kinds, fixedness and weakness in `Promoted::join` added about 125 instructions. The memory guard's check on each allocation and the later promotion refactor added about 95 more.
-{↑[⍵ 1]}⍣N 0	5717
+# A spaced run that applies a train at once. The compiled statement calls the train's tines in place, without building the train (`Op::CallTrain`).
+{(⍵)+⊢ ⍵}⍣N 0	3844
+# A bracket literal. It counted 5,620 on 24 October 2026. Joining its items' kinds, fixedness and weakness in `Promoted::join` added about 125 instructions. The memory guard's check on each allocation and the later promotion refactor added about 95 more. Moving `other_step` out of line and the `Value::Pending` arms in the resolving functions added about 220 more.
+{↑[⍵ 1]}⍣N 0	5941
 # A fixed mark on a 4-item float vector, which floors each item to `i32` through `derivative::converted`, the entry point that marks on values and on functions share. Stage 3's step 6 sent value marks there, which cost about 215 instructions. The inline size test in `fusion::convert` and the inline tests of `Value::carried` and `Value::holds_values` recover about 100 of them. On 26 October 2026, single-stepping `binder::derived` under lldb counted every instruction that it and its calls retire. Outside `malloc`, the other 115 lay in four functions: 130 in `derivative::converted`, 17 in an out-of-line `product` for its size test's length, 15 in `Value::converted`'s dispatch, and 47 fewer in `binder::derived`, which no longer reads the settings itself. Of the 130, about 45 read the settings, 25 test for carriers and 12 make the size test. The inline `rustymath::layout::count` and an always-inlined `derivative::plain` then saved 19.
 v_4ₓ₄	3733
 # `fib 10ₓ` makes 177 calls, which read `⍵` and `∇`.
 {fib 10ₓ}⍣N 0	824136
-# `g 10ₓ` makes 177 calls of a dfn that calls itself by name, with spaces that split its statement into runs.
-{g 10ₓ}⍣N 0	978171
+# `g 10ₓ` makes 177 calls of a dfn that calls itself by name, with spaces that split its statement into runs. Each call applies a train at once, whose tines the compiled statement calls in place (`Op::CallTrain`).
+{g 10ₓ}⍣N 0	914096
 # `fib 10ₓ` under static kinds, whose integer scalar calls run their integer kernel at the `int` width (`Primitive::integer_kernel`).
 •prefs ["kinds":"static"] ⋄ {fib 10ₓ}⍣N 0	870789
 # `fib 10ₓ₂` on 16-bit fixed integers, whose scalar calls run their integer kernel at that width (`Primitive::fixed_number`), and whose comparisons compare the integers directly (`Number::order`).
 {fib 10ₓ₂}⍣N 0	905540
-# Each over a nested vector, which can't batch, calls `⌽` once for each of the 64 strings in `t`. It counted 290,267 on 25 October 2026. Later that day a longer zero-axis scan in rustymath's `element_count` and stage 3's single map type, where `remap` builds a `Mapping` that `copying` reads back, made each string's reversed copy about 150 instructions dearer. Other changes recovered that rise, among them scanning only where a shape's product overflows, inlining `Mapping::from` and `Mapping::to_walk`, and the inline tests in `Value::carried`. On 26 October 2026, with this file's setup, the 02:01 build of 25 October counted 290,445 and a build of 26 October 291,153. Reading each part once in `plan::Kind::join`, which joins each copy's kind, then saved about 8,700. Later that day it rose to about 290,400, from `Route`'s drop and the fill option's pass through `Mapping::filled`. On 27 October 2026 four changes brought it to 278,025, about 180 instructions fewer for each string: `Mapping::filled` returns a mapping that keeps no fill without moving it, `plan::Kind::value` asks only integer arrays for a fixed width, `Kind::join` returns a lone part as it is, and `Storage::dtype` reads the buffer's dtype with no view. The count moves by up to about 2,400 with the setup alone. On 30 October 2026 it counted 269,374, 3.2% above its earlier count of 261,119. Of that 3.2%, about 2.4% came before that day's 12:43 build, `a8986b13`. The other 0.8% is one more call frame on each array primitive call, from the form rewriter's checks in `call_axis` and `run_axis`. The program-layer redesign in `meta/program-layer-2026-10-30.md` removes those checks, and the count is measured again then.
-⌽¨⍣N t	269374
+# Each over the 64 strings in `t`, of two lengths, reverses them as ragged cells: one walk of each string's plan over their leaf (`batch::segment_remap`), with the batched run's framing and assembly.
+⌽¨⍣N t	201391
 # Rank's general path calls a dfn once for each of the same 64 cells.
 {⌽⍵}⍤0⍣N t	316700
-# A system function maps itself over the same 64 cells.
-•ucs⍣N t	202400
+# A system function that converts each item on its own runs once on the leaf of the same 64 strings (`batch::leaf_system`).
+•ucs⍣N t	39813
 # A 2×2 float matrix product.
 {m+.×m}⍣N 0	6500
 # Rank on a stack of 64 Boolean 2×2 matrices, which runs one or-and product for the whole stack.
 {∨.∧⍤2⍨s}⍣N 0	27500
+# `∂` of a dfn on 4 floats, whose later calls replay the program that its first call traced.
+loss←{+/⊼1-2×⍵} ⋄ {loss∂v_4 ⋄ ⍵}⍣N 0	11366
+# The same on 16 floats. At this size a replay costs the same per call.
+loss←{+/⊼1-2×⍵} ⋄ v_16←1.5+⍳16 ⋄ {loss∂v_16 ⋄ ⍵}⍣N 0	11421
+# `∂` with no program. A guard on `⍵` stops the first call's trace ("a read of a traced value"). Each call then runs through duals, a linear record and its transpose (`linear::transpose`). The count includes the guard's `+/` and `<`.
+guarded←{0<+/⍵ ? +/⊼1-2×⍵ ; 0} ⋄ {guarded∂v_4 ⋄ ⍵}⍣N 0	134404
+# The same on 16 floats.
+guarded←{0<+/⍵ ? +/⊼1-2×⍵ ; 0} ⋄ v_16←1.5+⍳16 ⋄ {guarded∂v_16 ⋄ ⍵}⍣N 0	135907
+# `⇄` by L-BFGS on Rosenbrock's function: 53 evaluations, about 153,500 instructions each. Each evaluation calls `linearized` directly, outside the program cache.
+rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x} ⋄ {rosen⇄ ¯1.2 1 ⋄ ⍵}⍣N 0	8136698
+# Stage 8's baselines (one-graph plan, "Stage 8's tests and records"), counted on build `27541f5c` of 31 October 2026, before the stage's first edit. Selective assignment through a selecting function on 4 floats. The target `1↑a` runs under a `Label` level on the simple root `a`, whose labels hold a mapping and no ids. `Selection::write_into` writes `⍵` at the position that the labels give.
+a←v_4 ⋄ {(1↑a)←⍵ ⋄ ⍵}⍣N 0	20856
+# Under with a selecting function on the same kind of root. `1↑` runs under a `Label` level and `2×` on its result. `Selection::write_into` writes that result at the position that the labels give.
+{(2×)@(1↑)v_4 ⋄ ⍵}⍣N 0	23534

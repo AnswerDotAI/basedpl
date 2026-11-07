@@ -4,8 +4,6 @@ use js_sys::Uint8Array;
 use std::{cell::RefCell, io, path::{Path, PathBuf}};
 use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
 
-pub(crate) use web_time::Instant;
-
 /// The browser build takes no timing lock. `basedpl.bpltests` takes it around the module's timings.
 pub(crate) fn timing_lock() -> Result<(), String> { Ok(()) }
 
@@ -63,7 +61,6 @@ impl Regex {
         let groups = regexp(&format!("(?:{pattern})|"), insensitive).map_err(Error::domain)?.exec("").map_or(0, |m| m.length() as usize - 1);
         Ok(Self { pattern: pattern.into(), groups, insensitive })
     }
-    pub(crate) fn as_str(&self) -> &str { &self.pattern }
     pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> {
         let text = js_sys::JsString::from(text);
         let at = text.search(&regexp(&self.pattern, self.insensitive).map_err(Error::domain)?);

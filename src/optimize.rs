@@ -2,9 +2,7 @@
 use crate::{
     Described, Error, ErrorKind, Function, Number, Span, Value, array::Layout, data::Options, derivative::Linearized, element::Float, keyed, primitive::real,
 };
-use num_traits::ToPrimitive;
-use rustymath::{Native, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
-use rustymath::{buffer::FloatWidth, error::Kind};
+use rustymath::{Native, buffer::FloatWidth, error::Kind, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
 use std::borrow::Cow;
 
 /// The options that `options f⇄ start` takes.
@@ -84,7 +82,7 @@ impl<'a> Point<'a> {
 
     fn value<F: Native>(&self, x: &[F]) -> Result<Value, Error> {
         if self.atom { return Ok(Value::Number(Number::float(x[0].wide(), self.width))); }
-        self.layout.floats(self.width, x.iter().map(|v| v.wide())).described("invalid point")
+        Value::floats(self.layout.clone(), self.width, x.iter().map(|v| v.wide())).described("invalid point")
     }
 
     /// Calls `f` on the point `x`, with `left` as its left argument, and reads its numbers into `out`. A result with another number of them gives LENGTH with `message`.
@@ -97,7 +95,7 @@ impl<'a> Point<'a> {
     fn candidates<F: Native>(&self, xs: &[F], k: usize) -> Result<Value, Error> {
         let n = xs.len() / k;
         let data = (0..n * k).map(|i| xs[i % k * n + i / k].wide());
-        self.layout.concat(&Layout::from([k])).floats(self.width, data).described("invalid candidates")
+        Value::floats(self.layout.concat(&Layout::from([k])), self.width, data).described("invalid candidates")
     }
 
     /// The point found, or with `report`, a record of the point, its value, the number of evaluations and whether the search converged.
@@ -150,7 +148,7 @@ impl<F: Native + Float> Objective<F> for Goal<'_> {
     }
 }
 
-/// The operand as a mapping from a point to its residuals, with the products that `∂` gives where it differentiates `f`, from one record at each point, and the preconditioner of option `precondition` for a linear solve. `values` lays out a cotangent as the residuals are laid out.
+/// The operand as a mapping from a point to its residuals, with the products that `∂` gives where it differentiates `f`, from one tape at each point, and the preconditioner of option `precondition` for a linear solve. `values` lays out a cotangent as the residuals are laid out.
 struct Residual<'a> {
     f: &'a Function,
     /// Option `precondition`, whose function takes and gives arrays of the start's layout.
@@ -159,7 +157,7 @@ struct Residual<'a> {
     values: Point<'a>,
     /// Whether `∂` gives products with `f`'s Jacobian and its transpose, as the linearisation at the start found.
     products: bool,
-    /// Whether `f` is affine, so that one record serves every point.
+    /// Whether `f` is affine, so that one tape serves every point.
     affine: bool,
     last: Option<(Vec<f64>, Linearized)>,
     span: &'a crate::Span,
@@ -235,6 +233,6 @@ fn bracket<F: Native + Float>(value: &Value) -> Result<(Vec<F>, Vec<F>), Error> 
 
 /// The whole number at least `least` in option `key`.
 fn count(options: &Options, key: &str, least: usize) -> Result<Option<usize>, Error> {
-    let whole = |v: f64| (v.fract() == 0.0 && v >= least as f64).then(|| v.to_usize()).flatten();
+    let whole = |v: f64| crate::number::real::nonnegative_integer::<usize>(v).ok().filter(|&n| n >= least);
     options.number(key)?.map(|v| whole(v).ok_or_else(|| Error::domain(format!("⇄ {key} must be a whole number of at least {least}")))).transpose()
 }

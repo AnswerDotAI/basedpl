@@ -22,7 +22,7 @@ BPL computes each of these combinations by an algorithm of its own, in any spell
 | `K (f/⊢)⌸Y` or `K (f⌿⊢)⌸Y`, with `f` of `+ ⌈ ⌊`, or `×` of floats | a vector `Y` of floats, integers or Booleans | folds every group in one pass, without a call of the operand for each group |
 
 ```bpl
-≢⊢ ⌸"banana"                                       ⍝ [1 3 2]ₓ
-1 1 2(+/⊢)⌸10 20 30                                ⍝ 30 30
-(•explain "1 1 2(+/⊢)⌸10 20 30").fast.combination  ⍝ ["group folds"]
+≢⊢ ⌸"banana"                                ⍝ [1 3 2]ₓ
+1 1 2(+/⊢)⌸10 20 30                         ⍝ 30 30
+(•explain "1 1 2(+/⊢)⌸10 20 30").fast.rule  ⍝ ["group folds"]
 ```

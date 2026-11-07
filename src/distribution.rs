@@ -1,13 +1,12 @@
-use crate::execution::check;
-use crate::session;
+use crate::cancel::check;
 use crate::{
     Described, Error, Number, Span, Value, array::generated_len, element::{Stored, read_as}, keyed, number::Numeric, primitive::{numeric, pervade, real},
-    system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}, transform::{Cause, Stop}
+    session, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
-use rand::{SeedableRng, rngs::ChaCha8Rng};
+use rand::rngs::ChaCha8Rng;
 pub(crate) use rustymath::distribution::Distribution;
-use rustymath::{Arg, Unary as _, distribution::{Cdf, Invalid, Pdf, Quantile, standard}};
-use rustymath::{Float as _, buffer::FloatWidth, error::Kind, with_float_width};
+use rustymath::random::{Counter, Items, Key};
+use rustymath::{Arg, Float as _, Unary as _, buffer::FloatWidth, distribution::{Cdf, Invalid, Pdf, Quantile, standard}, error::Kind, with_float_width};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,9 +35,6 @@ const DISTRIBUTIONS: &[(&str, &[f64], Constructor)] = &[
     ("poisson", &[], Constructor::Poisson), ("logistic", &standard::LOGISTIC, Constructor::Two(Distribution::logistic)),
 ];
 
-/// The largest trial count or Poisson rate. A sampler's whole numbers stay exact up to it.
-const WHOLE: u64 = 1 << 53;
-
 fn parameters<const N: usize>(right: &Value) -> Result<[f64; N], Error> {
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "parameters must be a unit or vector")); }
     if right.len() != N { return Err(Error::new(Kind::Length, format!("expected {N} distribution parameters"))); }
@@ -59,14 +55,9 @@ fn construct(constructor: &Constructor, right: &Value) -> Result<Distribution, E
         Constructor::Binomial => {
             let [_, p] = parameters(right)?;
             let n = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("binomial trials must be a nonnegative whole number")?;
-            if n > WHOLE { return Err(Error::new(Kind::Limit, "binomial trials exceed the sampler's whole-number range")); }
             Distribution::binomial(n, p)
         }
-        Constructor::Poisson => {
-            let [rate] = parameters(right)?;
-            if rate > WHOLE as f64 { return Err(Error::new(Kind::Limit, "Poisson rate exceeds the sampler's whole-number range")); }
-            Distribution::poisson(rate)
-        }
+        Constructor::Poisson => { let [rate] = parameters(right)?; Distribution::poisson(rate) }
     };
     made.map_err(|e| Error::domain(e.to_string()))
 }
@@ -91,14 +82,12 @@ fn bundle(d: Distribution) -> Value {
     ])
 }
 
-fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
-
-/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. Draws come in blocks, with an interrupt check before each.
-fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: &[usize], len: usize, rng: &mut R) -> Result<Value, Error> {
-    let mut out = vec![0.0; len];
+/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. The draws are one draw call's items, taken in blocks, with an interrupt check before each.
+fn samples(d: &Distribution, shape: &[usize], len: usize, stream: &mut Stream) -> Result<Value, Error> {
+    let (mut out, mut items) = (vec![0.0; len], stream.items(d.words()));
     for block in out.chunks_mut(1 << 14) {
         check()?;
-        d.samples(rng, block);
+        d.samples(&mut items, block);
     }
     let made = if d.is_discrete() { Value::integers(shape.to_vec(), out.into_iter().map(|k| k as i64).collect()) }
     else { Value::floats(shape.to_vec(), Numeric::current().width, out) };
@@ -106,117 +95,99 @@ fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: &[usize], len: usize,
 }
 
 /// The density, cdf or quantile of `d` at each number in `right`, computed at the width of `right`'s floats, or the session's float width for other numbers. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
-fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Span) -> Result<Value, Error> {
+fn evaluate(d: &Distribution, op: Operation, right: &Value) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if !right.is_atom() && !(quantile && d.is_discrete()) {
         let width = right.float_width().unwrap_or(Numeric::current().width);
         let computed = with_float_width!(width, F => read_as::<F>(right).map(|x| {
-            if quantile && !x.iter().fold(true, |ok, p| ok & (0.0..=1.0).contains(&p.wide())) { return Err(Error::domain("probability must be in [0,1]")); }
             let mut out = Vec::with_capacity(x.len());
             match op {
                 Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
                 _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
             };
-            F::build(right.shape(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")?.with_layout(right.layout().clone()).described("invalid distribution result")
+            F::build(right.layout().clone(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")
         }));
         if let Some(result) = computed { return result; }
     }
-    pervade(None, right, &|_, e| point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width)), &|_, _, _| None, span)
+    pervade(right, &|e| Ok(point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width))))
 }
 
-/// The density, cdf or quantile of `d` at one number x, computed at `width` as an array's items are, as a float of `width`. A discrete quantile is computed in `f64` and gives an exact integer where it's finite, because its integers can pass the largest that narrower floats hold exactly.
-fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
+/// The density, cdf or quantile of `d` at one number x, computed at `width` as an array's items are, as a float of `width`. A discrete quantile is computed in `f64` and gives a machine integer where it's finite, because its integers can pass the largest that narrower floats hold exactly. A quantile past `i64` saturates, as Rust's `as` does.
+fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Value {
     let quantile = op == Operation::Quantile;
-    if quantile && !(0.0..=1.0).contains(&x) { return Err(Error::domain("probability must be in [0,1]")); }
     if quantile && d.is_discrete() {
         let y = d.quantile(x);
-        return Ok(if y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) });
+        return if y.is_finite() { Value::integer(y as i64) } else { Value::Number(Number::float(y, width)) };
     }
     let y = with_float_width!(width, F => { let x = F::narrow(x); match op { Operation::Density => Pdf(*d).one(x), Operation::Cdf => Cdf(*d).one(x), _ => Quantile(*d).one(x) }.wide() });
-    Ok(Value::Number(Number::float(y, width)))
+    Value::Number(Number::float(y, width))
 }
 
-pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    if op != Operation::Sample { return evaluate(d, op, right, span); }
+pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+    if op != Operation::Sample { return evaluate(d, op, right); }
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().described("invalid sample dimension")?;
     let len = generated_len(&shape)?;
-    let Some(left) = left else { return drawn(None, |rng| samples(d, &shape, len, rng)); };
+    let Some(left) = left else { return drawn(None, |stream| samples(d, &shape, len, stream)); };
     let generator = generator_of(left).ok_or_else(|| Error::domain("sample takes a •rand generator on the left"))?;
-    drawn(Some(&generator), |rng| samples(d, &shape, len, rng))
+    drawn(Some(&generator), |stream| samples(d, &shape, len, stream))
 }
 
 /// A stream of random numbers: the session's, which `¿` and a distribution's `sample` draw, or one that `•rand` makes. Every copy of a `•rand` record draws from the same stream.
 pub(crate) type Generator = Arc<Mutex<Stream>>;
 
-/// A generator's state. Draws take its numbers in the order they run. A map's cells draw in turn, and a batched run takes every cell's numbers for one draw at once, in cell order. A draw that each cell makes once gives the same numbers whether or not the map batches, except under a guard that splits the cells, where each side draws for its own cells in turn.
+/// A generator's state: rustymath's count of draw calls under one key (`random::Counter`). Each draw call reads a stream of its own, so its numbers don't depend on how many numbers the calls before it took. A map's cells draw in turn, a call each, and a batched run makes the same calls in cell order, so a draw gives the same numbers whether or not the map batches.
 #[derive(Debug)]
-pub(crate) struct Stream { rng: ChaCha8Rng }
+pub(crate) struct Stream { counter: Counter }
 
 impl Default for Stream {
-    /// The session's stream until a program sets a seed, seeded by the operating system.
-    fn default() -> Self { Self { rng: rand::make_rng() } }
+    /// The session's stream until a program sets a seed, keyed by the operating system.
+    fn default() -> Self { Self { counter: Counter { key: Key(rand::random()), count: 0 } } }
 }
 
 impl Stream {
     /// A stream seeded by `seed`.
-    pub(crate) fn seeded(seed: u64) -> Self { Self { rng: ChaCha8Rng::seed_from_u64(seed) } }
-    /// The stream's state: its seed, its stream number and how far its draws have reached.
-    fn state(&self) -> State { (self.rng.get_seed(), self.rng.get_stream(), self.rng.get_word_pos()) }
-    /// Puts the stream back in `state`.
-    fn restore(&mut self, (seed, stream, position): State) {
-        self.rng = ChaCha8Rng::from_seed(seed);
-        self.rng.set_stream(stream);
-        self.rng.set_word_pos(position);
-    }
+    pub(crate) fn seeded(seed: u64) -> Self { Self { counter: Counter::seeded(seed) } }
+    /// The items of the next draw call, with `w` packed words each: 1 for a roll or a float between 0 and 1, and a distribution's `words` for its sampler.
+    pub(crate) fn items(&mut self, w: usize) -> Items { Items::new(self.counter.next(), w) }
+    /// The generator of the next draw call, for a draw that takes words in sequence, as a deal does.
+    pub(crate) fn rng(&mut self) -> ChaCha8Rng { self.counter.next().at(0) }
 }
 
-/// A stream's state (`Stream::state`).
-type State = ([u8; 32], u64, u128);
-
 /// Each generator that the running batched try has drawn from, with its state before the try first drew from it (`Session::drawn`). Where the try falls back, `settle` puts each state back, so the run over cells draws the numbers it would draw had no try run.
-pub(crate) type Drawn = Mutex<Vec<(Generator, State)>>;
+pub(crate) type Drawn = Mutex<Vec<(Generator, Counter)>>;
 
 /// Ends a batched try's record of its draws, putting each generator's state back where the try fell back (`batch::tried`).
 pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
     let drawn = std::mem::take(&mut *drawn.lock().unwrap_or_else(PoisonError::into_inner));
-    if fell_back { for (generator, state) in drawn { locked(&generator).restore(state); } }
+    if fell_back { for (generator, counter) in drawn { locked(&generator).counter = counter; } }
 }
 
 fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
 
 /// `draw` drawing from `generator`, or from the session's generator where it's `None`, given the id and frame of the batched run where one is running. In a batched run, it first records the generator's state, once for each try (`Drawn`). Under a trace, it stops the trace first (`program::trace::each_call`).
 fn drawing(
-    generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
+    generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
     crate::program::trace::each_call("a random draw")?;
     let generator = generator.unwrap_or(&session().generator);
     let mut stream = locked(generator);
     let batched = session().batched();
     if batched.is_some() {
         let mut drawn = session().drawn.lock().unwrap_or_else(PoisonError::into_inner);
-        if !drawn.iter().any(|(g, _)| Arc::ptr_eq(g, generator)) { drawn.push((generator.clone(), stream.state())); }
+        if !drawn.iter().any(|(g, _)| Arc::ptr_eq(g, generator)) { drawn.push((generator.clone(), stream.counter)); }
     }
-    draw(batched.as_ref().map(|(level, frame)| (*level, frame)), &mut stream.rng)
+    draw(batched.as_ref().map(|(level, frame)| (*level, frame)), &mut *stream)
 }
 
 /// `f` drawing from `generator`, as `drawn_cells` does, where `f` doesn't depend on the cell.
-pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawn_cells(generator, |_, rng| f(rng))
+pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
+    drawn_cells(generator, |_, stream| f(stream))
 }
 
-/// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`). `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
-pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawing(generator, |batched, rng| match batched { Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, rng)), None => f(0, rng) })
-}
-
-/// `f` drawing from `generator` on `value`, where `f` draws for each item of `value` in turn and keeps its layout, as a roll does. In a batched run, `f` draws once, on `value` laid over the run's frame (`batch::whole_over`). That gives each cell the numbers it gets when the cells draw in turn. A value that can't be laid over the frame draws cell by cell (`batch::each_cell`).
-pub(crate) fn drawn_items(generator: Option<&Generator>, value: &Value, f: impl Fn(&Value, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawing(generator, |batched, rng| {
-        let Some((level, frame)) = batched else { return f(value, rng) };
-        match crate::batch::whole_over(value.clone(), level, frame) {
-            Some(whole) => crate::batch::result(level, f(&whole, rng)?, frame.shape().len(), || true, Stop::new(level, Cause::Rule)),
-            None => crate::batch::each_cell(level, frame, |c| f(&crate::batch::cell(value, c)?, rng)),
-        }
+/// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`), a call each in cell order, as the cells would draw unbatched. `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
+pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
+    drawing(generator, |batched, stream| match batched {
+        Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, stream)), None => f(0, stream)
     })
 }
 

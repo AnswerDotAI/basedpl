@@ -1,7 +1,7 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
-use crate::execution::check;
+use crate::cancel::check;
 use crate::search::compact_view;
 use rustymath::{buffer::View, error::Kind};
 
@@ -10,7 +10,7 @@ pub(super) fn found_mask(x: &Value, y: &Value, found: bool, span: &Span) -> Resu
     let (matches, frame) = search(y, x, span)?;
     if frame.shape().len() > 1 { return Err(Error::new(Kind::Rank, "set functions need cells of the same rank")); }
     let miss = y.shape()[0] as u32;
-    Layout::from(vec![matches.len()]).booleans(matches.into_iter().map(|p| (p < miss) == found).collect()).described("invalid set mask")
+    Value::booleans([matches.len()], matches.into_iter().map(|p| (p < miss) == found).collect()).described("invalid set mask")
 }
 
 pub(super) fn without(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
@@ -39,10 +39,10 @@ impl Value {
 
 pub(super) fn unique(right: &Value, span: &Span) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false, None) }
 
-/// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array. A weak integer must fit fixed integers beside it, as in catenation (`Primitive::joined_weak`).
+/// `left` with the cells of `right` that it lacks, joined by catenation. An atom that `left` lacks joins as itself, keeping a weak number weak for the join.
 pub(super) fn union(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    let weak = Primitive::Union.joined_weak(right, left)?;
-    catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true)
+    let lacked = without(right, left, span)?;
+    catenate(left, if right.is_atom() && !lacked.is_empty() { right } else { &lacked }, None, true)
 }
 
 pub(super) fn intersection(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
@@ -51,14 +51,13 @@ pub(super) fn intersection(left: &Value, right: &Value, span: &Span) -> Result<V
 
 pub(super) fn find(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let shape = right.shape();
-    let (x, y) = (left.as_items(), right.as_items());
-    let compact = match (x, y) {
-        (Items::Compact(x), Items::Compact(y)) => rustymath::search::view_find(
+    let compact = match (left.view(), right.view()) {
+        (Some(x), Some(y)) => rustymath::search::view_find(
             x, left.shape(), y, shape, crate::search::compared_at(left.float_width().max(right.float_width()), Numeric::current()).1), _ => None
     };
     let data = match compact { Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))? };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
-    Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).described("invalid find result")
+    Value::booleans(right.layout().clone(), data).described("invalid find result")
 }
 
 pub(super) fn self_classify(right: &Value, span: &Span) -> Result<Value, Error> {
@@ -69,18 +68,18 @@ pub(super) fn self_classify(right: &Value, span: &Span) -> Result<Value, Error> 
             let mut data = Vec::with_capacity(rows * b.len());
             data.extend(b.iter().map(|&x| x == first));
             if rows == 2 { data.extend(b.iter().map(|&x| x != first)) }
-            return Layout::from(vec![rows]).concat(&major_axis(right)).booleans(data).described("invalid classification");
+            return Value::booleans(Layout::from(vec![rows]).concat(&major_axis(right)), data).described("invalid classification");
         }
     }
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let n = major.shape()[0];
     let mut data = vec![false; classes.firsts.len() * n];
     for (row, these) in data.chunks_mut(n.max(1)).zip(classes.groups.each()) { for &p in these { row[p as usize] = true } }
-    Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).described("invalid classification")
+    Value::booleans(Layout::from(vec![classes.firsts.len()]).concat(&major), data).described("invalid classification")
 }
 
 pub(super) fn unique_mask(right: &Value, span: &Span) -> Result<Value, Error> {
-    major_axis(right).booleans(firsts(&major_cells(right)?, span)?).described("invalid unique mask")
+    Value::booleans(major_axis(right), firsts(&major_cells(right)?, span)?).described("invalid unique mask")
 }
 
 /// The classes of the major cells of `right`, numbered in order of first appearance as `∪` finds them, with the positions of each.
@@ -91,7 +90,7 @@ pub(super) fn duplicates_mask(right: &Value, span: &Span) -> Result<Value, Error
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let mut mask = vec![false; major.shape()[0]];
     for (&first, &size) in classes.firsts.iter().zip(&classes.groups.sizes) { mask[first] = size > 1 }
-    major.booleans(mask).described("invalid duplicates mask")
+    Value::booleans(major, mask).described("invalid duplicates mask")
 }
 
 /// The distinct major cells that occur more than once, in order of first appearance.
@@ -108,12 +107,23 @@ pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
         *lengths.last_mut().expect("the first cell starts a run") += 1;
     }
     let lengths = generated_items(vec![lengths.len()], lengths.into_iter(), starts.len() as u64 + 1, Mark::Exact).described("invalid run lengths")?;
-    let values = replicate(&axis.booleans(starts).described("invalid run starts")?, right, None, false, None)?;
+    let values = replicate(&Value::booleans(axis, starts).described("invalid run starts")?, right, None, false, None)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).described("invalid runs"); }
     let layout = values.layout().clone().without_keys(0);
     let values = values.with_layout(layout).described("invalid runs")?;
     let all = positions(right, (0..right.shape()[0] as u32).collect()).described("invalid run keys")?;
     Value::new(vec![3], vec![lengths, values, all]).described("invalid runs")
+}
+
+/// The cells that `runs` encodes as `right`: each run's first cell repeated by its length, then the keys of every position where `right` has a third item (`#⁻¹`).
+pub(super) fn unruns(right: &Value, span: &Span) -> Result<Value, Error> {
+    if !matches!(right.shape(), [2] | [3]) { return Err(Error::new(Kind::Length, "run-length decoding needs lengths and values, and optionally keys")); }
+    let mut items = right.elements();
+    let (lengths, values) = (items.next().expect("lengths"), items.next().expect("values"));
+    // `runs` writes the atom `1ₓ` as the length only for a unit, which then needs no replicate.
+    let decoded = if matches!(&lengths, Value::Number(n) if n.integer_items().is_some_and(|i| i.get(0) == 1)) { values }
+    else { replicate(&lengths, &values, None, false, None)? };
+    match items.next() { Some(keys) => Primitive::Keys.call(Some(&keys), &decoded, span), None => Ok(decoded) }
 }
 
 /// The positions of each distinct major cell, in the order of `∪`.
@@ -173,10 +183,12 @@ pub(super) fn iota(right: &Value) -> Result<Value, Error> {
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let real = |v: Value| match v { Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters")) };
     let steps = |distance: &Number| -> Result<usize, Error> {
-        let whole = distance.math_monad(Math::Magnitude)?.floor(Numeric::current())?;
+        let t = Numeric::current();
+        let whole =
+            crate::pervasive::number(Primitive::Math(Math::Floor), None, &crate::pervasive::number(Primitive::Math(Math::Magnitude), None, distance, t)?, t)?;
         whole.nonnegative_integer().described("range needs a finite length")
     };
-    let mark = Numeric::for_values(left.into_iter().chain([right]))?.fixed.map_or(Mark::Exact, Mark::Fixed);
+    let mark = Numeric::for_values(left.into_iter().chain([right])).fixed.map_or(Mark::Exact, Mark::Fixed);
     let counts = |items: std::ops::Range<usize>| {
         let bound = items.end as u64;
         generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| generated_items(vec![len], items.map(|i| i as u64), bound, mark))
@@ -228,9 +240,7 @@ pub(super) fn where_indices(right: &Value) -> Result<Value, Error> {
             return built.described("invalid where result");
         }
     }
-    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) {
-        if right.keys(0).is_none() { return where_vector(&counts.widened()); }
-    }
+    if let (Some(counts), [_]) = (right.as_items().ints(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened()); } }
     let counts = right.as_items().nonnegative_integers().described("where needs nonnegative whole counts")?;
     let total = generated_len(&[counts.iter().fold(0usize, |total, &n| total.saturating_add(n))])?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
@@ -294,7 +304,7 @@ fn position_value(array: &Value, axis: usize, position: usize) -> Value {
 }
 
 /// The order of two items. `None` when the comparison reaches a function, which has no ordering. A carried item orders as the value that a reader outside every call sees (`Carrier::observed`): a dual as its primal. A batch stops its map's run, because no one value stands for all its cells.
-fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::transform::Stop> {
+fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::error::Stop> {
     Ok(Some(match (left, right) {
         (Value::Carried(x), y) => return x.observed()?.map_or(Ok(None), |x| element_order(x, y)),
         (x, Value::Carried(y)) => return y.observed()?.map_or(Ok(None), |y| element_order(x, y)),
@@ -311,7 +321,7 @@ fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate:
 }
 
 /// The order of two arrays: by rank, then item by item, then by length and shape. `None` when the comparison reaches a function, and a stop where it reaches a batch (`element_order`).
-fn array_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::transform::Stop> {
+fn array_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::error::Stop> {
     let rank_order = left.shape().len().cmp(&right.shape().len());
     if !rank_order.is_eq() { return Ok(Some(rank_order)); }
     for (x, y) in left.elements().zip(right.elements()) {
@@ -379,8 +389,7 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width()).and_then(|v| v.with_layout(right.layout().clone()))
-                .described("invalid sort");
+            return Value::from_bounded(right.layout().clone(), sorted, right.fixed_width(), right.range()).described("invalid sort");
         }
     }
     let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
@@ -397,16 +406,15 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let (n, width) = (y.shape()[frame], crate::array::count(&y.shape()[frame + 1..]));
     let dims = [y.len() / width / n, n, 1];
     if !grade && k == 1 {
-        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| {
-            Value::from_buffer_at(y.shape(), sorted?, y.fixed_width()).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort")
-        });
+        return rustymath::search::view_sort_along(view, dims, down).transpose()
+            .map(|sorted| Value::from_bounded(y.layout().clone(), sorted?, y.fixed_width(), y.range()).described("invalid sort"));
     }
     if width > 16 { return None; }
     let columns: Vec<_> = (0..width).map(|j| (view, j, width)).collect();
     let order = match rustymath::search::view_lexgrade_along(&columns, dims, down) { Ok(order) => order?, Err(e) => return Some(Err(e.into())) };
     if grade {
         let layout = y.layout().axes(0..frame).concat(&crate::array::Layout::from([n]));
-        return Some(Value::positions(layout.shape(), n, order.into_iter()).and_then(|g| g.with_layout(layout)).described("invalid grade result"));
+        return Some(Value::positions(layout, n, order.into_iter()).described("invalid grade result"));
     }
     // Row `r` of the whole takes the row of its own cell that the cell's order names.
     let rows: Vec<usize> = order.iter().enumerate().map(|(r, &g)| r - r % n + g as usize).collect();
@@ -420,11 +428,11 @@ pub(crate) fn matched_cells(x: &Value, xk: usize, y: &Value, yk: usize, frame: &
     if x.is_empty() || y.is_empty() || x.has_keys() || y.has_keys() { return None; }
     let cell = |v: &Value, k: usize| v.layout().axes(v.shape().len() - k..v.shape().len());
     let cells = frame.count();
-    if !cell(x, xk).matches(&cell(y, yk)) { return frame.booleans(vec![not; cells]).ok(); }
+    if !cell(x, xk).matches(&cell(y, yk)) { return Value::booleans(frame.clone(), vec![not; cells]).ok(); }
     let (Some(xs), Some(ys)) = (x.view(), y.view()) else { return None };
     let t = Numeric::current();
     let matched = cell_items((xs, x.shape(), xk), (ys, y.shape(), yk), cells).map(|(xc, yc)| Some(crate::array::compact_match(xc, yc, t)? != not));
-    frame.booleans(matched.collect::<Option<_>>()?).ok()
+    Value::booleans(frame.clone(), matched.collect::<Option<_>>()?).ok()
 }
 
 /// What `p`, one of `⍳`, `∊` and `⍸`, gives each pair of cells of `x` and `y`, of ranks `xk` and `yk`, where each cell of the haystack, on the left where `haystack_left`, is a vector of compact items: a search of each cell's needles in its own haystack, by rustymath's kernels on slices of the whole arguments, as one value laid out by `frame` and the needles' cell axes. An argument with no axes besides its cell's is the same in every cell. `None` where a pair needs the search's own code: haystack cells that aren't vectors, keys on them, an empty argument, or items whose kinds rustymath's kernels don't search.
@@ -447,7 +455,7 @@ pub(crate) fn searched_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: 
         found.extend(if matches!(p, Primitive::Where) { rustymath::search::view_bins(hc, ec)? } else { rustymath::search::view_index_of(hc, ec, t)?.ok()? });
     }
     let layout = frame.concat(&e.layout().axes(e.shape().len() - ek..e.shape().len()));
-    if matches!(p, Primitive::Member) { return layout.booleans(found.into_iter().map(|q| (q as usize) < n).collect()).ok(); }
+    if matches!(p, Primitive::Member) { return Value::booleans(layout, found.into_iter().map(|q| (q as usize) < n).collect()).ok(); }
     Frame::Array(layout).positions_u32(found, n + 1).ok()
 }
 

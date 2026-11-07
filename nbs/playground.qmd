@@ -2,12 +2,14 @@
 title: Playground
 description: Run BPL in your browser.
 resources: [playground/*]
+toc: false
 ---
 
 Press **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac), to run the code. Type a backtick and a glyph's name for a glyph, such as `` `iota ``, or click a glyph in the language bar.
 
 The interpreter runs in your browser. It is the latest release of the npm package [`basedpl`](https://www.npmjs.com/package/basedpl). Names you create are persistent between runs. **⏹ Stop** ends the session and starts a new one.
 
+::: {.column-screen-inset-right}
 ```{=html}
 <div id="bpl-toolbar"></div>
 <div id="playground">
@@ -22,3 +24,4 @@ The interpreter runs in your browser. It is the latest release of the npm packag
 </div>
 <script type="module" src="playground/page.js"></script>
 ```
+:::

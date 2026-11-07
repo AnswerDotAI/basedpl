@@ -1,5 +1,5 @@
 use crate::{ErrorKind, Number, Value, array::{Items, Steps}};
-use rustymath::hashing::{HashMap, HashSet, HashSetExt};
+use rustymath::hashing::HashMap;
 use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
 use std::sync::Arc;
 
@@ -63,17 +63,17 @@ pub fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, Str
     value.with_axis_names(names.into_iter().map(|n| n.map(Into::into)).collect()).map_err(|k| k.to_string())
 }
 
-/// One name, or an array of names with its shape.
-pub(crate) enum Selector { One(Arc<str>), Many(Vec<usize>, Vec<Arc<str>>) }
+/// One name, or several names.
+pub(crate) enum Selector { One(Arc<str>), Many(Vec<Arc<str>>) }
 impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
-    pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
+    pub(crate) fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
         // Only characters, alone or among mixed items, can be names (`name`), so numbers in any storage hold none.
         if !matches!(value.as_items(), Items::Compact(View::Characters(_)) | Items::Values(_)) { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
         let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
-        Ok(Some(Self::Many(value.shape().to_vec(), names)))
+        Ok(Some(Self::Many(names)))
     }
 }
 
@@ -239,23 +239,12 @@ fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, E
     if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
 }
 
-/// For each axis of `target`, the keys in `selectors` that it lacks, each once.
-pub(crate) fn missing<'a>(target: &Value, selectors: impl IntoIterator<Item = (usize, &'a Value)>) -> Result<Vec<Vec<Arc<str>>>, ErrorKind> {
-    let rank = target.shape().len();
-    let mut added: Vec<Vec<Arc<str>>> = vec![vec![]; rank];
-    for (axis, selector) in selectors {
-        let Some(selector) = Selector::of(selector)? else { continue; };
-        if axis >= rank { return Err(Kind::Rank.into()); }
-        let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
-        let mut seen = HashSet::new();
-        for name in wanted {
-            if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); }
-        }
-    }
-    Ok(added)
+/// The keys that `selector` names on its axis: one, an array of them, or none (`Selector::of`).
+pub(crate) fn selected_keys(selector: &Value) -> Result<Vec<Arc<str>>, ErrorKind> {
+    Ok(match Selector::of(selector)? { Some(Selector::One(k)) => vec![k], Some(Selector::Many(names)) => names, None => vec![] })
 }
 
-/// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
+/// Adds an entry to `target` for each key in `added`, a list for each axis, as `structure::missing_keys` gives them. A new vector entry that a longer path descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array by `structure::extended`'s plan.
 pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> Result<(), ErrorKind> {
     let rank = target.shape().len();
     let fill = if descend && rank == 1 { empty_record() } else { target.prototype() };
@@ -269,20 +258,10 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
             let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?;
             return target.append(&cells, Some(&added[0].iter().cloned().map(Some).collect::<Vec<_>>()));
         }
-        shape = target.shape().to_vec();
     }
-    let mut keys = target.layout().all_keys();
-    for (axis, names) in added.into_iter().enumerate() {
-        if names.is_empty() { continue; }
-        let mut all = keys[axis].as_ref().map_or_else(|| vec![None; shape[axis]], |k| k.names().to_vec());
-        all.extend(names.into_iter().map(Some));
-        shape[axis] = all.len();
-        keys[axis] = Some(Keys::partial(all)?);
-    }
-    let stride = strides(target.shape());
-    let tables: Vec<_> = shape.iter().zip(target.shape()).zip(stride).map(|((&len, &size), stride)| Steps::clipped(0, len, size, stride)).collect();
-    let names = target.axis_names().to_vec();
-    *target = crate::primitive::remapped(target, rustymath::structure::Plan { layout: shape.into(), steps: tables })?.with_keys(keys)?.with_axis_names(names)?;
+    let plan = rustymath::structure::extended(target.layout(), &added)?;
+    *target = crate::fusion::copied(
+        target, crate::primitive::structural::relaid(plan.layout, &[target.layout()]), &rustymath::agreement::Mapping::from(plan.steps), None)?;
     Ok(())
 }
 
@@ -305,5 +284,6 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
         })
     }).collect::<Result<Vec<_>, ErrorKind>>()?;
     let layout = rustymath::layout::Layout::from(tables.iter().map(Steps::len).collect::<Vec<_>>()).with_keys(keys)?.inherit_names(value.axis_names().to_vec());
-    crate::primitive::remapped(value, rustymath::structure::Plan { layout, steps: tables })
+    // The replay key matches axis names and keys exactly, so this mapping from keys is safe to bake into a recording.
+    crate::fusion::copied(value, crate::primitive::structural::relaid(layout, &[value.layout()]), &rustymath::agreement::Mapping::from(tables), None)
 }

@@ -4,7 +4,7 @@ Function. Hanzi: `键/卸` (`鍵/卸`). Ranks: `∞` monadic, `1 ∞` dyadic
 
 As a separate [index](squad.qmd) selector, `:` takes one whole axis: `[: 1]⌷M` selects column 1.
 
-`:Y` removes the axis names and position keys of `Y`. `:⍠A Y` removes them from the axes `A` only. `K:Y` labels leading axes. `K:⍠A Y` labels the axes `A`. A bracket list with any `key:value` item is one keyed vector. The list's other items are entries without keys. See [axis keys](../keyed.ipynb).
+`:Y` removes the axis names and position keys of `Y`. `:⍠A Y` removes them from the axes `A` only. `K:Y` labels leading axes. `K:⍠A Y` labels the axes `A`. Keys on one axis must differ: `"a" "a":1 2` is a DOMAIN error. A bracket list with any `key:value` item is one keyed vector. The list's other items are entries without keys. See [axis keys](../keyed.ipynb).
 
 ```bpl
 :"aa" "bb":1 2    ⍝ 1 2

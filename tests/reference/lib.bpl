@@ -364,8 +364,8 @@ x←5 7⍴↦35
 ⍝ =>
 "unexpected eof" "unexpected eof" "numeric literal too long" "atom too long" "unexpected eof" "unexpected eof" "unexpected eof" 4
 
-⍝ — Fraction helpers preserve exact rationals beyond float precision
+⍝ — Fraction helpers preserve exact rationals beyond float precision, retaining the explicit unbounded domain even for whole results
 [cfract: rational:]←•load "lib/numeric.bpl"
-[rational9007199254740993r29 cfract9007199254740993r29]
+[rational9007199254740993ᵣ29 cfract9007199254740993ᵣ29]
 ⍝ =>
-[[9007199254740993 29]ₓ [310593077749689 2 2 2 2]ₓ]
+[[9007199254740993 29]ᵣ [310593077749689 2 2 2 2]ᵣ]

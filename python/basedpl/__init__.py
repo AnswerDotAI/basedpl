@@ -35,11 +35,16 @@ def _numpy(raw, dtype=None, copy=True):
     return np.array(raw, dtype=raw.export_dtype if dtype is None else dtype, copy=copy)
 
 
+# Numbers that `protocol.rs` sends as one-entry maps, by tag
+_TAGGED = dict(rational=lambda q: Fraction(int(q[0]), int(q[1])), complex=lambda z: complex(*z), nan=lambda _: math.nan, infinity=lambda sign: sign*math.inf)
+
+
 def _value(raw, as_array=False):
     def item(o):
         if isinstance(o, tuple): return Fraction(*o)
         if isinstance(o, _Function): return Function(o)
         if isinstance(o, _Operator): return Operator(o)
+        if isinstance(o, dict) and len(o) == 1 and (tag := next(iter(o))) in _TAGGED: return _TAGGED[tag](o[tag])
         return _value(o) if isinstance(o, (dict, _Array)) else o
     if isinstance(raw, _Array):
         if not as_array and (text := raw.text) is not None: return text
@@ -184,7 +189,7 @@ class Array(_Operators):
     def _classify(self):
         "Classify built-in array wrappers without changing user-defined subclasses."
         if type(self) in (Array, FunctionArray):
-            self.__class__ = FunctionArray if self._inner.holds_functions else type(self)
+            self.__class__ = FunctionArray if self._inner.holds_functions else Array
     @property
     def shape(self): return tuple(self._inner.shape)
     @property
@@ -229,7 +234,7 @@ class Array(_Operators):
     def __iter__(self): return (Array(a) for a in self._inner.cells())
     def __contains__(self, item): return self._inner.contains(item if isinstance(item, str) else _array(item))
     def __getitem__(self, index):
-        "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
+        "Select by positions, keys or slices, as `⌷` does: Booleans read as positions, and index arrays pair. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
     def __getattr__(self, name):
         "Read keyed fields when no Python attribute has that name."

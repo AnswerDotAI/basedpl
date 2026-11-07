@@ -1,7 +1,7 @@
 //! A check of each program's contracts before it runs, as milestone 2 in section 7 of `meta/graphreview.md` asks: every step reads values before its own, every read lays out as many items as its node holds, and every node's description is the one that planning its step on its operands gives (`plan`), as the trace and fusion plan them. The reference harness turns the check on for every case and page (`settings::verifies`).
 
-use super::{Desc, Node, Origin, Program, Read, Step};
-use crate::{number::Numeric, plan::{self, Operand, Pervasive}};
+use super::{Node, Origin, Program, Read, Step};
+use crate::{number::Numeric, plan::{self, Desc, Operand, Pervasive}};
 
 /// Panics with the program's listing where `program` breaks a contract (`broken`).
 pub(crate) fn check(program: &Program) {
@@ -27,9 +27,9 @@ fn broken(program: &Program) -> Option<String> {
 /// Whether `read` lays out as many items as its node holds.
 fn counted(nodes: &[Node], read: &Read) -> bool { read.layout.count() == nodes[read.of].desc.layout.count() }
 
-/// What `read` gives as an operand of a plan: a held value read as it is, whose number can pick a kernel, or otherwise `desc`, the read's description.
+/// What `read` gives as an operand of a plan: a held value read as it is, as the trace planned it (`Desc::operand`), or otherwise `desc`, the read's description.
 fn operand<'a>(nodes: &'a [Node], read: &Read, desc: &'a Desc) -> Operand<'a> {
-    match &nodes[read.of].origin { Origin::Held(value) if *value.layout() == read.layout => Operand::Held(value), _ => Operand::Traced(desc) }
+    match &nodes[read.of].origin { Origin::Held(value) if *value.layout() == read.layout => desc.operand(value), _ => Operand::Traced(desc) }
 }
 
 /// The description that planning `step`, the step of `node`, on the values that it reads gives. A pervasive step plans under the settings that its plan holds, so that a pending program forced after `•prefs` changes them still checks, and its plan must be the one that planning gives. The other steps plan under the session's settings.
@@ -42,7 +42,9 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
             let y = operand(nodes, right, &y);
             let mapped = plan::map(plan.p, x.as_ref(), &y, plan.same, plan.numeric)?;
             let held = [x.as_ref().is_some_and(|o| matches!(o, Operand::Held(_))), matches!(y, Operand::Held(_))];
-            if same(&mapped.plan, plan, held) { Ok(mapped.desc) } else { Err("a plan other than the one that its operands give") }
+            // A scalar read through another layout can lose its constant in `operand`; the stored plan keeps that constant and its result bound.
+            if same(&mapped.plan, plan, held) { Ok(Desc { range: plan.result_range(), ..mapped.desc }) }
+            else { Err("a plan other than the one that its operands give") }
         }
         Step::Convert { of, .. } => plan::convert(&desc(of), node.desc.dtype()),
         Step::Copy { of, .. } if node.desc.atom => plan::item(&nodes[*of].desc),
@@ -51,18 +53,16 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
         Step::Gather { of, .. } => plan::copy(&desc(of), &node.desc.layout),
         Step::Fold { p, kind, axis, seed, of } => {
             let (seed, items) = (seed.as_ref().map(desc), desc(of));
-            let (planned, along) =
-                plan::fold(*p, *kind, seed.as_ref().map(|s| s.kind), items.kind, Numeric::current())?.desc(Some(*axis), seed.as_ref(), &items)?;
+            let (planned, along) = plan::fold_desc(*p, *kind, Some(*axis), seed.as_ref(), &items, Numeric::current())?;
             if along == *axis { Ok(planned) } else { Err("an axis other than the one that planning gives") }
         }
         Step::Product { f, g, left, right, stacked } => {
             let (x, y) = (desc(left), desc(right));
-            let plan = plan::product(*f, *g, x.kind, y.kind, Numeric::current())?;
-            if *stacked { plan.stacked_desc(&x, &y) } else { plan.desc(&x, &y) }
+            plan::product_desc(*f, *g, &x, &y, *stacked, Numeric::current())
         }
         Step::At { p, base, items, .. } => plan::at(*p, &desc(base), &desc(items), Numeric::current()),
-        Step::OverlapAdd { of, .. } => plan::overlap(&desc(of), &node.desc.layout),
         Step::Picks { axis, of, .. } => plan::picks(&desc(of), *axis),
+        Step::Structural { .. } | Step::Shape { .. } => Ok(node.desc.clone()),
         Step::Select { mask, yes, no } => {
             let (m, y, n) = (desc(mask), desc(yes), desc(no));
             Ok(plan::select(&operand(nodes, mask, &m), &operand(nodes, yes, &y), &operand(nodes, no, &n))?.desc)
@@ -70,8 +70,8 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
     }
 }
 
-/// Whether plan `a`, which planning gives, is plan `b`, the step's. Constants compare by their bits, so that a NaN constant matches itself, and only on the sides that `held` marks. A constant comes from a value, and the plan of an operand that isn't a held value read as it is can hold the constant of the value that the operand copies, as fusion's plan of `(⊂3)+4` does.
+/// Whether plan `a`, which planning gives, is plan `b`, the step's. Constants compare by their bits, so that a NaN constant matches itself, and only on the sides that `held` marks. A constant comes from a value, and the plan of an operand that isn't a held value read as it is can hold the constant of the value that the operand copies, as fusion's plan of `(⊂3)+4` does. The kind the plan computes at (`at`) comes from its constants, so it's left out with them.
 fn same(a: &Pervasive, b: &Pervasive, held: [bool; 2]) -> bool {
     let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k]).map(f64::to_bits));
-    Pervasive { constants: [None; 2], ..*a } == Pervasive { constants: [None; 2], ..*b } && constants(a) == constants(b)
+    Pervasive { constants: [None; 2], at: None, ..a.clone() } == Pervasive { constants: [None; 2], at: None, ..b.clone() } && constants(a) == constants(b)
 }

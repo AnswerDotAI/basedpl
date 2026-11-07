@@ -419,7 +419,7 @@ A run that ends in a function is a train. The run `+/÷≢` ends at the space be
 ```bpl
 +/÷≢ 2 4 9             ⍝ 5
 x←2 4 9
-+/÷≢x                  ⍝ 1r3
++/÷≢x                  ⍝ 0ₓ
 ```
 
 ```bqn

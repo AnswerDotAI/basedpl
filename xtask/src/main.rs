@@ -1,4 +1,4 @@
-//! `cargo wasm` builds the interpreter and writes the npm package `basedpl` into `wasm/pkg/`. It includes the canonical `python/basedpl/browser/` modules and font under `browser/`, TextMate grammars and canvas support. It copies the same assets into `nbs/playground/` for local docs. It builds with the incremental `release` profile.
+//! `cargo wasm` builds the interpreter and writes the npm package `basedpl` into `wasm/pkg/`. It includes the canonical `python/basedpl/browser/` modules and font under `browser/`, TextMate grammars and canvas support. It copies the same assets into `nbs/playground/` for local docs. It builds with the incremental `release` profile by default; `--profile dist` uses the O3/ThinLTO distribution and x86-budget profile.
 //!
 //! `cargo wasm --strip` also drops the module's name section, which holds every function's name. CI publishes that module to npm.
 //!
@@ -14,18 +14,25 @@ const TARGET: &str = "wasm32-unknown-unknown";
 const MODULE: &str = "basedpl_wasm";
 
 fn main() -> anyhow::Result<()> {
-    let usage = || anyhow::anyhow!("usage: cargo wasm [--strip] [--out DIR]");
-    let (mut strip, mut out) = (false, None);
+    let usage = || anyhow::anyhow!("usage: cargo wasm [--strip] [--out DIR] [--profile NAME]");
+    let (mut strip, mut out, mut profile) = (false, None, "release".to_owned());
     let mut args = env::args().skip(1);
     while let Some(flag) = args.next() {
-        match flag.as_str() { "--strip" => strip = true, "--out" => out = Some(PathBuf::from(args.next().ok_or_else(usage)?)), _ => return Err(usage()) }
+        match flag.as_str() {
+            "--strip" => strip = true, "--out" => out = Some(PathBuf::from(args.next().ok_or_else(usage)?)),
+            "--profile" => profile = args.next().ok_or_else(usage)?, _ => return Err(usage())
+        }
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask is a workspace member");
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let built = Command::new(cargo).current_dir(root).args(["build", "-p", "basedpl-wasm", "--target", TARGET, "--release"]).status()?;
+    // Bindgen reads target_features before the final module is stripped.
+    let built = Command::new(cargo).current_dir(root).args(["build", "-p", "basedpl-wasm", "--target", TARGET, "--profile", &profile])
+        .args(["--config", &format!("profile.{profile}.strip='debuginfo'")]).status()?;
     anyhow::ensure!(built.success(), "the wasm build failed");
     let targets = env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), Into::into);
-    let module = targets.join(TARGET).join("release").join(format!("{MODULE}.wasm"));
+    let module = targets.join(TARGET).join(match profile.as_str() {
+        "dev" | "test" => "debug", "bench" => "release", name => name
+    }).join(format!("{MODULE}.wasm"));
     let pkg = out.clone().unwrap_or_else(|| root.join("wasm/pkg"));
     wasm_bindgen_cli_support::Bindgen::new().input_path(module).web(true)?.typescript(false).omit_default_module_path(false).remove_name_section(strip)
         .generate(&pkg)?;
@@ -44,9 +51,7 @@ fn main() -> anyhow::Result<()> {
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
     fs::copy(root.join("wasm/README.md"), pkg.join("README.md"))?;
-    let assets = [
-        "python/basedpl/bpl.tmLanguage.json", "python/basedpl/hpl.tmLanguage.json", "src/canvas.js",
-    ].map(|a| root.join(a));
+    let assets = ["python/basedpl/bpl.tmLanguage.json", "python/basedpl/hpl.tmLanguage.json", "src/canvas.js"].map(|a| root.join(a));
     for asset in &assets { fs::copy(asset, pkg.join(asset.file_name().expect("an asset is a file")))?; }
     let mut browsers = vec![pkg.join("browser")];
     if out.is_none() { browsers.push(root.join("nbs/playground/browser")); }

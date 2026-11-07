@@ -414,7 +414,7 @@ select ← {⍺⊃¨,¨/⊂¨¨⍵}  ⍝ ⍺-selection of items of vector ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_shannon.htm
 
-shannon ← {-+/(2↣⍟×⊣)¨(≢⊢ ⌸÷≢)⍵}  ⍝ Shannon entropy of message ⍵.
+shannon ← {-+/(2↣⍟×⊣)¨(≢⊢ ⌸÷ₐ≢)⍵}  ⍝ Shannon entropy of message ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_subvec.htm
 

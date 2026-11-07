@@ -3,10 +3,10 @@
 // as `node --no-liftoff --test tests/wasm-speed.mjs`. V8 first compiles wasm with Liftoff, which doesn't optimise, and recompiles a
 // function with TurboFan only once it runs often. The test calls each kernel only a few times. Without the flag, it would time
 // Liftoff's code. A case over its budget is timed again after the rest, after each pause in `RETRY_PAUSES` and a `warm`, and fails only if it's
-// over every time, as in `tests/speed.rs`. With `BASEDPL_COSTS` set, it also prints every case's cost. The `Test` workflow's
-// `wasm` job sets it. Node can't lock a file. `basedpl.bpltests.wasm_test` holds the machine's timing lock around this test.
-// Run directly, as CI runs it, the test takes no lock.
-// The test fails on a wasm budget only on the CPU that the budgets were set for, CI's runner, as `checks_budgets` decides. On any
+// over every time, as in `tests/speed.rs`. With `BASEDPL_COSTS` set, it also prints every case's cost.
+// Node can't lock a file. `basedpl.bpltests.wasm_test` holds the machine's timing lock around this test.
+// Run directly, the test takes no lock.
+// The test fails on a wasm budget only on Syd1's CPU, as `checks_budgets` decides. On any
 // other CPU, it prints every cost, then each case still over its budget after the retries, marked `over`, and fails on none.
 // Each case whose gap's hold has outlived the gap is printed too, marked `stale`. The rows that `costs` gives carry each case's
 // wasm budget with any hold, and whether its cost is over it or its hold is stale, as `rustymath::timing::Budget` decides.
@@ -20,13 +20,19 @@ const RETRY_PAUSES = retry_pauses();
 const checks = checks_budgets();
 
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');
-test('each BPL speed case takes no longer than its wasm budget on CI\'s runner', async () => {
+test('each BPL speed case takes no longer than its wasm budget on Syd1', async () => {
     const directory = new URL('speed/', import.meta.url);
-    const speed = readdirSync(directory).filter(name => name.endsWith('.bpl')).sort()
+    const batch = process.env.BASEDPL_SPEED_BATCH ? JSON.parse(process.env.BASEDPL_SPEED_BATCH) : null;
+    const speed = readdirSync(directory).filter(name => name.endsWith('.bpl') && (!batch || name === batch.file)).sort()
         .map(name => ({name, text: readFileSync(new URL(name, directory), 'utf8')}));
+    const identities = rows => rows.map(c => JSON.stringify([c.file, c.section, c.code])).sort();
     const line = c => c.line;
     const over = c => c.over;
-    const all = costs(speed);
+    const all = costs(speed, batch?.codes);
+    if (batch) {
+        assert.deepEqual(identities(all), batch.rows.map(row => JSON.stringify(row)).sort(), 'wasm batch omitted or duplicated a case');
+        console.log(`Checked ${all.length} wasm timing rows from ${batch.file}`);
+    }
     if (process.env.BASEDPL_COSTS || !checks) {
         for (const copy of new Set(all.map(c => c.copy).filter(Boolean))) console.log(copy);
         for (const c of all) console.log(line(c));
@@ -38,6 +44,7 @@ test('each BPL speed case takes no longer than its wasm budget on CI\'s runner',
         warm();
         for (const c of failures) console.log(`${line(c)}: over, timed again after ${pause} s`);
         const retried = costs(speed, failures.map(c => c.label)).filter(c => failures.some(f => f.file === c.file && f.section === c.section && f.code === c.code));
+        assert.deepEqual(identities(retried), identities(failures), 'wasm retry omitted or duplicated a case');
         for (const c of retried) console.log(line(c));
         failures = retried.filter(over);
     }

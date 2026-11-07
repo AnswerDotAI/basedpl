@@ -59,7 +59,7 @@ impl serde::Serialize for Data<'_> {
 /// A one-character string is a character.
 pub fn character(s: &str) -> Option<char> { let mut chars = s.chars(); chars.next().filter(|_| chars.next().is_none()) }
 
-/// An element of the JSON protocol. Its floats are 64-bit, because the protocol carries no width. A complex number follows the current kinds, as `Number::complex_in_session` says.
+/// An element of the JSON protocol. Its floats are 64-bit, because the protocol carries no width. A complex number stays complex (`Number::complex`).
 fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     let number = match value {
         JsonValue::Number(n) if approximate => n.as_f64().map(|x| Number::float(x, FloatWidth::F64)).ok_or_else(|| Kind::Domain.into()),
@@ -78,7 +78,7 @@ fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String>
         }
         JsonValue::Object(o) if o.contains_key("complex") => {
             let parts = o["complex"].as_array().filter(|a| a.len() == 2).ok_or("expected real and imaginary components")?;
-            Ok(Number::complex_in_session(
+            Ok(Number::complex(
                 num_complex::Complex64::new(parts[0].as_f64().ok_or("invalid real component")?, parts[1].as_f64().ok_or("invalid imaginary component")?),
                 FloatWidth::F64))
         }

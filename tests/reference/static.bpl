@@ -1,20 +1,38 @@
 •prefs ["kinds":"static"]
 
 ⍝⍝ setup
-kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.programs.event≡¨⊂"replayed"} ⋄ compiled←⊢.compiled replayed ⋄ staged←⊢.blocks replayed ⋄ ok←{∧/,(⍺≠⍺)∨⍺=⍵}
+kind←{(•storage ⍵).kind} ⋄ compiled←{∧/(∨/⍵.routes.route≡¨⊂"compiled")≥⍵.programs.event≡¨⊂"replayed"} ⋄ staged←{∧/(0<≢⍵.fused.items)≥⍵.programs.event≡¨⊂"replayed"} ⋄ ok←{∧/,(⍺≠⍺)∨⍺=⍵}
 
 ⍝⍝ Static kinds
 
-⍝ — Under static kinds, a result's kind follows from its arguments' kinds: real arguments stay real, complex results stay complex, ⌊ and ÷ give floats, and integers compute at the int width. New floats take 32 bits
+⍝ — Under static kinds, a result's kind follows from its arguments' kinds: real arguments stay real, complex results stay complex, ⌊ gives floats and integer ÷ floors, and integers compute at the int width. New floats take 32 bits
 {(•storage ⍵).kind}¨[√¯4 9;1j0;0j1×0j1;⌊2.5 3.5;7ₓ÷2ₓ;[1 2]ₓ;○[0]ₓ₁;○0⍴3ₓ]
-"float32" "complex64" "complex64" "float32" "float32" "int32" "complex64" "complex64"
+"float32" "complex64" "complex64" "float32" "int32" "int32" "complex64" "complex64"
 
 ⍝ — Static kinds give NaN outside the real domain and wrap integers that don't fit. Exact fractions stay exact
 [√¯4 9;⌊2.5 ∞;7ₓ÷2ₓ;2147483647ₓ+1ₓ;2ₓ*100ₓ;1r3+1r6]
-[[$n 3] [2 ∞] 3.5 ¯2147483648ₓ 0ₓ 1ᵣ2]
+[[$n 3] [2 ∞] 3ₓ ¯2147483648ₓ 0ₓ 1ᵣ2]
+
+⍝ — `√ₐ` and `⍟ₐ` give the real part where `√` and `⍟` give NaN, as floats of the arguments' width
+[√ₐ¯4 9;⍟ₐ¯1 ¯2;kind √ₐ¯4 9]
+[[0 3] [0 0.6931472] "float32"]
+
+⍝ — `*ₐ` gives the real part of the principal power where `*` gives NaN. ÷3 rounds up at 32 bits, so `¯8*ₐ÷3` lies just below 1
+[¯8*÷3;¯8 ¯4*ₐ[÷3;0.5];kind ¯8*ₐ÷3]
+[$n [0.99999994 0] "float32"]
+
+⍝ — `○ₐ` and `○⁻¹ₐ` give the real part where `○` and `○⁻¹` give NaN, as floats of the arguments' width
+[2○⁻¹ₐ2;1○⁻¹ₐ¯2 2;7○⁻¹ₐ 2;8○ₐ 2;kind 2○⁻¹ₐ2]
+[0 [¯1.5707964 1.5707964] 0.54930615 0 "float32"]
+
+⍝ — A count that doesn't fit the int width saturates to its maximum, as a conversion does. An empty array can have an axis that long
+≢[3000000000 0]⍴0   ⍝ 2147483647ₓ
+
+⍝ — So does a length that monadic ⍴ gives
+⍴[3000000000 0]⍴0   ⍝ [2147483647 0]ₓ
 
 ⍝ — Under static kinds, `⍟1+x` computes log1p, and gives NaN below ¯1, as `⍟` does outside the real domain
-⍟1+1E¯17 ¯3   ⍝ 1ₑ¯17 $n
+x←1E¯17 ¯3 ⋄ ⍟1+x   ⍝ 1ₑ¯17 $n
 
 ⍝ — Under static kinds with 64-bit floats, a weak atom takes the width of the floats beside it, as under dynamic kinds. An integer beside a float takes the float's width. Booleans add as integers
 •prefs ["float":64] ⋄ {(•storage ⍵).kind}¨[(32•float 1 2)×2;(32•float 1 2)+0j1;[1 2]ₓ+0.5;[1 2]ₓ+32•float 0.5;$t $f+$t $t]
@@ -28,9 +46,17 @@ kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.pr
 •prefs ["int":64] ⋄ [10ₓ⊥20⍴9ₓ;31ₓ₄⊥[2 32]⍴(⍳10ₓ)ₓ₄;¯7ₓ⊥30⍴[3 ¯5]ₓ]
 [7766279631452241919ₓ;[¯1617581680 ¯1829123632]ₓ₄;2220363030220159130ₓ]
 
-⍝ — Under static kinds, ÷ divides integers as floats on every route: on arrays, in folds and in scans, lanes of one item included
+⍝ — Under static kinds, integer ÷ floors at the int width on every route: arrays, folds and scans, including one-item lanes
 {(•storage ⍵).kind}¨[[6 8]ₓ÷[3 2]ₓ;÷/[6 3]ₓ;÷\[6 3]ₓ;÷/,5ₓ;÷\,5ₓ;÷/[2 1]⍴5ₓ 7ₓ]
-"float32" "float32" "float32" "float32" "float32" "float32"
+"int32" "int32" "int32" "int32" "int32" "int32"
+
+⍝ — Under static kinds, as under dynamic kinds, an index outside its axis, or one that isn't a whole number, reads the fill through `.[]`, `⌷` and `⊃`
+v←[10 20 30]ₓ ⋄ 0=[v.[5];5⌷v;[5]⊃v;v.[1.5];v.[¯9]]
+$t $t $t $t $t
+
+⍝ — Under static kinds, as under dynamic kinds, a write writes nothing at an invalid index: assignment and modified assignment change only the valid positions
+v←[10 20 30]ₓ ⋄ v.[5]←1ₓ ⋄ w←[10 20 30]ₓ ⋄ w.[[0 5]]+←1ₓ ⋄ [v;w]≡[[10 20 30]ₓ;[11 20 30]ₓ]
+$t
 
 ⍝ — A write whose items have another kind gives the whole array the compact kind that holds both, through `@`, indexed assignment and modified assignment. A Boolean written among bytes keeps bytes. Characters among numbers leave the array mixed
 x←[0 200 253 255]ₓ₁
@@ -46,6 +72,9 @@ e.[[0]]←'a'
 [a b c d ; kind¨[a;b;c;d;e]]
 ⍝ =>
 [[0 200 2 0] [3.5 200 253 255] [0 200.5 253 255] [1 200 253 255]ₓ₁ ; "float32" "float32" "float32" "uint8" "mixed"]
+
+⍝ — Results computed apart join to one compact kind, as a write's items do: the cells of a map, through Each batched or one cell at a time, the states that `⍣` keeps for a list of counts, and the cases of a compacting select, through `⍚` and a guard. Characters among numbers leave the result mixed
+[{(0<⍵)⍚[(1<) (2×)]⍵}¨¯1.5 2 3 ; (0<)⍚[(1<) (2×)] ¯1.5 2 3 ; {⍵>0?⍵;$f}¨¯1.5 2 3 ; {⍵×0.5}⍣(⍳3) 1ₓ ; kind {⍵>0?⍵;'a'}¨¯1 2]   ⍝ [[0 4 6] [0 4 6] [0 2 3] [1 0.5 0.25] "mixed"]
 
 ⍝ — A function gives an atom the kind that it gives a one-item array, under both kinds settings. Each arithmetic function and comparison, with one argument or two, takes fixed integers, floats, Booleans and a weak number beside each. The first seven results come from static kinds, the last seven from dynamic kinds
 kd←{(•storage ⍵).kind} ⋄ sd←{((kd ⍺ ⍶ ⍵) ≡ kd ⍺ ⍶ [⍵]) ∧ (kd ⍵ ⍶ ⍺) ≡ kd [⍵] ⍶ ⍺} ⋄ md←{(kd ⍶ ⍵) ≡ kd ⍶ [⍵]} ⋄ same←{∧/[⍺ +sd ⍵ ; ⍺ -sd ⍵ ; ⍺ ×sd ⍵ ; ⍺ ÷sd ⍵ ; ⍺ *sd ⍵ ; ⍺ ⍟sd ⍵ ; ⍺ |sd ⍵ ; ⍺ ⌈sd ⍵ ; ⍺ ⌊sd ⍵ ; ⍺ !sd ⍵ ; ⍺ ∧sd ⍵ ; ⍺ ∨sd ⍵ ; ⍺ =sd ⍵ ; ⍺ ≠sd ⍵ ; ⍺ <sd ⍵ ; ⍺ ≤sd ⍵ ; ⍺ >sd ⍵ ; ⍺ ≥sd ⍵ ; ⍺ √sd ⍵ ; -md ⍵ ; ×md ⍵ ; ÷md ⍵ ; *md ⍵ ; ⍟md ⍵ ; |md ⍵ ; ⌈md ⍵ ; ⌊md ⍵ ; !md ⍵ ; ○md ⍵ ; √md ⍵ ; ⊼md ⍵ ; ⊽md ⍵ ; ≤md ⍵ ; ≥md ⍵]} ⋄ sk←[3ₓ₂ same 4ₓ₂ ; 3ₓ₂ same 4ₓ₄ ; 3ₓ same 4ₓ₁ ; 1.5 same 4ₓ₂ ; $t same $t ; 1.5 same (32•float 2.5) ; 3ₓ₂ same (32•float 2.5)] ⋄ •prefs ["kinds":"dynamic"] ⋄ dk←[3ₓ₂ same 4ₓ₂ ; 3ₓ₂ same 4ₓ₄ ; 3ₓ same 4ₓ₁ ; 1.5 same 4ₓ₂ ; $t same $t ; 1.5 same (32•float 2.5) ; 3ₓ₂ same (32•float 2.5)] ⋄ •prefs ["kinds":"static"] ⋄ sk,dk
@@ -69,7 +98,11 @@ j←[¯3 0 3 1000]ₓ ⋄ j=3   ⍝ $f $f $t $f
 
 ⍝ — Under static kinds, a function whose results are approximate gives floats for integer arguments, at the width ÷ gives them: ⌹ inverts and solves integer matrices as floats, polar gives an integer's magnitude and angle as floats, and the derivatives of `!` and Lambert W give an atom the floats they give an array. Exact fractions stay exact
 [{(•storage ⍵).kind}¨[⌹2 2⍴[2 1 1 3]ₓ;[1 2]ₓ⌹2 2⍴[2 1 1 3]ₓ;(⌹⍤2)2 2 2⍴[2 1 1 3]ₓ;∧[3 ¯4]ₓ;∧3ₓ;{2ₓ!⍵}∂5ₓ;{2ₓ!⍵}∂[5 6]ₓ;{!⍵}∂3ₓ;{!⍵}∂[3]ₓ;(×↢*)⁻¹ 3ₓ;(×↢*)⁻¹ [3]ₓ];⌹1r3]
-["float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32";3ₓ]
+["float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32";3ᵣ]
+
+⍝ — Dyadic `○` and `○⁻¹` give an integer argument the kind that they give a float, at every code from 0 to 8, under both kinds settings: none of their formulas has an integer form
+c←0↦8 ⋄ k←{x←⍵ ⋄ ({kind ⍵○x}¨c),{kind ⍵○⁻¹x}¨c} ⋄ s←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"dynamic"] ⋄ d←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"static"] ⋄ s d
+$t $t
 
 ⍝ — Under static kinds, `∂` computes an integer argument as floats of the width `÷` gives it: the derivative of `-⍵` at `3ₓ` is the float ¯1
 [{-⍵}∂3ₓ ; {+/-⍵}∂[2 3]ₓ ; {⍵*3ₓ}∂2ₓ ; •float {⍵}∂3ₓ ; •float {⍵}∂$t]
@@ -123,6 +156,10 @@ f←{+/⍵×0ₓ₈+/u} ⋄ g←{+/⍵×0.5+/w} ⋄ u←[200 100 50]ₓ₁ ⋄ w
 v←(⍳2*18)ₓ₁ ⋄ e←•explain "[5ₓ₁+/v×2ₓ₁ ; 300ₓ₂⌈/v×2ₓ₁ ; 100ₓ₂⌈/v×2ₓ₁ ; ¯5ₓ₂⌊/v×2ₓ₁ ; 7ₓ₄+/v>100ₓ₁]" ⋄ e.value,⊂e.fused.glyphs
 [5ₓ₂ 300ₓ₂ 254ₓ₂ ¯5ₓ₂ 262050ₓ₄ ["×+/" "×⌈/" "×⌈/" "×⌊/" ">+/"]]
 
+⍝ — A seeded fold along one axis of a keyed pending array keeps the other axis's name and keys, in its block stage as in the interpreter
+k←"a" "b":["r":2]⍴0 1 ⋄ m←(k+⍳["c":2*17])ₓ₁ ⋄ 5ₓ₁+/m×2ₓ₁
+["r":2]⍴["a":5 "b":3]ₓ₁
+
 ⍝ fill-free-name — A fill read from a free name follows the name: a call after the name changes reads the new fill
 f←{+/⍵×+/(5↑⍠["fill":z] ⍵)} ⋄ z←10 ⋄ r_1←f∂1 2 3 ⋄ z←20 ⋄ [r_1 ; f∂1 2 3]
 [32 32 32 ; 52 52 52]
@@ -131,9 +168,13 @@ f←{+/⍵×+/(5↑⍠["fill":z] ⍵)} ⋄ z←10 ⋄ r_1←f∂1 2 3 ⋄ z←20
 g←{⍵+1} ⋄ f←{+/⍵×(g ⍵×m)} ⋄ m←2 ⋄ a←f∂1.5 2.5 ⋄ m←3 ⋄ b←f∂1.5 2.5 ⋄ m←[1 2]ₓ ⋄ c←f∂1.5 2.5 ⋄ g←{⍵+10} ⋄ [a;b;c;f∂1.5 2.5]
 [7 11 ; 10 16 ; 4 11 ; 13 20]
 
-⍝ — A free name that a dfn reads as positions holds its value in the program: every call after the first, while the name holds the same value, replays. A new value, even of the same type and shape, makes a new trace. After three new traces in a row that never replayed, the argument signature runs without a program, with the stopped-trace reason "a free value that changes on every call"
-x←0.5×[3 2]⍴⍳6 ⋄ r←[0 0 1]ₓ ⋄ f←{+/,⍵.[r]} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ i←c∂x ⋄ r←[2 1 0]ₓ ⋄ k←•explain "c∂x" ⋄ [e.value ; (≢e.programs.event),∧/1↓e.programs.event≡¨⊂"replayed" ; g ; h ; i ; k.value ; k.stopped.reason]
-[[[2 2⋄1 1⋄0 0] [2 2⋄1 1⋄0 0]] [2 1]ₓ [0 0⋄0 0⋄3 3] [0 0⋄3 3⋄0 0] [1 1⋄1 1⋄1 1] [1 1⋄1 1⋄1 1] ["a free value that changes on every call"]]
+⍝ — A free name that a dfn reads as positions is data, as gather indices are: a replay selects at the name's current positions, so new positions replay rather than trace, and each gives its own values
+x←0.5×[3 2]⍴⍳6 ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ e←•explain "c∂x" ⋄ [g ; h ; e.value ; e.programs.event]
+[[0 0⋄0 0⋄3 3] [0 0⋄3 3⋄0 0] [1 1⋄1 1⋄1 1] ["replayed"]]
+
+⍝ — A free name that a dfn reads as a count holds its value in the program: every call after the first, while the name holds the same value, replays, and a new value makes a new trace. After nine traces in a row that never replayed, the definition traces no more: a call that no program fits runs without one, with the stopped-trace reason "a free value that changes on every call". Its kept programs go on serving, so a second run of this code replays the first nine counts and needs nine new ones after them, which the eighteen counts give
+x←0.5×⍳20 ⋄ n←0 ⋄ f←{+/n↑⍵} ⋄ t←{n⊢←⍵ ⋄ f∂x} ⋄ j←t¨1↦18 ⋄ n←19 ⋄ k←•explain "f∂x" ⋄ [k.value ; k.stopped.reason]
+[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 ; ["a free value that changes on every call"]]
 
 ⍝ — A free name that a program holds as it was, such as a nested array, must hold an identical value at a replay. A value that `=` calls equal but that differs in sign, such as `¯0` for `0`, makes a new trace
 n←[(1 2) 0] ⋄ f←{+/⍵÷1⊃n} ⋄ a←f∂1 2 ⋄ n←[(1 2) ¯0] ⋄ [a ; f∂1 2]
@@ -156,15 +197,15 @@ x←0.1×2 5 3⍴⍳30 ⋄ w←0.01×2 3 4⍴⍳24 ⋄ f←{+/,(⍵(+.×⍤2)w)*
 [1 2 0]ₓ
 
 ⍝ — A program's first reuse compiles each block stage of elementwise steps on arrays of one shape, and later calls run its compiled parts. A compiled part gives the values that its steps give one at a time. This case and the block-stage cases after it run a body on a free name in the program that `∂` builds: the gradient of `{+/⍵×(f v)}` is `f v` [compiled]
-f←{(⍵-0.5)×⍵+0.5} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),⌈/e.programs.compiled
+f←{(⍵-0.5)×⍵+0.5} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),1ₓ×compiled e
 [1 1]ₓ
 
 ⍝ — A run with a step that doesn't lower to machine operations, such as `*`, still compiles: the steps that lower around it, the comparison `⍵>0.25` among them, become compiled parts, and `*` runs on its precompiled kernel inside the same stage. A comparison's Booleans stay Booleans until a later step reads them as floats [compiled]
-f←{(*⍵-0.5)×⍵>0.25} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),(⌈/e.programs.blocks),⌈/e.programs.compiled
+f←{(*⍵-0.5)×⍵>0.25} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),(1ₓ×staged e),1ₓ×compiled e
 [1 1 1]ₓ
 
 ⍝ — A run of steps that lower compiles where it holds at least two steps or the whole stage. Here `⍵-0.5`, `×` and the gradient's `×` lower, but each stands alone beside a `*`, which doesn't, so the stage compiles nothing and runs each step on its precompiled kernel [compiled]
-f←{*(*⍵-0.5)×*⍵} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),(⌈/e.programs.blocks),⌈/e.programs.compiled
+f←{*(*⍵-0.5)×*⍵} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),(1ₓ×staged e),1ₓ×compiled e
 [1 1 0]ₓ
 
 ⍝ — A block stage stores each value that later steps read and folds a value of one axis. It reads an array of another shape through the map that agreement gives it, as `r`'s stage reads the sum of each row that its fold gave. Each gives the interpreter's values
@@ -199,13 +240,13 @@ z←-1000⍴0 ⋄ s←{+/--⍵} ⋄ S←{⍵×(s z)} ⋄ e←•explain "[S∂0 
 f←{+/(⍵-0.5)×⍵-0.5} ⋄ p←{×/1+1e¯4×⍵-0.5} ⋄ v←0.001×⍳5000 ⋄ w←64•float v ⋄ Fw←{⍵×(f w)} ⋄ Pv←{⍵×(p v)} ⋄ Pw←{⍵×(p w)} ⋄ e←•explain "[Fw∂0 ; Fw∂0 ; Fw∂0 ; Pv∂0 ; Pv∂0 ; Pv∂0 ; Pw∂0 ; Pw∂0 ; Pw∂0]" ⋄ x←[f w ; f w ; f w ; p v ; p v ; p v ; p w ; p w ; p w] ⋄ (∧/(|e.value-x)≤1e¯4×|x),compiled e
 $t $t
 
-⍝ — A compiled part folds floats by ⌈ and ⌊ in registers, from ¯∞ and ∞, with the greatest and least items. Beside NaN it gives NaN or the greatest or least of the other items: here the greatest item comes first and NaNs follow it [compiled]
-h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5),compiled e
-$t $t $t
+⍝ — Recorded folds by ⌈ and ⌊ start from ¯∞ and ∞ and give the greatest and least items. Beside NaN they give NaN or the greatest or least remaining item: here the greatest item comes first and NaNs follow it
+h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5)
+$t $t
 
-⍝ — A block stage folds fixed integers as the interpreter does: `+` wraps at the items' width, and `⌈` and `⌊` give the greatest and least items. Each fold joins its stage, as a count of a comparison's Booleans does, and gives the interpreter's values, compiled or not [compiled]
-s←{+/⍵×3ₓ₁} ⋄ hi←{⌈/⍵+1ₓ₁} ⋄ lo←{⌊/⍵+1ₓ₁} ⋄ c←{+/⍵>100ₓ₁} ⋄ u←(⍳5000ₓ)ₓ₁ ⋄ S←{⍵×(s u)} ⋄ Hi←{⍵×(hi u)} ⋄ Lo←{⍵×(lo u)} ⋄ C←{⍵×(c u)} ⋄ z←32•float 0 ⋄ e←•explain "[S∂z ; S∂z ; S∂z ; Hi∂z ; Hi∂z ; Hi∂z ; Lo∂z ; Lo∂z ; Lo∂z ; C∂z ; C∂z ; C∂z]" ⋄ w←1×[s u ; s u ; s u ; hi u ; hi u ; hi u ; lo u ; lo u ; lo u ; c u ; c u ; c u] ⋄ (e.value≡w),(⌈/e.programs.compiled),⊂∪e.fused.glyphs
-[$t 1ₓ ["×+/" "+⌈/" "+⌊/" ">+/"]]
+⍝ — A block stage folds fixed integers as the interpreter does: `+` wraps at the items' width, and `⌈` and `⌊` give the greatest and least items. Each fold joins its stage, as a count of a comparison's Booleans does, and gives the interpreter's values, compiled or not
+s←{+/⍵×3ₓ₁} ⋄ hi←{⌈/⍵+1ₓ₁} ⋄ lo←{⌊/⍵+1ₓ₁} ⋄ c←{+/⍵>100ₓ₁} ⋄ u←(⍳5000ₓ)ₓ₁ ⋄ S←{⍵×(s u)} ⋄ Hi←{⍵×(hi u)} ⋄ Lo←{⍵×(lo u)} ⋄ C←{⍵×(c u)} ⋄ z←32•float 0 ⋄ e←•explain "[S∂z ; S∂z ; S∂z ; Hi∂z ; Hi∂z ; Hi∂z ; Lo∂z ; Lo∂z ; Lo∂z ; C∂z ; C∂z ; C∂z]" ⋄ w←1×[s u ; s u ; s u ; hi u ; hi u ; hi u ; lo u ; lo u ; lo u ; c u ; c u ; c u] ⋄ (e.value≡w),⊂∪e.fused.glyphs
+[$t ["×+/" "+⌈/" "+⌊/" ">+/"]]
 
 ⍝ — A compiled part counts a comparison's Booleans in registers, with the interpreter's counts beside NaN, the infinities and items equal to the comparison's other argument, for f32 and f64 items, and for rows that blocks cross [compiled]
 c←{[+/⍵>0.5 ; +/⍵≤0.5 ; +/⍵=0.5 ; +/⍵≠0.5]} ⋄ r←{+/⍵>0.5} ⋄ v←$n ∞ ¯∞ 0.5 0.5 ¯0.5,0.0002×⍳4994 ⋄ f←32•float v ⋄ d←64•float v ⋄ m←2 5000⍴d,d ⋄ Cf←{+/⍵×(c f)} ⋄ Cd←{+/⍵×(c d)} ⋄ Rm←{+/⍵×(r m)} ⋄ o←4⍴0 ⋄ p←2⍴0 ⋄ e←•explain "[Cf∂o ; Cf∂o ; Cf∂o ; Cd∂o ; Cd∂o ; Cd∂o ; Rm∂p ; Rm∂p ; Rm∂p]" ⋄ (e.value≡1×[c f ; c f ; c f ; c d ; c d ; c d ; r m ; r m ; r m]),compiled e
@@ -221,6 +262,12 @@ $t $t
 
 ⍝ — An ordinary integer is a fixed integer of the int width. A fixed integer of that width displays with plain ₓ, a weak literal beside bytes takes their width, plain ₓ gives the int width, and integer ÷ₓ wraps where its quotient doesn't fit
 u←[100 200]ₓ₁ ⋄ [⍕[1 2]ₓ₄+1ₓ ; u+1ₓ ; (uₓ)+200ₓ ; ¯2147483648ₓ÷ₓ¯1ₓ]   ⍝ ["[2 3]ₓ" [101 201]ₓ₁ [300 400]ₓ ¯2147483648ₓ]
+
+⍝ — Weak literal minima do not specialize opaque inputs, and tacit and dfn additions share promotion
+f←1ₓ₁+ ⋄ g←{1ₓ₁+⍵} ⋄ u←1ₓ ⋄ k←[kind f u;kind g u] ⋄ u←256ₓ
+[kind 1ₓ₁+1ₓ ; kind 1ₓ₁+256ₓ ; kind [1ₓ 2ₓ] ; k ; f u ; g u]
+⍝ =>
+["uint8";"int16";"int32";["int32";"int32"];257ₓ;257ₓ]
 
 ⍝ — •csv and •json read integers at the int width, whatever their values, as every new integer does
 nl←•ucs 10 ⋄ (kind (•csv "a",nl,"7").a) (kind (•json "{""a"":[1,2]}").a)   ⍝ "int32" "int32"
@@ -252,3 +299,22 @@ $t $t
 ⍝ — A program's key holds its arguments' labels, so arguments with other keys run from another program, with their own keys in the result
 d←[3 4]⍴0.1×⍳12 ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dq←["a" "b" "c" "e"]:⍤1 d ⋄ g←{+/,⍵×⍵} ⋄ e←•explain "[g∂dk ; g∂dq ; g∂dk]" ⋄ [3ₓ=≢e.programs.event ; (⍕¨e.value)≡⍕¨[2×dk ; 2×dq ; 2×dk]]
 $t $t
+
+⍝⍝ Constants in derivative graphs
+
+⍝ — Under static kinds, ∂ of a sum with a literal term, a repeated argument or a literal factor traces with no stops
+x←1 2 3 4.5
+stops←{≢(•explain ⍵).stopped.reason}¨"{+/⍵+1}∂x" "{+/⍵+⍵}∂x" "{+/⍵×2}∂x"
+[{+/⍵+1}∂x ; {+/⍵+⍵}∂x ; {+/⍵×2}∂x ; stops]
+⍝ =>
+[1 1 1 1 ; 2 2 2 2 ; 2 2 2 2 ; [0 0 0]ₓ]
+
+⍝ — Under static kinds, ∂ of a fold by - or ÷ on an empty vector gives an empty gradient
+e←0⍴0.5
+[{-/⍵}∂e ; {÷/⍵}∂e]
+⍝ =>
+[0⍴0 ; 0⍴0]
+
+⍝ structural-operator-captures — Axis names and rank vectors held in names remain call-time inputs, even after a body has been recorded
+d←["r":2 "c":3]⍴⍳6 ⋄ axis←"r" ⋄ f←{+/⍠axis ⍵} ⋄ a←f d ⋄ axis←"c" ⋄ b←f d ⋄ m←2 3⍴⍳6 ⋄ ranks←0 1 ⋄ g←{≢⍤ranks ⍵} ⋄ c←g m ⋄ ranks←1 0 ⋄ e←g m ⋄ [a≡+⌿d ; b≡+/d ; c≡(≢⍤[0 1])m ; e≡(≢⍤[1 0])m]
+4⍴$t

@@ -34,9 +34,6 @@ jobs:
           manylinux: auto
           # This runs inside the manylinux container, whose old glibc lets the binary run on older Linux distributions.
           before-script-linux: export PATH="/opt/python/cp311-cp311/bin:$PATH" && python3.11 -m pip install 'fastws-cli>=0.0.29' && ${{ env.STAGE_BPL }}
-      - name: Time the release build
-        continue-on-error: true
-        run: bin/${{ matrix.binary }} --costs tests/speed
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}

@@ -11,7 +11,7 @@ def test_worker_bindings_calls_and_echo(tmp_path):
         assert r['output'] == [dict(kind='explicit', data={'text/plain':'6ₓ'})] and r['value']['data'] == [2, 3, 4] and r['error'] is None
         r = w.request(dict(call='-', args=[a, a], echo=False), timeout=2)
         assert r['output'] == [] and r['value']['data'] == [0, 0, 0]
-        for code in ['3ₓ', '⊂3ₓ', '⊂⊂3ₓ', "[(2ₓ*100ₓ) 0.5 1r3 1j2 'a']", '[[1 2] "ab" (0 3⍴0ₓ)]', '0⍴⊂1 2', '0 2⍴""', '∞ ¯∞', '$t $f', '0⍴$f']:
+        for code in ['3ₓ', '⊂3ₓ', '⊂⊂3ₓ', "[(2ₓ*100ₓ) 0.5 1r3 1j2 'a']", '[[1 2] "ab" (0 3⍴0ₓ)]', '0⍴⊂1 2', '0⍴⊂0⍴⊂1 2', '0 2⍴""', '∞ ¯∞', '$t $f', '0⍴$f']:
             original = w.eval(code, timeout=2)
             r = w.request(dict(bindings=dict(v=original['value']), call='⊢', args=[original['value']]), timeout=2)
             assert r == original
@@ -79,13 +79,17 @@ def test_worker_cancellation_and_reference_sessions():
             with pytest.raises(KeyboardInterrupt): w.eval('{∇⍵}0', timeout=2)
         finally: timer.join()
         assert w.eval('keep+1')['value'] == 43
+        result = w.request(dict(case=dict(code='•delay3', expected_code='0')), timeout=5)
+        assert result['modes'][0]['status'] == 'timeout'
         assert w.request(dict(case=case), timeout=1)['status'] == 'pass'
         assert w.request(dict(case=dict(code='a', expected_error='VALUE ERROR')), timeout=1)['status'] == 'pass'
-        assert w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message'] == 'atom versus array'
+        assert 'atom versus array' in w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message']
         assert w.request(dict(case=dict(code='1', expected={})))['status'] == 'invalid'
         case = dict(code='∞', expected_code='∞', relative_tolerance=1e-14)
         assert w.request(dict(case=case))['status'] == 'pass'
         assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
+        timed, f = w.request(dict(page=dict(text='```bpl\n{⍵+1}⍣1e9⁝0 ⍝ 0\n1 ⍝ 1\n```\n')), timeout=.2)['failures']
+        assert (timed['line'], f['line'], f['status']) == (2, 3, 'unchecked') and 'TIMEOUT' in timed['message']
     bpl.timeout = .01
     with pytest.raises(BplError) as e: bpl('x←7 ⋄ {∇⍵}0', 'explicit')
     assert e.value.kind == 'TIMEOUT'

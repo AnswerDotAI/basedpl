@@ -1,9 +1,8 @@
-use crate::execution::check;
-use crate::session;
+use crate::cancel::check;
 use crate::{
     Described, Error, ErrorKind, Function, Span, Value, array::generated_len, number::Numeric, primitive::{
         Extension::{self, Items, Whole}, Item::{Number, Text, Vector}, Primitive, numeric
-    }
+    }, session
 };
 use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use std::borrow::Cow;
@@ -13,6 +12,20 @@ pub(crate) type Native = fn(Option<&Value>, &Value, &Span) -> Result<Value, Erro
 /// A native called for its effect. It returns its result, and whether the result is shy, as an assignment's is.
 pub(crate) type Effect = fn(Option<&Value>, &Value, &Span) -> Result<(Value, bool), Error>;
 
+/// A value-native's observation boundary: duals give primals, known trace counts/free values can be read, and unknown data or linear tangents stop before legacy readers. Active natives keep symbolic arguments.
+pub(crate) fn observed_call(call: Native, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    if !session().transforming() { return call(left, right, span); }
+    let read = |value: &Value| {
+        crate::transform::walk(value, &mut |mut leaf| {
+            while let Some(carrier) = leaf.carrier() {
+                leaf = carrier.observed()?.ok_or_else(|| Error::new(ErrorKind::Unsupported, "a native system function can't read a linear tangent"))?;
+            }
+            Ok(leaf.clone())
+        })
+    };
+    let (x, y) = (left.map(read).transpose()?, read(right)?);
+    call(x.as_ref(), &y, span)
+}
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
     Value(Native),
@@ -21,7 +34,6 @@ pub(crate) enum Call {
     /// A native called for its effect.
     Effect(Effect),
     Session(fn(&crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
-    Regex(std::sync::Arc<crate::host::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
     Generator(crate::distribution::Generator, crate::distribution::Draw),
     Load,
@@ -54,7 +66,6 @@ pub(crate) struct SystemFunction {
 impl PartialEq for SystemFunction {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name && match (&self.call, &other.call) {
-            (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
             (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
             (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
             (Call::Edge(x), Call::Edge(y)) => x == y, (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)]
@@ -132,7 +143,8 @@ const BUILTINS: &[SystemFunction] = &[
     row("•canvas", Call::Value(crate::canvas::factory), Monadic, Items(Text), Some(canvas), None), #[cfg(web)]
     row("•js", Call::Value(crate::js::function), Monadic, Items(Text), Some(crate::js::prototype), None),
     row("•vfi", Call::Value(crate::data::vfi), Ambivalent, Items(Text), Some(valid_numbers), None),
-    row("•r", Call::Value(crate::regex::compile), Monadic, Items(Text), Some(record), None),
+    row("•r", Call::Value(crate::regex::matches), Dyadic, Whole, Some(record), None),
+    row("•replace", Call::Value(crate::regex::replace), Dyadic, Whole, Some(text), None),
     row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Items(Text), Some(record), None),
     row("•special", Call::Value(crate::primitive::special), Monadic, Items(Text), Some(special), None),
     row("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, Some(record), None),
@@ -222,7 +234,7 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, s
     }
     let (call, valence) = f.inverse.ok_or_else(|| Error::domain("this function has no known inverse"))?;
     valence.check(&format!("{}⁻¹", f.name), left)?;
-    call(left, right, span)
+    observed_call(call, left, right, span)
 }
 
 const HOST_FACTS: &[&str] = &["args", "version", "env", "width", "height", #[cfg(not(web))] "cwd", #[cfg(not(web))] "temp",];
@@ -264,7 +276,7 @@ pub(crate) fn terminal_size() -> Option<(usize, usize)> { None }
 /// `•delay s` pauses for `s` seconds and gives the seconds it waited. `•delay ∞` waits until interrupted. Interrupts stop any delay.
 #[cfg(not(web))]
 fn delay(_: Option<&Value>, right: &Value, _: &Span) -> Result<(Value, bool), Error> {
-    use {crate::host::Instant, std::time::Duration};
+    use {crate::cancel::Instant, std::time::Duration};
     let seconds = crate::primitive::real(right)?;
     if seconds.is_nan() || seconds < 0.0 { return Err(Error::domain("•delay needs a nonnegative number of seconds")); }
     let start = Instant::now();
@@ -272,7 +284,7 @@ fn delay(_: Option<&Value>, right: &Value, _: &Span) -> Result<(Value, bool), Er
     loop {
         let now = Instant::now();
         if end.is_some_and(|end| now >= end) { break; }
-        crate::execution::pause(end.map_or(Duration::MAX, |end| end - now))?;
+        crate::cancel::pause(end.map_or(Duration::MAX, |end| end - now))?;
     }
     Ok((Value::Number(crate::Number::float(start.elapsed().as_secs_f64(), FloatWidth::F64)), true))
 }
@@ -290,13 +302,13 @@ fn storage(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     crate::keyed::vector(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).described("invalid storage record")
 }
 
-/// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `records` counts the live record nodes of `∂`, which each `∂` frees when it returns, and `pending` the live pending arrays. Each counts the nodes this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
+/// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `pending` counts the live pending arrays that this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
 fn memory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     // A batched run keeps alive what a run cell by cell doesn't.
     crate::transform::acts()?;
-    use crate::explain::{Counted, live};
-    let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
-    crate::keyed::vector(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).described("invalid memory record")
+    use crate::explain::live;
+    let counts = [live(), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
+    crate::keyed::vector(["pending", "bytes"].map(Into::into).to_vec(), counts).described("invalid memory record")
 }
 
 /// `•detach Y`: `Y` with every `∂` tag stripped. No derivative flows back through the result. Outside `∂`, it gives `Y`.
@@ -357,13 +369,13 @@ pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value) -> R
     use rustymath::structure::Edged;
     let n = n.as_number().and_then(|n| n.nonnegative_integer().ok()).ok_or_else(|| Error::domain("•edge takes a nonnegative whole length"))?;
     let edged = match p.as_items().view() {
-        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => mode.positions(view, n).ok(),
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => mode.positions(view, n, crate::number::Numeric::current().tolerance).ok(),
         _ => p.as_items().positions().ok().map(|signed| mode.mapped(n, signed.contains(&None), signed.into_iter())),
     };
     let result = match edged.ok_or_else(|| Error::domain("•edge takes whole positions"))? {
         Edged::Floats(y) if p.is_atom() => return Ok(Value::Number(crate::Number::float(y[0], FloatWidth::F64))),
-        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)), Edged::Floats(y) => p.layout().floats(FloatWidth::F64, y),
-        Edged::Positions(q) => Value::positions(p.layout().shape(), n, q.into_iter()).and_then(|v| v.with_layout(p.layout().clone()))
+        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)), Edged::Floats(y) => Value::floats(p.layout().clone(), FloatWidth::F64, y),
+        Edged::Positions(q) => Value::positions(p.layout().clone(), n, q.into_iter())
     };
     result.described("invalid positions")
 }
@@ -409,33 +421,35 @@ fn signal(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error>
     Err(Error::new(kind, message))
 }
 
-fn case_convert(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+fn case_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let mode = match left {
         None => -3, Some(a) if a.is_singleton() => numeric(&a.at(0))?.integer().described("•c mode must be 1, ¯1 or ¯3")?,
         _ => return Err(Error::domain("•c needs one case mode"))
     };
     if !matches!(mode, -3 | -1 | 1) { return Err(Error::domain("•c mode must be 1, ¯1 or ¯3")); }
     let text: fn(&str) -> String = match mode { 1 => str::to_uppercase, -1 => str::to_lowercase, _ => |s| s.to_uppercase().to_lowercase() };
-    cased(right, text, span)
+    cased(right, text)
 }
 
 /// `value` with each character vector mapped as a string by `text`, and each other character mapped on its own. A character whose mapping has more than one character stays as it is.
-fn cased(value: &Value, text: fn(&str) -> String, span: &Span) -> Result<Value, Error> {
+fn cased(value: &Value, text: fn(&str) -> String) -> Result<Value, Error> {
     check()?;
-    let mapped = match value {
+    match value {
         Value::Character(c) => {
             let s = text(&c.to_string());
             let mut chars = s.chars();
-            return Ok(Value::Character(match (chars.next(), chars.next()) { (Some(m), None) => m, _ => *c }));
+            Ok(Value::Character(match (chars.next(), chars.next()) { (Some(m), None) => m, _ => *c }))
         }
         Value::Array(_) if !value.is_empty() => match crate::keyed::name(value) {
-            Some(s) => crate::keyed::text(&text(&s)),
-            None => Value::new(value.shape(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?).described("invalid result")?,
+            Some(s) => {
+                let mapped = crate::keyed::text(&text(&s));
+                if mapped.shape() != value.shape() { return Ok(mapped); }
+                mapped.with_layout(value.layout().clone()).described("invalid result")
+            }
+            None => Value::new(value.layout().clone(), value.elements().map(|e| cased(&e, text)).collect::<Result<_, _>>()?).described("invalid result"),
         },
-        _ => return Ok(value.clone()),
-    };
-    if mapped.shape() != value.shape() { return Ok(mapped); }
-    mapped.with_layout(value.layout().clone()).described("invalid result")
+        _ => Ok(value.clone()),
+    }
 }
 
 /// `form •normalize text` puts `text` into a Unicode normalization form: `"NFC"`, the default, `"NFD"`, `"NFKC"` or `"NFKD"`.
@@ -470,9 +484,9 @@ fn unicode_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
         if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "encoded •ucs needs a vector")); }
         Some(text)
     } else { None };
-    let shape = |len: usize| {
-        let shape = if encoding.is_some() { vec![len] } else { right.shape().to_vec() };
-        generated_len(&shape).map(|_| shape).map_err(Error::from)
+    let layout = |len: usize| {
+        let layout = if encoding.is_some() { crate::Layout::from(vec![len]) } else { right.layout().clone() };
+        generated_len(layout.shape()).map(|_| layout).map_err(Error::from)
     };
     let result = if matches!(right.prototype(), Value::Character(_)) {
         use crate::array::Items;
@@ -487,7 +501,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
             _ => chars.iter().map(|&c| i64::from(u32::from(c))).collect(),
         };
         if encoding.is_none() && right.is_atom() { return Ok(Value::integer(codes[0])); }
-        Value::integers(shape(codes.len())?, codes)
+        Value::integers(layout(codes.len())?, codes)
     } else {
         if !matches!(right.prototype(), Value::Number(_)) { return Err(invalid()); }
         let codes = right.as_items().nonnegative_integers::<u32>().map_err(|_| invalid())?;
@@ -503,7 +517,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
             _ => codes.into_iter().map(char::from_u32).collect::<Option<_>>().ok_or_else(invalid)?,
         };
         if encoding.is_none() && right.is_atom() { return Ok(Value::Character(chars[0])); }
-        Value::characters(shape(chars.len())?, chars)
+        Value::characters(layout(chars.len())?, chars)
     };
-    result.and_then(|a| if encoding.is_none() { a.with_layout(right.layout().clone()) } else { Ok(a) }).described("invalid Unicode result")
+    result.described("invalid Unicode result")
 }

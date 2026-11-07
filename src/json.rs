@@ -1,23 +1,14 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Items, data::{Options, imported, text}, keyed};
-use num_bigint::BigInt;
-use num_rational::BigRational;
 use rustymath::error::Kind;
 use rustymath::hashing::{HashMap, HashMapExt};
 use serde_json::Value as Json;
 
-/// A JSON number, exact when written without a point or exponent and otherwise a float of `width`. A float too large for `f64` is a DOMAIN error.
+/// A JSON number: one written without a point or exponent reads as data reads a whole number (`Number::data_integer`), and any other is a float of `width`. A float too large for `f64` is a DOMAIN error.
 pub(crate) fn number(n: &serde_json::Number, width: rustymath::buffer::FloatWidth) -> Result<Number, ErrorKind> {
-    if let Some(i) = n.as_i64() { return Ok(Number::from_integer(i)); }
-    if n.as_str().contains(['.', 'e', 'E']) {
-        return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or_else(|| Kind::Domain.into());
-    }
-    exact(n.as_str().parse::<BigInt>().map_err(|_| Kind::Domain)?)
-}
-
-/// An exact integer of any size.
-fn exact(n: BigInt) -> Result<Number, ErrorKind> {
-    match i64::try_from(&n) { Ok(i) => Ok(Number::from_integer(i)), Err(_) => Number::try_from(BigRational::from_integer(n)) }
+    let text = n.as_str();
+    if !text.contains(['.', 'e', 'E']) && let Some(n) = Number::decimal(text) { return Ok(Number::data_integer(n, width)); }
+    text.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or_else(|| Kind::Domain.into())
 }
 
 /// An exact integer as a JSON number, whatever its size.
@@ -43,9 +34,12 @@ pub(crate) fn parse(left: Option<&Value>, right: &Value, _: &Span) -> Result<Val
 }
 
 /// A JSON5 value as the `json5` crate reads it. Unlike `serde_json::Value`, it holds NaN.
-enum Read { Null, Bool(bool), Integer(BigInt), Float(f64), Text(String), List(Vec<Read>), Record(Vec<(String, Read)>) }
+enum Read { Null, Bool(bool), Integer(Result<i64, f64>), Float(f64), Text(String), List(Vec<Read>), Record(Vec<(String, Read)>) }
 
 impl<'de> serde::Deserialize<'de> for Read { fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> { d.deserialize_any(ReadVisitor) } }
+
+/// A JSON5 whole number `n`, with `x` its nearest float for when it doesn't fit 64 bits (`Number::decimal`).
+fn whole(n: impl TryInto<i64>, x: f64) -> Read { Read::Integer(n.try_into().map_err(|_| x)) }
 
 struct ReadVisitor;
 
@@ -54,10 +48,10 @@ impl<'de> serde::de::Visitor<'de> for ReadVisitor {
     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str("a JSON5 value") }
     fn visit_unit<E: serde::de::Error>(self) -> Result<Read, E> { Ok(Read::Null) }
     fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<Read, E> { Ok(Read::Bool(b)) }
-    fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
-    fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
-    fn visit_i128<E: serde::de::Error>(self, n: i128) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
-    fn visit_u128<E: serde::de::Error>(self, n: u128) -> Result<Read, E> { Ok(Read::Integer(n.into())) }
+    fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<Read, E> { Ok(Read::Integer(Ok(n))) }
+    fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<Read, E> { Ok(whole(n, n as f64)) }
+    fn visit_i128<E: serde::de::Error>(self, n: i128) -> Result<Read, E> { Ok(whole(n, n as f64)) }
+    fn visit_u128<E: serde::de::Error>(self, n: u128) -> Result<Read, E> { Ok(whole(n, n as f64)) }
     fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Read, E> { Ok(Read::Float(x)) }
     fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Read, E> { Ok(Read::Text(s.into())) }
     fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Read, A::Error> {
@@ -82,10 +76,10 @@ impl<'de> serde::de::Visitor<'de> for ReadVisitor {
 }
 
 /// `•json⁻¹`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
-pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn serialize(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let opts = Options::new("•json⁻¹", left, None, &["fill"])?;
     let fill = opts.fill()?;
-    Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill), span)?.to_string()))
+    Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill))?.to_string()))
 }
 
 /// A copy of `value` without keyed-vector entries that hold functions, at any depth. A value with nothing to drop comes back as it is.
@@ -115,7 +109,7 @@ fn import(value: &Read, name: &str, reading: &mut Reading) -> Result<Value, Erro
         Read::Null => Value::Number(reading.fill.clone()),
         Read::Bool(b) => Value::Number(Number::from_bool(*b)),
         Read::Text(s) => reading.texts.text(s),
-        Read::Integer(n) => Value::Number(exact(n.clone()).described("JSON number is outside the supported range")?),
+        Read::Integer(n) => Value::Number(Number::data_integer(*n, crate::number::Numeric::current().width)),
         Read::Float(x) => Value::Number(Number::float(*x, crate::number::Numeric::current().width)),
         Read::List(items) => {
             let mut data = Vec::with_capacity(items.len());
@@ -134,7 +128,7 @@ fn import(value: &Read, name: &str, reading: &mut Reading) -> Result<Value, Erro
     Ok(value)
 }
 
-fn export(value: &Value, fill: Option<&Number>, span: &Span) -> Result<Json, Error> {
+fn export(value: &Value, fill: Option<&Number>) -> Result<Json, Error> {
     check()?;
     match value {
         Value::Number(n) => {
@@ -147,16 +141,16 @@ fn export(value: &Value, fill: Option<&Number>, span: &Span) -> Result<Json, Err
         Value::Function(_) | Value::Operator(_) => Err(Error::domain("JSON cannot encode functions or operators")),
         // A value that `∂` carries writes as its plain value, as `⍕` writes it (`Carrier::observed`). A batch stops its run.
         Value::Carried(carrier) => match carrier.observed()? {
-            Some(plain) => export(plain, fill, span),
+            Some(plain) => export(plain, fill),
             None => Err(Error::from(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read"))),
         },
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value)?)),
-        _ if value.shape().is_empty() => export(&value.at(0), fill, span),
+        _ if value.shape().is_empty() => export(&value.at(0), fill),
         _ => {
             let cells = value.cells(value.shape().len() - 1).described("invalid JSON array")?;
             let values = (0..cells.len()).map(|i| {
                 let cell = cells.get(i).described("invalid JSON cell")?;
-                export(&cell, fill, span)
+                export(&cell, fill)
             }).collect::<Result<Vec<_>, _>>()?;
             let Some(keys) = value.keys(0) else { return Ok(Json::Array(values)) };
             if !keys.complete() { return Err(Error::domain("JSON objects need a key for every entry")); }

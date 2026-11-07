@@ -2,10 +2,35 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file, SpeedCosts, _wasm_batches
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_cost_records_keep_values_without_optional_reports():
+    row = dict(section='copies', label='v', cost=1.234567, seconds=1.234567e-9)
+    costs = SpeedCosts.from_records([row, dict(row, budget=2)])
+    assert costs[0][:4] == ('copies', 'v', 1.234567, None) and costs[0][4] == pytest.approx(1.234567)
+    assert costs[1][3] == 2 and costs.holds == {} and costs.footprints == {}
+
+
+
+def test_wasm_batches_keep_files_sections_and_all_rows():
+    text = '⍝⍝ copies\n-v\n⍝⍝: 1\n\n⍝⍝ static\n-v\n⍝⍝: 2\n\n⌽v\n⍝⍝: 3\n\n⍝ —\n1+1   ⍝ 2\n'
+    files = [dict(name=name, text=text) for name in ('one.bpl', 'two.bpl')]
+    batches = list(_wasm_batches(files, size=1))
+    assert [b['file'] for b in batches] == ['one.bpl', 'one.bpl', 'two.bpl', 'two.bpl']
+    for b in batches:
+        assert b['codes'] == (['-v'] if len(b['rows']) == 2 else ['⌽v'])
+        assert b['rows'] == [[b['file'], section, b['codes'][0]] for section in
+            (['copies', 'static'] if len(b['rows']) == 2 else ['static'])]
+    files = [dict(name=p.name, text=p.read_text()) for p in sorted((ROOT/'tests/speed').glob('*.bpl'))]
+    batches = list(_wasm_batches(files))
+    expected = sorted((f['name'], c.section, c.code) for f in files for c in parse(f['text']) if c.budgets)
+    assert sorted(tuple(r) for b in batches for r in b['rows']) == expected
+    assert all(len(b['codes']) <= 16 and len(b['codes']) == len(set(b['codes'])) for b in batches)
+
 
 
 def test_records_and_boundaries():
@@ -88,3 +113,25 @@ def test_set_budgets(tmp_path):
     set_budgets({'neg': 1.2}, path=rm)
     assert rm.read_text() == '[float64]\nneg\t2.4\t2.4\n'
     with pytest.raises(ValueError): set_budgets({'neg': 1}, path=rm, builds='wasm')
+
+
+def test_checker_counts_runs_by_mode(tmp_path):
+    path = tmp_path/'checked.bpl'
+    path.write_text(r'''⍝⍝ cases
+⍝ wrong — A case whose expectation every run misses
+1+1   ⍝ 3
+
+⍝ right — A case that every run passes
+1+1   ⍝ 2
+''')
+    report = check_file(tmp_path, timeout=10)
+    [wrong] = report['failures']
+    statuses = {m['mode']: m['status'] for m in wrong['modes']}
+    # The second call checks only that it agrees with the first, so a wrong expectation passes it.
+    assert wrong['id'] == 'wrong' and statuses.pop("on a dfn's second call") == 'pass', wrong
+    assert set(statuses.values()) <= {'mismatch', 'not applicable'}, wrong
+    assert report['accounting']['with the batch pref off'] == {'planned': 2, 'checked': 2, 'failed': 1, 'not applicable': 0}, report['accounting']
+    with pytest.raises(ValueError, match='match no case'): check_file(path, ids=['absent'])
+    selected = check_file(path, ids='right', timeout=10)
+    assert not selected['failures'] and selected['accounting']['with the batch pref off'] == {'planned': 1, 'checked': 1, 'failed': 0, 'not applicable': 0}
+

@@ -41,12 +41,12 @@ x←0 0.5 1
 {1○x+⍵}∂0                   ⍝ 1 0.8775825619 0.5403023059
 ```
 
-`f∂∂` is `∂` applied to `f∂`. It gives second and mixed derivatives, such as the matrix of mixed derivatives of `×/`, the product of the items. Exact numbers give exact derivatives:
+`f∂∂` is `∂` applied to `f∂`. It gives second and mixed derivatives, such as the matrix of mixed derivatives of `×/`, the product of the items. Its derivatives are floats, whatever the kind of `X`:
 
 ```bpl
 {⍵×⍵×⍵}∂∂∂2                  ⍝ 6
 ×/∂∂ 2 3                     ⍝ [0 1⋄1 0]
-⊼∂3ₓ                         ⍝ 6ₓ
+⊼∂3ₓ                         ⍝ 6
 ```
 
 ## Forward mode
@@ -55,13 +55,13 @@ Where `X` holds one number, `∂` runs `f` once, in forward mode. Every value th
 
 Each `∂` call tags the duals it makes. A call reads only the derivatives with its own tag. Under nested `∂`, as in `{⍵×⍵×⍵}∂∂∂2`, a value is a dual of a dual of a dual. Julia's ForwardDiff tags its dual numbers in the same way.
 
-Functions that move items, such as reshape, transpose, take and windows, move each item's derivative with the item. Comparisons, floor, `⍳`, grade and other functions whose results are counts, positions or Booleans give results with no derivative.
+Functions that move items, such as reshape, transpose, take and windows, move each item's derivative with the item. Comparisons, floor, integer `÷`, `⍳`, grade and other functions whose results are counts, positions, Booleans or floored integers give results with no derivative.
 
 ## Reverse mode
 
 Forward mode takes one pass for each number in `X`. A network with a million parameters would take a million passes. Where `X` holds more than one number, `∂` instead runs `f` once with a record in place of each derivative. A record's items are never computed. Each call on a record adds a linear step to it, built from the same partial derivatives that forward mode uses. The steps are few: scaling by a coefficient, adding, copying from positions, broadcasting, folding by `+`, and matrix products with a constant. When `f` returns, the record holds the linearisation of `f` at `X`. That's the linear map from a small change in `X` to the change it causes in `f X`.
 
-`∂` then reads the Jacobian from the record. A run through the record backwards, through each step's transpose in reverse order, gives one row of the Jacobian. A run forwards gives one column. `∂` takes whichever direction needs fewer runs. A function that gives a number, such as a loss, needs one backward run. Its gradient costs a small multiple of one run of `f`, however many numbers `X` holds. Dex and JAX also build reverse mode as the transpose of a linearisation. One set of tangent rules then serves both modes.
+`∂` then reads the Jacobian from the record. A run through the record backwards, through each step's transpose in reverse order, gives one row of the Jacobian. A run forwards gives one column. `∂` takes the direction that needs fewer runs. A function that gives a number, such as a loss, needs one backward run. Its gradient costs a small multiple of one run of `f`, however many numbers `X` holds. Dex and JAX also build reverse mode as the transpose of a linearisation. One set of tangent rules then serves both modes.
 
 Each linear step has one transpose:
 
@@ -71,13 +71,10 @@ Each linear step has one transpose:
 | Adding two values | The same gradient to each value |
 | A broadcast | A sum over the broadcast axes |
 | A fold by `+` along an axis | A broadcast along that axis |
-| A copy that reads each item at most once, such as a transpose, reverse, take or drop | A copy back through the inverse map |
-| A sum over windows that move by 1 | A sliding sum |
-| Windows that move by more than 1 | Each window's gradient, added back where the window read |
-| A selection that can repeat positions | An accumulation into those positions |
+| A structural copy or a selection, such as a transpose, reverse, windows or a selection that repeats positions | Each item's gradient, added back where the item was read |
 | A matrix product with a constant | A matrix product with the constant's transpose |
 
-The transposes work on whole arrays, as the steps do. The transpose of a selection adds each gradient into the position that it was read from. It never builds an array of zeros with a one at each position read. In this example, `3↕` gives windows of 3. The first function reads item 0 twice and never reads item 1. In the second, the middle items appear in more of the windows:
+The transposes work on whole arrays, as the steps do. The transpose of a copy or a selection adds each gradient into the position that it was read from. It never builds an array of zeros with a one at each position read. In this example, `3↕` gives windows of 3. The first function reads item 0 twice and never reads item 1. In the second, the middle items appear in more of the windows:
 
 ```bpl
 0 0 2 {+/⊼⍵.[⍺]}∂ 1 2 3     ⍝ 4 0 6
@@ -107,6 +104,21 @@ ste←{⌊⍵} ⋄ ste∂←{⍺}
 
 A value that `f` writes to a name outside itself loses its derivatives when `∂` returns. A function gives the same values with and without `∂`.
 
+## Writes
+
+`∂` differentiates indexed, sliced and masked replacement and additive updates. The replacement can depend on the differentiated input:
+
+```bpl
+{v←⍵ ⋄ v.[0]←0 ⋄ +/v}∂1 2 3               ⍝ 0 1 1
+{v←⍵ ⋄ v.[0]+←⍵.[1] ⋄ +/v}∂1 2 3         ⍝ 1 2 1
+{v←⍵ ⋄ v.[[0 0]]+←⍵.[1] ⋄ +/v}∂1 2 3     ⍝ 1 3 1
+{v←⍵ ⋄ v.[[0 2]]←+/⍵ ⋄ +/v}∂1 2 3        ⍝ 2 3 2
+```
+
+Positions and masks are fixed choices during differentiation. `∂` does not differentiate which positions were chosen. An additive update counts each addition at a repeated destination, as the third example shows. A broadcast replacement's gradient sums back to the replacement's original shape, as the fourth example shows.
+
+These rules also apply to selecting [Under](glyphs/at.qmd).
+
 ## Programs: trace once, replay
 
 Without a program, `∂` builds its duals or its record afresh on every call, through the interpreter. A training loop calls `∂` hundreds of times, with arguments of the same types and shapes. This loop fits a network with 16 tanh units (`7○`) to 64 points of sin 3x (`1○3×x`), in 200 steps of gradient descent on a record of parameters:
@@ -120,9 +132,9 @@ p←{⍵ - 0.1× [x y]loss∂⍵}⍣200p
 [x y] loss p                ⍝ 0.07655752909
 ```
 
-`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. The derivative's records and transposes run on traced values too. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
+`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. A map in the function, such as Rank in `+/{⊼1○+/w×⍵}⍤1 X`, calls its dfn once on all its cells, as it does outside a trace. Each call in the dfn then adds one step for all the cells. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
 
-Later calls with the same argument types and shapes replay the program on their arguments, without running the function. The replay runs each chain of elementwise steps as one stage, a block of items at a time. A stage folds its last step's items as it computes them. Its intermediate results exist only one block at a time. Once a stage is large enough, or runs again, BPL compiles it to machine code with Cranelift, if its steps can compile. The browser build has no compiler. It runs every stage on the interpreter's kernels. tinygrad's `TinyJit` replays the kernels of an earlier call in the same way. `•explain` shows whether a call built a program or replayed one:
+Later calls with the same argument types and shapes replay the program on their arguments, without running the function. The replay runs the program's steps as ordinary calls. Chains of elementwise steps then run as one stage, a block of items at a time, as they do outside a program. A stage folds its last step's items as it computes them. Its intermediate results exist only one block at a time. Once a stage is large enough, or runs again, BPL compiles it to machine code with Cranelift, if its steps can compile. The browser build has no compiler. It runs every stage on the interpreter's kernels. `•explain` shows whether a call built a program or replayed one:
 
 ```bpl
 sq←{+/⊼⍵} ⋄ g←sq∂ 1 2 3
@@ -139,16 +151,19 @@ w←1 2 3 ⋄ g←(+/w×⊢)∂ 4 5 6
 w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
 ```
 
-A trace stops at anything that a program can't hold: output or another effect, a random draw, `⍎`, a read of a differentiated value, as a guard on one makes, or a call that no plan covers. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
+### What stops a trace
+
+A trace stops at anything that a program can't hold: output or another effect, a random draw, `⍎`, a read of a differentiated value, as a guard on one makes, a differentiated value inside a nested array, as enclosing one makes, or a call that programs don't take yet. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
 
 ```bpl
 pos←{+/⍵ > 0 ? +/⊼⍵ ; 0}
 (•explain "pos∂ 1 2 3").stopped.reason    ⍝ ["a read of a traced value"]
+(•explain "{+/,⍵×⊃(⊂+/⍵)×2}∂ 1 2 3").stopped.reason   ⍝ ["a traced value inside a nested array"]
 ```
 
 Each replay reads the current value of every name that the function reads from outside its body, and of every array that a function other than a dfn binds. A name or an array read as positions, a count or a guard's condition is part of the program itself. A replay checks its value. A new value traces the function again.
 
-A program fixes every type before it runs. Under the default dynamic kinds, a result's type can depend on its values: `√` of a negative number gives a complex number. A trace stops at such a call. Under static kinds, which `•prefs ["kinds":"static"]` sets, every type follows from the argument types. The same call then traces. Static kinds are the setting for work where speed matters.
+A program fixes every type before it runs. Under the default dynamic kinds, a result's type can depend on its values: `√` of a negative number gives a complex number. A trace stops at such a call, unless the argument is known to be nonnegative, as `⊼x` is. Under static kinds, which `•prefs ["kinds":"static"]` sets, every type follows from the argument types. The same call then traces. Static kinds are the setting for work where speed matters.
 
 ```bpl
 roots←{+/√⍵}
@@ -196,15 +211,15 @@ JAX, Dex and tinygrad are the role models. Futhark, Dex and Julia set the standa
 | ForwardDiff | Dual numbers with tags, which keep nested derivatives apart. |
 | J | `D.`, which gives a Jacobian, and `d.`, which gives the derivative at each item. `f∂` and `f∂⍤0` do these jobs. |
 
-BPL also differs from all of them. `∂` strips its tags from values that escape it, where JAX raises an error when a leaked tracer is used. One operator picks the mode, where JAX offers `jvp`, `vjp`, `jacfwd` and `jacrev`. A Jacobian takes its keys, axis names and records from the rules of outer products. Exact numbers give exact derivatives. Futhark differentiates its program before running it and recomputes values in reverse mode. BPL differentiates the calls that `f` makes as it runs. It keeps their linear steps instead of recomputing values.
+BPL also differs from all of them. `∂` strips its tags from values that escape it, where JAX raises an error when a leaked tracer is used. One operator picks the mode, where JAX offers `jvp`, `vjp`, `jacfwd` and `jacrev`. A Jacobian takes its keys, axis names and records from the rules of outer products. Futhark differentiates its program before running it and recomputes values in reverse mode. BPL differentiates the calls that `f` makes as it runs. It keeps their linear steps instead of recomputing values.
 
 ## Not built yet
 
 These are planned:
 
 - Branches in programs. Agenda (`⍚`) with a selector computed from differentiated values stops a trace, as a guard on them does. The plan is to trace such a selector as a masked select, as JAX traces `select`.
-- Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level". Batching inside traces is planned.
-- Joins. `,`, `⍪` and `@` with differentiated values stop a trace. `∂` still gives the right result, more slowly. A program step for them is designed.
+- Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level".
+- Writes. `@` and selective assignment with differentiated values stop a trace. `∂` still gives the right result, more slowly.
 - Whole training steps. A program holds one call of `∂`. The update, and the loop around it, run outside the program. A tracing point for whole training steps, such as `⍣`, would run a step's forward pass, gradient and update as one program.
 - Deferred Jacobians. `f∂ x` builds every item of the Jacobian. The plan holds a large Jacobian as its linearisation, and builds its items only when something reads them. `J+.×v` would then run as a JVP, `u+.×J` as a vector–Jacobian product, and `b⌹J` as an iterative solve, as in the Gauss–Newton step `x - r⁝x ⌹ r∂x`.
 - The GPU. Programs run on the CPU. A later stage adds a WebGPU back end, with arrays kept on the device.

@@ -3,7 +3,7 @@
 use super::*;
 use rustymath::error::Kind;
 
-use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
+use rustymath::{agreement::{Mapping, Missing, ReadPlan}, buffer::View, layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
 
 /// A window specification for the leading axes of an argument, as `↕` and `⌺` read it: sizes, movements, an edge mode that pads every windowed axis, and the item that padding with fill reads. Without an edge mode, a size below 0 pads its axis with fill.
 pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec<i64>, pub(crate) edge: Option<Edge>, pub(crate) fill: Option<Value> }
@@ -35,22 +35,138 @@ impl WindowSpec {
 
 pub(super) fn windows(spec: &Value, right: &Value, span: &Span) -> Result<Value, Error> { windowed(&WindowSpec::new(spec)?, right, span) }
 
-/// The windows that `spec` gives over the leading axes of `right`: a copy that pads each padded axis by its edge mode where any does, read by the plan of every window. Padding with fill reads `spec`'s fill as an item of `right`'s type (`Primitive::fill_for`), or the prototype where there's none.
+/// The windows that `spec` gives over the leading axes of `right` (`Form::Windows`). Padding with fill reads `spec`'s fill as an item of `right`'s type (`Primitive::fill_for`), or the prototype where there's none.
 pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<Value, Error> {
-    if spec.sizes.is_empty() { return Ok(right.clone()); }
     let (right, fill) = match &spec.fill { Some(fill) => Primitive::fill_for(fill, right, false, span)?, None => (Cow::Borrowed(right), None) };
-    let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or((size < 0).then_some(Edge::Fill)), right.shape())?;
-    let padded =
-        windows.padding().map(|p| copied_fill(&right, p.layout.into(), &Mapping::from(p.steps), fill.as_ref())).transpose().described("invalid windows")?;
-    let source = padded.as_ref().unwrap_or(&right);
-    let plan = windows.plan(right.layout(), source.shape())?;
-    remapped(source, plan).described("invalid windows")
+    let integers = |n: &[i64]| Value::integers(vec![n.len()], n.to_vec()).described("invalid window specification");
+    let params = [integers(&spec.sizes)?, integers(&spec.moves)?];
+    crate::fusion::copy(&Form::Windows { edge: spec.edge, fill: fill.is_some() }, &params, &[&right], fill.as_ref())
+}
+
+/// A structural call whose result reads its inputs' items through a mapping that `plan` computes from their layouts. A recording holds it with reads of its parameters and plans it again at each run, on the lengths of that run (`fusion::copy`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Form {
+    /// The primitive `p` along `axis`, as `call_axis` resolves it, or its inverse where `inverse`. `fill` where the call reads an explicit fill.
+    Call { p: Primitive, axis: Option<usize>, inverse: bool, fill: bool },
+    /// `⍉`, or `⍉⁻¹` where `inverse`, by the axis groups that the call resolved when it was made (`transposed`). Without groups, the specification is the call's one parameter, as one that a carrier holds is, or there's none, and `⍉` reverses the axes.
+    Transpose { inverse: bool, groups: Option<std::sync::Arc<[TransposeGroup]>> },
+    /// Windows over the leading axes, padded by `edge` where it's given, and otherwise by fill on an axis whose size is below 0. `fill` where padding reads an explicit fill.
+    Windows { edge: Option<Edge>, fill: bool },
+}
+
+impl Form {
+    /// Whether atoms copied to a result with no axes stay atoms, as `⌽3` and `⍬↓0` give. A reshape gives an array of the shape it's given, so `⍬⍴5` is a scalar.
+    pub(crate) fn keeps_atoms(&self) -> bool { !matches!(self, Form::Call { p: Primitive::Shape, .. }) }
+}
+
+/// The layout of `form`'s result on inputs laid out as `inputs`, with parameter values `params`, and the read that gives its items: a `ReadPlan` over sources `0..inputs.len()`, plus source `inputs.len()`, the explicit fill, where the form reads one. Otherwise a position that reaches no item reads the default fill.
+/// - Take and drop: `params` are the counts, then the axes where the call lists them.
+/// - Replicate, its inverse expand, and rotate: the counts. Rotate without counts reverses.
+/// - Reshape: the shape. Transpose and its inverse: the axis specification, where the call holds it as a parameter (`Form::Transpose`).
+/// - Windows: the sizes, then the movements. The result's layout is `relaid` from the inputs'.
+pub(crate) fn plan(form: &Form, params: &[Value], inputs: &[&Layout]) -> Result<(Layout, ReadPlan), Error> {
+    let (core, read) = core_plan(form, params, inputs)?;
+    Ok((relaid(core, inputs), read))
+}
+
+/// A structural result's layout from its sources': `core` with the renderer of the one source it rearranges where the rank is unchanged, and for a join the renderer both sources agree on.
+pub(crate) fn relaid(core: CoreLayout, sources: &[&Layout]) -> Layout {
+    match sources { [left, right] => Layout::paired(core, left, right), _ => Layout::rearranged(core, sources[0]) }
+}
+
+/// `plan`'s layout before its renderer is chosen.
+fn core_plan(form: &Form, params: &[Value], inputs: &[&Layout]) -> Result<(CoreLayout, ReadPlan), Error> {
+    let fill = matches!(*form, Form::Call { fill: true, .. } | Form::Windows { fill: true, .. });
+    let missing = if fill { Missing::Scalar(inputs.len()) } else { Missing::Default };
+    let right: &CoreLayout = inputs[0];
+    let read = |layout: CoreLayout, map: Mapping| -> Result<(CoreLayout, ReadPlan), Error> {
+        let len = generated_len(layout.shape())?;
+        Ok((layout, ReadPlan::copy(0, right.count(), map, len, missing.clone())))
+    };
+    let planned = |plan: Plan| read(plan.layout, Mapping::from(plan.steps));
+    let same = || -> Result<(CoreLayout, ReadPlan), Error> { Ok((right.clone(), ReadPlan::input(0, right.count()))) };
+    // A unit reads as `n` axes of length 1.
+    let unit = |n: usize| CoreLayout::from(vec![1; n]);
+    match *form {
+        Form::Call { p: p @ (Primitive::Take | Primitive::Drop), .. } => {
+            let counts = &params[0];
+            if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "take/drop counts must be a unit or vector")); }
+            let axes = params.get(1).map(|a| a.as_items().nonnegative_integers().described("invalid axis")).transpose()?;
+            if axes.as_ref().is_some_and(|a| a.len() != counts.len()) { return Err(Error::new(Kind::Length, "counts do not agree with axes")); }
+            if counts.is_empty() { return same(); }
+            let counts = counts.as_items().integers().described("invalid take/drop count")?;
+            let counts: Vec<_> = counts.iter().enumerate().map(|(i, &n)| (axes.as_ref().map_or(i, |a| a[i]), structure::Count::of(n))).collect();
+            let unit = unit(counts.len());
+            planned(structure::take(if right.shape().is_empty() { &unit } else { right }, &counts, matches!(p, Primitive::Take))?)
+        }
+        Form::Call { p: Primitive::Replicate, axis, inverse, .. } => {
+            let counts = replication_counts(&params[0])?;
+            let unit = unit(1);
+            let layout = if right.shape().is_empty() { &unit } else { right };
+            let axis = axis.unwrap_or(0);
+            planned(if inverse { structure::expand(layout, axis, &counts) } else { structure::repeat(layout, axis, &counts) }?)
+        }
+        Form::Call { p: Primitive::Reverse(_), axis, .. } => {
+            let axis = axis.expect("a rotation resolves its axis");
+            let numbers = params.first().map(|a| a.as_items().integers().described("invalid rotation count")).transpose()?;
+            let counts = params.first().zip(numbers.as_deref()).map(|(a, ns)| (a.shape(), ns));
+            // A unit rotates as a vector of one item, which leaves it as it is.
+            if right.shape().is_empty() { structure::rotate(&unit(1), axis, counts)?; return same(); }
+            planned(structure::rotate(right, axis, counts)?)
+        }
+        Form::Call { p: Primitive::Shape, .. } => {
+            let dimensions = &params[0];
+            if dimensions.shape().len() > 1 { return Err(Error::new(Kind::Rank, "shape must be a unit or vector")); }
+            let shape = dimensions.as_items().nonnegative_integers().described("invalid dimension")?;
+            let len = generated_len(&shape)?;
+            let names = shape_names(dimensions);
+            // The same shape keeps `right`'s keys, under the axis names that `dimensions` gives.
+            if !shape.is_empty() && right.shape() == &shape[..] { return Ok((right.clone().inherit_names(names), ReadPlan::input(0, right.count()))); }
+            let layout = CoreLayout::from(shape);
+            let layout = if names.is_empty() { layout } else { layout.inherit_names(names) };
+            // The items in order, cycling where the shape holds more, and fills where there are none.
+            let n = right.count();
+            read(layout, Mapping::from(vec![if n == 0 { Steps::clipped(0, len, 0, 1) } else { Steps::padded(0, len, n, 1, Edge::Wrap) }]))
+        }
+        Form::Transpose { inverse: false, ref groups } => {
+            let (regrouped, axes) = match groups_of(groups, params, right, false)? {
+                None => (right.clone(), (0..right.shape().len()).rev().collect()), Some(groups) => split_axes(&groups, right)?
+            };
+            if rustymath::gather::counts_up(&axes) { return Ok((regrouped, ReadPlan::input(0, right.count()))); }
+            // A regroup moves no items, so the transpose of the regrouped layout reads `right`'s items directly.
+            planned(structure::transpose(&regrouped, &axes)?)
+        }
+        Form::Transpose { inverse: true, ref groups } => {
+            let groups = groups_of(groups, params, right, true)?.expect("⍉⁻¹ has a specification");
+            let (order, shape, sources, names) = merged_axes(&groups, right)?;
+            let moved = structure::transpose(right, &rustymath::search::inverse_permutation(order.into_iter()))?;
+            // The merge moves no items, so the merged layout reads the transposed items.
+            read(structure::regrouped(&moved.layout, shape, &sources, &names)?, Mapping::from(moved.steps))
+        }
+        Form::Call { p: p @ (Primitive::Ravel | Primitive::CatenateFirst), axis, .. } => {
+            catenated(right, inputs[1], axis, matches!(p, Primitive::CatenateFirst))
+        }
+        Form::Call { p, .. } => Err(Error::new(crate::ErrorKind::Syntax, format!("{} has no structural plan", p.glyph()))),
+        Form::Windows { edge, .. } => {
+            let integers = |v: &Value| v.as_items().integers().described("window sizes and movements must be whole numbers").map(|n| n.to_vec());
+            let (sizes, moves) = (integers(&params[0])?, integers(&params[1])?);
+            if sizes.is_empty() { return same(); }
+            let windows = Windows::new(&sizes, &moves, |size: structure::Count| edge.or(size.negative.then_some(Edge::Fill)), right.shape())?;
+            let Some(pad) = windows.padding() else { return planned(windows.plan(right, right.shape())?) };
+            // The windows read a padded copy of `right` by plain strides: a map over the padding's map, which a copy reads inner map first (`fusion::copied_through`).
+            let padded = pad.layout.shape().to_vec();
+            let plan = windows.plan(right, &padded)?;
+            let inner = ReadPlan::copy(0, right.count(), Mapping::from(pad.steps), generated_len(&padded)?, missing.clone());
+            let len = generated_len(plan.layout.shape())?;
+            Ok((plan.layout, inner.remapped(Mapping::from(plan.steps), len, Missing::Invalid)))
+        }
+    }
 }
 
 pub(super) fn enlist(right: &Value, span: &Span) -> Result<Value, Error> {
     // A simple array's enlist is its ravel, which reads it whole.
     if right.is_simple() { return Primitive::Ravel.call(None, right, span); }
-    fn append(array: &Value, data: &mut Gather, span: &Span) -> Result<(), Error> {
+    fn append(array: &Value, data: &mut Gather) -> Result<(), Error> {
         let limit = || Error::new(Kind::Limit, "enlist exceeds array limits");
         // A simple mixed array keeps its storage. A nested array's items are gathered one by one.
         if array.is_simple() {
@@ -60,7 +176,7 @@ pub(super) fn enlist(right: &Value, span: &Span) -> Result<Value, Error> {
         }
         let Items::Values(items) = array.as_items() else { unreachable!() };
         for item in items {
-            if let a @ Value::Array(_) = item { append(a, data, span)?; } else {
+            if let a @ Value::Array(_) = item { append(a, data)?; } else {
                 generated_len(&[data.len() + 1]).map_err(|_| limit())?;
                 data.add(item.clone());
             }
@@ -68,7 +184,7 @@ pub(super) fn enlist(right: &Value, span: &Span) -> Result<Value, Error> {
         Ok(())
     }
     let mut data = Gather::items(right.len());
-    append(right, &mut data, span)?;
+    append(right, &mut data)?;
     let shape = vec![data.len()];
     let prototype = || {
         let mut prototype = right.prototype();
@@ -126,17 +242,8 @@ pub(super) fn placed_cells(mixed: &Value, frame: usize, spec: &Value) -> Result<
 pub(super) fn shape_names(dimensions: &Value) -> Vec<Option<std::sync::Arc<str>>> { dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec()) }
 
 pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Value>) -> Result<Value, Error> {
-    if dimensions.shape().len() > 1 { return Err(Error::new(Kind::Rank, "shape must be a unit or vector")); }
-    let shape = dimensions.as_items().nonnegative_integers().described("invalid dimension")?;
-    let len = generated_len(&shape)?;
-    let names = shape_names(dimensions);
-    if right.shape() == shape && !right.is_atom() { return right.clone().with_axis_names(names).described("invalid axis names"); }
-    // The items in order, cycling where the shape holds more, and fills where there are none. Where they fit in order, the result views the argument's storage.
-    let n = right.len();
-    let flat = right.relaid(Layout::from([n])).described("invalid reshape")?;
-    let steps = if n == 0 { Steps::clipped(0, len, 0, 1) } else { Steps::padded(0, len, n, 1, Edge::Wrap) };
-    copied_fill(&flat, Layout::from([len]), &Mapping::from(vec![steps]), fill.as_ref()).and_then(|a| a.relaid(Layout::from(shape)))
-        .and_then(|a| a.with_axis_names(names)).described("invalid reshape")
+    crate::fusion::copy(
+        &Form::Call { p: Primitive::Shape, axis: None, inverse: false, fill: fill.is_some() }, std::slice::from_ref(dimensions), &[right], fill.as_ref())
 }
 
 /// `right` reshaped to `shape`, through the reshape primitive's call. That call applies `∂`'s rules to duals and records.
@@ -145,105 +252,42 @@ pub(crate) fn reshape_to(shape: &[usize], right: &Value, span: &Span) -> Result<
     Primitive::Shape.call(Some(&shape), right, span)
 }
 
-/// `right` copied by `plan`, with no renderer.
-pub(crate) fn remapped(right: &Value, plan: Plan) -> Result<Value, ErrorKind> { copied(right, plan.layout.into(), &Mapping::from(plan.steps)) }
-
 /// `right` copied by `plan`, keeping `right`'s renderer where the rank doesn't change. A position that reaches no item reads `fill`, or the prototype where there's none.
-pub(super) fn remap(right: &Value, plan: Plan, fill: Option<Value>) -> Result<Value, Error> {
-    copied_fill(right, Layout::rearranged(plan.layout, right), &Mapping::from(plan.steps), fill.as_ref()).described("invalid structural result")
-}
-
-/// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`). A large copy of a compact array is a pending copy, which fusion computes with the calls that read it (`fusion::copy`). Otherwise the copy is computed at once (`copied_now`).
-pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, None, true) }
-/// `copied`, computed at once, with no pending copy: a program's copy step, whose program's plan schedules it (`program::run`).
-pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, None, false) }
-/// `copied` with a validated scalar fill. Compact sources carry native fills on the map; fills of mixed data are consumed eagerly.
-pub(crate) fn copied_fill(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
-    if let Some(native) = fill.and_then(|fill| right.native_fill(fill)) { return copied(right, layout, &map.clone().filled(Some(native))); }
-    copying(right, layout, map, fill, true)
-}
-
-/// `copied`, which a pending copy can give where `defers` holds. A map that reads every item of `right` in order gives `right` under `layout`, with no items copied. A carried array copies each of its parts through the map that its part reads, a record as one `Op::Copy` (`Carrier::copied`). A position that reaches no item reads `fill`, the chosen fill of mixed data, or else the map's native fill, or else the prototype. A native fill can stay on a pending copy's map, and a fill of mixed data makes the copy eager.
-fn copying(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>, defers: bool) -> Result<Value, ErrorKind> {
-    let len = generated_len(layout.shape())?;
-    if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
-    let (base, tables, native) = map.to_walk(layout.shape());
-    if right.len() == len && base == 0 && Steps::in_order(&tables) { return right.relaid(layout); }
-    let fill = fill.filter(|_| map.fills());
-    if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
-    if fill.is_none() && defers && let Some(copy) = crate::fusion::copy(right, &layout, map) { return Ok(copy); }
-    let chosen = native.map(|fill| Value::from_fill(fill, right.fixed_width().is_some()));
-    walked(right, layout, base, &tables, fill.or(chosen.as_ref()))
-}
-
-/// Items of `right` at the flat `offsets`, laid out by `layout`, as `copied` reads them, with `fill` at an offset that reaches no item, or the prototype where there's none.
-pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout, fill: Option<&Value>) -> Result<Value, ErrorKind> {
-    copied_fill(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets)]), fill)?.relaid(layout)
-}
-
-/// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`, with `fill` where they reach no item, or the prototype where there's none.
-pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps], fill: Option<&Value>) -> Result<Value, ErrorKind> {
-    let mut data = Gather::new(&[source], generated_len(layout.shape())?);
-    data.walk(source, base, steps, fill);
-    data.finish(layout, || source.prototype())
+pub(crate) fn remap(right: &Value, plan: Plan, fill: Option<Value>) -> Result<Value, Error> {
+    crate::fusion::copied(right, relaid(plan.layout, &[right.layout()]), &Mapping::from(plan.steps), fill.as_ref()).described("invalid structural result")
 }
 
 pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>) -> Result<Value, Error> {
-    if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "take/drop counts must be a unit or vector")); }
-    if axes.is_some_and(|a| a.len() != counts.len()) { return Err(Error::new(Kind::Length, "counts do not agree with axes")); }
-    if counts.is_empty() { return Ok(right.clone()); }
-    let counts = counts.as_items().integers().described("invalid take/drop count")?;
-    let counts: Vec<_> = counts.iter().enumerate().map(|(i, &count)| (axes.map_or(i, |a| a[i]), count)).collect();
-    let unit = rustymath::layout::Layout::from(vec![1; counts.len()]);
-    let plan = structure::take(if right.is_unit() { &unit } else { right.layout() }, &counts, take)?;
-    remap(right, plan, fill)
+    let p = if take { Primitive::Take } else { Primitive::Drop };
+    let mut params = vec![counts.clone()];
+    if let Some(axes) = axes { params.push(Value::integers(vec![axes.len()], axes.iter().map(|&a| a as i64).collect()).described("invalid axes")?); }
+    crate::fusion::copy(&Form::Call { p, axis: None, inverse: false, fill: fill.is_some() }, &params, &[right], fill.as_ref())
 }
 
-/// `counts` replicates the cells of `right` along `axis`, the leading axis by default, through rustymath's `structure::repeat`, or undoes that through `structure::expand` where `inverse`. Expand's inserted items read `fill`, or the prototype where there's none. A plain vector's counts copy its items with no table of offsets: a Boolean mask compresses them, and counts that insert no fills repeat each item.
+/// `counts` replicates the cells of `right` along `axis`, the leading axis by default, or undoes that where `inverse`: expand, whose inserted items read `fill`, or the prototype where there's none.
 pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, fill: Option<Value>) -> Result<Value, Error> {
+    if !inverse && let Some(copy) = repeated(counts, right, axis.unwrap_or(0))? { return Ok(copy); }
+    crate::fusion::copy(&Form::Call { p: Primitive::Replicate, axis, inverse, fill: fill.is_some() }, std::slice::from_ref(counts), &[right], fill.as_ref())
+}
+
+/// `replicate` of the compact items of `right`, which no carrier holds, written at once (`structure::repeated`). `None` for a unit or atom, and where `structure::repeated` gives none.
+fn repeated(counts: &Value, right: &Value, axis: usize) -> Result<Option<Value>, Error> {
+    if right.shape().is_empty() || right.carries_here() || counts.carries_here() { return Ok(None); }
+    let Some(view) = right.view() else { return Ok(None) };
+    let copy = if let Some(View::Booleans(mask)) = counts.view() && counts.shape().len() <= 1 { structure::repeated(view, right.layout(), axis, mask)? }
+    else { structure::repeated(view, right.layout(), axis, &replication_counts(counts)?)? };
+    let Some((core, buffer)) = copy else { return Ok(None) };
+    Value::from_bounded(relaid(core, &[right.layout()]), buffer, right.fixed_width(), right.range()).map(Some).described("a replication")
+}
+
+/// `counts` as replication counts: a unit or a vector of whole numbers.
+fn replication_counts(counts: &Value) -> Result<std::borrow::Cow<'_, [i64]>, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "replication counts must be a unit or vector")); }
-    let axis = axis.unwrap_or(0);
-    // `Gather` copies the items of a value that no running level carries. A carried value moves through its carrier (`remap`), which routes each level's parts, a trace's included.
-    let gathers = right.carrier().is_none();
-    // A Boolean mask over an unkeyed vector copies the items it selects. The mask is read as it is, with no conversion.
-    if let (Some(mask), [n], [m], false) = (counts.as_booleans(), counts.shape(), right.shape(), inverse) {
-        if n == m && right.keys(0).is_none() && gathers {
-            let total = mask.iter().map(|&b| usize::from(b)).sum();
-            let mut data = Gather::new(&[right], total);
-            data.compress(right, mask, total);
-            return data.finish(Layout::rearranged(CoreLayout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
-                .described("invalid replication");
-        }
-    }
-    // Validate even an unused singleton count (e.g. fractional count / empty vector).
-    let counts = counts.as_items().integers().described("replication count must be a representable whole number")?;
-    // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most their or, which bounds their sum by the or times the number of items. Counts whose sum could pass `i64` take the plan, which reports the overflow.
-    let (any, sum) = or_and_sum(&counts);
-    let len = right.len();
-    let plain = gathers && axis == 0 && match right.shape() { [] => true, [_] => right.keys(0).is_none(), _ => false };
-    if plain && !inverse && any >= 0 && (counts.len() == 1 || counts.len() == len) && (any as u64).checked_mul(len as u64).is_some_and(|m| m <= i64::MAX as u64)
-    {
-        let total = if counts.len() == 1 { counts[0] as usize * len } else { sum as usize };
-        generated_len(&[total])?;
-        let mut data = Gather::new(&[right], total);
-        if counts.len() > 1 && any <= 1 { data.compress(right, &counts, total) }
-        else { data.replicate(right, &counts, total) }
-        return data.finish(Layout::rearranged(CoreLayout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
-            .described("invalid replication");
-    }
-    let unit = CoreLayout::from([1]);
-    let layout = if right.is_unit() { &unit } else { right.layout() };
-    let plan = if inverse { structure::expand(layout, axis, &counts) } else { structure::repeat(layout, axis, &counts) }?;
-    remap(right, plan, fill)
+    counts.as_items().integers().described("replication count must be a representable whole number")
 }
 
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize) -> Result<Value, Error> {
-    let numbers = counts.map(|a| a.as_items().integers().described("invalid rotation count")).transpose()?;
-    let counts = counts.zip(numbers.as_deref()).map(|(a, ns)| (a.shape(), ns));
-    // A unit rotates as a vector of one item, which leaves it as it is.
-    if right.is_unit() { structure::rotate(&CoreLayout::from([1]), axis, counts)?; return Ok(right.clone()); }
-    let plan = structure::rotate(right.layout(), axis, counts)?;
-    remap(right, plan, None)
+    crate::fusion::copy(&Form::Call { p: Primitive::Reverse(false), axis: Some(axis), inverse: false, fill: false }, counts.cloned().as_slice(), &[right], None)
 }
 
 /// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one axis fewer gains `axis`, with one position.
@@ -260,18 +304,20 @@ fn promoted(a: &Value, other: &Value, rank: usize, axis: usize) -> Result<Value,
     }
     if a.shape().len() + 1 != rank { return Err(Error::new(Kind::Rank, "catenate ranks differ by more than one")); }
     let shape: crate::Shape = a.shape()[..axis].iter().chain(&[1]).chain(&a.shape()[axis..]).copied().collect();
-    let layout = a.layout().replace(axis..axis, &Layout::from([1]));
+    let layout = a.layout().axes(0..axis).concat(&Layout::from([1]).concat(&a.layout().axes(axis..a.shape().len())));
     a.with_shape(shape).and_then(|v| v.with_layout(layout)).described("invalid catenate shape")
 }
 
 /// What `append_plan` gives.
 type AppendPlan = (Value, Option<Vec<Option<std::sync::Arc<str>>>>);
 
-/// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the keys of the new positions when the leading axis has keys or gains them. `None` when the result would have another rank, gain keys on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written, apart from a new key already on the leading axis, which `Value::append` reports without writing.
+/// What `left,right` on a vector or `left⍪right` adds along the leading axis, when `left` can grow in place: the new cells, and the keys of the new positions when the leading axis has keys or gains them. `None` when the join would change `left`'s kind (`Gather::joined_kind`) or the result would have another rank, gain keys on another axis, change an axis name or be empty. It gives the errors that `catenate` gives, before anything is written, apart from a new key already on the leading axis, which `Value::append` reports without writing.
 pub(crate) fn append_plan(left: &Value, right: &Value, first: bool) -> Result<Option<AppendPlan>, Error> {
     let rank = left.shape().len();
     if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
-    let weak = Primitive::Ravel.joined_weak(right, left)?;
+    let kind = crate::plan::Kind::value(left);
+    if Gather::joined_kind(&[left, right], Widening::Arrays).is_none_or(|k| (k.dtype, k.fixed) != (kind.dtype, kind.fixed)) { return Ok(None); }
+    let weak = weakened_beside(right, kind);
     let right = promoted(weak.as_ref().unwrap_or(right), left, rank, 0)?;
     let wanted: Vec<_> = (0..rank).map(|a| if a == 0 { None } else { left.keys(a).cloned() }).collect();
     let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
@@ -286,35 +332,63 @@ pub(crate) fn append_plan(left: &Value, right: &Value, first: bool) -> Result<Op
     };
     Ok(Some((right, names)))
 }
+/// `left` and `right` joined along `axis` (`catenated`). The result kind, in which a weak number takes the other argument's width, is `fusion::copy`'s, from Numeric's result-kind function for the form.
 pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool) -> Result<Value, Error> {
+    let p = if first { Primitive::CatenateFirst } else { Primitive::Ravel };
+    crate::fusion::copy(&Form::Call { p, axis, inverse: false, fill: false }, &[], &[left, right], None)
+}
+
+/// Catenate's plan: the joined layout, and a read of `left`'s items, source 0, then `right`'s, source 1. A unit becomes one cell, an argument with one axis fewer gains `axis` with one position, and `right`'s keyed axes other than `axis` take `left`'s order.
+fn catenated(left: &CoreLayout, right: &CoreLayout, axis: Option<usize>, first: bool) -> Result<(CoreLayout, ReadPlan), Error> {
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(Error::domain("catenate axis is outside result rank")); }
-    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array. A weak integer beside fixed integers must fit their width (`plan::Kind::fits`).
-    crate::plan::Kind::fits([left, right])?;
-    let (left, right) = Primitive::Ravel.weakened(Some(left), right, |left, right| {
-        let left = promoted(left.expect("catenation is dyadic"), right, rank, axis)?;
-        let right = promoted(right, &left, rank, axis)?;
-        Ok::<_, Error>((left, right))
-    })?;
-    let wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
-    let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
-    let layout = structure::catenate(left.layout(), right.layout(), axis)?;
-    let size = layout.count();
-    let traversal = Lanes::new(layout.shape(), axis)?;
-    let mut data = Gather::new(&[&left, &right], size);
-    let lens = [&left, &right].map(|a| a.shape()[axis] * traversal.inner);
-    data.lanes([&left, &right], lens, if size == 0 { 0 } else { traversal.outer });
-    data.finish(Layout::paired(layout, left.layout(), right.layout()), || left.prototype()).described("invalid catenate result")
+    let (ln, rn) = (left.count(), right.count());
+    let along = |a: &CoreLayout| a.shape().iter().zip(strides(a.shape())).map(|(&n, s)| Steps::along(n, s)).collect::<Vec<_>>();
+    // An argument as `rank` axes, with the steps that reach each of its positions in its own items.
+    let promoted = |a: &CoreLayout, other: &CoreLayout| -> Result<(CoreLayout, Vec<Steps>), Error> {
+        if a.shape().len() == rank { return Ok((a.clone(), along(a))); }
+        if a.shape().is_empty() {
+            let mut shape = if other.shape().is_empty() { vec![1] } else { other.shape().to_vec() };
+            shape[axis] = 1;
+            let steps = shape.iter().map(|&n| Steps::along(n, 0)).collect();
+            return Ok((CoreLayout::from(shape), steps));
+        }
+        if a.shape().len() + 1 != rank { return Err(Error::new(Kind::Rank, "catenate ranks differ by more than one")); }
+        let mut steps = along(a);
+        steps.insert(axis, Steps::along(1, 0));
+        Ok((a.axes(0..axis).concat(&CoreLayout::from([1]).concat(&a.axes(axis..a.shape().len()))), steps))
+    };
+    let (left, lsteps) = promoted(left, right)?;
+    let (right, mut rsteps) = promoted(right, &left)?;
+    let mut keys = right.all_keys();
+    let stride = strides(right.shape());
+    for a in (0..rank).filter(|&a| a != axis) {
+        if let (Some(src), Some(dst)) = (right.keys(a), left.keys(a)) && src != dst {
+            let positions = src.positions(dst, false).described("catenate axis keys differ")?;
+            rsteps[a] = Steps::table(positions.into_iter().map(|p| p * stride[a]).collect());
+            keys[a] = Some(dst.clone());
+        }
+    }
+    let right = right.with_keys(keys)?;
+    let layout = structure::catenate(&left, &right, axis)?;
+    let [outer, _, _] = Lanes::new(layout.shape(), axis)?.dims();
+    // Each of the `outer` rows reads `left`'s cells along `axis`, then `right`'s: a stretch of each argument's items, read through its steps.
+    let part =
+        |source: usize, items: usize, a: &CoreLayout, steps: Vec<Steps>| ReadPlan::copy(source, items, Mapping::from(steps), a.count(), Missing::Default);
+    Ok((layout, ReadPlan::joined(outer, [part(0, ln, &left, lsteps), part(1, rn, &right, rsteps)])?))
 }
 
 /// One source-axis route in `⍉`, or a group of source axes to merge in `⍉⁻¹`. Keys declare names on the unsplit and split sides.
-struct TransposeGroup { axes: Vec<usize>, sizes: Option<Vec<Option<usize>>>, name: Option<std::sync::Arc<str>>, factor_names: Vec<Option<std::sync::Arc<str>>> }
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TransposeGroup {
+    axes: Vec<usize>, sizes: Option<Vec<Option<usize>>>, name: Option<std::sync::Arc<str>>, factor_names: Vec<Option<std::sync::Arc<str>>>
+}
 
 /// Whether `value` is a name, or holds one at any depth.
 fn holds_name(value: &Value) -> bool { crate::keyed::name(value).is_some() || !value.is_atom() && value.elements().any(|e| holds_name(&e)) }
 
-fn transpose_groups(spec: &Value, right: &Value, inverse: bool) -> Result<Vec<TransposeGroup>, Error> {
+fn transpose_groups(spec: &Value, right: &CoreLayout, inverse: bool) -> Result<Vec<TransposeGroup>, Error> {
     if spec.shape().len() > 1 { return Err(Error::new(Kind::Rank, "transpose axes must be a unit or vector")); }
     // `⍉` takes destinations, where a named vector gives its numbers. In `⍉⁻¹`, a named vector names its axis, as a string does.
     let named = |v: &Value| if inverse { super::named_axis(v) } else { crate::keyed::name(v) };
@@ -339,7 +413,7 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool) -> Result<Vec<Tr
             return Err(Error::domain(if inverse { "a merge is a list of axes, or of [source size] pairs" }
             else { "a split is a list of [destination size] pairs, such as [1 2;3 ∞]" }));
         };
-        let selectors = if inverse { resolve_axes(&selectors, right)? } else { selectors };
+        let selectors = if inverse { resolve_axes_in(&selectors, right)? } else { selectors };
         let axes = if inverse { axes(&selectors, right.shape().len())? }
         else { selectors.as_items().nonnegative_integers().described("invalid transpose axis")? };
         if axes.is_empty() { return Err(Error::domain("a transpose group must contain an axis")); }
@@ -348,17 +422,19 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool) -> Result<Vec<Tr
     }).collect()
 }
 
-/// Change shape without copying, keeping metadata only on axes that were not split or merged.
-fn regroup(right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>]) -> Result<Value, Error> {
-    if right.is_atom() && shape.is_empty() { return Ok(right.clone()); }
-    let layout = structure::regrouped(right.layout(), shape.clone(), sources, names)?;
-    right.with_shape(shape).and_then(|a| a.with_layout(Layout::rearranged(layout, right))).described("invalid transpose shape")
+/// A transpose call's axis groups: those that the call resolved when it was made (`transposed`), or else those of its specification parameter, or `None` where it has neither.
+fn groups_of<'a>(
+    groups: &'a Option<std::sync::Arc<[TransposeGroup]>>, params: &[Value], right: &CoreLayout, inverse: bool
+) -> Result<Option<Cow<'a, [TransposeGroup]>>, Error> {
+    Ok(match (groups, params.first()) {
+        (Some(groups), _) => Some(Cow::Borrowed(&groups[..])), (None, Some(spec)) => Some(Cow::Owned(transpose_groups(spec, right, inverse)?)),
+        (None, None) => None
+    })
 }
 
-pub(super) fn transpose(spec: Option<&Value>, right: &Value) -> Result<Value, Error> {
+/// Change shape without copying, keeping metadata only on axes that were not split or merged. The layout that `⍉`'s `groups` regroup `right` to, splitting the axes that a group splits, and each regrouped axis's destination. As in BQN, remaining axes fill the unused destinations in order, and repeated destinations select diagonals.
+fn split_axes(groups: &[TransposeGroup], right: &CoreLayout) -> Result<(CoreLayout, Vec<usize>), Error> {
     let rank = right.shape().len();
-    let Some(spec) = spec else { return transpose_axes((0..rank).rev().collect(), right) };
-    let groups = transpose_groups(spec, right, false)?;
     if groups.len() > rank { return Err(Error::new(Kind::Length, "transpose has more axes than its argument")); }
     let mut destinations = Vec::new();
     let mut shape = Vec::new();
@@ -389,20 +465,19 @@ pub(super) fn transpose(spec: Option<&Value>, right: &Value) -> Result<Value, Er
     }
     shape.extend_from_slice(&right.shape()[groups.len()..]);
     sources.extend((groups.len()..rank).map(|a| vec![a]));
-    let expanded = regroup(right, shape, &sources, &names)?;
-    // As in BQN, remaining source axes fill the unused destinations in order. Repeated destinations select diagonals.
+    let regrouped = structure::regrouped(right, shape, &sources, &names)?;
     let mut distinct = destinations.clone();
     distinct.sort_unstable();
     distinct.dedup();
-    let result_rank = distinct.len() + expanded.shape().len() - destinations.len();
+    let result_rank = distinct.len() + regrouped.shape().len() - destinations.len();
     if destinations.iter().any(|&n| n >= result_rank) { return Err(Error::new(Kind::Rank, "transpose axes must be consecutive from 0")); }
-    let unused: Vec<_> = (0..result_rank).filter(|r| distinct.binary_search(r).is_err()).collect();
-    destinations.extend(unused);
-    transpose_axes(destinations, &expanded)
+    destinations.extend((0..result_rank).filter(|r| distinct.binary_search(r).is_err()));
+    Ok((regrouped, destinations))
 }
 
-pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Error> {
-    let groups = transpose_groups(spec, right, true)?;
+/// What `⍉⁻¹`'s `groups` do to `right`: the order that brings each group's axes together, then the shape, sources and names that merge each group into one axis.
+type Merge = (Vec<usize>, Vec<usize>, Vec<Vec<usize>>, Vec<Option<std::sync::Arc<str>>>);
+fn merged_axes(groups: &[TransposeGroup], right: &CoreLayout) -> Result<Merge, Error> {
     let mut order = Vec::new();
     let mut shape = Vec::new();
     let mut sources = Vec::new();
@@ -417,8 +492,8 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Er
         }
         shape.push(crate::array::element_count(&factors)?);
         sources.push(if group.axes.len() == 1 && group.sizes.is_none() { vec![order.len()] } else { Vec::new() });
-        names.push(group.name);
-        order.extend(group.axes);
+        names.push(group.name.clone());
+        order.extend(&group.axes);
     }
     for axis in 0..right.shape().len() {
         if !order.contains(&axis) {
@@ -427,14 +502,26 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Er
             order.push(axis);
         }
     }
-    let ordered = reorder(right, &order)?;
-    regroup(&ordered, shape, &sources, &names)
+    Ok((order, shape, sources, names))
 }
 
-/// The shared data-remapping kernel: input axis `i` goes to `axes[i]`. Where no axis moves, `right` itself.
+pub(super) fn transpose(spec: Option<&Value>, right: &Value) -> Result<Value, Error> { transposed(spec, right, false) }
+
+pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Error> { transposed(Some(spec), right, true) }
+
+/// `⍉` of `right` by `spec`, or `⍉⁻¹` where `inverse`. A plain specification resolves to its axis groups here (`transpose_groups`), so that a recording holds the groups in its recipe: a program can't hold the names, strings and nested groups of the specification itself. A specification that a carrier holds stays the call's parameter, which each run resolves (`core_plan`).
+fn transposed(spec: Option<&Value>, right: &Value, inverse: bool) -> Result<Value, Error> {
+    let plain = spec.filter(|s| !s.carried());
+    let groups = plain.map(|s| transpose_groups(s, right.layout(), inverse)).transpose()?.map(std::sync::Arc::from);
+    let params = if plain.is_some() { None } else { spec.cloned() };
+    crate::fusion::copy(&Form::Transpose { inverse, groups }, params.as_slice(), &[right], None)
+}
+
+/// `right` with input axis `i` at `axes[i]`. Where no axis moves, `right` itself.
 pub(crate) fn transpose_axes(axes: Vec<usize>, right: &Value) -> Result<Value, Error> {
     if rustymath::gather::counts_up(&axes) { return Ok(right.clone()); }
-    remap(right, structure::transpose(right.layout(), &axes)?, None)
+    let axes = Value::integers(vec![axes.len()], axes.iter().map(|&a| a as i64).collect()).described("invalid transpose axes")?;
+    transpose(Some(&axes), right)
 }
 
 pub(super) fn split(right: &Value, axis: Option<usize>) -> Result<Value, Error> {
@@ -471,7 +558,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
         previous = count;
     }
     let cell_layout = |range: std::ops::Range<usize>| CoreLayout::select(right.layout(), axis, range.map(Some));
-    let prototype = cell_layout(0..0).map_err(ErrorKind::from).and_then(|layout| Layout::rearranged(layout, &right).collect(vec![], right.prototype()))
+    let prototype = cell_layout(0..0).map_err(ErrorKind::from).and_then(|layout| relaid(layout, &[right.layout()]).collect(vec![], right.prototype()))
         .described("invalid partition prototype")?;
     // A partition of a plain array along its leading axis, or along an axis below axes of length 1, is a range of its items, which `part` lends as a view.
     let leading = traversal.outer == 1 && right.layout().plain();

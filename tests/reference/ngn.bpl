@@ -86,12 +86,10 @@
 2 2⍴0
 
 ⍝ ngn:30 —
-2 2⊃1 2
-⍝ error: INDEX ERROR
+2 2⊃1 2   ⍝ 0
 
 ⍝ ngn:31 —
-0 2⊃["AB"⋄"CD"]
-⍝ error: INDEX ERROR
+0 2⊃["AB"⋄"CD"]   ⍝ ' '
 
 ⍝ ngn:32 —
 a←" this is a test "⋄a≠' ' ⊂ a
@@ -1890,12 +1888,10 @@ a   ⍝ [0 0 0⋄1 0 1]
 2⌷23 54 38   ⍝ 38
 
 ⍝ ngn:614 —
-10 1⌷[100 101 102⋄110 111 112]
-⍝ error: INDEX ERROR
+10 1⌷[100 101 102⋄110 111 112]   ⍝ 0
 
 ⍝ ngn:615 —
-4⌷23 54 38
-⍝ error: INDEX ERROR
+4⌷23 54 38   ⍝ 0
 
 ⍝ ngn:616 —
 1⌷[100 101 102⋄110 111 112]   ⍝ 110 111 112
@@ -2343,18 +2339,17 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
 ⍝ ngn:504 — Zero-origin offset, match and capture
-p←•r "b(c+)d"
-m←p.matches "abcd"
+m←"abcd" •r "b(c+)d"
 (↑m.position),(m.text),(↑m.groups)
 ⍝ =>
 1ₓ "bcd" "c"
 
 ⍝ ngn:505 — No match
-p←•r "B(c+)d" ⋄ (p.matches "abcd").position
+("abcd" •r "B(c+)d").position
 ⍬ₓ
 
 ⍝ ngn:506 — Malformed regex
-•r "a(b"
+"abcd" •r "a(b"
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:119 — BPL gives `¯∞` for `⍟0`, as ngn expects

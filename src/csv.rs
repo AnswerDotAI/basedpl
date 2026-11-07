@@ -1,6 +1,5 @@
-use crate::execution::check;
+use crate::cancel::check;
 use crate::{Described, Error, Number, Span, Value, array::generated_len, data::{Types, text as string}, keyed};
-use num_bigint::BigInt;
 use rustymath::error::Kind;
 use std::sync::Arc;
 
@@ -71,10 +70,7 @@ impl Options {
             field = field.replace(self.decimal, ".");
         }
         let digits = field.trim_start_matches(['+', '-']);
-        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-            if let Ok(n) = field.parse::<i64>() { return Some(Number::from_integer(n)); }
-            return Some(field.parse::<BigInt>().ok()?.into());
-        }
+        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) { return Number::decimal(&field).map(|n| Number::data_integer(n, self.width)); }
         let n = Number::float(field.parse::<f64>().ok()?, self.width);
         if n.is_infinite() && !matches!(digits.to_ascii_lowercase().as_str(), "inf" | "infinity") { return None; }
         Some(n)

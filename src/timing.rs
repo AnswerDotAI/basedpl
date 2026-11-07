@@ -1,7 +1,7 @@
 //! BPL measurements share reference records and setups. Numerical timing, copy units, footprint copies and retries live in Rustymath.
 use crate::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, host::timing_lock, protocol::response, reference::{self, File}};
 use rustymath::hashing::HashMap;
-use rustymath::timing::{Budget, CopyTime, Footprint, Cause, Held, NATIVE_COLUMN, copy_time, footprint};
+use rustymath::timing::{Budget, Cause, CopyTime, Footprint, Held, NATIVE_COLUMN, copy_time, footprint};
 pub use rustymath::timing::{RETRY_PAUSES, checks_budgets, name_cpu};
 use serde_json::{Value as JsonValue, json};
 
@@ -24,18 +24,23 @@ pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
 
 pub fn items(session: &Session) -> Option<usize> { let n = session.eval("n").value?.as_real()?; (n >= 0.0 && n.fract() == 0.0).then_some(n as usize) }
 
+/// A run of `code` as timings run it: evaluated at top level with no echo, then its value forced in full through `Session::forced`, which the interrupt and deadline stop as they stop the evaluation. Each call keeps the first failed evaluation in its argument. `time` and `steps_request` run cases through it.
+fn runner(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<impl FnMut(&mut Option<Evaluation>), Evaluation> {
+    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
+    let options = move || EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
+    Ok(move |failed: &mut Option<Evaluation>| {
+        let result = session.eval_parsed(&parsed, options());
+        let forced = result.value.as_ref().map_or(Ok(()), |value| session.forced(value, options()));
+        if result.error.is_some() { failed.get_or_insert(result); } else if let Err(error) = forced { failed.get_or_insert(Evaluation::failed(error)); }
+    })
+}
+
 /// Parse once, warm once, then take the fastest of five evaluations, forcing the result each time. Gives that time, the most bytes that the five evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first evaluation left.
 pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
-    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
-    let mut failed = None;
-    let mut run = || {
-        let result = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
-        if let Some(value) = &result.value { value.force(); }
-        if result.error.is_some() { failed.get_or_insert(result); }
-    };
-    run();
+    let (mut run, mut failed) = (runner(session, code, interrupt)?, None);
+    run(&mut failed);
     let start = rustymath::memory::held();
-    let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run()));
+    let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run(&mut failed)));
     let left = rustymath::memory::held().saturating_sub(start);
     failed.map_or(Ok((seconds, held, left)), Err)
 }
@@ -62,9 +67,9 @@ pub fn rows(cases: &[Case], column: Option<usize>) -> JsonValue {
     cases.iter().map(|c| {
         let b = c.budget(column);
         json!({"file":c.file, "section":c.section, "code":c.code, "label":c.label, "line":c.line(column), "copy":c.copy_line(), "budgets":c.budgets,
-            "budget":b.map(|b| b.value), "rule":b.map(|b| b.rule), "hold":b.and_then(|b| b.cause).map(Cause::name),
-            "over":b.is_some_and(|b| b.over(c.cost)), "stale":b.is_some_and(|b| b.stale(c.cost)),
-            "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
+    "budget":b.map(|b| b.value), "rule":b.map(|b| b.rule), "hold":b.and_then(|b| b.cause).map(Cause::name),
+    "over":b.is_some_and(|b| b.over(c.cost)), "stale":b.is_some_and(|b| b.stale(c.cost)),
+    "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
     }).collect()
 }
 
@@ -137,13 +142,15 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
         let (cost, footprint) = match copy {
-            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)),
-            None => (total / timed("exact")?.0, None),
+            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)), None => (total / timed("exact")?.0, None)
         };
         let mut holds = Vec::new();
-        for held in case["held"].as_array().into_iter().flatten() { rustymath::timing::hold(held.as_str().unwrap(), &mut holds).expect("`reference::file` checks each line"); }
+        for held in case["held"].as_array().into_iter().flatten() {
+            rustymath::timing::hold(held.as_str().unwrap(), &mut holds).expect("`reference::file` checks each line");
+        }
         result.push(Case { file: file.name.clone(), section: section.into(), code: code.into(), label: label(file, case),
-            budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), holds, cost, seconds: total / n as f64, copy, footprint });
+            budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), holds, cost, seconds: total / n as f64, copy,
+            footprint });
         Ok(())
     })?;
     Ok(result)
@@ -157,7 +164,7 @@ impl Observed {
     fn of(events: &crate::explain::Events) -> Self { Self { slow: events.slow(), report: events.observed().clone() } }
     /// Whether this run recorded `route` as an event of `kind`: "taken", "declined" or "itemwise". An itemwise route appears in `slow`, as `•explain`'s own rows hold it.
     pub fn exercised(&self, kind: &str, route: rustymath::events::Route) -> bool {
-        self.report.records.iter().any(|e| e.kind.name() == kind && e.route == route)
+        self.report.records.iter().filter_map(rustymath::events::Event::route).any(|r| r.kind.name() == kind && r.route == route)
             || self.slow.iter().any(|(record, event, _)| *record == kind && event == route.name())
     }
 }
@@ -171,11 +178,11 @@ impl Capture {
         let mut wrong = Vec::new();
         for required in &self.named.routes {
             use rustymath::events::EventKind::{Declined, Taken};
-            let records = self.run.report.records.iter();
+            let records = self.run.report.records.iter().filter_map(rustymath::events::Event::route);
             if !records.clone().any(|r| r.kind == Taken && r.route.name() == required.as_str()) {
                 let declines: Vec<_> = records.filter(|r| r.kind == Declined).map(|r| format!("{}: {}", r.route.name(), r.reason)).collect();
                 wrong.push(if declines.is_empty() { format!("required route {required} was not taken") }
-                    else { format!("required route {required} was not taken, with declines {}", declines.join("; ")) });
+                else { format!("required route {required} was not taken, with declines {}", declines.join("; ")) });
             }
         }
         let named: Vec<_> = self.named.allowed.iter().chain(&self.named.gaps).collect();
@@ -190,19 +197,29 @@ impl Capture {
     }
 }
 
-/// Warm one case, then capture a forced evaluation in the same session.
-pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
-    let code = case["code"].as_str().unwrap();
-    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(|e| failure(code, Evaluation::failed(e)))?;
+/// `code` parsed once and run twice in `session`, each run as `•explain` runs its text, with its value forced: a warm-up, then the run that a route check reads. Gives that run's evaluation and events and the warm-up's events, or the evaluation that failed. The route test (`route`) and the worker's `route` request (`route_request`) both capture through it.
+fn warmed(
+    session: &Session, code: &str, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle
+) -> Result<(Evaluation, crate::explain::Events, crate::explain::Events), Evaluation> {
+    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
+    let options = || EvalOptions { timeout, echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let run = || {
-        let evaluation = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
-        if let Some(value) = &evaluation.value { value.force(); }
-        evaluation
+        let evaluation = session.eval_parsed(&parsed, options());
+        match evaluation.value.as_ref().map_or(Ok(()), |value| session.forced(value, options())) {
+            Err(error) if evaluation.error.is_none() => Evaluation::failed(error), _ => evaluation
+        }
     };
     let (warm, warmup) = crate::explain::explained(run);
-    if warm.error.is_some() { return Err(failure(code, warm)); }
+    if warm.error.is_some() { return Err(warm); }
     let (evaluation, events) = crate::explain::explained(run);
-    if evaluation.error.is_some() { return Err(failure(code, evaluation)); }
+    if evaluation.error.is_some() { return Err(evaluation); }
+    Ok((evaluation, events, warmup))
+}
+
+/// Warm one case, then capture a forced evaluation in the same session (`warmed`).
+pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
+    let code = case["code"].as_str().unwrap();
+    let (_, events, warmup) = warmed(session, code, Some(reference::TIMEOUT), interrupt).map_err(|failed| failure(code, failed))?;
     let named = |key: &str| case[key].as_array().into_iter().flatten().map(|v| (v[0].as_str().unwrap().into(), v[1].as_str().unwrap().into())).collect();
     Ok(Capture { file: String::new(), section: case["section"].as_str().unwrap_or_default().into(), code: code.into(),
         label: case["id"].as_str().unwrap_or(code).into(), run: Observed::of(&events), warmup: Observed::of(&warmup), named: Named {
@@ -210,17 +227,28 @@ pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -
     })
 }
 
-/// Capture every timed case outside its timed loop, with its ordinary setup and size.
-pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Capture>, String> {
-    let mut result = Vec::new();
+/// The worker's `route` request: the `•explain` record of the run of `spec`'s `code` that a route check reads (`warmed`), in a fresh session that runs `prefs` and `setup` first (`session`). `bpltests.explained` reads it.
+pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let text = |key| spec[key].as_str().ok_or_else(|| format!("route needs {key} as a string"));
+    let code = text("code")?;
+    let session = match session(text("prefs")?, text("setup")?) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
+    let (mut evaluation, events, _) = match warmed(&session, code, None, interrupt) { Ok(runs) => runs, Err(failed) => return Ok(response(failed)) };
+    let value = evaluation.value.take().ok_or("route needs code that gives a value")?;
+    evaluation.value = Some(events.report(value, &crate::Span::whole(Source::new("<input>", code))).map_err(|error| error.to_string())?);
+    Ok(response(evaluation))
+}
+
+/// Capture every timed case outside its timed loop, with its ordinary setup and size. A case whose capture fails, as one that runs past `reference::TIMEOUT` does, gives its label and message among the failures, and the cases after it are still captured.
+pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<(Vec<Capture>, Vec<String>), String> {
+    let (mut result, mut failed) = (Vec::new(), Vec::new());
     each_case(files, only, "", |group, file, case| {
-        let mut route = route(group.session(case["section"].as_str().unwrap())?, case, interrupt)?;
-        route.file = file.name.clone();
-        route.label = label(file, case);
-        result.push(route);
+        match route(group.session(case["section"].as_str().unwrap())?, case, interrupt) {
+            Ok(route) => result.push(Capture { file: file.name.clone(), label: label(file, case), ..route }),
+            Err(message) => failed.push(format!("{}: {message}", label(file, case))),
+        }
         Ok(())
     })?;
-    Ok(result)
+    Ok((result, failed))
 }
 
 /// Times the cases in `files`, retimes each one over its native budget after each pause in `RETRY_PAUSES`, and gives the lines of those still over it. `print` gets the copy lines and every cost where `all` is set, each retry's lines, then each case still over its budget, marked `over`, and last each case whose gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides from its first cost, marked `stale`.
@@ -283,6 +311,23 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
         }
     }
     Ok(json!({"n":n, "costs":costs, "output":[], "error":null}))
+}
+
+/// Runs each case `steps` times as `time` runs it, for an instruction count or a profile, and gives no timing. Unlike `request`, it takes no timing lock, so counts can run side by side under one shared hold.
+pub fn steps_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let text = |key| spec[key].as_str().ok_or_else(|| format!("steps needs {key} as a string"));
+    let steps = spec["steps"].as_u64().ok_or("steps needs steps as a count")?;
+    let cases = spec["cases"].as_array().ok_or("steps needs cases as an array")?;
+    let session = match session(text("prefs")?, text("setup")?) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
+    for code in cases {
+        let code = code.as_str().ok_or("each case must be a string")?;
+        let mut failed = None;
+        match runner(&session, code, interrupt) {
+            Ok(mut run) => { for _ in 0..steps { run(&mut failed); if failed.is_some() { break; } } } Err(error) => failed = Some(error)
+        }
+        if let Some(failed) = failed { return Ok(response(failed)); }
+    }
+    Ok(json!({"output":[], "error":null}))
 }
 
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {

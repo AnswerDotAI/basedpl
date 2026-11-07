@@ -13,7 +13,8 @@ In Python, the workspace object `bpl` has each system function under its name wi
 | [`•c`](system/c.qmd) | Case |
 | [`•ucs`](system/ucs.qmd) | Unicode |
 | [`•normalize`](system/normalize.qmd) | Unicode normalization |
-| [`•r`](system/r.qmd) | Regular expressions |
+| [`•r`](system/r.qmd) | Regular expression matches |
+| [`•replace`](system/replace.qmd) | Regular expression replacement |
 
 ## Data and files
 

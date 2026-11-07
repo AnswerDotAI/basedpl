@@ -24,12 +24,12 @@ def main(
     kernel.mkdir(parents=True, exist_ok=True)
     (kernel/'kernel.json').write_text(json.dumps(kernel_spec(binary), indent=2) + '\n')
     fonts.mkdir(parents=True, exist_ok=True)
-    for source in (ASSETS/'fonts').iterdir(): shutil.copy2(source, fonts/source.name)
+    for source in (ASSETS/'fonts').iterdir(): shutil.copyfile(source, fonts/source.name)
     print(f'Installed BasedPL kernel: {kernel}')
     print(f'Installed SAX2B and BQN386B: {fonts}')
     if mac:
         target = Path.home()/'Library/Keyboard Layouts'/keyboard.name
-        shutil.copytree(keyboard, target, dirs_exist_ok=True)
+        shutil.copytree(keyboard, target, dirs_exist_ok=True, copy_function=shutil.copyfile)
         print(f'Installed BasedPL-{code}. In System Settings, open Keyboard > Text Input > Edit, add BasedPL-{code}, then select it.')
         print('Log out and back in if the layout is not listed or the old layout remains active.')
     else: print('No native Linux keyboard layout is provided; use the REPL or browser glyph entry.')

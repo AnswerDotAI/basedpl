@@ -46,6 +46,7 @@ impl Value {
         if self.is_unit() {
             if let Value::Function(f) = self.at(0) { let text = f.to_string(); return Self::characters([text.chars().count()], text.chars().collect()); }
         }
+        let el = el.items_of(self);
         // A keyed array formats as its display text, so its keys stay visible.
         let keyed = self.has_keys();
         if !keyed && matches!(self.prototype(), Value::Character(_)) && self.elements().all(|e| matches!(e, Value::Character(_))) { return Ok(self.clone()); }
@@ -73,6 +74,7 @@ impl Value {
             for (i, e) in self.elements().enumerate() {
                 if i > 0 { text.push(' '); }
                 let Value::Number(n) = e else { unreachable!("every item is a number") };
+                let n = el.shown_number(&n);
                 if el.marks { write!(text, "{n}") } else { write!(text, "{n:#}") }.unwrap();
             }
             (vec![text.chars().count()], text)
@@ -93,7 +95,7 @@ impl Value {
 
     fn formatted_cells(&self, el: Elide) -> Result<Self, ErrorKind> {
         use crate::display::{Cell, Style, grid};
-        if self.is_empty() { return Self::empty([0], Value::Character(' ')); }
+        if self.is_empty() { return Self::empty([0], Value::Character(char::FILL)); }
         let rank = self.shape().len();
         let columns = self.shape().last().copied().unwrap_or(1);
         let (mut size, mut matrix, mut rows) = (0, rank > 1, Vec::new());
@@ -162,6 +164,7 @@ impl Value {
             }
             Plain::Operator(op) => { let text = op.text(el); if text.contains(' ') { format!("({text})") } else { text } }
             Plain::Array(_) => {
+                let el = el.items_of(self);
                 if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
                 if self.string_literal(el.display).is_some() { return quoted(&self.elided_text(el)); }
@@ -227,12 +230,20 @@ impl Value {
     pub(crate) fn shown_kind(&self) -> Option<(rustymath::buffer::DType, bool)> {
         let held = self.template();
         match held.as_items() {
-            Items::Values(items) => super::storage::items_kind(items, Widening::Items),
+            Items::Values(items) => super::storage::compact_dtype(items, Widening::Items),
             items => items.dtype().map(|dtype| (dtype, items.fixed_width().is_some())),
         }
     }
     /// A number of an array that `mark` marks, without its own marker.
     fn unmarked_item(&self, el: Elide) -> String { let Self::Number(n) = self else { unreachable!("compact storage holds numbers") }; el.unmarked(n) }
+    /// Whether this array holds a complex number with a nonzero imaginary part, so that its complex items with a zero imaginary part show as real numbers (`Elide::items_of`).
+    pub(crate) fn keeps_complex(&self) -> bool {
+        match self.as_items() {
+            Items::Compact(View::Complexes(v)) => (0..v.len()).any(|i| v.get(i).im != 0.0),
+            Items::Values(items) => items.iter().any(|v| matches!(v, Value::Number(n) if n.as_complex().is_some_and(|z| z.im != 0.0))),
+            Items::Compact(_) | Items::Fixed(_) => false,
+        }
+    }
     /// The value as one item inside brackets. Text with a space between its runs, or with a `:` that would read as a key, needs parentheses.
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.

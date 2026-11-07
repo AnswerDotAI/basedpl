@@ -56,7 +56,7 @@ fn folds_match_rustymath() {
                     unsafe { kernel.run(n, block, &[x.as_ptr().cast()], &[0.5, 1e-4, 1.0].map(f64::to_bits), &[out.as_mut_ptr().cast()], &mut totals) };
                     assert!(out.iter().zip(&halves).all(|(a, b)| a.to_bits() == b.to_bits()), "halves of {n} items");
                     for (k, h) in halves.chunks(block).enumerate() {
-                        let got = |j: usize| f64::from_bits(totals[4 * k + j]);
+                        let got = |j: usize| f64::from(rustymath::operation::Total { items: h.len(), bits: totals[4 * k + j] }.value::<$f>().unwrap());
                         let nan = h.iter().any(|v| v.is_nan());
                         let (most, least) =
                             h.iter().filter(|v| !v.is_nan()).fold((f64::NEG_INFINITY, f64::INFINITY), |(a, b), &v| (a.max(v.into()), b.min(v.into())));
@@ -315,7 +315,7 @@ fn arrays(n: usize) -> Vec<(&'static str, basedpl::Value)> {
     ]
 }
 
-/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. The lengths reach each loop of a kernel: fusion defers calls of `Sizes::DEFAULT.min_items` items, which a stage splits into blocks of a power of two items, at most 4,096 (`blocks::Blocks::block`), and 1, 7 or 37 items more make a last block of their own. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
+/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. Every result is forced through •explain, which reports whether compiled stages ran. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
 #[test]
 fn compiled_stages_match_interpreted() {
     use basedpl::settings::{self, Compiles};
@@ -325,21 +325,33 @@ fn compiled_stages_match_interpreted() {
     fixed.extend(["+", "-", "×", "÷", "⌈", "⌊"].map(|g| format!("--xf{g}yf")));
     for g in ["=", "≠", "<", "≤", ">", "≥"] { fixed.extend([format!("~x{g}y"), format!("~xf{g}yf"), format!("~yf{g}0.75"), format!("~0.75{g}yf")]); }
     // Dynamic kinds compare within the default tolerance: `x×1+1E¯15` lies within it of `x`.
-    for g in ["=", "≠", "<", "≤", ">", "≥"] { dynamic.extend([format!("~x{g}y"), format!("~y{g}0.75"), format!("~0.75{g}y"), format!("~x{g}x×1+1E¯15")]); }
-    dynamic.extend(["-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x", "--0.75|x", "--x|0.75"].map(String::from));
+    for g in ["=", "≠", "<", "≤", ">", "≥"] {
+        dynamic.extend([format!("~x{g}y"), format!("~y{g}0.75"), format!("~0.75{g}y"), format!("~x{g}x×1+1E¯15")]);
+    }
+    dynamic.extend([
+        "-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x",
+        "--0.75|x", "--x|0.75", "yi←¯32768ₓ↦32767ₓ ⋄ forced←yi≡yi ⋄ +/yi-16ₓ×yi÷16ₓ",
+    ].map(String::from));
     fixed.extend([
-        "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf", "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m",
-        "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1", "--×x", "--×xf", "--⌊x", "--⌈xf", "--⌊(x÷3)×3", "--⌈(xf÷3)×3", "--÷xf", "--πxf", "--xfπyf", "--x*¯1", "--xf*0.5", "--x*1.5", "--xf*¯0.5", "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
+        "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf",
+        "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m", "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1", "--×x",
+        "--×xf", "--⌊x", "--⌈xf", "--⌊(x÷3)×3", "--⌈(xf÷3)×3", "--÷xf", "--πxf", "--xfπyf", "--x*¯1", "--xf*0.5", "--x*1.5", "--xf*¯0.5",
+        "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
-    for n in [0, 1, 7, 37].map(|more| settings::Sizes::DEFAULT.min_items + more) {
+    let sizes = [0, 1, 7, 37].map(|more| 16 * settings::Sizes::DEFAULT.block + more);
+    let selected = std::env::var_os("BASEDPL_JIT_SIZE_INDEX").map(|s| {
+        s.to_str().and_then(|s| s.parse::<usize>().ok()).filter(|&i| i < sizes.len()).expect("BASEDPL_JIT_SIZE_INDEX must select an existing size index")
+    });
+    for (i, n) in sizes.into_iter().enumerate() {
+        if selected.is_some_and(|j| i != j) { continue; }
         for (prefs, cases) in [("", &dynamic), (r#"•prefs ["kinds":"static"]"#, &fixed)] {
             settings::reset();
             // Static kinds make ordinary integers at the `int` width, so the arrays are made under the kinds that read them.
             basedpl::Session::new().eval_with(prefs, options());
             let data = arrays(n);
             for code in cases {
-                // The value of `code` under `compiles`, computed in full, and the number of stage runs that used compiled code.
+                // Compare the actual compiled route with the same graph executed natively.
                 let run = |compiles| {
                     settings::reset();
                     settings::set_compiles(compiles);
@@ -352,17 +364,22 @@ fn compiled_stages_match_interpreted() {
                     eval(prefs);
                     for (name, value) in &data { session.set(name, value.clone()).unwrap(); }
                     eval(SETUP);
-                    let before = settings::compiled_runs();
-                    let value = eval(code).unwrap_or_else(|| panic!("{code} gave no value"));
-                    // Reading an item computes a pending result in full.
-                    value.elements().next();
-                    (value, settings::compiled_runs() - before)
+                    session.set("source", basedpl::keyed::text(code)).unwrap();
+                    eval("report←•explain source");
+                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
+                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap();
+                    let runs = runs.as_number().unwrap().as_integer().unwrap();
+                    (value, runs)
                 };
                 let (compiled, runs) = run(Compiles::Always);
                 assert!(runs > 0, "{code} on {n} items ran no compiled part");
                 let interpreted = run(Compiles::Never).0;
-                assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items");
+                assert_eq!(
+                    basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None,
+                    "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number()
+                );
             }
         }
+        eprintln!("checked size {i}: {n} items, {} dynamic and {} static cases", dynamic.len(), fixed.len());
     }
 }

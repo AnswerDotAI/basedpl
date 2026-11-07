@@ -541,7 +541,7 @@ mat ← [1 2⋄0 1⋄2 4] ⋄ ⌹ mat   ⍝ [0.2 ¯2 0.4⋄0 1 0]
 mat ← 2 2⍴⍳4ₓ ⋄ 5 6 ⌹ mat   ⍝ ¯4.5 5
 
 ⍝ aplcart/table.tsv:161 — Multiplying Mm with inversed Nm
-mat ← 2 2⍴⍳4ₓ ⋄ mat ⌹ mat   ⍝ [1 0⋄0 1]ₓ
+mat ← 2 2⍴⍳4ₓ ⋄ mat ⌹ mat   ⍝ [1 0⋄0 1]
 
 ⍝ aplcart/table.tsv:162 — Execute: Result of expression Dv; Reviewed Execute example checked through the Rust reference worker
 Dv←"2+3×4" ⋄ ⍎Dv   ⍝ 14
@@ -754,11 +754,11 @@ r←¿⍨Js
 
 ⍝ aplcart/table.tsv:530 — Ones, same shape and structure
 [3 3⍴⍳9ₓ;"";=⍨ 3 3⍴⍳9ₓ]
-[[0 1 2⋄3 4 5⋄6 7 8] "" [$t $t $t⋄$t $t $t⋄$t $t $t]]ₓ
+[[0 1 2⋄3 4 5⋄6 7 8]ₓ "" [$t $t $t⋄$t $t $t⋄$t $t $t]]
 
 ⍝ aplcart/table.tsv:531 — Zeros, same shape and structure
 [3 3⍴⍳9ₓ;"";≠⍨ 3 3⍴⍳9ₓ]
-[[0 1 2⋄3 4 5⋄6 7 8] "" [$f $f $f⋄$f $f $f⋄$f $f $f]]ₓ
+[[0 1 2⋄3 4 5⋄6 7 8]ₓ "" [$f $f $f⋄$f $f $f⋄$f $f $f]]
 
 ⍝ aplcart/table.tsv:532 — Increment: N+1
 [1↣+ 10 20 30;1↣+ ¯10 ¯20 ¯30;3 3⍴4;1↣+ 3 3⍴4]
@@ -3030,8 +3030,8 @@ M ×↢×⍨↢| N   ⍝ ¯2 0 4
 ⍝ aplcart/table.tsv:1174 — Normalisation by Infinity-norm
 (⊢÷⌈⌿∘|) 3 4   ⍝ 0.75 1
 
-⍝ aplcart/table.tsv:1175 — Geometric mean
-N←1 4 16 ⋄ ×⌿*↢÷≢ N   ⍝ 4
+⍝ aplcart/table.tsv:1175 — Geometric mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
+N←1 4 16 ⋄ ×⌿*↢÷≢ₐ N   ⍝ 4
 
 ⍝ aplcart/table.tsv:1176 — Row-wise percentage per row
 N←[1 2 3⋄4 5 6] ⋄ 100×(⊢÷⍤1 0+/) N
@@ -4190,7 +4190,7 @@ Jv←2 0 1 ⋄ ¯1⌽(+\∊⍨↢↦+/) 1↣+ Jv   ⍝ $t $f $f $t $t $f
 Im←[1 2⋄2 3⋄3 1] ⋄ -/(⍳⌈/∘,)=⊗⍉ Im   ⍝ [0 0⋄1 1⋄¯1 1]ₓ
 
 ⍝ aplcart/table.tsv:1491 — Shannon entropy of array ⍵
-Y← "aaabbc"  ⋄ -(1⊥2(⍟×⊢)⊢↢≢⌸÷≢) Y   ⍝ 1.4591479170272448
+Y← "aaabbc"  ⋄ -(1⊥2(⍟×⊢)⊢↢≢⌸÷ₐ≢) Y   ⍝ 1.4591479170272448
 
 ⍝ aplcart/table.tsv:1492 — Null near-zero (within absolute distance Ms) real and imaginary parts in N
 Ms←0.01
@@ -4381,7 +4381,7 @@ Dv← "don't"  ⋄ '''↣ ⊣,⊣,⍨⊢#⍨(1+=) Dv   ⍝ "'don''t'"
 Jv←1 3 3 4 ⋄ {'⎕'#⍨¯1+≢⍵}⌸⌈/↦↣,⊢ Jv   ⍝ ["⎕ "⋄"  "⋄"⎕⎕"⋄"⎕ "]
 
 ⍝ aplcart/table.tsv:1544 — Truth table: All possibilities of Boolean primitive Ds; Reviewed Execute example checked through the Rust reference worker
-Ds←'∧' ⋄ 0 1↣{(⍵,⍺)⍪⍺,(⍎⍵)⊗⍨⍺}Ds   ⍝ ['∧' 0 1⋄0 0 0⋄1 0 1]
+Ds←'∧' ⋄ 0 1↣{f←⍎⍵ ⋄ (⍵,⍺)⍪⍺,f⊗⍨⍺}Ds   ⍝ ['∧' 0 1⋄0 0 0⋄1 0 1]
 
 ⍝ aplcart/table.tsv:1545 — Is'th moment of Nv
 Is←2
@@ -4407,16 +4407,16 @@ Mv(⊢×+.×)↢ ⊢÷2*↢÷⍨+.×⍨ Nv
 ⍝ =>
 1.5 1.5 0
 
-⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean
-Nv←1 4 ⋄ ↑((+⌿÷≢),×⌿*↢÷≢)⍣≡ Nv   ⍝ 2.2430285802876027
+⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
+Nv←1 4 ⋄ ↑((+⌿÷≢),×⌿*↢÷≢ₐ)⍣≡ Nv   ⍝ 2.2430285802876027
 
 ⍝ aplcart/table.tsv:1551 — Product of polynomials with descending coefficients
 Mv←1 2
 Nv←1 3 2
 Mv +⌿∘⊃(,\0×⊣)(1↓,)¨×↢⊂ Nv   ⍝ 1 5 8 4
 
-⍝ aplcart/table.tsv:1552 — Geometric-harmonic mean
-Nv←1 4 ⋄ ↑((×⌿*↢÷≢),≢÷1⊥÷)⍣≡ Nv   ⍝ 1.7833031799742458
+⍝ aplcart/table.tsv:1552 — Geometric-harmonic mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
+Nv←1 4 ⋄ ↑((×⌿*↢÷≢ₐ),≢÷1⊥÷)⍣≡ Nv   ⍝ 1.7833031799742458
 
 ⍝ aplcart/table.tsv:1553 — Median of non-empty Nv
 Nv←7 1 4 2 ⋄ 2÷⍨(1⊥⊢⌷⍨↢⊂⍋⌷⍨↢⊂↢(¯1+⌈)2÷⍨(0 1+≢)) Nv   ⍝ 3
@@ -5810,7 +5810,7 @@ Av{(b∧⍺)⊽c#⁻¹ </∘ 2↣↕ 0⍪(c←b∨⍺)#b←~⍵}B
 $t $f $t $t $f
 
 ⍝ aplcart/table.tsv:2054 — Discrete Fourier Transformation
-{⍵+.×⍨*π0j¯2×n÷⍨×⊗⍨⍳n←≢⍵} 1 2j¯1 0j¯1 ¯1j2   ⍝ 2 ¯2j¯2 0j¯2 4j4
+{⍵+.×⍨*π0j¯2×n÷ₐ⍨×⊗⍨⍳n←≢⍵} 1 2j¯1 0j¯1 ¯1j2   ⍝ 2 ¯2j¯2 0j¯2 4j4
 
 ⍝ aplcart/table.tsv:2055 — Progressive index of (⍳) without replacement
 X←1 2 1
@@ -5844,7 +5844,7 @@ Y#⁻¹⍨~(⍳Mv+⍥≢Y)∊Mv⌊↣+⍳≢Mv   ⍝ 0 1 2 0 3
 Yv←[2 1 2;["ba"⋄"ca"⋄"db"]] ⋄ {{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑⍵}Yv   ⍝ [1 0 2]ₓ
 
 ⍝ aplcart/table.tsv:2065 — Inverse Discrete Fourier Transformation
-{n÷⍨⍵+.×⍨*π0j2×n÷⍨×⊗⍨⍳n←≢⍵} 2 ¯2j¯2 0j¯2 4j4
+{n÷⍨⍵+.×⍨*π0j2×n÷ₐ⍨×⊗⍨⍳n←≢⍵} 2 ¯2j¯2 0j¯2 4j4
 1 2j¯1 0j¯1 ¯1j2
 
 ⍝ aplcart/table.tsv:2066 — Changing connectivity list Jm to a connectivity matrix
@@ -6303,12 +6303,12 @@ vex←[["one" "two" "three"] ["alpha" "beta" "gamma"] ["red" "blue" "green"]]
 ⍝ aplcart/table.tsv:2190 — Simple Binary Search Trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:285
 [sbst:]←•load "lib/tree.bpl"
 [tree:]←•load "tests/reference/support/sbst.bpl"
-'?' sbst tree ⍳7ₓ   ⍝ [$t 7 3 7]ₓ
+'?' sbst tree ⍳7ₓ   ⍝ [$t 7ₓ 3ₓ 7ₓ]
 
 ⍝ aplcart/table.tsv:2191 — Splay trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:893
 [splay:]←•load "lib/tree.bpl"
 [tree:]←•load "tests/reference/support/splay.bpl"
-'?' splay tree ⍳7ₓ   ⍝ [$t 7 3 7]ₓ
+'?' splay tree ⍳7ₓ   ⍝ [$t 7ₓ 3ₓ 7ₓ]
 
 ⍝ aplcart/table.tsv:2192 — Red-black trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:518
 [redblack:]←•load "lib/tree.bpl"
@@ -6323,7 +6323,7 @@ tt←tree pairs
 [put: tree:]←•load "tests/reference/support/avl.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 tt←tt put foldl [["one" 11] ["two" 22] ["three" 33]]
-'?' avl tree ⍳7ₓ   ⍝ [$t 7 1 3]ₓ
+'?' avl tree ⍳7ₓ   ⍝ [$t 7ₓ 1ₓ 3ₓ]
 
 ⍝ aplcart/table.tsv:2201 — Apply monadic function taking two-element argument as a dyadic function
 Sum ← +/ ⋄ [Sum 3 4;3 Sum{⍶[⍺ ⍵]} 4]   ⍝ 7 7
@@ -6814,7 +6814,7 @@ Xv{⍶↣(⍳⊂↣⌷⍹⍨)@[∊↢⍶] ⍵}Yv Z   ⍝ 1 20 3 40 20
 Xv←1 2
 Cv←'+'
 Yv←3 4
-Xv Cv{(⍵,⍨⊂⍶)⍪⍺,⍺(⍎⍶)⊗⍵} Yv
+Xv Cv{f←⍎⍶ ⋄ (⍵,⍨⊂⍶)⍪⍺,⍺f⊗⍵} Yv
 ⍝ =>
 ['+' 3 4⋄1 4 5⋄2 5 6]
 
@@ -7150,7 +7150,7 @@ x←42 ⋄ ⎕←x   ⍝ 42
 {"SYNTAX"::2 ⋄ ⍎'('}0   ⍝ 2
 
 ⍝ aplcart/table.tsv:2625 — Index or axis is not in ⍳⍴Y or not in ⍳≢⍴Y; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
-{"INDEX"::3 ⋄ 4⊃1 2 3}0   ⍝ 3
+{"INDEX"::3 ⋄ [0 0]⌷1 2 3}0   ⍝ 3
 
 ⍝ aplcart/table.tsv:2631 — Array rank invalid for function/operator, or ranks of arguments do not conform; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
 {"RANK"::4 ⋄ +⍤(2 2⍴1) 1}0   ⍝ 4
@@ -8937,7 +8937,7 @@ cfract1.5   ⍝ [1 2]ₓ
 rational1.5   ⍝ 3 2
 
 ⍝ aplcart/table.tsv:2175 — Array of functions; Concrete native equivalent; independent Dyalog dfns expectation; Store and retrieve native function values
-v←[+ ×] ⋄ 2(0⊃v)3 , 2(1⊃v)3   ⍝ 5 6
+v←[+ ×] ⋄ 2(0⍚v)3 , 2(1⍚v)3   ⍝ 5 6
 
 ⍝ aplcart/table.tsv:2208 — Apply arrayified function Xs on Y (optionally with left argument Y); Concrete native equivalent; independent Dyalog dfns expectation; Apply a native stored function
 f←0⊃[+ ×] ⋄ 2 f 3   ⍝ 5
@@ -8949,10 +8949,10 @@ f←0⊃[+ ×] ⋄ 2 f 3   ⍝ 5
 10 +@1 3 [1 2 3 4]   ⍝ 1 12 3 14
 
 ⍝ aplcart/table.tsv:2229 — List of functions; Concrete native equivalent; independent Dyalog dfns expectation; Apply a native function vector to one argument
-[+ -]{(↑⍺)⍵}¨3   ⍝ 3 ¯3
+[+ -] 3   ⍝ 3 ¯3
 
 ⍝ aplcart/table.tsv:2239 — Vector of functions; Concrete native equivalent; independent Dyalog dfns expectation; Pair each native function with its argument
-[+ -]{(↑⍺)⍵}¨3 4   ⍝ 3 ¯4
+0 1⍚[+ -] 3 4   ⍝ 3 ¯4
 
 ⍝ aplcart/table.tsv:2173 — Apply no-result function “en passant”; Concrete no-result side effect and pass-through result; independently checked in Dyalog; Retain Execute-based sequencing; name the operand in the operator body
 seen←0
@@ -9722,11 +9722,11 @@ T←["name":"Ada" "age":36] ⋄ "age" "name"⊃¨⊂T   ⍝ [36;"Ada"]
 ⍝ aplcart/table.tsv:397 — Get named values with a default
 T←"age":36 ⋄ 0 {"INDEX"::⍺ ⋄ ⍵⌷T}¨ "age" "height"   ⍝ 36 0
 
-⍝ aplcart/table.tsv:398 — Get named values with per-name defaults
+⍝ aplcart/table.tsv:398 — Get named values with per-name defaults: a missing name reads the fill, so the guard doesn't run
 T←"age":36
 {"INDEX"::⍵₁ ⋄ (↑⍵)⌷T}¨[["age" 0] ["height" 170]]
 ⍝ =>
-36 170
+36 0
 
 ⍝ aplcart/table.tsv:478 — Assign a vector of named values
 T←["name":"Ada" "age":36]
@@ -9741,8 +9741,8 @@ pairs←[["aa" 1] ["bb" 2]]
 T.[↑¨pairs]←1⊃¨pairs
 T   ⍝ "aa" "bb":1 2
 
-⍝ aplcart/table.tsv:1775 — Default for a missing key
-T←"age":36 ⋄ 170 {"INDEX"::⍺ ⋄ ⍵⌷T} "height"   ⍝ 170
+⍝ aplcart/table.tsv:1775 — Default for a missing key: a missing key reads the fill, so the guard doesn't run
+T←"age":36 ⋄ 170 {"INDEX"::⍺ ⋄ ⍵⌷T} "height"   ⍝ 0
 
 ⍝ aplcart/table.tsv:1831 — Assign values by name
 T←(⍬:⍬)
@@ -9861,10 +9861,10 @@ inter←{0ₓ=≢⍺?⍺;i←⍵⍳↑⍺ ⋄ i=≢⍵?(1↓⍺)∇⍵;(1↑⍺)
 
 ⍝ aplcart/table.tsv:2182 — Add large integers as decimal strings
 •json⁻¹ (•json "99999999999999999999")+•json '1'
-"100000000000000000000"
+"1e+20"
 
 ⍝ aplcart/table.tsv:2186 — Exact rational addition
-⍕(1ₓ÷3ₓ)+1ₓ÷2ₓ   ⍝ "5ᵣ6"
+⍕(1ᵣ÷3ᵣ)+1ᵣ÷2ᵣ   ⍝ "5ᵣ6"
 
 ⍝ aplcart/table.tsv:2198 — Balanced-ternary addition
 encode←{⍵=0?,0ₓ;{⍵=0?⍬;(∇⌊(⍵+1ₓ)÷3ₓ),¯1ₓ+3ₓ|⍵+1ₓ}⍵}
@@ -9877,59 +9877,57 @@ encode (3ₓ⊥[1 0]ₓ)+3ₓ⊥,1ₓ   ⍝ [1 1]ₓ
 le←{0=↑⍋[⍺ ⍵]} ⋄ 1 2 le 1 3   ⍝ $t
 
 ⍝ aplcart/table.tsv:461 — Replace matches
-p←•r "[0-9]+" ⋄ '#' p.replace "a12 b3"   ⍝ "a# b#"
+"a12 b3" •replace ["[0-9]+" "#"]   ⍝ "a# b#"
 
 ⍝ aplcart/table.tsv:462 — Matched strings
-p←•r "[0-9]+" ⋄ (p.matches "a12 b3").text   ⍝ "12" "3"
+("a12 b3" •r "[0-9]+").text   ⍝ "12" "3"
 
 ⍝ aplcart/table.tsv:507 — Case-insensitive replacement
-p←•r "(?i)cat" ⋄ "dog" p.replace "Cat cat"   ⍝ "dog dog"
+"Cat cat" •replace ["(?i)cat" "dog"]   ⍝ "dog dog"
 
 ⍝ aplcart/table.tsv:508 — Case-insensitive search
-p←•r "(?i)cat" ⋄ (p.matches "Cat cat").text   ⍝ "Cat" "cat"
+("Cat cat" •r "(?i)cat").text   ⍝ "Cat" "cat"
 
 ⍝ aplcart/table.tsv:1464 — Capture groups
-p←•r "([a-z]+)([0-9]+)" ⋄ (p.matches "ab12 cd3").groups
+("ab12 cd3" •r "([a-z]+)([0-9]+)").groups
 [["ab" "12"] ["cd" "3"]]
 
 ⍝ aplcart/table.tsv:1513 — Escape transformation punctuation
-p←•r "[%&\\]" ⋄ "\$0" p.replace "a&b%c\d"   ⍝ "a\&b\%c\\d"
+"a&b%c\d" •replace ["[%&\\]" "\$0"]   ⍝ "a\&b\%c\\d"
 
 ⍝ aplcart/table.tsv:1579 — APL identifiers
-p←•r "[\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ&&\D][\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ]*"
-(p.matches "x←3 ⋄ y2←x+1").text
+p←"[\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ&&\D][\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ]*"
+("x←3 ⋄ y2←x+1" •r p).text
 ⍝ =>
 "x" "y2" "x"
 
 ⍝ aplcart/table.tsv:1808 — Count matches
-p←•r "[0-9]+" ⋄ ≢(p.matches "a12 b3").text   ⍝ 2ₓ
+≢("a12 b3" •r "[0-9]+").text   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:1871 — Any match
-p←•r "[0-9]+" ⋄ 0ₓ<≢(p.matches "a12 b3").text   ⍝ $t
+0ₓ<≢("a12 b3" •r "[0-9]+").text   ⍝ $t
 
 ⍝ aplcart/table.tsv:1921 — Select matching text
-p←•r "[0-9]+" ⋄ (0ₓ<≢(p.matches "a12 b3").text) # ,⊂"a12 b3"   ⍝ ["a12 b3"]
+(0ₓ<≢("a12 b3" •r "[0-9]+").text) # ,⊂"a12 b3"   ⍝ ["a12 b3"]
 
 ⍝ aplcart/table.tsv:1949 — Matching lines
-p←•r "[0-9]+" ⋄ {0ₓ<≢(p.matches ⍵).text}¨"abc" "a12"   ⍝ $f $t
+{0ₓ<≢(⍵ •r "[0-9]+").text}¨"abc" "a12"   ⍝ $f $t
 
 ⍝ aplcart/table.tsv:2118 — Unicode character properties
-p←•r "\p{L}" ⋄ {0ₓ<≢(p.matches ⍵).text}¨"Ab2!"   ⍝ $t $t $f $f
+{0ₓ<≢(⍵ •r "\p{L}").text}¨"Ab2!"   ⍝ $t $t $f $f
 
 ⍝ aplcart/table.tsv:1576 — Glob to regex
-p←•r "\W"
-glob←{⍵='*'?".*";⍵='?'?'.';"\$0" p.replace ,⍵}
+glob←{⍵='*'?".*";⍵='?'?'.';(,⍵) •replace ["\W" "\$0"]}
 '^' , ∊glob¨"ab*.txt" , '$'
 ⍝ =>
 "^ab.*\.txt$"
 
 ⍝ aplcart/table.tsv:1920 — Overlapping literal matches via suffixes
-p←•r "^ana" ⋄ ,/{(p.matches ⍵).text}¨{⍵↓"banana"}¨⍳6ₓ   ⍝ "ana" "ana"
+,/{(⍵ •r "^ana").text}¨{⍵↓"banana"}¨⍳6ₓ   ⍝ "ana" "ana"
 
 ⍝ aplcart/table.tsv:2121 — Split, retaining empty segments
-p←•r "[,;]"
 s←"a,,b;c"
-m←p.matches s
+m←s •r "[,;]"
 b←0,m.position+≢¨m.text
 e←m.position,≢s
 b{(⍵-⍺)↑⍺↓s}¨e   ⍝ "a" "" "b" "c"

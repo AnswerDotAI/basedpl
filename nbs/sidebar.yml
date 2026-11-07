@@ -25,6 +25,8 @@ website:
           - overview.ipynb
           - href: glyphs-study.qmd
             text: Glyphs Study Guide
+          - foundations.qmd
+          - performance.qmd
           - principles.ipynb
           - arrays.ipynb
           - indexing.ipynb
@@ -40,7 +42,6 @@ website:
           - keyed.ipynb
           - autodiff.qmd
           - index-notation.qmd
-          - performance.qmd
       - section: Working with data
         contents:
           - data.ipynb

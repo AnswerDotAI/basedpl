@@ -3,35 +3,25 @@
 //! The rewriter reads what a function computes, and what an expression computes, as one tree of calls (`Form`). It replaces each subtree that a rule matches, inner subtrees first, with a call of the rule's function. `Function::new` rewrites a function's monadic and dyadic forms (`function`), and `dispatch` calls the results in the function's place. The binder rewrites each list of nodes before it walks it, after dot access and joins (`expression`). So `⍟1+x`, `⍟ 1+x`, `⍟(x+1)`, the train `⍟1+` and `⍟∘(1+)` all compute through `log1p`, from the first call on. An expression is read as far as its functions are constant and its arguments are arrays, as `Session::static_category` reads them, which keeps what it read about names in the recording's facts.
 //!
 //! A combination's function gives the combination's results. Where its algorithm doesn't suit the arguments, or a running level carries one, it calls the functions it combines (`combined`), which the level then sees. `•explain` reports each combination that its own algorithm computes.
-use super::*;
+use super::tree::Facts;
+use super::{
+    Binding, Bound, Function, FunctionNode, Operand, Session, Step, binder::{Binder, Category, Tine}, operators::{grouped, primitive_expansion}, session
+};
 use crate::primitive::{Folding, Order, Pick, Special};
 use crate::syntax::{Node, NodeKind, cover};
+use crate::{Described, Error, Span, Value, name::Name, primitive::{FoldKind, OperatorKind, Primitive}};
 use rustymath::events::Route;
-use std::{cell::Cell, ops::Range, sync::OnceLock};
-use super::tree::Facts;
+use std::{borrow::Cow, cell::Cell, convert::Infallible, ops::Range, sync::OnceLock};
 
 /// Each fast combination apart from the selections, which `rules` adds: its pattern, and the function that computes it.
 const RULES: &[(&str, Special)] = &[
-    ("⍟1+⍵", Special::Log1p), ("¯1+*⍵", Special::Expm1),
-    ("⍋⍋⍵", Special::Ranks(false)), ("⍋⍒⍵", Special::Ranks(true)),
-    ("(≢⊢)⌸⍵", Special::GroupCounts), ("⍺(≢⊢)⌸⍵", Special::GroupCounts),
-    ("⍺(+/⊢)⌸⍵", Special::GroupFolds(Folding::Plus, false)), ("⍺(+⌿⊢)⌸⍵", Special::GroupFolds(Folding::Plus, true)),
-    ("⍺(⌈/⊢)⌸⍵", Special::GroupFolds(Folding::Max, false)), ("⍺(⌈⌿⊢)⌸⍵", Special::GroupFolds(Folding::Max, true)),
-    ("⍺(⌊/⊢)⌸⍵", Special::GroupFolds(Folding::Min, false)), ("⍺(⌊⌿⊢)⌸⍵", Special::GroupFolds(Folding::Min, true)),
-    ("⍺(×/⊢)⌸⍵", Special::GroupFolds(Folding::Times, false)), ("⍺(×⌿⊢)⌸⍵", Special::GroupFolds(Folding::Times, true)),
-    ("-.×⍵", Special::Determinant), ("+.×⍵", Special::Permanent),
+    ("⍟1+⍵", Special::Log1p), ("¯1+*⍵", Special::Expm1), ("⍋⍋⍵", Special::Ranks(false)), ("⍋⍒⍵", Special::Ranks(true)),
+    ("(≢⊢)⌸⍵", Special::GroupCounts), ("⍺(≢⊢)⌸⍵", Special::GroupCounts), ("⍺(+/⊢)⌸⍵", Special::GroupFolds(Folding::Plus, false)),
+    ("⍺(+⌿⊢)⌸⍵", Special::GroupFolds(Folding::Plus, true)), ("⍺(⌈/⊢)⌸⍵", Special::GroupFolds(Folding::Max, false)),
+    ("⍺(⌈⌿⊢)⌸⍵", Special::GroupFolds(Folding::Max, true)), ("⍺(⌊/⊢)⌸⍵", Special::GroupFolds(Folding::Min, false)),
+    ("⍺(⌊⌿⊢)⌸⍵", Special::GroupFolds(Folding::Min, true)), ("⍺(×/⊢)⌸⍵", Special::GroupFolds(Folding::Times, false)),
+    ("⍺(×⌿⊢)⌸⍵", Special::GroupFolds(Folding::Times, true)), ("-.×⍵", Special::Determinant), ("+.×⍵", Special::Permanent),
 ];
-
-/// The pattern of each monadic rule whose function maps its argument, as `⍟1+⍵`.
-pub(crate) fn mapping_patterns() -> impl Iterator<Item = &'static str> {
-    RULES.iter().filter(|&&(text, s)| !text.contains('⍺') && Primitive::Special(s).facts(false).extension == crate::primitive::Extension::Pervasive).map(|&(text, _)| text)
-}
-
-/// Whether a rule matches some combination in expression `code`, read in `session`.
-pub(crate) fn rewrites(session: &Session, code: &str) -> bool {
-    let Ok(parsed) = crate::syntax::parse(crate::error::Source::new("<code>", code)).complete() else { return false };
-    parsed.statements.iter().any(|s| matches!(expression(session, &s.nodes, &mut None), Cow::Owned(_)))
-}
 
 /// Where an expression's form lies: a list of nodes, by its number in `Reader::lists`, and the nodes it covers there.
 type At = (usize, Range<usize>);
@@ -105,8 +95,10 @@ fn rules() -> Option<&'static Rules> {
     if let Some(rules) = READ.get() { return Some(rules); }
     if READING.get() { return None; }
     READING.set(true);
-    let selections = [Order::Grade(false), Order::Grade(true), Order::Sort(false), Order::Sort(true)].into_iter()
-        .flat_map(|o| [Pick::Take, Pick::First, Pick::Index, Pick::Mix].map(|p| (format!("{}{}{}⍵", if p == Pick::First { "" } else { "k" }, p.primitive().glyph(), o.primitive().glyph()), Special::Selected(o, p))));
+    let selections = [Order::Grade(false), Order::Grade(true), Order::Sort(false), Order::Sort(true)].into_iter().flat_map(|o| {
+        [Pick::Take, Pick::First, Pick::Index, Pick::Mix]
+            .map(|p| (format!("{}{}{}⍵", if p == Pick::First { "" } else { "k" }, p.primitive().glyph(), o.primitive().glyph()), Special::Selected(o, p)))
+    });
     let mut all: Vec<Rule> = RULES.iter().map(|&(text, with)| Rule::read(text, with)).chain(selections.map(|(text, with)| Rule::read(&text, with))).collect();
     all.sort_by_key(|r| !r.spans);
     let (masks, spanning): (Vec<u64>, _) = (all.iter().map(|r| r.pattern.needs()).collect(), all.partition_point(|r| r.spans));
@@ -132,15 +124,17 @@ struct Binds<'f> { args: [Option<&'f Form>; 2], holes: [Option<&'f Form>; 2] }
 fn matches<'f>(pattern: &Form, form: &'f Form, mut binds: Option<&mut Binds<'f>>) -> bool {
     if let Some(b) = binds.as_deref_mut() {
         match pattern.kind {
-            Kind::Arg(side) => return bind(&mut b.args[usize::from(side)], form),
-            Kind::Hole(i) => return bind(&mut b.holes[i], form),
-            _ => {}
+            Kind::Arg(side) => return bind(&mut b.args[usize::from(side)], form), Kind::Hole(i) => return bind(&mut b.holes[i], form), _ => {}
         }
     }
     match (&pattern.kind, &form.kind) {
-        (Kind::Arg(x), Kind::Arg(y)) => x == y, (Kind::Value(x), Kind::Value(y)) => same_value(x, y), (Kind::Subject(Some(x)), Kind::Subject(Some(y))) => x == y,
+        (Kind::Arg(x), Kind::Arg(y)) => x == y,
+        (Kind::Value(x), Kind::Value(y)) => same_value(x, y),
+        (Kind::Subject(Some(x)), Kind::Subject(Some(y))) => x == y,
         (Kind::Call(g, pl, pr), Kind::Call(h, fl, fr)) => {
-            same(g, h) && match (pl, fl) { (None, None) => true, (Some(p), Some(f)) => matches(p, f, binds.as_deref_mut()), _ => false } && matches(pr, fr, binds)
+            same(g, h) && match (pl, fl) {
+                (None, None) => true, (Some(p), Some(f)) => matches(p, f, binds.as_deref_mut()), _ => false
+            } && matches(pr, fr, binds)
         }
         _ => false,
     }
@@ -175,24 +169,15 @@ fn call(f: &Function, left: Option<Form>, right: Form, at: Option<At>) -> Form {
 
 /// What `f` computes from the forms of its arguments, `left` absent in a monadic call, through its trains and compositions. Any other function is one call of itself.
 fn applied(f: &Function, left: Option<Form>, right: Form) -> Form {
-    use {FunctionNode as N, OperatorKind as O, Operand::{Function as F, Value as V}};
+    use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind as O};
     match (f.node(), left) {
         (N::Composed(O::Atop, [F(g), F(h)]), left) => applied(g, None, applied(h, left, right)),
         (N::Composed(O::Before, [V(a), F(g)]), None) => applied(g, Some(Form::new(Kind::Value(a.clone()))), right),
-        (N::Composed(O::Before, [F(g), F(h)]), left) => {
-            let x = left.unwrap_or_else(|| right.clone());
-            applied(h, Some(applied(g, None, x)), right)
-        }
+        (N::Composed(O::Before, [F(g), F(h)]), left) => { let x = left.unwrap_or_else(|| right.clone()); applied(h, Some(applied(g, None, x)), right) }
         (N::Composed(O::After, [F(g), V(a)]), None) => applied(g, Some(right), Form::new(Kind::Value(a.clone()))),
-        (N::Composed(O::After, [F(g), F(h)]), left) => {
-            let x = left.unwrap_or_else(|| right.clone());
-            applied(g, Some(x), applied(h, None, right))
-        }
+        (N::Composed(O::After, [F(g), F(h)]), left) => { let x = left.unwrap_or_else(|| right.clone()); applied(g, Some(x), applied(h, None, right)) }
         (N::Fork([g, h, k]), left) => applied(h, Some(applied(g, left.clone(), right.clone())), applied(k, left, right)),
-        (N::Modified(O::Commute, F(g)), left) => {
-            let x = left.unwrap_or_else(|| right.clone());
-            applied(g, Some(right), x)
-        }
+        (N::Modified(O::Commute, F(g)), left) => { let x = left.unwrap_or_else(|| right.clone()); applied(g, Some(right), x) }
         (_, left) => call(f, left, right, None),
     }
 }
@@ -222,32 +207,25 @@ fn built(form: &Form, dyadic: bool, span: &Span) -> Result<Function, Error> {
 pub(super) fn built_from(node: &FunctionNode) -> u64 {
     let operand = |o: &Operand| if let Operand::Function(f) = o { f.node.needs } else { 0 };
     match node {
-        FunctionNode::Primitive(p) => glyph(*p),
-        FunctionNode::Fold(f, kind) => bit(OperatorKind::Fold(*kind).glyph()) | f.node.needs,
-        FunctionNode::Modified(op, a) => bit(op.glyph()) | operand(a),
-        FunctionNode::Composed(op, [a, b]) => bit(op.glyph()) | operand(a) | operand(b),
-        FunctionNode::Fork(fs) => fs.iter().fold(0, |m, f| m | f.node.needs),
-        _ => 0,
+        FunctionNode::Primitive(p) => glyph(*p), FunctionNode::Fold(f, kind) => bit(OperatorKind::Fold(*kind).glyph()) | f.node.needs,
+        FunctionNode::Modified(op, a) => bit(op.glyph()) | operand(a), FunctionNode::Composed(op, [a, b]) => bit(op.glyph()) | operand(a) | operand(b),
+        FunctionNode::Fork(fs) => fs.iter().fold(0, |m, f| m | f.node.needs), _ => 0
     }
 }
 
 /// The bit of the primitive or operator that the function `f` applies outermost, or 0 for any other function.
 fn root(f: &Function) -> u64 {
     match f.node() {
-        FunctionNode::Primitive(p) => bit(p.glyph()),
-        FunctionNode::Fold(_, kind) => bit(OperatorKind::Fold(*kind).glyph()),
-        FunctionNode::Modified(op, _) | FunctionNode::Composed(op, _) => bit(op.glyph()),
-        _ => 0,
+        FunctionNode::Primitive(p) => bit(p.glyph()), FunctionNode::Fold(_, kind) => bit(OperatorKind::Fold(*kind).glyph()),
+        FunctionNode::Modified(op, _) | FunctionNode::Composed(op, _) => bit(op.glyph()), _ => 0
     }
 }
 
 /// The needs mask of the primitives and operators that `node` writes, in its groups too.
 fn written(node: &Node) -> u64 {
     match &node.kind {
-        NodeKind::Function(crate::primitive::Builtin::Primitive(p)) => glyph(*p),
-        NodeKind::Operator(op) => bit(op.glyph()),
-        NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().fold(0, |m, n| m | written(n)),
-        _ => 0,
+        NodeKind::Function(crate::primitive::Builtin::Primitive(p)) => glyph(*p), NodeKind::Operator(op) => bit(op.glyph()),
+        NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().fold(0, |m, n| m | written(n)), _ => 0
     }
 }
 
@@ -261,7 +239,12 @@ fn rewritten(form: Form, rules: &Rules, changed: &mut bool) -> (Form, u64) {
     let form = Form { kind: Kind::Call(f, left, Box::new(right)), at };
     let mut tried = rules.all.iter().zip(&rules.masks).filter(|&(rule, mask)| rule.root == root && mask & !held == 0);
     match tried.find_map(|(rule, _)| Some((rule, rule.matched(&form)?))) {
-        Some((rule, binds)) => { *changed = true; let replaced = rule.replaced(binds, form.at.clone()); let mask = replaced.needs(); (replaced, mask) }
+        Some((rule, binds)) => {
+            *changed = true;
+            let replaced = rule.replaced(binds, form.at.clone());
+            let mask = replaced.needs();
+            (replaced, mask)
+        }
         None => (form, held),
     }
 }
@@ -281,8 +264,7 @@ pub(super) fn function(f: &Function, span: &Span) -> [Option<Function>; 2] {
 pub(super) fn direct(f: &Function) -> Option<(Special, Option<&Value>)> {
     let special = |g: &Function| match g.node() { FunctionNode::Primitive(Primitive::Special(s)) if s.combines() => Some(*s), _ => None };
     match f.node() {
-        FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(g)]) => Some((special(g)?, Some(a))),
-        _ => Some((special(f)?, None)),
+        FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(g)]) => Some((special(g)?, Some(a))), _ => Some((special(f)?, None))
     }
 }
 
@@ -306,7 +288,7 @@ pub(super) fn expression<'a>(session: &Session, nodes: &'a [Node], facts: &mut F
             reader.read(0, out.len()).and_then(|(form, _)| reader.first(&form, rules))
         };
         let Some((range, node)) = found else { return out };
-        if let Some(facts) = facts { read.into_iter().for_each(|f| if !facts.contains(&f) { facts.push(f) }) }
+        if let Some(facts) = facts { read.into_iter().for_each(|f| { if !facts.contains(&f) { facts.push(f) } }) }
         out.to_mut().splice(range, [node]);
     }
 }
@@ -317,9 +299,8 @@ struct Reader<'a, 'f, 'r> { session: &'a Session, facts: Option<&'f mut Facts<'r
 impl<'a> Reader<'a, '_, '_> {
     fn category(&mut self, node: &Node) -> Category {
         match (&mut self.facts, &node.kind) {
-            (None, NodeKind::Name(..)) => Category::Value,
-            (Some(facts), _) => self.session.static_category(node, facts),
-            (None, _) => self.session.static_category(node, &mut None),
+            (None, NodeKind::Name(..)) => Category::Value, (Some(facts), _) => self.session.static_category(node, facts),
+            (None, _) => self.session.static_category(node, &mut None)
         }
     }
 
@@ -331,9 +312,7 @@ impl<'a> Reader<'a, '_, '_> {
             // An array just before the function is its left argument, unless an array before that strands with it.
             let nodes = self.lists[list];
             let (left, from) = match from.checked_sub(1).and_then(|i| Some((self.subject(list, i)?, i))) {
-                Some((_, i)) if i > 0 && self.category(&nodes[i - 1]) == Category::Value => break,
-                Some((left, i)) => (Some(left), i),
-                None => (None, from),
+                Some((_, i)) if i > 0 && self.category(&nodes[i - 1]) == Category::Value => break, Some((left, i)) => (Some(left), i), None => (None, from)
             };
             form = call(&f, left, form, Some((list, from..end)));
             start = from;
@@ -348,8 +327,12 @@ impl<'a> Reader<'a, '_, '_> {
         let kind = match &nodes[i].kind {
             NodeKind::Literal(v) => Kind::Value(v.clone()),
             NodeKind::Name(name, _) if self.facts.is_none() => match *name {
-                Name::OMEGA => Kind::Arg(false), Name::ALPHA => Kind::Arg(true),
-                _ => Kind::Hole(self.holes.iter().position(|h| h == name).unwrap_or_else(|| { self.holes.push(*name); self.holes.len() - 1 })),
+                Name::OMEGA => Kind::Arg(false),
+                Name::ALPHA => Kind::Arg(true),
+                _ => Kind::Hole(self.holes.iter().position(|h| h == name).unwrap_or_else(|| {
+                    self.holes.push(*name);
+                    self.holes.len() - 1
+                })),
             },
             NodeKind::Group(inner) | NodeKind::Run(inner) if self.category(&nodes[i]) == Category::Value => {
                 self.lists.push(inner);
@@ -378,10 +361,9 @@ impl<'a> Reader<'a, '_, '_> {
     /// Where the function or operand whose last node is node `k` starts: a monadic operator takes the operand before it, and a dyadic operator the operands on both sides of it.
     fn term(&mut self, nodes: &[Node], k: usize) -> Option<usize> {
         match self.category(&nodes[k]).valence() {
-            Some(false) => self.operand(nodes, k.checked_sub(1)?),
-            Some(true) => None,
+            Some(false) => self.operand(nodes, k.checked_sub(1)?), Some(true) => None,
             None if k > 0 && self.category(&nodes[k - 1]).valence() == Some(true) => self.operand(nodes, k.checked_sub(2)?),
-            None => (self.category(&nodes[k]) == Category::Function).then_some(k),
+            None => (self.category(&nodes[k]) == Category::Function).then_some(k)
         }
     }
 
@@ -415,26 +397,27 @@ impl<'a> Reader<'a, '_, '_> {
 fn constant(node: &Node) -> bool {
     match &node.kind {
         NodeKind::Function(crate::primitive::Builtin::Primitive(_)) | NodeKind::Operator(_) | NodeKind::Literal(_) => true,
-        NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().all(constant),
-        _ => false,
+        NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().all(constant), _ => false
     }
 }
 
-/// The Key or product that combination `s` replaces, which a running level sees in its place.
+/// The Key or product that combination `s` replaces, which a running level sees in its place. It has no rewrite, so calling it doesn't come back to `combined`.
 fn original(s: Special, span: &Span) -> Result<Function, Error> {
     use {crate::number::Arithmetic::*, FunctionNode as N, OperatorKind as O};
     let p = Function::primitive;
     let key = |f: Function| {
         let operand = Function::new(N::Composed(O::Atop, [Operand::Function(f), Operand::Function(p(Primitive::Identity(false)))]), span)?;
-        Function::new(N::Modified(O::Key, Operand::Function(operand)), span)
+        Function::unrewritten(N::Modified(O::Key, Operand::Function(operand)), span)
     };
-    let product = |f| Function::new(N::Composed(O::Product, [Operand::Function(p(Primitive::Arithmetic(f))), Operand::Function(p(Primitive::Arithmetic(Times)))]), span);
+    let product = |f| {
+        Function::unrewritten(
+            N::Composed(O::Product, [Operand::Function(p(Primitive::Arithmetic(f))), Operand::Function(p(Primitive::Arithmetic(Times)))]), span)
+    };
     match s {
         Special::GroupCounts => key(p(Primitive::Tally)),
         Special::GroupFolds(by, first) => key(Function::new(N::Fold(p(by.primitive()), FoldKind { scan: false, first }), span)?),
-        Special::Determinant => product(Minus),
-        Special::Permanent => product(Plus),
-        _ => unreachable!("only Key's and the products' combinations have a function of their own to stand for"),
+        Special::Determinant => product(Minus), Special::Permanent => product(Plus),
+        _ => unreachable!("only Key's and the products' combinations have a function of their own to stand for")
     }
 }
 
@@ -446,17 +429,16 @@ pub(crate) fn combined(s: Special, left: Option<&Value>, right: &Value, span: &S
         return original(s, span)?.call_array(left, right, span);
     }
     let (route, fast) = match s {
-        Special::Selected(order, pick) => (if matches!(order, Order::Grade(_)) { Route::PartialGrade } else { Route::PartialSort }, selected(order, pick, left, right, span)),
+        Special::Selected(order, pick) => {
+            (if matches!(order, Order::Grade(_)) { Route::PartialGrade } else { Route::PartialSort }, selected(order, pick, left, right, span))
+        }
         Special::Ranks(down) => (Route::Ranks, ranks(down, right, span)),
         Special::GroupCounts | Special::GroupFolds(..) => return grouped(s, left, right, span)?.array(span),
         Special::Determinant => return primitive_expansion(Primitive::Arithmetic(Minus), Primitive::Arithmetic(Times), right, span),
         Special::Permanent => return primitive_expansion(Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times), right, span),
         _ => unreachable!("a kernel computes this combination"),
     };
-    if let Some(result) = fast {
-        if result.is_ok() { taken(route, s) }
-        return result;
-    }
+    if let Some(result) = fast { if result.is_ok() { taken(route, s) } return result; }
     rustymath::events::declined(route, "arguments that don't suit it", right.len());
     match s {
         Special::Selected(order, pick) => pick.primitive().call(left, &order.primitive().call(None, right, span)?, span),
@@ -466,11 +448,9 @@ pub(crate) fn combined(s: Special, left: Option<&Value>, right: &Value, span: &S
 }
 
 /// Records for `•explain`, where it's on, that the function of combination `s` computed it by its own algorithm, along `route`. It names the combination by its row's glyph, as `↑⍋` names every selection.
-pub(super) fn taken(route: Route, s: Special) {
-    if rustymath::events::running() { crate::explain::fast(route, Primitive::Special(s).glyph().into()) }
-}
+pub(super) fn taken(route: Route, s: Special) { if rustymath::events::running() { crate::explain::fast(route, Primitive::Special(s).glyph().into()) } }
 
-/// The items of `right`'s order that `pick` takes, through rustymath's partial selection, where `right` is a vector without keys and they are at most a quarter of its items. `left` is the count to take or the position to pick.
+/// The items of `right`'s order that `pick` takes, through rustymath's partial selection, where `right` is a vector without keys. `left` is the count to take or the position to pick.
 fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
     if right.shape().len() != 1 || right.keys(0).is_some() || crate::transform::carried(left, right) { return None; }
     let n = right.len();
@@ -483,8 +463,6 @@ fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span:
         Pick::First => { let i = rustymath::layout::position(0, n)?; (i..i + 1, true) }
         Pick::Index | Pick::Mix => { let i = rustymath::layout::position(integer(left?)?, n)?; (i..i + 1, true) }
     };
-    // Large runs cost more to comparison-sort than grading the whole vector by radix or counting.
-    if range.len() > n / 4 { return None; }
     let (grade, down) = match order { Order::Grade(down) => (true, down), Order::Sort(down) => (false, down) };
     let taken = rustymath::search::view_selected(right.view()?, range, down)?;
     Some((|| {
@@ -493,7 +471,7 @@ fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span:
             let selector = Value::new([1], vec![positions]).described("invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, span)?
         };
-        if item { crate::primitive::pick(&Value::integer(0), &selected, session().prototype.get(), None, span) } else { Ok(selected) }
+        if item { crate::primitive::pick(&Value::integer(0), &selected, None, span) } else { Ok(selected) }
     })())
 }
 
@@ -514,8 +492,8 @@ fn bit(glyph: &str) -> u64 {
     let written = WRITTEN.get_or_init(|| {
         let selections = [Pick::Take, Pick::Index, Pick::Mix].map(|p| p.primitive().glyph()).into_iter()
             .chain([Order::Grade(false), Order::Grade(true), Order::Sort(false), Order::Sort(true)].map(|o| o.primitive().glyph()));
-        let mut chars: Vec<char> = RULES.iter().map(|&(text, _)| text).chain(selections).flat_map(str::chars)
-            .filter(|c| !c.is_alphanumeric() && !"⍺⍵¯() ".contains(*c)).collect();
+        let mut chars: Vec<char> =
+            RULES.iter().map(|&(text, _)| text).chain(selections).flat_map(str::chars).filter(|c| !c.is_alphanumeric() && !"⍺⍵¯() ".contains(*c)).collect();
         chars.sort_unstable();
         chars.dedup();
         assert!(chars.len() <= 64, "a needs mask holds 64 characters");

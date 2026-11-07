@@ -142,7 +142,7 @@ impl LanguageSession for BplSession {
                 Some(record)
             }).collect();
             json!({"response": {"type": "response", "request_seq": request["seq"], "command": "inspectVariables", "success": true,
-            "body": {"variables": variables}}, "events": []})
+        "body": {"variables": variables}}, "events": []})
         }).await
     }
 

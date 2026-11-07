@@ -145,7 +145,7 @@ uns ← {2ₓ*⍺ | ⍵}  ⍝ Unsigned from signed integer.
 
 nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
   q←⍵⍴⌊⍺÷⍵  ⍝ quotient.
-  d←+\ ⍵|⍺ ÷ ⍵⍴⍵  ⍝ residue spread in ⍵ decimal steps.
+  d←+\ ⍵|⍺ ÷ₐ ⍵⍴⍵  ⍝ residue spread in ⍵ decimal steps.
   i←</↕0ₓ,⌊0.5+d
   q+i
 }
@@ -232,8 +232,8 @@ bayes ← {⍺ ×÷+.× ⍵}  ⍝ Bayes' formula. (implemented as a fork)
 
 Cholesky ← {  ⍝ decomposition of a Hermitian positive-definite matrix.
   1ₓ≥n←≢⍵?√⍵;
-  p←⌈n÷2ₓ
-  q←⌊n÷2ₓ
+  q←n÷2ₓ
+  p←n-q
   X←[p p]↑⍵ ⋄ Y←[p -q]↑⍵ ⋄ Z←(-q,q)↑⍵
   L_0←∇ X
   L_1←∇ Z-(TT←+Yᵀ +.× ⌹X)+.×Y

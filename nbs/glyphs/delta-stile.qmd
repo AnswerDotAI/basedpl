@@ -31,7 +31,7 @@ BPL computes each of these combinations by an algorithm of its own, in any spell
 
 | Combination | Applies to | Benefit |
 |---|---|---|
-| `k↑⍋Y`, `k↑⍋ Y` or `(k↑)∘⍋` | a vector of reals or characters without keys, with the count at most a quarter of its length | selects the first `k` positions of the grade, or the last `-k`, without ordering the rest |
+| `k↑⍋Y`, `k↑⍋ Y` or `(k↑)∘⍋` | a vector of reals or characters without keys | selects the first `k` positions of the grade, or the last `-k`, without ordering the rest |
 | `↑⍋Y`, `i⌷⍋Y` or `i⊃⍋Y` | the same vectors | selects one position without ordering the rest |
 | `⍋⍋Y`, `⍋⍋ Y` or `⍋∘⍋` | any `Y` without keys on its first axis | gives each major cell's rank by inverting the first grade, without grading it again |
 
@@ -39,7 +39,7 @@ BPL computes each of these combinations by an algorithm of its own, in any spell
 v←30 10 20 50 40 60 70 80 90 0
 2↑⍋ v                                ⍝ [9 1]ₓ
 ⍋⍋ v                                 ⍝ [3 1 2 5 4 6 7 8 9 0]ₓ
-(•explain "2↑⍋ v").fast.combination  ⍝ ["partial grade"]
+(•explain "2↑⍋ v").fast.rule         ⍝ ["partial grade"]
 ```
 
 ## Inverse

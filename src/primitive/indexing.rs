@@ -144,11 +144,11 @@ pub(crate) fn coordinate_fields(value: &Value) -> impl Iterator<Item = Value> + 
 }
 
 /// `left⊃right`: the item or cell at the end of the path `left` into `right`. A last level that selects a cell outside its axes gives a cell of `fill`'s items, or of prototypes where there's none (`Value::fill_item`).
-pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
-    let (array, _, fields) = walk(left, right, prototype)?;
+pub(crate) fn pick(left: &Value, right: &Value, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
+    let (array, _, fields) = walk(left, right)?;
     if fields.is_empty() { return Ok(array.into_owned()); }
-    if fields.len() >= array.shape().len() { return Ok(array.at_or_fill(cell_offset(array.layout(), 0, &fields, prototype)?, fill)); }
-    if cell_offset(array.layout(), 0, &fields, prototype)? != Steps::FILL {
+    if fields.len() >= array.shape().len() { return Ok(array.at_or_fill(cell_offset(array.layout(), 0, &fields)?, fill)); }
+    if cell_offset(array.layout(), 0, &fields)? != Steps::FILL {
         return select(&array, &fields.into_iter().map(IndexPart::Axis).collect::<Vec<_>>(), None, false, None, span);
     }
     let cell = array.layout().axes(fields.len()..array.shape().len());
@@ -159,7 +159,7 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&V
 
 /// Whether the path `left` into `right` ends at one item, not at a cell. Only the nested items on the way are read.
 pub(crate) fn picks_item(left: &Value, right: &Value) -> Result<bool, Error> {
-    walk(left, right, false).map(|(array, _, fields)| fields.is_empty() || fields.len() >= array.shape().len())
+    walk(left, right).map(|(array, _, fields)| fields.is_empty() || fields.len() >= array.shape().len())
 }
 
 /// The item or cell at the end of the path `left` into `right`, as a selection to write into.
@@ -179,9 +179,9 @@ enum End {
 
 /// The end of the path `left` into `right`, after the offsets of the nested items it goes through (`walk`'s steps).
 fn path_end(left: &Value, right: &Value) -> Result<(Vec<usize>, End), Error> {
-    let (array, steps, fields) = walk(left, right, false)?;
+    let (array, steps, fields) = walk(left, right)?;
     if fields.is_empty() { return Ok((steps, End::Item(None))); }
-    let offset = cell_offset(array.layout(), 0, &fields, false)?;
+    let offset = cell_offset(array.layout(), 0, &fields)?;
     // An atom is its own one item, as in `walk`.
     if fields.len() >= array.shape().len() { return Ok((steps, End::Item((offset == Steps::FILL || !array.is_atom()).then_some(offset)))); }
     let cell = array.layout().axes(fields.len()..array.shape().len());
@@ -199,13 +199,13 @@ fn pick_targets(left: &Value, right: &Value, targets: &mut Targets) -> Result<Fr
     Ok(Frame::Direct)
 }
 
-/// A path's last level in `right`: the array it selects from, borrowed while it is `right` itself, so that a pending `right` that nothing else holds stays unshared, the offset of each nested item that the levels before it go through, and its fields, which select an item or a cell of that array. The fields are empty for an empty path. A level is whole items of `left`, each a position, a key or a vector of them, until their fields select one item of the array before. In `prototype` mode a position outside its axis reads the prototype, and the path goes on in that. The offsets are `None` from a level that reads the prototype.
-fn walk<'a>(left: &Value, right: &'a Value, prototype: bool) -> Result<(Cow<'a, Value>, Vec<usize>, Vec<Value>), Error> {
+/// A path's last level in `right`: the array it selects from, borrowed while it is `right` itself, so that a pending `right` that nothing else holds stays unshared, the offset of each nested item that the levels before it go through, and its fields, which select an item or a cell of that array. The fields are empty for an empty path. A level is whole items of `left`, each a position, a key or a vector of them, until their fields select one item of the array before. A position outside its axis reads the prototype, and the path goes on in that. The offsets are `None` from a level that reads the prototype.
+fn walk<'a>(left: &Value, right: &'a Value) -> Result<(Cow<'a, Value>, Vec<usize>, Vec<Value>), Error> {
     if left.shape().len() > 1 { return Err(Error::new(Kind::Rank, "a path must be a unit or vector")); }
     let (mut items, mut array, mut steps, mut fields) = (coordinate_fields(left).peekable(), Cow::Borrowed(right), Vec::new(), Vec::new());
     while items.peek().is_some() {
         if !fields.is_empty() {
-            let offset = cell_offset(array.layout(), 0, &fields, prototype)?;
+            let offset = cell_offset(array.layout(), 0, &fields)?;
             // An atom is its own one item, with no item inside it to write. A level that reads the fill leaves a path that writes nothing.
             if !array.is_atom() { steps.push(offset); }
             array = Cow::Owned(array.at_or_fill(offset, None));
@@ -226,8 +226,8 @@ fn next_level(items: &mut impl Iterator<Item = Value>, rank: usize) -> Result<Ve
     Ok(fields)
 }
 
-/// The position of the item or cell that `fields` select in an array with `layout`, one position or key for each axis from `from`, among the cells after those axes. A unit's one item is at position 0. `Steps::FILL` where a path reads the prototype: at position 0 or ¯1 of an empty axis, and in `prototype` mode at any position outside its axis.
-fn cell_offset(layout: &rustymath::layout::Layout, from: usize, fields: &[Value], prototype: bool) -> Result<usize, Error> {
+/// The position of the item or cell that `fields` select in an array with `layout`, one position or key for each axis from `from`, among the cells after those axes. A unit's one item is at position 0. `Steps::FILL` where a position is outside its axis, isn't a whole number or is a NaN, or a key is missing: a path reads the prototype there, and a write writes nothing.
+fn cell_offset(layout: &rustymath::layout::Layout, from: usize, fields: &[Value]) -> Result<usize, Error> {
     if fields.iter().any(|f| !f.is_atom() && crate::keyed::name(f).is_none()) {
         return Err(Error::new(Kind::Domain, "a level of a path selects one item or cell: .[] selects several"));
     }
@@ -236,20 +236,16 @@ fn cell_offset(layout: &rustymath::layout::Layout, from: usize, fields: &[Value]
     let mut offset = Some(0);
     for (axis, (field, &size)) in fields.iter().zip(shape).enumerate() {
         if layout.shape().is_empty() && crate::keyed::name(field).is_some() { return Err(Error::new(Kind::Rank, "a unit has no axis to look up a key on")); }
-        let selector = axis_selector(field, layout, from + axis)?;
-        let n = selector.observed_number().described("expected numeric elements")?;
-        // A NaN position reads the fill, as a position past an empty axis does.
-        if n.as_float().is_some_and(f64::is_nan) { offset = None; continue; }
-        let k = n.integer().described(rustymath::structure::NOT_WHOLE)?;
-        offset = match rustymath::layout::position(k, size) {
-            Some(i) => offset.map(|o| o * size + i), None if prototype || size == 0 && (k == 0 || k == -1) => None,
-            None => return Err(Error::new(Kind::Index, "index is outside the array"))
+        let position = match crate::keyed::name(field) {
+            Some(k) => Some(rustymath::structure::key_position(layout, from + axis, &k)?).filter(|&p| p != Steps::FILL),
+            None => field.observed_number().described("expected numeric elements")?.integer().ok().and_then(|k| rustymath::layout::position(k, size)),
         };
+        offset = offset.zip(position).map(|(o, i)| o * size + i);
     }
     Ok(offset.unwrap_or(Steps::FILL))
 }
 
-/// Adds to `array` the keys that the path `items` names and it lacks, level by level, as `⊃` reads its levels. `⌷` and `.[]` give one item, which selects in one level. A new entry that a later level reads starts as a record, and so does one at the last level where `descend`. Unless `write`, it only finds whether a key is missing, and leaves `array` as it was. Returns whether a key was missing.
+/// Adds to `array` the keys that the path `items` names and it lacks, level by level, as `⊃` reads its levels. `⌷` and `.[]` give one item, which selects in one level. A new entry that a later level reads starts as a record, and so does one at the last level where `descend`. Unless `write`, it only finds whether a key is missing, and leaves `array` as it was. A level at the fill ends the path. Returns whether a key was missing.
 pub(crate) fn extend_path(items: &[Value], mut array: &mut Value, descend: bool, write: bool) -> Result<bool, Error> {
     let (mut items, mut lacked) = (items.iter().cloned().peekable(), false);
     while items.peek().is_some() {
@@ -259,8 +255,9 @@ pub(crate) fn extend_path(items: &[Value], mut array: &mut Value, descend: bool,
         if missing && !write { return Ok(true); }
         lacked |= missing;
         if last { break; }
-        let offset = cell_offset(array.layout(), 0, &fields, false)?;
-        if offset == Steps::FILL { return Err(Error::new(Kind::Index, "a path can't add keys past an empty axis")); }
+        let offset = cell_offset(array.layout(), 0, &fields)?;
+        // A level at the fill writes nothing, so the levels after it add no keys.
+        if offset == Steps::FILL { break; }
         if write { array = array.item_mut(&[offset], false); } else { *array = array.at(offset); }
     }
     Ok(lacked)
@@ -279,23 +276,33 @@ pub(crate) fn extend_indices(left: &Value, array: &mut Value, descend: bool, wri
 }
 
 fn extend_fields<'a>(array: &mut Value, fields: impl IntoIterator<Item = (usize, &'a Value)>, descend: bool, write: bool) -> Result<bool, Error> {
-    let added = crate::keyed::missing(array, fields).described("invalid named axis extension")?;
+    let wanted = fields.into_iter().map(|(axis, f)| Ok((axis, crate::keyed::selected_keys(f)?))).collect::<Result<Vec<_>, crate::ErrorKind>>()
+        .described("invalid named axis extension")?;
+    extend_keys(array, &wanted, descend, write)
+}
+
+/// Adds to `array` the keys that `wanted` names on each axis and it lacks (`structure::missing_keys`), or with `write` false only finds whether one is missing. A new entry starts as a record where `descend` (`keyed::extend`). Returns whether a key was missing.
+fn extend_keys(array: &mut Value, wanted: &[(usize, Vec<std::sync::Arc<str>>)], descend: bool, write: bool) -> Result<bool, Error> {
+    let added = rustymath::structure::missing_keys(array.core_layout(), wanted.iter().map(|(axis, names)| (*axis, names.iter().map(|n| &**n))))
+        .described("invalid named axis extension")?;
     let missing = added.iter().any(|keys| !keys.is_empty());
     if missing && write { crate::keyed::extend(array, added, descend).described("invalid named axis extension")?; }
     Ok(missing)
 }
 
-pub(crate) fn position(n: &Number, size: usize) -> Result<usize, Error> {
-    let n = n.integer().described(rustymath::structure::NOT_WHOLE)?;
-    rustymath::layout::position(n, size).ok_or_else(|| Error::new(Kind::Index, "index is outside the array"))
+/// The claims that address a frontend's written `parts` (`structure::addressed_parts`): a value's one axis name and the axes it covers, and one axis for a part that the frontend decodes.
+fn claims(parts: &[IndexPart<Option<Value>>]) -> Vec<IndexPart<(Option<&str>, usize)>> {
+    parts.iter().map(|p| p.as_ref().map(|v| v.as_ref().map_or((None, 1), |v| (rustymath::structure::sole_name(v.layout()), v.index_width())))).collect()
 }
 
-/// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
+/// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a value outside the axis, one that isn't a whole number within the comparison tolerance in force (which only Mathish makes nonzero) or a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
 pub(crate) fn positions(a: &Value, size: usize) -> Result<Vec<usize>, Error> {
     match a.view() {
-        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size),
-        _ => rustymath::structure::counted_positions(&a.as_items().positions().described(rustymath::structure::NOT_WHOLE)?, size),
-    }.map_err(Error::from)
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => {
+            rustymath::structure::positions(view, size, crate::number::Numeric::current().tolerance).map_err(Error::from)
+        }
+        _ => Ok(rustymath::structure::counted_positions(&a.as_items().positions().described(rustymath::structure::NOT_WHOLE)?, size)),
+    }
 }
 
 /// A compact array of whole numbers serves as index values that a selection's table reads in place, so that no list of offsets is built from them.
@@ -396,34 +403,36 @@ impl Selection {
     /// The value of target `i`. A direct target takes the whole value.
     pub(crate) fn item(&self, values: &Value, i: usize) -> Value { if matches!(self.frame, Frame::Direct) { values.clone() } else { selected(values, i) } }
     /// This selection without its targets at a fill, which write nothing, and `values`, as `checked` gives them, cut to the targets kept. `None` where no target is at a fill.
-    pub(crate) fn without_fills(&self, values: &Value, span: &Span) -> Result<Option<(Selection, Value)>, Error> {
+    pub(crate) fn without_fills(&self, values: &Value) -> Result<Option<(Selection, Value)>, Error> {
         if !self.targets.at_fill() { return Ok(None); }
-        if let Some(listed) = self.listed() { return listed.without_fills(values, span); }
+        if let Some(listed) = self.listed() { return listed.without_fills(values); }
         let kept: Vec<usize> = (0..self.targets.len()).filter(|&i| !self.targets.path(i).contains(&Steps::FILL)).collect();
         let mut targets = Targets::Offsets(Vec::with_capacity(kept.len()));
         for &i in &kept { targets.push(self.targets.path(i)); }
         let values = if kept.is_empty() { Value::integers(vec![0], Vec::new()).described("invalid replacement")? }
         else if values.is_singleton() { values.clone() } else {
-            Selection::offsets(kept.clone()).read(&values.clone().with_shape(vec![values.len()]).described("invalid replacement")?, None, span)?
+            Selection::offsets(kept.clone()).read(&values.clone().with_shape(vec![values.len()]).described("invalid replacement")?, None)?
         };
         Ok(Some((Selection { frame: Frame::Array(vec![kept.len()].into()), targets }, values)))
     }
 
     /// The items that the selection reads from `array`, with `fill` where a target reaches no item, or the prototype where there's none.
-    pub(crate) fn read(&self, array: &Value, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn read(&self, array: &Value, fill: Option<&Value>) -> Result<Value, Error> {
         let invalid = |k| Error::new(k, "invalid selection");
         let layout = match (&self.targets, &self.frame) {
             (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at_or_fill(offsets[0], fill)),
             (Targets::Paths(paths), Frame::Direct) => {
                 return Frame::Direct.collect(paths.iter().map(|p| item_at(array, p, fill)), || array.prototype()).map_err(invalid);
             }
-            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, fill, span),
+            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, fill),
             (Targets::Cells(cells), Frame::Direct) => return cells.read(array, &Default::default()),
             (_, Frame::Array(layout)) => layout,
         };
         let data = match &self.targets {
             // A carried array reads through its carrier, as `select` reads it, where a `Gather` would hold a batch's items one at a time.
-            Targets::Offsets(offsets) if array.carrier().is_some() => return copied_at(array, offsets.clone(), layout.clone(), fill).map_err(invalid),
+            Targets::Offsets(offsets) if array.carrier().is_some() => {
+                return crate::fusion::copied_at(array, offsets.clone(), layout.clone(), fill).map_err(invalid);
+            }
             Targets::Offsets(offsets) => {
                 let mut data = Gather::new(&[array], offsets.len());
                 data.at(array, offsets, fill);
@@ -451,7 +460,7 @@ impl Selection {
                 data
             }
             Targets::Walk { base, steps } if array.carrier().is_some() => {
-                return copied_at(array, Steps::combined(*base, steps), layout.clone(), fill).map_err(invalid);
+                return crate::fusion::copied_at(array, Steps::combined(*base, steps), layout.clone(), fill).map_err(invalid);
             }
             Targets::Walk { base, steps } => {
                 let mut data = Gather::new(&[array], self.targets.len());
@@ -471,36 +480,25 @@ impl Selection {
     }
     /// Replaces each target of `array` with its value, in place. A target at a fill writes nothing. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, but a weak integer that doesn't fit fixed integers is DOMAIN, as in arithmetic (`plan::Kind::fits`). Exact and approximate numbers stay apart, and so do Booleans and other numbers, as in a literal (`Widening::Items`), so writing one kind among another leaves the array mixed. Mixed storage stays mixed. While `•explain` records, a write that leaves compact storage mixed records the call (`explain::mixed`).
     pub(crate) fn write_into(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
-        if !crate::explain::recording() { return self.write_targets(array, values, span); }
+        if !crate::explain::recording() { return self.write_targets(array, values); }
         let numeric = crate::number::Numeric::current();
         let target = array.dtype().map(|_| array.storage_kind(numeric));
-        self.write_targets(array, values, span)?;
+        self.write_targets(array, values)?;
         if let (Some(target), None) = (target, array.dtype()) { crate::explain::mixed(span, target, values.storage_kind(numeric), array.len()); }
         Ok(())
     }
-    fn write_targets(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
+    fn write_targets(&self, array: &mut Value, values: &Value) -> Result<(), Error> {
         let values = self.checked(values)?;
-        crate::plan::Kind::fits([array, &values])?;
         // The scatter skips a fill offset itself. Paths, and the targets of an atom, drop theirs here.
         if array.is_atom() || matches!(self.targets, Targets::Paths(_)) {
-            if let Some((kept, values)) = self.without_fills(&values, span)? { return kept.write_targets(array, &values, span); }
+            if let Some((kept, values)) = self.without_fills(&values)? { return kept.write_targets(array, &values); }
         }
         let offsets = match &self.targets {
             Targets::Offsets(offsets) => offsets,
-            Targets::Paths(paths) => {
-                let updates: Vec<(&[usize], Value)> = paths.iter().enumerate().map(|(i, p)| (p.as_slice(), self.item(&values, i))).collect();
-                let mut sorted: Vec<_> = updates.iter().map(|&(p, _)| p).collect();
-                sorted.sort_unstable();
-                sorted.dedup();
-                // Writing a target can remove a path inside it, so a selection with such paths writes into a copy.
-                if sorted.windows(2).any(|w| w[1].starts_with(w[0])) { *array = write_paths(array, &updates, span)?; } else {
-                    for (path, item) in updates { array.write_path(path, item)? }
-                }
-                return Ok(());
-            }
+            Targets::Paths(paths) => { for (i, path) in paths.iter().enumerate() { array.write_path(path, self.item(&values, i))? } return Ok(()); }
             Targets::Walk { base, steps } => {
                 if array.is_atom() || matches!(self.frame, Frame::Direct) {
-                    return self.listed().expect("a walk lists its targets").write_targets(array, &values, span);
+                    return self.listed().expect("a walk lists its targets").write_targets(array, &values);
                 }
                 array.scatter_walk(*base, steps, &values)?;
                 return Ok(());
@@ -526,27 +524,6 @@ impl Selection {
         };
         Ok(Self { targets, ..self })
     }
-}
-
-/// `array` with the item at each path replaced by its value. A later update to the same path wins.
-fn write_paths(array: &Value, updates: &[(&[usize], Value)], span: &Span) -> Result<Value, Error> {
-    let replacement;
-    let (array, updates) = if let Some(last) = updates.iter().rposition(|(p, _)| p.is_empty()) {
-        replacement = updates[last].1.clone();
-        (&replacement, &updates[last + 1..])
-    } else { (array, updates) };
-    if updates.is_empty() { return Ok(array.clone()); }
-    let mut items: Vec<_> = array.elements().collect();
-    let mut groups: HashMap<usize, Vec<(&[usize], Value)>> = HashMap::new();
-    for (path, value) in updates { groups.entry(path[0]).or_default().push((&path[1..], value.clone())); }
-    for (i, edits) in groups {
-        if i >= items.len() { return Err(Error::new(Kind::Index, "replacement changed a selected path")); }
-        items[i] = write_paths(&items[i].clone(), &edits, span)?;
-    }
-    if array.is_atom() { return Ok(items.remove(0)); }
-    let mut data = Gather::new(&[array], items.len());
-    for item in items { data.add(item) }
-    data.finish(array.layout().clone(), || array.prototype()).described("invalid amended array")
 }
 
 /// The selection that the array `indices` makes as the positions of `@`, as one selector of `⌷`: major cells for positions, or where its items are vectors, the item or cell at each coordinate.
@@ -610,7 +587,7 @@ fn suffix_plan(cell: &rustymath::layout::Layout, suffix: &[IndexPart<Value>], pa
 
 /// The layout of the cell that `paths`' prototype reaches in `right`, reading prototypes past the ends of axes, or `None` where it reaches an item.
 fn prototype_cell(paths: &Value, right: &Value) -> Result<Option<crate::array::Layout>, Error> {
-    let (array, _, fields) = walk(&paths.prototype(), right, true)?;
+    let (array, _, fields) = walk(&paths.prototype(), right)?;
     Ok((fields.len() < array.shape().len()).then(|| array.layout().axes(fields.len()..array.shape().len())))
 }
 
@@ -620,18 +597,35 @@ static INDEX: std::sync::LazyLock<Span> = std::sync::LazyLock::new(|| Span { sou
 impl Value {
     /// Source axes consumed by one numeric, key or coordinate-array selector.
     pub fn index_width(&self) -> usize { coordinate_width(self).unwrap_or(1) }
-    /// Plans a frontend's selection of this value by written `parts`, as `⌷` plans one, with index arrays paired by broadcasting. `frontend(i, axis)` decodes the parts that hold no value, as Python decodes slices, and can decode other parts too, as Python decodes Boolean masks. It gives `None` to leave a part to `⌷`'s decoding. Also gives whether the selection reads one item. `err` converts BPL errors to the frontend's.
+    /// Plans a frontend's selection of this value by written `parts`, as `⌷` plans one, with index arrays paired by broadcasting. `frontend(i, axis)` decodes the parts that hold no value, as Python decodes its own slices, integers and keys. It gives `None` to leave a part to `⌷`'s decoding. Also gives whether the selection reads one item. `err` converts BPL errors to the frontend's.
     pub fn planned<E>(
         &self, parts: &[IndexPart<Option<Value>>], mut frontend: impl FnMut(usize, usize) -> Option<Result<(AxisSelector, bool), E>>, err: impl Fn(Error) -> E
     ) -> Result<(Plan, bool), E> {
         let layout = self.core_layout();
-        let claims: Vec<_> = parts.iter()
-            .map(|p| p.as_ref().map(|v| v.as_ref().map_or((None, 1), |v| (rustymath::structure::sole_name(v.layout()), v.index_width())))).collect();
+        let claims = claims(parts);
         rustymath::structure::plan_parts(layout, &claims, None, true, |i, axis| {
             if let Some(decoded) = frontend(i, axis) { return decoded; }
             let IndexPart::Axis(Some(value)) = &parts[i] else { unreachable!("the frontend decodes the parts that hold no value") };
             axis_part(value, layout, axis).map_err(&err)
         }, |e| err(Error::new(e, "")))
+    }
+    /// This value with the keys that a write by a frontend's written `parts` names and it lacks added, as assignment adds them before it plans (`extend_keys`). `native(i)` gives the keys that a part holding no value names, as Python's own strings and lists of strings do. Pick paths add no keys.
+    pub fn with_missing_keys(&self, parts: &[IndexPart<Option<Value>>], native: impl Fn(usize) -> Vec<String>) -> Result<Value, Error> {
+        if let Some(IndexPart::Axis(Some(first))) = parts.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All)) && self.picks_paths(first)? {
+            return Ok(self.clone());
+        }
+        let mut wanted = Vec::new();
+        for (axis, part) in rustymath::structure::addressed_parts(self.core_layout(), &claims(parts), None)? {
+            let IndexPart::Axis(i) = part else { continue };
+            let names = match &parts[i] {
+                IndexPart::Axis(Some(value)) => crate::keyed::selected_keys(value).described("invalid axis selector")?,
+                _ => native(i).into_iter().map(std::sync::Arc::<str>::from).collect(),
+            };
+            wanted.push((axis, names));
+        }
+        let mut value = self.clone();
+        extend_keys(&mut value, &wanted, false, true)?;
+        Ok(value)
     }
     /// Whether `part`, the first written axis part of an index of this value, selects pick paths, which `select` reads.
     pub fn picks_paths(&self, part: &Value) -> Result<bool, Error> {
@@ -654,7 +648,7 @@ pub(crate) fn select(
     right: &Value, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, fill: Option<Value>, span: &Span) -> Result<Value, Error> {
     if parts.is_empty() { return Ok(right.clone()); }
     if axes.is_none() && let Some(selected) = crate::batch::bracketed(parts, right, paired, fill.as_ref(), span) { return selected; }
-    if parts.iter().any(|part| matches!(part, IndexPart::Axis(v) if traced_positions(v))) {
+    if parts.iter().any(|part| matches!(part, IndexPart::Axis(v) if traced_positions(v) || older_level(v, right))) {
         if axes.is_some() || fill.is_some() { return Err(crate::program::trace::stopped("a selection by computed positions along axes or with a fill")); }
         return match right.carrier() {
             Some(carrier) => carrier.selected(right, parts, paired, span), None => crate::program::trace::gathered(right, parts, paired, span)
@@ -662,7 +656,7 @@ pub(crate) fn select(
     }
     if axes.is_none() && let Some(offset) = item_offset(right, parts) { return Ok(crate::fusion::item(right, offset)); }
     let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, axes, paired, span)? {
-        Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, fill.as_ref(), span)
+        Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, fill.as_ref())
     };
     planned_read(right, plan, direct, fill)
 }
@@ -674,7 +668,7 @@ pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option
     remap(right, plan, fill)
 }
 
-/// The plan of a selection by `parts` on an array with `layout`, and whether it reads one item, as a step that selects at replay plans it (`program::Step::Gather`, `program::Writes::By`). Without the whole array, positions never select pick paths.
+/// The plan of a selection by `parts` on an array with `layout`, and whether it reads one item, as a step that selects at replay plans it (`program::Step::Gather`). Without the whole array, positions never select pick paths.
 pub(crate) fn parts_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<(Plan, bool), Error> {
     let Positions::Plan(plan, direct) = axis_positions(layout, None, parts, None, paired, span)? else {
         unreachable!("positions plan without the whole array")
@@ -682,20 +676,14 @@ pub(crate) fn parts_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<
     Ok((plan, direct))
 }
 
-/// Whether `part` holds positions that the running trace computes, such as an argument's, and so can't read: a traced array of integers, Booleans or floats, or a traced atom of integers or Booleans, that isn't a free name's value or computed from free names alone (`Traced::held`). An atom of floats can be `∞` or `¯∞`, which select whole axes. A step selects by such parts at replay (`trace::gathered`).
-fn traced_positions(part: &Value) -> bool {
-    part.carrier().and_then(crate::transform::Carrier::traced).is_some_and(|t| {
-        t.held().is_none() && { let desc = t.desc(); desc.kind.dtype.is_some_and(|d| d.kind() <= 1 || d.kind() == 2 && !desc.atom) }
-    })
-}
+/// Whether a selector's kind and atom flag fix it as numeric positions. A float atom may be `∞` or `¯∞`, which select whole axes instead.
+pub(crate) fn numeric_positions(desc: &crate::plan::Desc) -> bool { desc.kind.dtype.is_some_and(|d| d.kind() <= 1 || d.kind() == 2 && !desc.atom) }
 
-/// The plan that `parts_plan` gives with zeros in place of the parts whose positions the running trace computes (`traced_positions`), for the description of a step that selects by them at replay: a selection's layout, and whether it reads one item, depend only on its parts' layouts.
-pub(crate) fn traced_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<(Plan, bool), Error> {
-    let zeroed = |v: &Value| {
-        if !traced_positions(v) { v.clone() } else if v.is_atom() { Value::integer(0) } else { v.layout().filled(&Value::integer(0)) }
-    };
-    parts_plan(layout, &parts.iter().map(|part| part.as_ref().map(zeroed)).collect::<Vec<_>>(), paired, span)
-}
+/// Whether a recording computes these numeric positions. Do not observe a free value here: it remains replayed data, not a value-specialized assumption.
+fn traced_positions(part: &Value) -> bool { part.carrier().and_then(crate::transform::Carrier::traced).is_some_and(|t| numeric_positions(&t.desc())) }
+
+/// Whether `part` carries an older transform level than `right`: a coefficient of an outer level, which `right`'s tape records as a Gather's positions (`trace::Arg::of`).
+fn older_level(part: &Value, right: &Value) -> bool { part.carrier().zip(right.carrier()).is_some_and(|(p, r)| p.level() < r.level()) }
 
 /// The offset of the item that one integer position on each axis of `right` selects. `None` for parts of any other kind, and for a position outside its axis, which the general path reports.
 fn item_offset(right: &Value, parts: &[IndexPart<Value>]) -> Option<usize> {
@@ -752,19 +740,27 @@ fn axis_positions(
     Ok(Positions::Plan(plan, direct))
 }
 
-/// The selector that `value`, one written axis part, gives at `axis` of an array with `layout`, and whether it reads one position. Coordinates read their axes as one axis, keys read their positions, and other values are positions.
+/// The selector that `value`, one written axis part, gives at `axis` of an array with `layout`, and whether it reads one position. Coordinates read their axes as one axis, keys read their positions by `structure::key_selector`, where a missing key reads the fill, and other values are positions.
 fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> Result<(AxisSelector, bool), Error> {
     if let Some(k) = coordinate_width(value) {
         let fields = coordinate_parts(value, k).ok_or_else(|| Error::new(Kind::Domain, "pick paths that go inside items select alone"))?;
-        let positions = fields.iter().map(|fields| cell_offset(layout, axis, fields, false)).collect::<Result<_, _>>()?;
+        let positions = fields.iter().map(|fields| cell_offset(layout, axis, fields)).collect::<Result<_, _>>()?;
         return Ok((AxisSelector::Indices { layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::gather::Table::new(positions) },
             false));
     }
+    match Selector::of(value).described("invalid axis selector")? {
+        Some(Selector::One(k)) => return Ok((rustymath::structure::key_selector(layout, axis, [&*k], None)?, true)),
+        Some(Selector::Many(names)) => {
+            let within = Some(rustymath::layout::Layout::clone(value.layout()));
+            return Ok((rustymath::structure::key_selector(layout, axis, names.iter().map(|n| &**n), within)?, false));
+        }
+        None => {}
+    }
     let size = layout.shape()[axis];
-    let value = axis_selector(value, layout, axis)?;
     let selector = match value.view() {
         Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => AxisSelector::Indices {
-            layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size)? },
+            layout: rustymath::layout::Layout::clone(value.layout()),
+            positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size, crate::number::Numeric::current().tolerance)? },
         _ => {
             let positions = positions(&value, size)?;
             match positions[..] {
@@ -794,18 +790,4 @@ fn coordinate_parts(selector: &Value, k: usize) -> Option<Vec<Vec<Value>>> {
         coordinates.push(fields);
     }
     Some(coordinates)
-}
-
-/// The positions that `value` selects along `axis` of an array with `layout`. A selector of keys reads their positions, keeping its own axis names and keys.
-fn axis_selector(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> Result<Value, Error> {
-    let Some(selector) = Selector::of(value).described("invalid axis selector")? else { return Ok(value.clone()); };
-    let keys = layout.keys(axis).ok_or_else(|| Error::new(Kind::Index, "axis has no keys"))?;
-    let position = |k: &str| {
-        keys.position(k).map(|i| Value::integer(i as i64)).ok_or_else(|| Error::new(Kind::Index, format!("missing key: {}", rustymath::layout::shown(k))))
-    };
-    match selector {
-        Selector::One(k) => position(&k),
-        Selector::Many(shape, names) => Value::from_parts(shape, names.iter().map(|k| position(k)).collect::<Result<_, _>>()?, Value::integer(0))
-            .and_then(|v| v.with_layout(value.layout().clone())).described("invalid named selector")
-    }
 }

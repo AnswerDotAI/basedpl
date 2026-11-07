@@ -1,10 +1,30 @@
-//! The settings that `•prefs` changes, held once for the whole process. Code on any thread reads them, and a computation reads the settings in force when it runs. `•prefs` writes them, the lexer writes the settings in a source's leading `•prefs` header as it reads them, and `reset` restores the defaults, as `]clear` does. Nothing keeps a setting to put back later. Rustymath holds the thread count, the one setting that it reads itself (`rustymath::parallel::set_threads`).
+//! The settings that `•prefs` changes, held once for the whole process. Code on any thread reads them, and a computation reads the settings in force when it runs. `•prefs` writes them, the lexer writes the settings in a source's leading `•prefs` header as it reads them, and `reset` restores the defaults, as `]clear` does. Nothing keeps a setting to put back later, except that a pending array computes its items under the numeric settings that planned it (`under`). Rustymath holds the thread count, the one setting that it reads itself (`rustymath::parallel::set_threads`).
 //!
 //! Each setting that calls and scalar operations read is an atomic, read with a relaxed load. A read of several settings can see some of them from before a concurrent write and some from after it. The display settings, which only display reads, sit behind a lock.
-pub use crate::fusion::Sizes;
 use crate::{display, number::{Kinds, Numeric}};
 use rustymath::buffer::{FloatWidth, Width};
 use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}};
+
+/// The sizes that decide which calls wait and how a block stage splits its items. `set_sizes` sets them for the whole process, and a block stage reads them when it runs.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Sizes {
+    /// The fewest result items of a call that dispatch defers. A call with a smaller result runs at once.
+    pub min_items: usize,
+    /// The items in a block, which a block stage computes step by step while their buffers stay in the cache.
+    pub block: usize,
+    /// The shortest repeat of an input that splits a block into runs, each read in place.
+    pub run: usize,
+}
+impl Sizes {
+    /// The sizes that `reset` restores.
+    ///
+    /// - `min_items`, 2^16: smaller arrays stay in the cache between calls.
+    /// - `block`, 2^12: a block's buffers fit in `fusion::BUFFERED` bytes where its inputs don't skip items. Each step's results for a block stay in the cache until the steps that read them have run.
+    /// - `run`, 256: within a run, the input reads its one item in place. A shorter repeat copies into a buffer for each block. A cycle shorter than a block never splits it: a block stage repeats its period once, then reads each run from that buffer in place.
+    pub const DEFAULT: Self = Self { min_items: 1 << 16, block: 1 << 12, run: 256 };
+    /// Sizes under which every fusible call that gives items waits, and a block stage splits its items into blocks of 7 and reads repeats of 3 or more in place. The reference suite runs each case under them too, so that small arrays take the paths that large ones take.
+    pub const SMALL: Self = Self { min_items: 1, block: 7, run: 3 };
+}
 
 /// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, and whether each program is checked before it runs.
 const HANZI: bool = false;
@@ -34,16 +54,37 @@ const UNSET: u8 = u8::MAX;
 /// The display settings in force, then the ones that `reset` restores.
 static DISPLAY: LazyLock<RwLock<[display::Settings; 2]>> = LazyLock::new(|| RwLock::new([display::Settings::default(); 2]));
 
-/// The numeric settings in force.
+thread_local! {
+    /// The numeric settings of the force that this thread runs (`under`), which `numeric`, `int_storage` and `float_width` give in place of the process's.
+    static PLANNED: std::cell::Cell<Option<Numeric>> = const { std::cell::Cell::new(None) };
+}
+
+/// The numeric settings of the force that this thread runs, if one runs.
+#[inline]
+fn planned() -> Option<Numeric> { PLANNED.with(std::cell::Cell::get) }
+
+/// `f`, run with `numeric` as this thread's numeric settings: a pending array computes its items under the settings that planned it, whatever `•prefs` has set since. Code that the force runs on other threads reads no settings: a block stage's folds take theirs from the plan (`BlockFold::settings`).
+pub(crate) fn under<T>(numeric: Numeric, f: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Numeric>);
+    impl Drop for Restore { fn drop(&mut self) { PLANNED.with(|p| p.set(self.0)); } }
+    let _restore = Restore(PLANNED.with(|p| p.replace(Some(numeric))));
+    f()
+}
+
+/// The numeric settings in force: a running force's (`under`), or the process's. Callers read them through `Numeric::current`.
 #[inline]
 pub(crate) fn numeric() -> Numeric {
+    if let Some(numeric) = planned() { return numeric; }
     let mathish = MATHISH.load(Relaxed);
     let kinds = if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic };
     Numeric { mathish, width: float_width(), kinds, int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT }.with_public_tolerance()
 }
 /// The `int` width under static kinds, and `None` under dynamic kinds. Static kinds store every ordinary integer array at the `int` width, and dynamic kinds store each one at the narrowest width that holds its values (`array::ordinary_width`). It reads only the two settings that array construction needs.
 #[inline]
-pub(crate) fn int_storage() -> Option<Width> { STATIC_KINDS.load(Relaxed).then(|| if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }) }
+pub(crate) fn int_storage() -> Option<Width> {
+    if let Some(numeric) = planned() { return (numeric.kinds == Kinds::Static).then_some(numeric.int); }
+    STATIC_KINDS.load(Relaxed).then(|| if INT32.load(Relaxed) { Width::I32 } else { Width::I64 })
+}
 /// Makes `numeric` the numeric settings in force. Only `Numeric::convergence` changes `units`, for its own comparisons, so the store leaves them out.
 pub(crate) fn set_numeric(numeric: Numeric) {
     MATHISH.store(numeric.mathish, Relaxed);
@@ -54,6 +95,7 @@ pub(crate) fn set_numeric(numeric: Numeric) {
 /// The width of new floats. Until the `float` pref sets one, `Numeric::set` keeps it at the width the kinds give.
 #[inline]
 pub fn float_width() -> FloatWidth {
+    if let Some(numeric) = planned() { return numeric.width; }
     match FLOAT.load(Relaxed) { w if w == FloatWidth::F16 as u8 => FloatWidth::F16, w if w == FloatWidth::F32 as u8 => FloatWidth::F32, _ => FloatWidth::F64 }
 }
 /// Whether the `float` pref has set the width of new floats, which a change of `kinds` then leaves alone.
@@ -117,7 +159,6 @@ pub(crate) fn compiles() -> Compiles {
     match COMPILES.load(Relaxed) { 0 => Compiles::Policy, 1 => Compiles::Always, 2 => Compiles::Never, _ => Compiles::from_env() }
 }
 pub fn set_compiles(compiles: Compiles) { COMPILES.store(compiles as u8, Relaxed) }
-pub use crate::program::blocks::compiled_runs;
 
 /// Restores every setting's default, with the display defaults that `set_display_defaults` gave, and rustymath's default thread count. `]clear` does this, and the test harnesses do it before each test.
 pub fn reset() {

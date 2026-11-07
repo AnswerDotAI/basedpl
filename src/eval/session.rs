@@ -1,8 +1,17 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
-use super::*;
+use super::{
+    Argument, Binding, Bound, Closure, Evaluation, FUNCTION_CLASS, Function, FunctionNode, MAX_CALL_DEPTH, OPERATOR_CLASS, Operator, OperatorNode,
+    STACK_SEGMENT, SUBJECT_CLASS, Session, Step, Turn, binder::{Binder, Category, before}, bindings::{Frame, FrameBindings, Place}, depth_error,
+    dissect::Expression, operators::Guarded, released, room, session, undefined
+};
 use crate::syntax::Statement;
+use crate::{
+    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value, display::Elide, name::Name, primitive::{Builtin, Primitive},
+    syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}
+};
 use rustymath::{buffer::FloatWidth, error::Kind};
+use std::sync::Arc;
 
 impl Session {
     /// A turn at the process's one session, cleared to how a new session starts. It waits while another thread holds a turn.
@@ -59,11 +68,15 @@ impl Session {
     pub fn interactive() -> Turn { Self::make_interactive(); Self::new() }
     /// Makes the interactive display settings the current ones and the ones that `]clear` restores. Settings are process-wide, so this needs no session. Python's BPL magics use it on the workspace they share with the Python API.
     pub fn make_interactive() { crate::settings::set_display_defaults(crate::display::Settings::interactive()); }
-    /// `value` as this session's implicit display shows it, as text.
-    pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
+    /// `value` as this session's implicit display shows it, as text, or the error that computing its pending items gives.
+    pub fn show(&self, value: &Value) -> String {
+        if let Err(e) = self.forced(value, crate::EvalOptions::default()) { return e.to_string(); }
+        self.display_settings().array(value, false)
+    }
     /// The implicit MIME display of `value`, without publishing it. Rendering is interruptible; a renderer's side output is discarded.
     pub fn render(&self, value: &Value, interrupt: crate::InterruptHandle) -> Result<crate::MimeBundle, Error> {
         let _running = self.execution.begin(crate::EvalOptions { interrupt, echo: false, output: Some(Arc::new(|_| {})), ..crate::EvalOptions::default() });
+        value.forced()?;
         self.render_value(value, &Span::whole(Source::new("<display>", "")))
     }
     /// The display settings, with floats of the default width shown without a marker.
@@ -132,9 +145,9 @@ impl Session {
         }
     }
     /// Records a write to the binding at `place`, for each running level whose exit acts on it, or stops a batched map's run before it (`transform::Levels::record_write`).
-    pub(super) fn record_write(&self, place: Place) -> Result<(), crate::transform::Stop> { self.levels.borrow_mut().record_write(place) }
+    pub(super) fn record_write(&self, place: Place) -> Result<(), crate::error::Stop> { self.levels.borrow_mut().record_write(place) }
     /// Checks `effect` against the running levels (`transform::Levels::effect`).
-    pub(crate) fn effect(&self, effect: crate::transform::Effect) -> Result<(), crate::transform::Stop> { self.levels.borrow().effect(effect) }
+    pub(crate) fn effect(&self, effect: crate::transform::Effect) -> Result<(), crate::error::Stop> { self.levels.borrow().effect(effect) }
     /// The running trace's level and tracer, if a trace is running (`transform::Levels::tracing`).
     pub(crate) fn tracing(&self) -> Option<(u64, std::sync::Arc<crate::program::trace::Tracer>)> {
         self.levels.borrow().tracing().map(|(level, t, _)| (level, t.clone()))
@@ -181,11 +194,8 @@ impl Session {
     /// `•explain text` runs `text` in the caller's scope, as `⍎` does, computes its value, and gives a record of that value and of what happened while it ran and computed (`explain`). Computing a pending value records no `forced` row, as the speed timer's computing records none.
     pub(crate) fn system_explain(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         crate::transform::acts().at(span)?;
-        let (result, events) = crate::explain::explained(|| {
-            let result = self.execute(None, right, span).and_then(|r| r.array(span));
-            if let Ok(value) = &result { value.force(); }
-            result
-        });
+        let (result, events) =
+            crate::explain::explained(|| self.execute(None, right, span).and_then(|r| r.array(span)).and_then(|value| value.forced().map(|()| value)));
         events.report(result?, span)
     }
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
@@ -214,17 +224,16 @@ impl Session {
             Value::Function(f) => self.fastest(&f, right, span), _ => Err(Error::domain("•time needs functions on its left").at(span))
         }).collect::<Result<Vec<_>, _>>()?;
         if functions.is_atom() { return Ok(second(times[0])); }
-        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone()))
-            .described("invalid •time result").at(span)
+        Value::floats(functions.layout().clone(), FloatWidth::F64, times).described("invalid •time result").at(span)
     }
-    /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::force`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
+    /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::forced`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
-        use {crate::host::Instant, std::time::Duration};
+        use {crate::cancel::Instant, std::time::Duration};
         let start = Instant::now();
         let (mut batch, mut best) = (1u32, f64::INFINITY);
         loop {
             let begun = Instant::now();
-            for _ in 0..batch { if let Binding::Value(v) = &f.call(None, x, span)?.value { v.force(); } }
+            for _ in 0..batch { if let Binding::Value(v) = &f.call(None, x, span)?.value { v.forced()?; } }
             let taken = begun.elapsed();
             best = best.min(taken.as_secs_f64() / f64::from(batch));
             if start.elapsed() >= Duration::from_millis(100) { return Ok(best); }
@@ -265,6 +274,11 @@ impl Session {
         self.execution.flush();
         self.stacks.take();
         Evaluation { output: self.execution.take_output(), ..result }
+    }
+    /// `value`'s pending items computed, as a host computes them before it reads them: under the running evaluation's deadline and interrupt where one runs, and otherwise under `options`, as an evaluation would run. The force's interrupt, timeout or error comes back as an evaluation's would.
+    pub fn forced(&self, value: &Value, options: crate::EvalOptions) -> Result<(), Error> {
+        let _running = (!crate::cancel::running()).then(|| self.execution.begin(options));
+        value.forced()
     }
     pub fn eval_timeout(&self, code: &str, timeout: std::time::Duration) -> Evaluation {
         self.eval_with(code, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })
@@ -463,7 +477,7 @@ impl Session {
     }
     /// `f` evaluating `nodes` one level deeper, after an interrupt check, within the depth limit and on a stack that grows as needed.
     pub(super) fn nested<T>(&self, nodes: &[Node], f: impl FnOnce(&Self) -> Result<T, Error>) -> Result<T, Error> {
-        crate::execution::check().at(&nodes[0].span)?;
+        crate::cancel::check().at(&nodes[0].span)?;
         self.descend(&nodes[0].span)?;
         let result = if room() { f(self) } else { stacker::grow(STACK_SEGMENT, || f(self)) };
         self.ascend();
@@ -508,6 +522,7 @@ impl Session {
     }
 
     fn display_value(&self, value: &Value, span: &Span) -> Result<(), Error> {
+        value.forced()?;
         self.execution.emit(Output { kind: crate::OutputKind::Display, data: self.render_value(value, span)? });
         Ok(())
     }
@@ -602,10 +617,10 @@ impl Session {
                 None => return Err(undefined(name, &node.span)),
             },
             NodeKind::System(name) => return Err(undefined(name, &node.span)),
-            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self),
+            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self)?.bound(&node.span.source),
             NodeKind::Scope(root, body) => {
                 let record = self.resolve(root)?.array(&root.span)?;
-                return self.scoped(&record, &node.span, |session| session.resolve(body));
+                return self.scoped(&record, &node.span, |session| session.resolve(body)).map(Bound::given);
             }
             NodeKind::ArrayLiteral { .. } => self.bracket(node, |nodes, _, _, within| match within {
                 Within::Key => self.array_result(nodes).map(Some), _ => self.item_result(nodes)
@@ -814,7 +829,7 @@ impl Session {
             let Some((handler, catch)) = handlers.pop() else { break };
             if !catch.catches(&error.kind) { continue; }
             if let Err(stop) = self.effect(crate::transform::Effect::Catches) { result = Err(stop.into()); break; }
-            if matches!(error.kind, ErrorKind::Interrupt) { crate::execution::clear_interrupt(); }
+            if matches!(error.kind, ErrorKind::Interrupt) { crate::cancel::clear_interrupt(); }
             self.bindings.insert(self.bindings.here(Name::ERROR), Binding::Value(caught(error)));
             result = self.return_expression(handler, false, None);
         }
@@ -828,7 +843,7 @@ impl Session {
         let key = definition as *const Definition as usize;
         super::operators::guard(truths, level, |holds, rows, cells| {
             let (_, first) = session().levels.borrow_mut().case(Some(key), frame, cells.clone()).at(span)?;
-            let restricted = session().restricted(frame, first, level, truths.len(), rows, span);
+            let restricted = session().restricted(frame, first, level, truths.len(), rows);
             let result = restricted.and_then(|bindings| {
                 let saved = session().bindings.swap(bindings);
                 let step = session().run_definition(definition, if holds { (at.0, at.1 + 1) } else { (at.0 + 1, 0) }, false);
@@ -841,11 +856,11 @@ impl Session {
     }
 
     /// The bindings of each frame from `first` to `frame`, with each batched value of run `level` read at a guard case's cells, the cells at positions `rows` of the run's `cells` cells (`batch::read_cells`), for `Bindings::swap`. These frames are the calls that started during the run. A closure that a case calls reads its defining frame, which can be any of them, whether or not it lies on `frame`'s lexical chain. Frames before `first` started before the run and hold none of its batches. A batch made before the run widened has fewer cells than the run, one for each run of cells that the widening's inner frame repeats it over (`read_binding`), so the case reads it at the cells that hold its rows.
-    fn restricted(&self, frame: usize, first: usize, level: u64, cells: usize, rows: &[u32], span: &Span) -> Result<Vec<(usize, FrameBindings)>, Error> {
+    fn restricted(&self, frame: usize, first: usize, level: u64, cells: usize, rows: &[u32]) -> Result<Vec<(usize, FrameBindings)>, Error> {
         let read = |whole: &Value, axes: usize| {
             let repeats = (cells / crate::array::count(&whole.shape()[..axes])) as u32;
             let rows: std::borrow::Cow<[u32]> = if repeats == 1 { rows.into() } else { rows.iter().map(|r| r / repeats).collect() };
-            Ok((super::operators::cells_at(whole, axes, &rows, span)?, 1))
+            Ok((super::operators::cells_at(whole, axes, &rows)?, 1))
         };
         (first..=frame).map(|i| {
             let mut copy = self.bindings.frame_bindings(i);
@@ -875,11 +890,11 @@ impl Session {
         let Some((level, frame)) = levels.widened() else { return Ok(binding) };
         crate::batch::widened(value, level, frame).map(Binding::Value)
     }
-    /// What the binding at `place` holds now, as a program's replay reads a free name again (`program::Found`). `None` where nothing is bound there.
-    pub(crate) fn captured(&self, place: Place) -> Option<crate::program::Found> {
+    /// What the binding at `place` holds now, as a program's replay reads a free name again (`program::trace::Found`). `None` where nothing is bound there.
+    pub(crate) fn captured(&self, place: Place) -> Option<crate::program::trace::Found> {
         Some(match self.bindings.get(place)? {
-            Binding::Value(Value::Function(f)) | Binding::Function(f) => crate::program::Found::Function(f),
-            Binding::Value(v) => crate::program::Found::Value(v), _ => crate::program::Found::Other
+            Binding::Value(Value::Function(f)) | Binding::Function(f) => crate::program::trace::Found::Function(f),
+            Binding::Value(v) => crate::program::trace::Found::Value(v), _ => crate::program::trace::Found::Other
         })
     }
 }

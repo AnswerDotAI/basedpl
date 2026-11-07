@@ -173,7 +173,7 @@ fn shaped_array(fields: Vec<(String, Js)>, width: FloatWidth) -> Result<Value, E
     }
     let Some(Js::List(shape)) = shape else { return Err(Kind::Domain.into()) };
     let shape = shape.into_iter().map(|n| match n {
-        Js::Number(n) if n >= 0. && n.fract() == 0. => Ok(n as usize), _ => Err(Kind::Domain)
+        Js::Number(n) if let Some(n) = crate::number::real::whole(n).filter(|&n| n >= 0.) => Ok(n as usize), _ => Err(Kind::Domain)
     }).collect::<Result<Vec<_>, _>>()?;
     let value = match data.expect("is_array checked for data") {
         Js::Typed(t) => typed(shape, t)?,
