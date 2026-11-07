@@ -2,10 +2,18 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file, SpeedCosts
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_cost_records_keep_values_without_optional_reports():
+    row = dict(section='copies', label='v', cost=1.234567, seconds=1.234567e-9)
+    costs = SpeedCosts.from_records([row, dict(row, budget=2)])
+    assert costs[0][:4] == ('copies', 'v', 1.234567, None) and costs[0][4] == pytest.approx(1.234567)
+    assert costs[1][3] == 2 and costs.holds == {} and costs.footprints == {}
+
 
 
 def test_records_and_boundaries():

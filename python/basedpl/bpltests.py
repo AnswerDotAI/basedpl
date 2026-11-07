@@ -944,6 +944,17 @@ class SpeedCosts(list):
     def __init__(self, rows=(), cpu=None, platform=None, copies=(), footprints=None, holds=None):
         super().__init__(rows)
         self.cpu, self.platform, self.copies, self.footprints, self.holds = cpu, platform, list(copies), dict(footprints or {}), dict(holds or {})
+    @classmethod
+    def from_records(cls, records, platform=None):
+        "Read measured values; descriptive budget, hold and footprint fields are optional."
+        records = list(records)
+        copy_log = '\n'.join(dict.fromkeys(c['copy'] for c in records if c.get('copy'))) + '\n'
+        copies = logged_costs(copy_log, platform=platform)
+        footprints = {(c['section'], c['label']): (f['bytes'], f['seconds']*1e9) for c in records if (f := c.get('footprint'))}
+        holds = {(c['section'], c['label']): (c['hold'], c['rule'], c['stale']) for c in records if c.get('hold')}
+        values = ((c['section'], c['label'], c['cost'], c.get('budget'), c['seconds']*1e9) for c in records)
+        return cls(values, cpu=copies.cpu, platform=platform, copies=copies.copies, footprints=footprints, holds=holds)
+
     def __repr__(self):
         fp = {k: f' {b/2**20:8.1f} MiB {ns:6.3f} ns' for k, (b, ns) in self.footprints.items()}
         pad = ' ' * max(map(len, fp.values()), default=0)
@@ -995,10 +1006,7 @@ def speed_costs(
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
-    footprints = {(c['section'], c['label']): (f['bytes'], f['seconds']*1e9) for c in rows if (f := c.get('footprint'))}
-    holds = {(c['section'], c['label']): (c['hold'], c['rule'], c['stale']) for c in rows if c['hold']}
-    rows = ((c['section'], c['label'], c['cost'], c['budget'], c['seconds']*1e9) for c in rows)
-    return SpeedCosts(rows, platform=None if wasm else _platform(), footprints=footprints, holds=holds)
+    return SpeedCosts.from_records(rows, platform=None if wasm else _platform())
 
 
 _LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+|-)(?: (?P<hold>held|busy) from (?P<rule>[\d.]+))?(?:, (?P<ns>[\d.]+) ns(?:, footprint (?P<mib>[\d.]+) MiB copied at (?P<copy>[\d.]+) ns)?)?(?P<stale>: stale)?$')
