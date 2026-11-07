@@ -113,15 +113,26 @@ impl<'a> Group<'a> {
 
 fn failure(code: &str, failed: Evaluation) -> String { format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default()) }
 
+/// Select execution without discarding the catalogue's section preferences.
+#[derive(Clone, Copy)]
+pub enum Selection<'a> { Codes(&'a [&'a str]), Rows(&'a [JsonValue]) }
+
+impl Selection<'_> {
+    pub fn matches(self, file: &File, case: &JsonValue) -> bool {
+        match self {
+            Self::Codes(codes) => {
+                codes.iter().any(|&s| s == case["code"].as_str().unwrap() || s == case["id"].as_str().unwrap_or_default() || s == label(file, case))
+            }
+            Self::Rows(rows) => rows.iter().any(|r| r[0] == file.name && r[1] == case["section"] && r[2] == case["code"]),
+        }
+    }
+}
+
 fn each_case<'a>(
-    files: &'a [File], only: Option<&[&str]>, start: &str, small: bool, mut visit: impl FnMut(&mut Group<'a>, &'a File, &'a JsonValue) -> Result<(), String>
-) -> Result<(), String> {
+    files: &'a [File], only: Option<Selection<'_>>, start: &str, small: bool,
+    mut visit: impl FnMut(&mut Group<'a>, &'a File, &'a JsonValue) -> Result<(), String>) -> Result<(), String> {
     for file in files {
-        let wanted = |case: &&JsonValue| {
-            case["budgets"].is_array() && only.is_none_or(|only| {
-                only.iter().any(|&s| s == case["code"].as_str().unwrap() || s == case["id"].as_str().unwrap_or_default() || s == label(file, case))
-            })
-        };
+        let wanted = |case: &&JsonValue| case["budgets"].is_array() && only.is_none_or(|only| only.matches(file, case));
         let mut cases = file.cases.iter().filter(wanted).peekable();
         let Some(first) = cases.peek() else { continue; };
         let mut group = Group::new(file, start, first["section"].as_str().unwrap(), small)?;
@@ -131,7 +142,7 @@ fn each_case<'a>(
 }
 
 /// Time selected records in copies, or as widths/exact ratios. Check optional expectations once, outside timing.
-pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &InterruptHandle) -> Result<Vec<Case>, String> {
+pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, interrupt: &InterruptHandle) -> Result<Vec<Case>, String> {
     let _lock = timing_lock()?;
     let mut result = Vec::new();
     each_case(files, only, prefs, false, |group, file, case| {
@@ -250,7 +261,7 @@ pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Js
 /// Capture every timed case at its fixture's small size under Sizes::SMALL. A case whose capture fails, as one that runs past `reference::TIMEOUT` does, gives its label and message among the failures, and the cases after it are still captured.
 pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<(Vec<Capture>, Vec<String>), String> {
     let (mut result, mut failed) = (Vec::new(), Vec::new());
-    each_case(files, only, "", true, |group, file, case| {
+    each_case(files, only.map(Selection::Codes), "", true, |group, file, case| {
         let session = group.session(case["section"].as_str().unwrap())?;
         match route(session, case, interrupt) {
             Ok(route) => result.push(Capture { file: file.name.clone(), label: label(file, case), ..route }),
@@ -263,12 +274,12 @@ pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle
 
 /// Times the cases in `files`, retimes each one over its native budget after each pause in `RETRY_PAUSES`, and gives the lines of those still over it. `print` gets the copy lines and every cost where `all` is set, each retry's lines, then each case still over its budget, marked `over`, and last each case whose gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides from its first cost, marked `stale`.
 #[cfg(not(web))]
-pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Result<Vec<String>, String> {
+pub fn measured(files: &[File], only: Option<Selection<'_>>, all: bool, mut print: impl FnMut(&str)) -> Result<Vec<String>, String> {
     use rustymath::timing::retried;
     let line = |c: &Case| c.line(NATIVE_COLUMN);
     let over = |c: &Case| c.budget(NATIVE_COLUMN).is_some_and(|b| b.over(c.cost));
     let interrupt = InterruptHandle::default();
-    let mut first = costs(files, None, "", &interrupt)?;
+    let mut first = costs(files, only, "", &interrupt)?;
     for c in &first { for obligation in &c.obligations { print(&format!("{}: route obligation: {obligation}", c.label)); } }
     if all {
         let mut copies: Vec<String> = Vec::new();
@@ -285,16 +296,9 @@ pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Resul
     let mut failed = Ok(());
     let over_budget = retried(first, |cases, pause| {
         for c in &cases { print(&format!("{}: over, timed again after {pause} s", line(c))); }
-        let codes: Vec<&str> = cases.iter().map(|c| c.label.as_str()).collect();
-        match costs(files, Some(&codes), "", &interrupt) {
-            Ok(mut retimed) => {
-                retimed.retain(|c| {
-                    cases.iter().any(|f| (f.file.as_str(), f.section.as_str(), f.code.as_str()) == (c.file.as_str(), c.section.as_str(), c.code.as_str()))
-                });
-                for c in &retimed { print(&line(c)); }
-                retimed.into_iter().filter(over).collect()
-            }
-            Err(e) => { failed = Err(e); Vec::new() }
+        let rows: Vec<JsonValue> = cases.iter().map(|c| json!([c.file, c.section, c.code])).collect();
+        match costs(files, Some(Selection::Rows(&rows)), "", &interrupt) {
+            Ok(retimed) => { for c in &retimed { print(&line(c)); } retimed.into_iter().filter(over).collect() } Err(e) => { failed = Err(e); Vec::new() }
         }
     });
     failed?;
@@ -347,5 +351,7 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
         Some(cases) => Some(cases.as_array().and_then(|c| c.iter().map(JsonValue::as_str).collect()).ok_or("costs needs cases as a list of strings")?),
     };
     let files = reference::sources(&spec["files"])?;
-    Ok(json!({"costs":rows(&costs(&files, only.as_deref(), spec["prefs"].as_str().unwrap_or_default(), interrupt)?, NATIVE_COLUMN), "error":null}))
+    Ok(
+        json!({"costs":rows(&costs(&files, only.as_deref().map(Selection::Codes), spec["prefs"].as_str().unwrap_or_default(), interrupt)?, NATIVE_COLUMN), "error":null}),
+    )
 }

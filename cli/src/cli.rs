@@ -113,7 +113,9 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
 fn costs(path: &str, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
     let mut written = Ok(());
     let measured = basedpl::reference::load(std::path::Path::new(path)).and_then(|files| {
-        basedpl::timing::measured(&files, true, |line| { if written.is_ok() { written = writeln!(out, "{line}"); } })
+        basedpl::timing::measured(&files, None, true, |line| {
+            if written.is_ok() { written = writeln!(out, "{line}"); }
+        })
     });
     written?;
     match measured { Ok(_) => Ok(0), Err(e) => writeln!(err, "{e}").map(|_| 1) }
