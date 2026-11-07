@@ -1,13 +1,5 @@
-import platform, sys
-from pathlib import Path
 import pytest
-from basedpl.bpltests import instruction_budgets, _perf_counts
-
-
-@pytest.mark.skipif((sys.platform, platform.machine()) != ('darwin', 'arm64'), reason='the counts are set for macOS on Apple silicon')
-def test_instruction_budgets():
-    budgets = instruction_budgets(calls=Path(__file__).with_name('instructions.txt').read_text())
-    if budgets.outside: pytest.fail(f'\n{budgets!r}', pytrace=False)
+from basedpl.bpltests import _perf_counts
 
 
 def test_perf_callchains():

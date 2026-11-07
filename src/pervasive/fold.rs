@@ -23,7 +23,7 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     let ((out, order), _) = with_reads(&args, missing, |reads, types| {
         computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
             let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), 0);
-            kernel.fold_read(right.shape(), axis, Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|order| (out, order))
+            kernel.fold_read(right.shape(), Some(axis), Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|order| (out, order))
         })
     })?.ok().flatten()?;
     // A copy lays out folds left in their source's order, pending where it's large, so that a later fold of windows can slide over them.

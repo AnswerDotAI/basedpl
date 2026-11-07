@@ -230,6 +230,7 @@ impl Back<'_> {
 
     /// Adds `u` at the walk `base`, `steps` of the node that `read` reads. A broadcast's cotangent sums along the axes it repeats over (step 0) first, and only the remaining axes write back. A repeated axis reads one offset of its source, its start, which joins the base.
     fn add_walked(&mut self, read: &Read, base: usize, steps: &[Steps], u: Value) -> Result<(), Error> {
+        if !self.live(read.of) { return Ok(()); }
         let starts: Vec<(usize, usize)> = steps.iter().enumerate().filter_map(|(a, s)| match *s {
             Steps::Stride { start, len, step: 0 } if len > 1 => Some((a, start)), _ => None
         }).collect();
@@ -237,6 +238,16 @@ impl Back<'_> {
         let base = base + starts.iter().map(|&(_, start)| start).sum::<usize>();
         let u = if repeated.is_empty() { u } else { crate::eval::folded_along(PLUS, FoldKind::REDUCE, &repeated, &u, self.span)? };
         let kept: Vec<Steps> = steps.iter().enumerate().filter(|(a, _)| !repeated.contains(a)).map(|(_, s)| s.clone()).collect();
+        let tables = Steps::with_base(base, kept.clone());
+        if let Some((order, terms)) =
+            rustymath::structure::Walk::new(&tables, u.shape(), read.layout.shape()).and_then(|w| w.transpose_windows(read.layout.shape())) {
+                let u = crate::primitive::reorder(&u, &order)?;
+                let mut reads =
+                    terms.into_iter().map(|map| crate::fusion::copied(&u, read.layout.clone(), &map, None).described("a cotangent reads overlapping windows back"));
+                let first = reads.next().expect("nonempty windows have a transpose")?;
+                let sum = reads.try_fold(first, |sum, read| PLUS.call(Some(&sum), &read?, self.span))?;
+                return self.add(read, sum);
+            }
         self.add_at(read, Places::Walk { base, steps: &kept }, &u)
     }
 
