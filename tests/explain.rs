@@ -1,5 +1,5 @@
 //! `•explain` and `•memory`, which report what a run did, what the thread that runs a session holds, and what a value keeps alive.
-use basedpl::{InterruptHandle, Session, settings::{Sizes, set_sizes}, timing};
+use basedpl::{Session, settings::{Sizes, set_sizes}};
 
 /// Whether `code` gives the value that `expected` gives, both run in `session`. An evaluation error fails.
 fn gives(session: &Session, code: &str, expected: &str) -> bool {
@@ -19,63 +19,21 @@ fn report(wrong: &mut Vec<String>, session: &Session, code: &str, expected: &str
     if !gives(session, code, expected) { wrong.push(format!("{code} didn't give {expected}")); }
 }
 
-/// Every speed case in `speed/*.bpl`, every idiom case below and every reference case with a route directive takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case takes each route that its `⍝⍝⍝ route` lines require, and records no slow-path event (`explain::Events::slow`) beyond the events that its directives name (`timing::Named`): `⍝⍝⍝ allows` lines, each with the principle that allows its event, and `⍝⍝⍝ gap` lines, each with what a faster route should do instead. A stopped trace needs a `gap` line. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears is reported too, so the lines stay true and a fixed gap's line goes. The test also reports each route and kind of event in rustymath's inventory (`events::Route`) that no case exercises. It prints the gaps it tolerates and the case that exercised each event, which `cargo test -- --nocapture` shows. Route contracts and the route counts that `explain_and_memory` reads are release-2 obligations, which the test prints. It fails where one of its own evaluations errs or a property that holds on every route breaks, such as a leaked pending array (`check`), and where a case fails to run, as one past its time limit does, though only after every other case has run and the test has printed what they report. Speed cases use their small fixture dimensions and Sizes::SMALL on one thread; the speed suite captures their full-size warm-ups through the same verdict. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because a capture records what every thread in its process does, so no other test may evaluate beside it.
+/// The counts in `•explain`'s and `•memory`'s reports: accumulations and their paths, fused groups' runs and copies, stored and pending arrays, and the bytes a value keeps alive. A count that differs from what the test expects is a release-2 obligation, which the test prints and which fails no run (`report`). An evaluation error, or a broken property that holds on every route, such as a leaked pending array, fails it (`check`). `reference_cases` checks routes (`reference::route_check`).
 #[test]
-fn speed_cases_take_their_routes() {
-    let _lock = rustymath::timing::shared().unwrap();
+fn reports_count_what_runs_did() {
     rustymath::parallel::set_threads(1);
-    let (mut routes, reported) = explain_and_memory();
-    // A case that fails to run, as one past its time limit does, joins `failed`. The cases after it still run, and the test fails only after it prints what every other case reported.
-    let mut failed = Vec::new();
-    let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
-    match timing::routes(&files, None, &InterruptHandle::default()) {
-        Ok((captured, errors)) => { routes.extend(captured); failed.extend(errors) } Err(message) => failed.push(message)
-    }
-    for file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
-        for case in file.cases.iter().filter(|case| basedpl::reference::routed(case)) {
-            match basedpl::reference::route(case, &file.setup, &InterruptHandle::default()) {
-                Ok(route) => routes.push(timing::Capture { file: file.name.clone(), label: format!("{}:{}", file.name, route.label), ..route }),
-                Err(error) => failed.push(format!("{}:{}: {}", file.name, case["id"].as_str().unwrap_or_default(), error["message"])),
-            }
-        }
-    }
-    let (mut wrong, mut gaps) = (reported, Vec::new());
-    for r in &routes {
-        let case = format!("[{}] {}", r.section, r.label);
-        wrong.extend(r.violations().into_iter().map(|message| format!("{case}: {message}")));
-        gaps.extend(r.named.gaps.iter().map(|(record, event)| format!("{case}: {record} \"{event}\"")));
-    }
-    use rustymath::events::Route;
-    for &route in Route::ALL {
-        for (kind, required) in [("taken", route.reports_taken()), ("declined", route.reports_decline()), ("itemwise", route.reports_itemwise())] {
-            if !required { continue; }
-            let hot = routes.iter().find(|r| r.run.exercised(kind, route)).map(|r| (r, "hot"));
-            match hot.or_else(|| routes.iter().find(|r| r.warmup.exercised(kind, route)).map(|r| (r, "warmup-only"))) {
-                Some((r, when)) => println!("observed {kind} {} [{}] {} ({when})", route.name(), r.section, r.label),
-                None => wrong.push(format!("no case exercises {kind} {}", route.name())),
-            }
-        }
-    }
-    println!("gaps that route cases tolerate: {gaps:#?}");
-    if !wrong.is_empty() { println!("route and report contracts, release-2 obligations that fail no run: {wrong:#?}"); }
-    assert!(failed.is_empty(), "cases that failed to run: {failed:#?}");
-}
-
-/// The checks of `•explain`'s and `•memory`'s reports, with the route captures they make, and each route count that differs from what it expects (`report`).
-fn explain_and_memory() -> (Vec<timing::Capture>, Vec<String>) {
-    let (mut routes, mut wrong) = (Vec::new(), Vec::new());
+    let mut wrong = Vec::new();
     assert!(std::mem::size_of::<basedpl::Number>() <= 32);
     let session = Session::new();
     check(&session, "v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ m←[2 1 0⋄1 3 1⋄0 1 4]ₓ ⋄ $t", "$t");
-    // Each documented spelling takes its fast combination once. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn.
+    // Each documented spelling takes its fast combination. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn, and that each combination's route is taken.
     for (spelling, combination) in [
         ("(10↑)∘⍋ v", "partial grade"), ("¯10↑< v", "partial sort"), ("↑> v", "partial sort"), ("(3⌷)∘⍒ v", "partial grade"),
         ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("(≢⊢)⌸ k", "group counts"), ("k((+/⊢)⌸)v", "group folds"),
         ("k((⌈⌿⊢)⌸)v", "group folds"), ("k((⌊/⊢)⌸)b", "group folds"), ("k((+/⊢)⌸)k", "group folds"), ("-.× m", "determinant"),
         ("+.× m", "permanent"),
-    ] {
-        routes.push(timing::route(&session, &serde_json::json!({"code":spelling, "route":[combination]}), &InterruptHandle::default()).unwrap());
-    }
+    ] { report(&mut wrong, &session, &format!(r#"(⊂"{combination}")∊(•explain "{spelling}").routes.route"#), "$t"); }
     // Gradients through reversal, transpose, windows, a sum of windows, a broadcast, a maximum along an axis and windows that move by 2 make no accumulation. A selection that repeats positions makes one.
     for (code, scatters) in [
         ("{+/v×⌽⍵}∂ v", 0), ("{+/,(10 10⍴v)×⍉10 10⍴⍵}∂ 100↑v", 0), ("{+/,(998 3⍴v)×3↕⍵}∂ v", 0), ("{+/+/3↕⍵}∂ v", 0),
@@ -98,15 +56,6 @@ fn explain_and_memory() -> (Vec<timing::Capture>, Vec<String>) {
     report(&mut wrong, &session, r#"sv←¿4194304⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[0]ₓ");
     report(&mut wrong, &session, r#"x←¿1000⍴0 ⋄ e←•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q" ⋄ (0=≢e.stored.reason)∧e.fused.glyphs≡["--×"]"#, "$t");
     set_sizes(Sizes::DEFAULT);
-    // A faster route that code considers and doesn't take is a decline, with its reason: a fused fold of a copy that no call moves under, and an idiom whose arguments don't suit it.
-    for (code, route, reason) in [
-        ("+/⌽sv", "fused fold", "a copy that no call moves under"), ("(10↑)∘⍋ 30 4⍴⍳120", "partial grade", "arguments that don't suit it"),
-        ("↑< [3 4⋄1 2]", "partial sort", "arguments that don't suit it"), (r#"⍋⍋ ["a":30 "b":10 "c":20]"#, "ranks", "arguments that don't suit it"),
-    ] {
-        routes.push(
-            timing::route(&session, &serde_json::json!({"code":code, "allows":[["declined",format!("{route}: {reason}")]]}), &InterruptHandle::default())
-                .unwrap());
-    }
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let held = Session::new();
     set_sizes(Sizes { min_items: 1, ..Sizes::DEFAULT });
@@ -120,5 +69,5 @@ fn explain_and_memory() -> (Vec<timing::Capture>, Vec<String>) {
     report(&mut wrong, &held, "v←⍳1000 ⋄ r←2 500⍴v ⋄ (•storage r).view∧(•memory r).bytes=(•memory v).bytes", "$t");
     report(&mut wrong, &held, "((•memory [r v]).bytes<2×(•memory v).bytes)∧(•memory ⌽w).bytes=(•memory w).bytes", "$t");
     check(&held, "b←0 ⋄ g←{b+←(•memory ⍵).bytes ⋄ +/⍵×⍵}∂ 1 2 3 ⋄ b>0", "$t");
-    (routes, wrong)
+    if !wrong.is_empty() { println!("report counts, release-2 obligations that fail no run: {wrong:#?}"); }
 }

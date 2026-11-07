@@ -60,12 +60,12 @@ impl serde::Serialize for Line {
 fn reply(session: &Session, request: &Value, interrupt: InterruptHandle) -> Result<Reply, String> {
     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
-    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, &options.interrupt))); }
-    if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("steps") { return basedpl::timing::steps_request(spec, &options.interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("costs") { return basedpl::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, &options.interrupt, options.timeout).map(Reply::Json); }
-    if let Some(spec) = request.get("route") { return basedpl::timing::route_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl_testkit::reference::check(case, &options.interrupt))); }
+    if let Some(spec) = request.get("timing") { return basedpl_testkit::timing::request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("steps") { return basedpl_testkit::timing::steps_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("costs") { return basedpl_testkit::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("reference") { return basedpl_testkit::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("page") { return basedpl_testkit::reference::page_request(spec, &options.interrupt, options.timeout).map(Reply::Json); }
+    if let Some(spec) = request.get("route") { return basedpl_testkit::timing::route_request(spec, &options.interrupt).map(Reply::Json); }
     basedpl::protocol::request(session, request, options).map(|e| Reply::Response(basedpl::protocol::Response(e)))
 }

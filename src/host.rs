@@ -3,13 +3,6 @@ use crate::cancel::check;
 use crate::{Error, array::generated_len, data::{Request, Response}, regex::Match};
 use std::{io, path::{Path, PathBuf}, time::Duration};
 
-/// Takes the machine's timing lock exclusively, as `rustymath::timing::exclusive` describes, then writes `started` to stderr. A worker's caller counts a timing's deadline from that note (`basedpl.worker`).
-pub(crate) fn timing_lock() -> Result<rustymath::timing::Hold, String> {
-    let hold = rustymath::timing::exclusive().map_err(|e| e.to_string())?;
-    eprintln!("started");
-    Ok(hold)
-}
-
 pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> { std::fs::read(path) }
 /// The name that identifies the file at `path`, for `•load`'s cycle check.
 pub(crate) fn canonical(path: &Path) -> PathBuf { std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned()) }

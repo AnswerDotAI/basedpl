@@ -21,6 +21,7 @@ async-trait = ">=0.1, <1"
 ctrlc.workspace = true
 kernmini.workspace = true
 rustyline.workspace = true
+basedpl-testkit = { path = "../testkit" }
 rustymath.workspace = true
 serde = ">=1.0.229, <2"
 serde_json = "1"

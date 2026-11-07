@@ -183,12 +183,14 @@ impl Traced {
         let (level, role) = (self.level, self.role);
         let fail = |reason| failed(role, level, &self.tracer, reason);
         let args = inputs.iter().map(|v| Arg::of(v, level, role)).collect::<Result<Vec<_>, _>>().map_err(fail)?;
-        let parameters = params.iter().map(|v| Arg::of(v, level, role)).collect::<Result<Vec<_>, _>>().map_err(fail)?;
         let fill = fill.map(|v| Arg::of(v, level, role)).transpose().map_err(fail)?;
-        let values = params.iter().map(|v| match v.carrier_at(level).and_then(Carrier::traced) {
+        let values = params.iter().map(|v| crate::transform::walk(v, &mut |v| match v.carrier().and_then(Carrier::traced) {
             Some(t) => Ok(match t.count() { Some(count) => count, None => t.observed("a structural parameter that the program computes")? }.clone()),
             None => Ok(v.clone()),
-        }).collect::<Result<Vec<_>, Error>>()?;
+        })).collect::<Result<Vec<_>, Error>>()?;
+        let parameters = params.iter().zip(&values).map(|(v, known)| {
+            Arg::of(if crate::transform::nested(v) { known } else { v }, level, role)
+        }).collect::<Result<Vec<_>, _>>().map_err(fail)?;
         let layout = {
             let layouts: Vec<&Layout> = args.iter().map(|a| &a.desc().layout).collect();
             crate::primitive::structural::plan(form, &values, &layouts)?.0

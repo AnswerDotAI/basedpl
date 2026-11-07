@@ -25,7 +25,9 @@ num-bigint = ">=0.4.6, <0.5"
 num-complex = ">=0.4.6, <1"
 pyo3 = { workspace = true, features = ["extension-module", "num-bigint"] }
 rustymath-buffer.workspace = true
+basedpl-testkit = { path = "../testkit" }
 rustymath.workspace = true
+rustymath-timing.workspace = true
 serde_json = "1"
 
 [build-dependencies]

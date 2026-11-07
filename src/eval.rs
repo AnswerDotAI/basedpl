@@ -1047,7 +1047,7 @@ pub struct Evaluation {
 }
 impl Evaluation {
     pub fn output_text(&self) -> Vec<&str> { self.output.iter().map(Output::text).collect() }
-    pub(crate) fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
+    pub fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
 }
 
 pub struct Session {

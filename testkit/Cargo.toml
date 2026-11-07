@@ -1,0 +1,19 @@
+[package]
+name = "basedpl-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "BPL's reference checks and speed measurements, for its tests, `bpl --worker`'s test requests and the browser's speed test."
+publish = false
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+basedpl = { path = "..", default-features = false }
+rustymath.workspace = true
+rustymath-timing.workspace = true
+serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
+tempfile = "3"

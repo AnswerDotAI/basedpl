@@ -2606,6 +2606,7 @@ y.[[1 $n]]+←5
 y   ⍝ 10 25 30 40
 
 ⍝ — A modifier that reassigns or erases its target doesn't change the update
+⍝⍝⍝ allows itemwise "accumulation": a modifier with side effects runs once for each target
 x←1 2 3
 x₀{x,←5 ⋄ ⍺+⍵}←10
 y←1 2 3
@@ -5566,6 +5567,33 @@ $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
 ⍝ ranks-route — A grade of a grade runs as ranks
 ⍝⍝⍝ route ranks
 ⍋⍋5 3 9 1   ⍝ [2 1 3 0]ₓ
+
+⍝ sorted-prefix-route — A prefix of a sort runs as a partial sort
+⍝⍝⍝ route partial sort
+3↑<⍳¯1000   ⍝ 0 1 2
+
+⍝ key-count-route — Counts under Key run as group counts
+⍝⍝⍝ route group counts
+(≢⊢)⌸ 2 0 2 1 2   ⍝ [3 1 1]ₓ
+
+⍝ key-fold-route — A fold under Key runs as group folds
+⍝⍝⍝ route group folds
+2 0 2 1 2 (+/⊢)⌸ 1 2 3 4 5   ⍝ 9 2 4
+
+⍝ expansion-routes — The determinant and permanent of a square matrix run as their own routes
+⍝⍝⍝ route determinant
+⍝⍝⍝ route permanent
+[-.×[2 1⋄1 3] ; +.×[2 1⋄1 3]]   ⍝ 5 7
+
+⍝ unsuited-routes — Partial grades and sorts decline a matrix, and ranks decline a keyed vector
+⍝⍝⍝ allows declined "partial grade: arguments that don't suit it": a matrix's rows go through the general grade
+⍝⍝⍝ allows declined "partial sort: arguments that don't suit it": a matrix's rows go through the general sort
+⍝⍝⍝ allows declined "ranks: arguments that don't suit it": a keyed vector goes through the general grades
+[(10↑)∘⍋ 30 4⍴⍳120 ; ↑<[3 4⋄1 2] ; ⍋⍋["a":30 "b":10 "c":20]]   ⍝ [[0 1 2 3 4 5 6 7 8 9]ₓ ; 1 2 ; [2 0 1]ₓ]
+
+⍝ copied-fold-decline — A fold of a reversal that no call moves under declines the fused fold
+⍝⍝⍝ allows declined "fused fold: a copy that no call moves under": a mapped fold reads the reversal in place
++/⌽⍳100000   ⍝ 4999950000
 
 ⍝ — Numbers precede characters; complex numbers sort by real then imaginary part
 ⍋1j2 1 1j¯2 'a' 0   ⍝ [4 2 1 0 3]ₓ

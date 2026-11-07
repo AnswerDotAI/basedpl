@@ -112,8 +112,8 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
 /// Times a BPL speed file or directory, reporting budgets without failing on them.
 fn costs(path: &str, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
     let mut written = Ok(());
-    let measured = basedpl::reference::load(std::path::Path::new(path)).and_then(|files| {
-        basedpl::timing::measured(&files, None, true, |line| {
+    let measured = basedpl_testkit::reference::load(std::path::Path::new(path)).and_then(|files| {
+        basedpl_testkit::timing::measured(&files, None, true, |line| {
             if written.is_ok() { written = writeln!(out, "{line}"); }
         })
     });

@@ -90,7 +90,7 @@ static COMPILED_RUNS: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomic
 
 /// How many compiled kernel calls have run so far.
 #[cfg(not(web))]
-pub(crate) fn compiled_runs() -> usize { COMPILED_RUNS.load(Relaxed) }
+pub fn compiled_runs() -> usize { COMPILED_RUNS.load(Relaxed) }
 /// How many compiled kernel calls have run so far. The browser build compiles nothing.
 #[cfg(web)]
 pub fn compiled_runs() -> usize { 0 }
@@ -901,12 +901,12 @@ impl Blocks {
     fn step_at<A: Item>(
         &self, step: &BlockStep, got: &[Got<'_>], bufs: &[Buffer], constants: &[Option<Got<'_>>; 3], scratch: &mut Scratch, n: usize, dest: Dest<'_, '_, '_>
     ) -> bool {
-        let (plans, buffers) = A::scratch(scratch);
+        let buffers = A::scratch(scratch);
         let [b0, b1, b2] = buffers.each_mut();
         let read = |k: usize, buf| step.operands[k].map(|o| self.arg::<A>(o, constants[k], got, bufs, n, buf, step.tolerance));
         let (x, y, m) = (read(0, b0), read(1, b1).expect("every step reads its last operand"), read(2, b2));
         if let (Op::Map(plan), Some(kernel)) = (&step.op, &step.kernel) {
-            return mapped(kernel, x, y, n, plan.numeric.settings_for(plan.computes().expect("a step with a kernel has its computing kind")), plans, dest);
+            return mapped(kernel, x, y, n, plan.numeric.settings_for(plan.computes().expect("a step with a kernel has its computing kind")), dest);
         }
         match dest {
             Dest::Buffer(Buffer::Booleans(v)) => Slots::append(v, n, |s| wrote(&step.op, x, y, m, n, Out::Bools(s))),
@@ -937,25 +937,14 @@ fn wrote<A: Item>(op: &Op, x: Option<Arg<'_, A>>, y: Arg<'_, A>, m: Option<Arg<'
 }
 
 /// Runs `kernel` on its arguments' `n` items into `dest`: a buffer it appends them to, or the stage's last slots. The arguments are the last of `x` and `y` that the kernel takes, as a code-picked `○` takes `y` alone. Each reads its run in place, or its one item for every position. The kernel casts its results to `dest`'s type, so a comparison writes 1 and 0 where `dest` holds numbers. Gives false where the kernel fails.
-fn mapped<A: Item>(
-    kernel: &Kernel, x: Option<Arg<'_, A>>, y: Arg<'_, A>, n: usize, settings: Settings, scratch: &mut MapScratch, mut dest: Dest<'_, '_, '_>) -> bool {
-    use rustymath::agreement::{Binding, Read};
+fn mapped<A: Item>(kernel: &Kernel, x: Option<Arg<'_, A>>, y: Arg<'_, A>, n: usize, settings: Settings, dest: Dest<'_, '_, '_>) -> bool {
+    use rustymath::operation::MapOutput;
     if kernel.arity() > 1 + usize::from(x.is_some()) { return false; }
     let args = [x.unwrap_or(y), y];
-    let binding = |k: usize| {
-        Binding::full(match &args[k] { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) })
-    };
-    let sources = [binding(0), binding(1)];
-    let (plans, output) = scratch.at(n);
-    let reads: [_; 2] = std::array::from_fn(|k| Read { sources: &sources, plan: &plans[k + 2 * usize::from(matches!(args[k], Arg::One(_)))] });
-    let reads = &reads[2 - kernel.arity()..];
-    if let Dest::Buffer(buffer) = &mut dest && buffer.is_empty() { return kernel.map(&reads, 0..n, settings, buffer).is_ok(); }
-    let dtype = match &dest { Dest::Buffer(buffer) => buffer.dtype(), Dest::Last(last) => last.dtype() };
-    let out = output.get_or_insert_with(|| Buffer::with_capacity(dtype, n));
-    if out.dtype() != dtype { *out = Buffer::with_capacity(dtype, n); }
-    if kernel.map(&reads, 0..n, settings, out).is_err() { return false; }
-    match dest { Dest::Buffer(buffer) => { buffer.extend_from(out.view(), 0..n); } Dest::Last(last) => last.copy(out, n) }
-    true
+    let view = |k: usize| match &args[k] { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) };
+    let inputs = [view(0), view(1)];
+    let output = match dest { Dest::Buffer(buffer) => MapOutput::Buffer(buffer), Dest::Last(last) => last.output() };
+    kernel.map_ready(&inputs[2 - kernel.arity()..], n, settings, output).is_ok()
 }
 
 /// The buffer that each step writes for a run, by liveness, the type of each buffer, and the number of buffers that the steps would take if every buffer had one type, which sizes the blocks. A step's buffer holds a later step's items, of the same type, once every step that reads it has run. The last step writes straight into its value, or into the block that the fold reads, and has none. A line of steps therefore takes two buffers.

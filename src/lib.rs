@@ -38,8 +38,6 @@ mod polynomial;
 mod primitive;
 mod program;
 pub mod protocol;
-#[doc(hidden)]
-pub mod reference;
 mod regex;
 mod search;
 mod selection;
@@ -47,10 +45,20 @@ pub mod settings;
 pub mod symbols;
 mod syntax;
 pub mod system;
-#[doc(hidden)]
-pub mod timing;
 mod transform;
 mod xml;
+
+/// What `basedpl-testkit`'s reference checks and speed measurements take from the interpreter's internals. Not part of BPL's API.
+#[doc(hidden)]
+pub mod hooks {
+    pub use crate::explain::{Events, explained};
+    pub use crate::number::Numeric;
+    pub use crate::program::{blocks::compiled_runs, forget_plans};
+    /// Seeds `session`'s random generator with `seed`, as each reference case's fresh session starts.
+    pub fn seed_generator(session: &crate::Session, seed: u64) {
+        *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(seed);
+    }
+}
 
 pub use array::{Layout, Prototype, Shape, Value};
 pub use cancel::{InterruptHandle, Poll};

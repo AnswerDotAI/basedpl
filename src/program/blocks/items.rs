@@ -1,7 +1,6 @@
 //! The typed items of a stage's runs: what a run reads (`Got`), where a step writes (`Dest`, `Last`, `Out`), and the types a stage computes at (`Item`).
 
 use super::*;
-use rustymath::agreement::{Missing, ReadPlan};
 
 /// Where a stage's last step writes each run: the slots of its stored value, of the value's type, or the fold, which gets each block with the block's position.
 pub(super) enum Last<'a, 'b> {
@@ -9,22 +8,13 @@ pub(super) enum Last<'a, 'b> {
     I32(&'a mut Slots<'b, i32>), I64(&'a mut Slots<'b, i64>), Fold(&'a mut dyn FnMut(usize, Folded<'_>))
 }
 
-impl Last<'_, '_> {
-    /// The type of the stage's last slots, which a step's results are cast to before they're written there.
-    pub(super) fn dtype(&self) -> DType {
+impl<'a, 'b> Last<'a, 'b> {
+    pub(super) fn output(&mut self) -> rustymath::operation::MapOutput<'_, 'b> {
+        use rustymath::operation::MapOutput;
         match self {
-            Last::F32(_) => DType::Float(FloatWidth::F32), Last::F64(_) => DType::Float(FloatWidth::F64), Last::Bool(_) => DType::Boolean,
-            Last::U8(_) => DType::Integer(Width::U8), Last::I16(_) => DType::Integer(Width::I16), Last::I32(_) => DType::Integer(Width::I32),
-            Last::I64(_) => DType::Integer(Width::I64), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
-        }
-    }
-    /// Writes the first `n` items of `out`, which have the slots' type, into the next `n` slots.
-    pub(super) fn copy(&mut self, out: &Buffer, n: usize) {
-        let view = out.view();
-        match self {
-            Last::F32(s) => s.copy(&f32::held(view)[..n]), Last::F64(s) => s.copy(&f64::held(view)[..n]), Last::Bool(s) => s.copy(&bool::held(view)[..n]),
-            Last::U8(s) => s.copy(&u8::held(view)[..n]), Last::I16(s) => s.copy(&i16::held(view)[..n]), Last::I32(s) => s.copy(&i32::held(view)[..n]),
-            Last::I64(s) => s.copy(&i64::held(view)[..n]), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
+            Last::F32(s) => MapOutput::F32(s), Last::F64(s) => MapOutput::F64(s), Last::Bool(s) => MapOutput::Bool(s), Last::U8(s) => MapOutput::U8(s),
+            Last::I16(s) => MapOutput::I16(s), Last::I32(s) => MapOutput::I32(s), Last::I64(s) => MapOutput::I64(s),
+            Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
         }
     }
 }
@@ -106,25 +96,7 @@ unsafe impl Sync for Shared {}
 /// The buffers into which a step converts its operands, for each type that a step computes at.
 #[derive(Default)]
 pub(super) struct Scratch {
-    f32s: [Vec<f32>; 3], f64s: [Vec<f64>; 3], bools: [Vec<bool>; 3], u8s: [Vec<u8>; 3], i16s: [Vec<i16>; 3], i32s: [Vec<i32>; 3], i64s: [Vec<i64>; 3],
-    map: MapScratch
-}
-
-/// A map's read plans and temporary output, reused by the steps and runs of one execution.
-#[derive(Default)]
-pub(super) struct MapScratch { n: usize, plans: Option<[ReadPlan; 4]>, output: Option<Buffer> }
-
-impl MapScratch {
-    pub(super) fn at(&mut self, n: usize) -> (&[ReadPlan; 4], &mut Option<Buffer>) {
-        if self.n != n {
-            self.plans = None;
-            self.n = n;
-        }
-        let plans = self.plans.get_or_insert_with(|| {
-            std::array::from_fn(|k| if k < 2 { ReadPlan::input(k, n) } else { ReadPlan::copy(k - 2, 1, Mapping::Single, n, Missing::Default) })
-        });
-        (plans, &mut self.output)
-    }
+    f32s: [Vec<f32>; 3], f64s: [Vec<f64>; 3], bools: [Vec<bool>; 3], u8s: [Vec<u8>; 3], i16s: [Vec<i16>; 3], i32s: [Vec<i32>; 3], i64s: [Vec<i64>; 3]
 }
 
 /// A type that a stage's buffers hold and its steps compute at: floats of 32 or 64 bits, Booleans, or integers.
@@ -135,8 +107,8 @@ pub(super) trait Item: Stored + Sync {
     fn items(buffer: &mut Buffer) -> &mut Vec<Self> { Self::vec_mut(buffer).expect("a buffer holds its step's type") }
     /// `arg` as a run's items.
     fn got(arg: Arg<'_, Self>) -> Got<'_>;
-    /// The map's scratch and the buffers into which this type converts its operands.
-    fn scratch(s: &mut Scratch) -> (&mut MapScratch, &mut [Vec<Self>; 3]);
+    /// The buffers into which this type converts its operands.
+    fn scratch(s: &mut Scratch) -> &mut [Vec<Self>; 3];
     /// `slots`, the slots of a stage's value of this type, as where its last step writes.
     fn last<'a, 'b>(slots: &'a mut Slots<'b, Self>) -> Last<'a, 'b>;
     /// Where a step of this type writes the stage's last slots: items of this type, or a comparison's Booleans.
@@ -158,7 +130,7 @@ pub(super) trait Item: Stored + Sync {
 macro_rules! items {
     (@common $v:ident, $s:ident) => {
         fn got(arg: Arg<'_, Self>) -> Got<'_> { Got::$v(arg) }
-        fn scratch(s: &mut Scratch) -> (&mut MapScratch, &mut [Vec<Self>; 3]) { (&mut s.map, &mut s.$s) }
+        fn scratch(s: &mut Scratch) -> &mut [Vec<Self>; 3] { &mut s.$s }
         fn last<'a, 'b>(slots: &'a mut Slots<'b, Self>) -> Last<'a, 'b> { Last::$v(slots) }
         fn choose(x: Arg<'_, Self>, y: Arg<'_, Self>, mask: Arg<'_, Self>, n: usize, out: &mut Slots<'_, Self>) -> bool { rustymath::Ternary::many_into(&rustymath::Choose, x, y, mask, n, out) }
     };

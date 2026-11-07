@@ -359,6 +359,10 @@ fn derivative_replay_tracks_input_layouts() {
         equiv_in(&s, "g∂1 2", &format!("{sum} {sum}"));
         equiv_in(&s, &format!("g∂⍳{n}"), &format!("{n}⍴{sum}"));
     }
+    equiv_in(&s, "rows←2 ⋄ h←{+/, [rows 2]⍴⍵} ⋄ h∂1 2 3 4", "1 1 1 1");
+    equiv_in(&s, r#"(•explain "h∂1 2 3 4").programs.event"#, r#"["replayed"]"#);
+    equiv_in(&s, "rows←3 ⋄ h∂1 2 3 4", "2 2 1 1");
+    equiv_in(&s, r#"0<≢(•explain "{+/, [⍵₀ 2]⍴⍵}∂2 3 4 5").stopped"#, "$t");
 }
 
 #[test]
@@ -505,7 +509,7 @@ fn lexical_frames_are_reclaimed() {
         ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.), ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ];
-    let skipped = basedpl::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code))).unwrap();
+    let skipped = basedpl_testkit::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code))).unwrap();
     for (_, (code, expected)) in cases.into_iter().enumerate().filter(|(index, _)| !skipped.iter().any(|(i, _)| i == index)) {
         check_in(&s, code, float(expected));
     }

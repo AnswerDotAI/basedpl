@@ -101,7 +101,7 @@ fn import_array(value: &JsonValue, approximate: bool) -> Result<Value, String> {
 }
 
 /// An array from its JSON encoding. Numbers captured from another interpreter carry no exactness, so `approximate` reads them all as floats.
-pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> { import_array(value, approximate) }
+pub fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> { import_array(value, approximate) }
 
 /// The evaluation options a request sets: `timeout_ms`, and `echo`, which defaults to true.
 pub fn options(request: &JsonValue) -> Result<EvalOptions, String> {

@@ -35,7 +35,7 @@ tstats←{
 ⍝⍝⍝ gap itemwise "batch cells": qs should sort and select every category in one batched call (a segmented grade and gather)
 ⍝⍝⍝ gap itemwise "batched items": qs's [i]⌷q should select each category's positions in one batched gather
 prods tstats sales
-⍝⍝: 130	280	290
+⍝⍝: 130	280	290	instructions linux 670.006	allocated linux 174.373
 
 ⍝⍝ static •prefs ["kinds":"static" "int":32 "float":32]
 ⍝ As at 64 bits, Key batches each dfn over its groups, and `qs` falls back to one call per category. Expected at 32 bits: about 50 copies, or 85 on Linux and 70 in wasm. Grouping by the store names, about 20, doesn't depend on the widths. The numeric parts, about 60 at 64 bits, cost about half. On Linux CI measured 160 to 218 in most runs from 56 to 62, and 318 in run 62, whose host was busy.
@@ -47,4 +47,4 @@ prods tstats sales
 ⍝⍝⍝ gap itemwise "batched items": qs's [i]⌷q should select each category's positions in one batched gather
 ⍝⍝⍝ gap forced "<": qs's sort of each category should run as one segmented grade, not cell by cell
 prods tstats sales
-⍝⍝: 75	180	180
+⍝⍝: 75	180	180	instructions linux 569.705	allocated linux 122.704

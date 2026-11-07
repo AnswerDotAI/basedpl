@@ -80,7 +80,7 @@ impl Session {
         self.render_value(value, &Span::whole(Source::new("<display>", "")))
     }
     /// The display settings, with floats of the default width shown without a marker.
-    pub(crate) fn display_settings(&self) -> crate::display::Settings {
+    pub fn display_settings(&self) -> crate::display::Settings {
         let mut settings = crate::settings::display();
         settings.elide.plain = Some(crate::settings::float_width());
         settings

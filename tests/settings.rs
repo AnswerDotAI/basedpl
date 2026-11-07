@@ -6,9 +6,9 @@ use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 9] = [
-        language_examples, mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results,
-        hanzi_spellings_and_language, leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header, retained_selection_parameters_survive_data_reads,
+    let checks: [fn(); 8] = [
+        mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results, hanzi_spellings_and_language,
+        leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header, retained_selection_parameters_survive_data_reads,
     ];
     for check in checks {
         basedpl::settings::reset();
@@ -30,42 +30,6 @@ fn mathish_arithmetic() {
         &s,
         r#"•prefs ["kinds":"dynamic"] ⋄ n←1ₓ⍟1ₓ ⋄ p←1ₚ⍟1ₚ ⋄ [≠⍨n;(•storage n).kind;p;(•storage p).kind;0.3ₚ=0.1ₚ+0.2ₚ]"#,
         r#"[$t;"float32";0ₚ;"float64";$t]"#);
-}
-
-fn language_examples() {
-    let mut failures = Vec::new();
-    let page = std::env::var("BASEDPL_PAGE").ok();
-    let prefs = std::fs::read_to_string("nbs/gallery/prefs.bpl").unwrap();
-    for dir in ["nbs", "nbs/glyphs", "nbs/system", "nbs/gallery"] {
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            let Some(ext) = path.extension().filter(|ext| *ext == "qmd" || *ext == "bpl") else { continue; };
-            if page.as_deref().is_some_and(|p| !path.to_string_lossy().contains(p)) { continue; }
-            let text = std::fs::read_to_string(&path).unwrap();
-            // A gallery demo is a whole program, run after the gallery's settings, as the gallery runs it. A demo that defines `frame` also draws its first frame.
-            if ext == "bpl" {
-                let session = Session::new();
-                let error = [prefs.as_str(), &text, r#"{3=•nc "frame"?frame 0;0}0"#].into_iter().find_map(|code| session.eval(code).error);
-                if let Some(error) = error { failures.push(format!("{}: {error}", path.display())); }
-                continue;
-            }
-            let mut fenced = false;
-            for line in text.lines() {
-                if line.starts_with("```") { fenced = !fenced; continue; }
-                if fenced { continue; }
-                for link in line.split("](").skip(1) {
-                    let target = link.split(')').next().unwrap().split('#').next().unwrap();
-                    if !target.is_empty() && !target.contains("://") {
-                        assert!(path.parent().unwrap().join(target).exists(), "{}: missing {target}", path.display());
-                    }
-                }
-            }
-            for f in basedpl::reference::page(&text, None, &Default::default(), None) {
-                failures.push(format!("{}:{}: {}\n{}", path.display(), f["line"], f["code"].as_str().unwrap(), f["message"].as_str().unwrap()));
-            }
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn boxed_display_and_function_trees() {

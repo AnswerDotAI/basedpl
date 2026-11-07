@@ -41,6 +41,8 @@ static STATIC_KINDS: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.kind
 static INT32: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.int, Width::I32));
 static HANZI_ALIASES: AtomicBool = AtomicBool::new(HANZI);
 static BATCHING: AtomicBool = AtomicBool::new(BATCH);
+/// Reads of the `batch` pref (`batch`). The reference harness checks a case with the pref off only where a run with it on read it.
+static BATCH_READS: AtomicUsize = AtomicUsize::new(0);
 static REPORTS_FUSION: AtomicBool = AtomicBool::new(REPORTS);
 /// Fusion's sizes, one atomic for each field of `Sizes` (`sizes`). `MIN_ITEMS` holds `UNSET_ITEMS` for its default, which `sizes` reads from the environment.
 static MIN_ITEMS: AtomicUsize = AtomicUsize::new(UNSET_ITEMS);
@@ -115,8 +117,11 @@ pub(crate) fn reports_fusion() -> bool { REPORTS_FUSION.load(Relaxed) }
 pub(crate) fn set_reports_fusion(on: bool) { REPORTS_FUSION.store(on, Relaxed) }
 /// Whether maps first try one call of their operand on batches of all their cells (`batch::tried`), as the `batch` pref asks.
 #[inline]
-pub(crate) fn batch() -> bool { BATCHING.load(Relaxed) }
-pub(crate) fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
+pub(crate) fn batch() -> bool { BATCH_READS.fetch_add(1, Relaxed); BATCHING.load(Relaxed) }
+/// How many times code has read the `batch` pref so far (`batch`). Not part of BPL's API.
+#[doc(hidden)]
+pub fn batch_reads() -> usize { BATCH_READS.load(Relaxed) }
+pub fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
 /// Whether hanzi spell glyphs, as a leading `•prefs ["hanzi_aliases":$t]` declares.
 pub fn hanzi_aliases() -> bool { HANZI_ALIASES.load(Relaxed) }
 pub(crate) fn set_hanzi_aliases(on: bool) { HANZI_ALIASES.store(on, Relaxed) }
@@ -140,7 +145,7 @@ pub fn set_sizes(sizes: Sizes) {
 pub fn set_small_sizes(on: bool) { set_sizes(if on { Sizes::SMALL } else { UNSET_SIZES }) }
 /// Whether each program is checked before it runs (`program::verify::check`). The reference harness turns it on for every case and page.
 pub(crate) fn verifies() -> bool { VERIFIES.load(Relaxed) }
-pub(crate) fn set_verifies(on: bool) { VERIFIES.store(on, Relaxed) }
+pub fn set_verifies(on: bool) { VERIFIES.store(on, Relaxed) }
 
 /// How block stages compile their parts (`blocks::Blocks::compiles`): by the compile policy, every stage on its first run, or none. The reference harness sets it for each run, and `tests/jit.rs` sets it to compare compiled stages with uncompiled ones (`compiled_runs`). Timings compare compiled stages with none through `BASEDPL_COMPILE`. The browser build compiles nothing.
 #[derive(Clone, Copy, PartialEq, Eq)]

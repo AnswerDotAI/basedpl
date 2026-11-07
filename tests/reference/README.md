@@ -14,19 +14,14 @@ cargo test --test reference -- --nocapture
 
 Each run of a reference case has a two-second deadline, including its final value read. `tests/skipped.txt` names full-size cases temporarily set aside. Rust reference checks and `check_file` honor the same list and report those cases separately as unresolved skips.
 
-To run active cases, set `BASEDPL_CASE` to an ID or ID prefix:
+To check one file, or the cases of a file named by id or header line, use `check_file` on the installed build:
 
 ```bash
-BASEDPL_CASE=ngn:177 cargo test --test reference reference_cases -- --nocapture
+bpl-tests check_file tests/reference/core.bpl
+bpl-tests check_file tests/reference/ngn.bpl ngn:177
 ```
 
-To run the active cases of one file, set `BASEDPL_SOURCE` to its name without `.bpl`:
-
-```bash
-BASEDPL_SOURCE=core cargo test --test reference reference_cases -- --nocapture
-```
-
-To list the slowest cases, set `BASEDPL_TIMES` to how many to list. Each case's time covers all its runs, so the slowest single run, which the deadline applies to, is shorter:
+To list the slowest cases and documentation pages, set `BASEDPL_TIMES` to how many to list. Each case's time covers all its runs, so the slowest single run, which the deadline applies to, is shorter:
 
 ```bash
 BASEDPL_TIMES=30 cargo test --test reference reference_cases -- --nocapture
@@ -70,13 +65,13 @@ An optional `⍝ input: text` line, just before any `⍝ ⎕:` line, gives the l
 
 The header of a ported case starts with the upstream description, assertion or leading program comment, with known import and review boilerplate removed. Notes on the port's adaptations follow on the same line. Some descriptions keep inaccurate upstream wording. Some cases have no description, where the upstream source gave none.
 
-Use `basedpl.bpltests.parse(text)` to read records as `Case` objects, including optional expectations and budgets. `src/reference.rs` owns the parser used by Python, native checks and timing, the worker and the browser build. Two cases in one file can't share an id. `render(cases)` writes checked records back and rejects a result that doesn't read back as the same cases. It does not rewrite shared setups or timed files. The expectations of ported cases reproduce captured values, shapes and recursive prototypes. They aren't inferred from the program under test.
+Use `basedpl.bpltests.parse(text)` to read records as `Case` objects, including optional expectations and budgets. `testkit/src/reference.rs` owns the parser used by Python, native checks and timing, the worker and the browser build. Two cases in one file can't share an id. `render(cases)` writes checked records back and rejects a result that doesn't read back as the same cases. It does not rewrite shared setups or timed files. The expectations of ported cases reproduce captured values, shapes and recursive prototypes. They aren't inferred from the program under test.
 
-Use `check_file(path)` from `basedpl.bpltests` to run a reference file in fresh workers, one for each core, and list its failures. It runs the same code from `src/reference.rs` as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
+Use `check_file(path)` from `basedpl.bpltests` to run a reference file in fresh workers, one for each core, and list its failures. It runs the same code from `testkit/src/reference.rs` as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
 
 ### Timed cases
 
-`tests/speed/*.bpl` uses this same format. A footer gives the macOS, Linux and wasm budgets, separated by whitespace:
+`tests/speed/*.bpl` uses this same format. A footer gives the macOS, Linux and wasm budgets, separated by whitespace, with `-` for none, then any count fields that `tests/speed/README.md` describes:
 
 ```bpl
 ⍝⍝ setup
@@ -91,7 +86,7 @@ v←¿n⍴0
 
 A trailing `⍝⍝:` footer identifies a timed case. All preceding body lines are its code, which can span multiple lines. A check uses inline `⍝ expected` or the existing explicit `⍝ =>` marker. Headers and IDs are optional. An absent expectation means unchecked, not no result. The timing runner checks a supplied expectation once, outside timing, in independently initialized sessions. The reference runner checks it with the usual batch, fusion and repeated-call variants. A record must check a result or supply a budget.
 
-Both reference and timed cases accept `⍝⍝⍝ route NAME` before their code to require a fast route. `⍝⍝⍝ allows RECORD "EVENT": principle` and `⍝⍝⍝ gap RECORD "EVENT": what should happen` name permitted slow events, with doubled `"` inside an event. A stopped trace takes an `allows` line where the stop is by design, as dynamic kinds' rule for types that depend on values makes it, and a `gap` line otherwise. The shared checker rejects unexpected slow events, missing required routes and annotations whose events no longer appear. Within `cargo test`, the explain test runs it on every routed case. `check_file` runs it on a file's routed cases. Ordinary comments have no effect on route checks. See [DEV.md](../../DEV.md) for event names and capture rules.
+Both reference and timed cases accept `⍝⍝⍝ route NAME` before their code to require a fast route. `⍝⍝⍝ allows RECORD "EVENT": principle` and `⍝⍝⍝ gap RECORD "EVENT": what should happen` name permitted slow events, with doubled `"` inside an event. A stopped trace takes an `allows` line where the stop is by design, as dynamic kinds' rule for types that depend on values makes it, and a `gap` line otherwise. The shared checker rejects unexpected slow events, missing required routes and annotations whose events no longer appear. Within `cargo test`, `reference_cases` runs it on every routed case and on every timed speed case at small size. `check_file` runs it on a file's routed cases. Ordinary comments have no effect on route checks. See [DEV.md](../../DEV.md) for event names and capture rules.
 
 Budgets count copies of the setup's `n` items, except in `widths`: there they limit the time as a fraction of the same code's time under `exact`. The runner applies section preferences before setup, parses each case once, warms it once, and takes the fastest of five runs, forcing the returned value each time. It preserves the section's session between cases and repeats. Do not put one-off setup inside timed code.
 

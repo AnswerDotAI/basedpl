@@ -4,9 +4,6 @@ use js_sys::Uint8Array;
 use std::{cell::RefCell, io, path::{Path, PathBuf}};
 use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
 
-/// The browser build takes no timing lock. `basedpl.bpltests` takes it around the module's timings.
-pub(crate) fn timing_lock() -> Result<(), String> { Ok(()) }
-
 thread_local! {
     /// The URL that relative paths resolve against: the page's.
     static BASE: RefCell<String> = const { RefCell::new(String::new()) };

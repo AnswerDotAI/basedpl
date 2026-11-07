@@ -206,7 +206,7 @@ pub(crate) const STOPPED: &str = "a batched run can't do this for all its cells 
 
 impl Span {
     /// The whole of `source`.
-    pub(crate) fn whole(source: Arc<Source>) -> Self { Self { range: 0..source.text.len(), source } }
+    pub fn whole(source: Arc<Source>) -> Self { Self { range: 0..source.text.len(), source } }
     /// The source text the span covers.
     pub(crate) fn text(&self) -> &str { &self.source.text[self.range.clone()] }
     /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths, and every path in code not read from a file, are relative to the working directory.

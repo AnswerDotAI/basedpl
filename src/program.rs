@@ -484,7 +484,7 @@ static PLANS: Mutex<Recent<(Numeric, Program, Arc<run::Plan>), PLANNED>> = Mutex
 const PLANNED: usize = 32;
 
 /// Forgets every kept plan, as a new process has none.
-pub(crate) fn forget_plans() { PLANS.lock().unwrap_or_else(PoisonError::into_inner).0.clear() }
+pub fn forget_plans() { PLANS.lock().unwrap_or_else(PoisonError::into_inner).0.clear() }
 
 /// The plan that runs `program` (`blocks::plan`), made once for each structure of program under each of the settings that planning reads (`Numeric`). The plan comes from the program with inputs in place of its held arrays, whose items a block stage reads as it runs. Programs that differ only in their arrays' items share a plan, as each force of one pending chain does. Programs whose held atoms differ get plans of their own, because a plan can depend on an atom's value, as `○`'s does on its left argument. A program with a table of positions (`Step::tabled`), which can hold as many positions as the data has items, is planned each time and never kept. Where the session checks programs (`settings::verifies`), each program that's planned is checked first as it is, because a step planned on a held array's values plans differently on the input that replaces it.
 pub(crate) fn planned(program: &Program) -> Arc<run::Plan> {

@@ -225,9 +225,7 @@ pub enum ParseStatus { Complete(Parsed), Incomplete(Error), Invalid(Error) }
 
 impl ParseStatus {
     /// The program, or the error for input that is incomplete or invalid.
-    pub(crate) fn complete(self) -> Result<Parsed, Error> {
-        match self { Self::Complete(parsed) => Ok(parsed), Self::Incomplete(e) | Self::Invalid(e) => Err(e) }
-    }
+    pub fn complete(self) -> Result<Parsed, Error> { match self { Self::Complete(parsed) => Ok(parsed), Self::Incomplete(e) | Self::Invalid(e) => Err(e) } }
 }
 
 #[derive(Debug)]
