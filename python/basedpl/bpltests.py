@@ -821,7 +821,8 @@ def call_profile(
 
 
 # basedpl's library and the rustymath library it links, built as CI's Linux runner compiles them. Apple's `clang` assembles the x86-64 source in basedpl's `psm` dependency, because this Mac has no `x86_64-linux-gnu-gcc`. Incremental compilation is off, as on CI, so that code splits into the same codegen units.
-_X86_BUILD = 'cargo build --lib --release --target x86_64-unknown-linux-gnu --target-dir /tmp/aai-ws-x86 -p basedpl'.split()
+def _x86_build(profile='release'):
+    return ['cargo', 'build', '--lib', '--profile', profile, '--target', 'x86_64-unknown-linux-gnu', '--target-dir', '/tmp/aai-ws-x86', '-p', 'basedpl']
 _X86_ENV = dict(CARGO_INCREMENTAL='0', CC_x86_64_unknown_linux_gnu='clang')
 # A line of `nm`'s listing: an address, or spaces for an undefined symbol, then the symbol's type letter and its name.
 _NM_LINE = re.compile(r'^(?:[0-9a-f]+| +) (\S) (.+)$')
@@ -829,8 +830,8 @@ _NM_LINE = re.compile(r'^(?:[0-9a-f]+| +) (\S) (.+)$')
 _MANGLED = re.compile(r'(?<![\w$.])_?(?:_R|_ZN)[\w$.]+')
 
 def _x86_libraries():
-    "The libraries that `_X86_BUILD` makes, and a note that's empty unless basedpl failed to compile. Cargo builds rustymath first, so a failed build still gives rustymath's library."
-    p = subprocess.run([*_X86_BUILD, '--message-format=json-render-diagnostics'], cwd=_ROOT, capture_output=True, text=True, env=os.environ | _X86_ENV)
+    "The libraries that `_x86_build` makes, and a note that's empty unless basedpl failed to compile. Cargo builds rustymath first, so a failed build still gives rustymath's library."
+    p = subprocess.run([*_x86_build(), '--message-format=json-render-diagnostics'], cwd=_ROOT, capture_output=True, text=True, env=os.environ | _X86_ENV)
     built = map(json.loads, p.stdout.splitlines())
     files = [f for m in built if m['reason'] == 'compiler-artifact' and m['target']['name'] in ('basedpl', 'rustymath') for f in m['filenames'] if f.endswith('.rlib')]
     if p.returncode and not files: raise ValueError(p.stderr)
@@ -1350,9 +1351,10 @@ def _timed_build(name, cmd, env):
 
 def target_builds(
     out:Path, # The directory for the browser package, which `wasm_test` then tests
+    profile:str='release', # The native and wasm build profile
 ):
     "Build what CI builds and this Mac's daily builds leave out: basedpl's and rustymath's libraries for Linux x86-64, as `disasm`'s `x86` builds them, and the browser package, with `cargo wasm --out`. The two builds run at once. It gives each build's time, or raises `ValueError` naming each build that failed."
-    builds = {'Linux x86-64 libraries': (_X86_BUILD, _X86_ENV), f'browser package in {out}': (['cargo', 'wasm', '--out', str(Path(out).expanduser())], {})}
+    builds = {'Linux x86-64 libraries': (_x86_build(profile), _X86_ENV), f'browser package in {out}': (['cargo', 'wasm', '--profile', profile, '--out', str(Path(out).expanduser())], {})}
     with ThreadPoolExecutor(len(builds)) as pool: running = {name: pool.submit(_timed_build, name, cmd, env) for name, (cmd, env) in builds.items()}
     rows, failed = [], []
     for name, f in running.items():
@@ -1400,33 +1402,44 @@ def set_budgets(
     if edits: path.write_bytes(data)
     return changes
 
+def _wasm_batches(files, size=16):
+    "Partition budgeted cases by file and code, keeping repeated code in different sections together for the wasm selector."
+    for f in files:
+        cases = [c for c in parse(f['text']) if c.budgets]
+        codes = list(dict.fromkeys(c.code for c in cases))
+        for start in range(0, len(codes), size):
+            selected = codes[start:start+size]
+            yield dict(file=f['name'], codes=selected, rows=[[f['name'], c.section, c.code] for c in cases if c.code in selected])
+
+
+
 _RUSTYMATH = _ROOT.parent/'rustymath'
 
 @dataclass
 class _Step:
-    "One command that `prerelease` runs in the repository `cwd`, once the steps that `after` names have passed, with `env` added to its environment. It fails after `timeout` seconds. A `timing` step times code and runs alone after every other step."
+    "One command that `prerelease` runs in the repository `cwd`, once the steps that `after` names have passed, with `env` added to its environment. It fails after `timeout` seconds; None leaves builds untimed. A `timing` step times code and runs alone after every other step."
     name: str
     cmd: list
     cwd: Path
     after: tuple = ()
     env: dict = field(default_factory=dict)
-    timeout: float = 1800
+    timeout: float | None = 1800
     timing: bool = False
 
 def _cargo_test(root, *args):
     "The command that runs `cargo test` with `args` in `root` through fastws's `run_tests`, using its default per-binary execution budget, and exits 1 when a test fails."
     return [sys.executable, '-c', f"import sys; from fastws.cargo import run_tests; r = run_tests({', '.join(map(repr, (str(root), *args)))}); print(r.text); sys.exit(not r.ok)"]
 
-def _steps(out, node):
+def _steps(out, node, profile):
     "The steps of `prerelease`. Its browser package goes in `out/'wasm'`. `node` is the Node binary that the editor tests run under (`_node`)."
     B, R, wasm = _ROOT, _RUSTYMATH, str(out/'wasm')
     dev, rdev = 'basedpl: cargo develop', 'rustymath: cargo develop'
-    develop_cmd = ['cargo', 'develop']
+    develop_cmd = ['cargo', 'develop', '--profile', profile]
     return [
-        _Step(dev, develop_cmd, B, timeout=1200),
-        _Step(rdev, develop_cmd, R, timeout=1200),
-        *(_Step(f'{r.name}: checked tests', _cargo_test(r, '--profile', 'checked', '--target-dir', str(r/'target'/'prerelease')), r, timeout=3600) for r in (B, R)),
-        _Step('target builds', ['bpl-tests', 'target_builds', wasm], B, (dev,)),
+        _Step(dev, develop_cmd, B, (rdev,), timeout=None),
+        _Step(rdev, develop_cmd, R, timeout=None),
+        *(_Step(f'{r.name}: checked tests', _cargo_test(r, '--profile', 'checked', '--target-dir', str(r/'target'/'prerelease')), r, timeout=None) for r in (B, R)),
+        _Step('target builds', ['bpl-tests', 'target_builds', wasm, '--profile', profile], B, (dev,), timeout=None),
         _Step('basedpl: pytest', ['pytest', '-q'], B, (dev,), timeout=1200),
         _Step('rustymath: pytest', ['pytest', '-q'], R, (rdev,), timeout=1200),
         *(_Step(f'basedpl: {t} test', [node, f'tests/{t}.mjs'], B, (dev,), timeout=300) for t in ('input', 'highlighting')),
@@ -1434,13 +1447,15 @@ def _steps(out, node):
         _Step('basedpl: BPL notebooks', ['bpl-nb', '--save'], B, (dev,)),
         _Step('basedpl: nbdev', ['nbdev-prepare'], B, (dev, 'basedpl: BPL notebooks')),
         _Step('rustymath: nbdev', ['nbdev-prepare'], R, (rdev,)),
-        *(_Step(f'{r.name}: cargo test', _cargo_test(r), r, (d,), timeout=3600) for r, d in ((B, dev), (R, rdev))),
-        _Step('basedpl: route test', _cargo_test(B, '--test', 'explain'), B, (dev,), timeout=3600),
-        _Step('basedpl: speed test', _cargo_test(B, '--test', 'speed'), B, (dev,), dict(BASEDPL_COSTS='1'), 3600, True),
-        _Step('rustymath: speed test', _cargo_test(R, '--test', 'speed'), R, (rdev,), dict(RUSTYMATH_COSTS='1'), 3600, True),
+        *(_Step(f'{r.name}: cargo test', _cargo_test(r, '--profile', profile), r, (d,), timeout=None) for r, d in ((B, dev), (R, rdev))),
+        _Step('basedpl: route test', _cargo_test(B, '--profile', profile, '--test', 'explain'), B, (dev,), timeout=None),
+        _Step('basedpl: speed test', _cargo_test(B, '--profile', profile, '--test', 'speed'), B, (dev,), dict(BASEDPL_COSTS='1'), None, True),
+        _Step('rustymath: speed test', _cargo_test(R, '--profile', profile, '--test', 'speed'), R, (rdev,), dict(RUSTYMATH_COSTS='1'), None, True),
         _Step('rustymath: Python speed test', ['pytest', '-q', 'tests/test_speed.py'], R, (rdev,), dict(RUSTYMATH_COSTS='1'), 600, True),
         _Step('basedpl: thread scaling', ['bpl-tests', 'thread_scaling'], B, (dev,), timing=True),
-        _Step('basedpl: browser speed test', ['bpl-tests', 'wasm_test', wasm, '--speed'], B, ('target builds',), timeout=900, timing=True)]
+        *(_Step(f'basedpl: browser speed {i} {batch["file"]}', ['bpl-tests', 'wasm_test', wasm, '--speed'], B, ('target builds',),
+            dict(BASEDPL_SPEED_BATCH=json.dumps(batch)), timing=True)
+            for i, batch in enumerate(_wasm_batches([dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))]), 1))]
 
 def _preflight():
     "What `prerelease` reads before it starts: notes for its summary, the problems that stop it, and the Node binary that `_node` chooses."
@@ -1472,7 +1487,7 @@ def _run(steps, logs, jobs, keep_going):
         while pending or running:
             for name, (p, _, start, s) in list(running.items()):
                 if p.poll() is not None: end(name, 'failed' if p.returncode else 'ok')
-                elif time.monotonic()-start > s.timeout: end(name, 'timed out')
+                elif s.timeout is not None and time.monotonic()-start > s.timeout: end(name, 'timed out')
             failed = [r for r in rows.values() if r[1] != 'ok']
             if failed and not owner: raise RuntimeError(f'{failed[0][0]} {failed[0][1]}; stopping the containing job')
             if failed and not keep_going: break
@@ -1506,18 +1521,22 @@ def prerelease(
     jobs:int=None, # The most steps that run at once before the timings; None: every step that's ready
     out:Path=None, # The directory for the run's logs and browser package; None: a new directory under the system's temporary directory
     dry_run:bool=False, # List the steps in their order without running them?
+    profile:str='release', # One profile for development, native timings and wasm
 ):
     "Run basedpl's and rustymath's checks and saves before a release, as DEV.md's Release section describes. Gives each step's status, time and log. A step that doesn't pass raises `ValueError` with that summary and the end of the step's log."
     notes, problems, node = _preflight()
+    notes.append(f'Build profile: {profile}; checked profile: checked')
     out = Path(out).expanduser() if out else Path(tempfile.gettempdir())/time.strftime('prerelease-%Y%m%d-%H%M%S')
-    steps, cleans = _steps(out, node), [_Step(f'{r.name}: clean', ['nbdev-clean'], r, timeout=300) for r in (_ROOT, _RUSTYMATH)]
+    steps, cleans = _steps(out, node, profile), [_Step(f'{r.name}: clean', ['nbdev-clean'], r, timeout=300) for r in (_ROOT, _RUSTYMATH)]
     if dry_run:
         listed = lambda ss: [f'  {s.name}: {" ".join(s.cmd)}' + (f'  (after {", ".join(s.after)})' if s.after else '') for s in ss]
         return Report('\n'.join([*notes, *(f'Problem: {p}' for p in problems), 'In parallel, each after the steps it reads:', *listed(s for s in steps if not s.timing),
                                  'Then one at a time, with nothing else running:', *listed(s for s in steps if s.timing), 'Then in both repositories, even after a failure:', *listed(cleans)]))
     if problems: raise ValueError('\n'.join(problems))
     out.mkdir(parents=True, exist_ok=True)
-    rows = _run(steps, out, jobs, keep_going) + _run(cleans, out, None, True)
+    try: rows = _run(steps, out, jobs, keep_going)
+    finally: cleaned = _run(cleans, out, None, True)
+    rows += cleaned
     result = Prerelease(rows, notes)
     if bad := [r for r in rows if r[1] != 'ok']:
         name, _, _, log = next((r for r in bad if r[3]), bad[0])

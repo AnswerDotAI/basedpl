@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file, SpeedCosts
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file, SpeedCosts, _wasm_batches
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +13,23 @@ def test_cost_records_keep_values_without_optional_reports():
     costs = SpeedCosts.from_records([row, dict(row, budget=2)])
     assert costs[0][:4] == ('copies', 'v', 1.234567, None) and costs[0][4] == pytest.approx(1.234567)
     assert costs[1][3] == 2 and costs.holds == {} and costs.footprints == {}
+
+
+
+def test_wasm_batches_keep_files_sections_and_all_rows():
+    text = '⍝⍝ copies\n-v\n⍝⍝: 1\n\n⍝⍝ static\n-v\n⍝⍝: 2\n\n⌽v\n⍝⍝: 3\n\n⍝ —\n1+1   ⍝ 2\n'
+    files = [dict(name=name, text=text) for name in ('one.bpl', 'two.bpl')]
+    batches = list(_wasm_batches(files, size=1))
+    assert [b['file'] for b in batches] == ['one.bpl', 'one.bpl', 'two.bpl', 'two.bpl']
+    for b in batches:
+        assert b['codes'] == (['-v'] if len(b['rows']) == 2 else ['⌽v'])
+        assert b['rows'] == [[b['file'], section, b['codes'][0]] for section in
+            (['copies', 'static'] if len(b['rows']) == 2 else ['static'])]
+    files = [dict(name=p.name, text=p.read_text()) for p in sorted((ROOT/'tests/speed').glob('*.bpl'))]
+    batches = list(_wasm_batches(files))
+    expected = sorted((f['name'], c.section, c.code) for f in files for c in parse(f['text']) if c.budgets)
+    assert sorted(tuple(r) for b in batches for r in b['rows']) == expected
+    assert all(len(b['codes']) <= 16 and len(b['codes']) == len(set(b['codes'])) for b in batches)
 
 
 

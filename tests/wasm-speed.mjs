@@ -22,11 +22,17 @@ const checks = checks_budgets();
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');
 test('each BPL speed case takes no longer than its wasm budget on Syd1', async () => {
     const directory = new URL('speed/', import.meta.url);
-    const speed = readdirSync(directory).filter(name => name.endsWith('.bpl')).sort()
+    const batch = process.env.BASEDPL_SPEED_BATCH ? JSON.parse(process.env.BASEDPL_SPEED_BATCH) : null;
+    const speed = readdirSync(directory).filter(name => name.endsWith('.bpl') && (!batch || name === batch.file)).sort()
         .map(name => ({name, text: readFileSync(new URL(name, directory), 'utf8')}));
+    const identities = rows => rows.map(c => JSON.stringify([c.file, c.section, c.code])).sort();
     const line = c => c.line;
     const over = c => c.over;
-    const all = costs(speed);
+    const all = costs(speed, batch?.codes);
+    if (batch) {
+        assert.deepEqual(identities(all), batch.rows.map(row => JSON.stringify(row)).sort(), 'wasm batch omitted or duplicated a case');
+        console.log(`Checked ${all.length} wasm timing rows from ${batch.file}`);
+    }
     if (process.env.BASEDPL_COSTS || !checks) {
         for (const copy of new Set(all.map(c => c.copy).filter(Boolean))) console.log(copy);
         for (const c of all) console.log(line(c));
@@ -38,6 +44,7 @@ test('each BPL speed case takes no longer than its wasm budget on Syd1', async (
         warm();
         for (const c of failures) console.log(`${line(c)}: over, timed again after ${pause} s`);
         const retried = costs(speed, failures.map(c => c.label)).filter(c => failures.some(f => f.file === c.file && f.section === c.section && f.code === c.code));
+        assert.deepEqual(identities(retried), identities(failures), 'wasm retry omitted or duplicated a case');
         for (const c of retried) console.log(line(c));
         failures = retried.filter(over);
     }
