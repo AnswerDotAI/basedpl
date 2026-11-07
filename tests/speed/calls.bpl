@@ -1,7 +1,7 @@
 ⍝⍝ setup
 ⍝ Fibonacci numbers by direct recursion.
 fib←{⍵<2ₓ?⍵;∇⍵-1ₓ + ∇⍵-2ₓ}
-n←65536
+n←65536 size 1024
 v←¿n⍴0
 ⍝ A dfn that writes one item of its argument in place where it holds the argument alone.
 step←{[[0]]⌷⍵ ←0 ⋄ ⍵}

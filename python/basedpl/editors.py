@@ -2,13 +2,13 @@
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
-`write()` updates all generated editor files during release preparation, including the BPL and Hanzi TextMate grammars beside this module, exported from the Quarto XML, and the JetBrains bundle and templates. The Hanzi grammar includes BPL and adds its aliases from the same symbol metadata. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
+`write()` updates all generated editor files during release preparation, including the BPL and Hanzi TextMate grammars under `python/basedpl`, exported from the Quarto XML, and the JetBrains bundle and templates. The Hanzi grammar includes BPL and adds its aliases from the same symbol metadata. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
 import json, re, subprocess, tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from . import symbols, keyboards, windows_keyboard
 from ._core import _superscripts, _subscripts, _number_marks
-from .assets import kernel_spec
+from .assets import GENERATED, kernel_spec
 
 VIM = Path('editors/vim/syntax/bpl.vim')
 JETBRAINS = Path('editors/jetbrains')
@@ -30,7 +30,7 @@ DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,
 BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
        'DyadicOperator': '∘○⊸⟜⌾⊘◶⎉⚇⍟⎊', 'Argument': '𝕨𝕩𝕗𝕘𝕤𝕣𝕎𝕏𝔽𝔾𝕊', 'Keyword': '←↩⇐⋄,‿·?:;'}
 HIGHLIGHTERS = {Path('nbs/bpl.xml'): BPL, Path('nbs/dyalog.xml'): DYALOG, Path('nbs/bqn.xml'): BQN}
-TEXTMATE = Path(__file__).parent
+TEXTMATE = GENERATED.parent
 SCOPES = {'Normal Text': 'source.bpl', 'Name': 'variable.other.bpl', 'Comment': 'comment.line.bpl', 'String': 'string.quoted.double.bpl',
           'Char': 'string.quoted.single.bpl', 'Number': 'constant.numeric.bpl',
           'Function': 'support.function.bpl', 'MonadicOperator': 'keyword.operator.monadic.bpl',

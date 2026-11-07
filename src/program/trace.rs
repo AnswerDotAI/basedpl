@@ -21,11 +21,10 @@ pub(crate) enum Role { Trace, Tape }
 #[derive(Default)]
 pub(crate) struct Tracer(Mutex<Builder>);
 
-/// The nodes, inputs and free names that a trace has recorded so far, the place, node and value of each free name that became an input, the names that `•index` drew, why the trace stops, once it does, and why its program must key exact lengths, once something that it holds depends on them (`Tracer::exact`).
+/// The recorded nodes, inputs and captured names, the place/node/value of each free name, generated index names and the first stop reason.
 #[derive(Default)]
 struct Builder {
-    nodes: Nodes, inputs: Vec<Input>, captured: Vec<Captured>, places: Vec<(Free, usize, Value)>, named: Vec<Arc<str>>, stopped: Option<&'static str>,
-    exact: Option<&'static str>
+    nodes: Nodes, inputs: Vec<Input>, captured: Vec<Captured>, places: Vec<(Free, usize, Value)>, named: Vec<Arc<str>>, stopped: Option<&'static str>
 }
 
 impl std::fmt::Debug for Tracer { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("Tracer") } }
@@ -48,8 +47,6 @@ impl Tracer {
     fn add(&self, desc: Desc, origin: Origin) -> usize { self.builder().nodes.add(Node { desc, origin }) }
     /// Notes why the trace stops, for `•explain`, keeping the first reason.
     fn stopping(&self, reason: &'static str) { self.builder().stopped.get_or_insert(reason); }
-    /// Notes that the program must key its arguments' exact lengths, for `reason`, keeping the first.
-    fn exact(&self, reason: &'static str) { self.builder().exact.get_or_insert(reason); }
     /// Keeps a name that `•index` drew during the trace, which each replay renames in its result (`Recording::renamed`).
     pub(crate) fn named(&self, name: Arc<str>) { self.builder().named.push(name); }
     /// The step that copies node `of` through `map` for a result of `shape`: one copy of the source where `of` is itself a copy whose map composes with `map` (`copy_of_copy`).
@@ -216,7 +213,7 @@ impl Traced {
         let desc = plan::picks(&self.desc(), axis)?;
         Ok(self.stepped(desc, |of| Step::Picks { p, axis, of: of.clone() }))
     }
-    /// Plain zeros in this value's shape, as `Value::zeroed` gives them: the zero atom for an atom (`Desc::atom`, as `traced` decides), and an array otherwise, rank 0 included. A trace holds such an array as its zero item and a broadcast copy, which holds its lengths (`Step::holds_lengths`), so its program keys exact lengths.
+    /// Plain zeros in this value's shape, as `Value::zeroed` gives them: the zero atom for an atom (`Desc::atom`, as `traced` decides), and an array otherwise, rank 0 included.
     pub(crate) fn zeroed(&self) -> Value {
         if self.desc().atom { return self.zero.clone(); }
         Layout::from(self.read.layout.shape().to_vec()).filled(&self.zero)
@@ -225,15 +222,15 @@ impl Traced {
     pub(crate) fn stop(&self, cause: Cause, reason: &'static str) -> Stop { self.tracer.stopping(reason); Stop::new(self.level, cause) }
     /// The value that an observing read, such as a position, a count or a guard, sees in this value's place (`Carrier::observed`). Where this value is a free name's, or computed from free names alone, that's its value, laid out as the read lays it out, and the read holds those names (`Tracer::hold`). A read of any other traced value, which has no items, stops the trace and notes `reason`.
     pub(crate) fn observed(&self, reason: &'static str) -> Result<&Value, Stop> { self.held().ok_or_else(|| self.stop(Cause::Observed, reason)) }
-    /// The value that `observed` gives, or `None` where it would stop the trace instead: for a tape value, and for a value that isn't a free name's or computed from free names alone. A count by `≢` gives the count that the trace recorded, and the program then keys exact lengths (`count`).
+    /// The value that `observed` gives, or `None` where it would stop the trace instead: for a tape value, and for a value that isn't a free name's or computed from free names alone. A count by `≢` gives the recorded count (`count`).
     pub(crate) fn held(&self) -> Option<&Value> {
         if self.role == Role::Tape { return None; }
-        if let Some(count) = self.count() { self.tracer.exact("a count read as a value"); return Some(count); }
+        if let Some(count) = self.count() { return Some(count); }
         self.known.get_or_init(|| {
             self.tracer.hold(self.read.of).and_then(|v| if *v.layout() == self.read.layout { Some(v) } else { v.relaid(self.read.layout.clone()).ok() })
         }).as_ref()
     }
-    /// The count that this value, a step of `≢` (`Step::Shape`), had when the trace recorded it. A structural parameter reads it without making the program key exact lengths, since each run plans from the count that it computes. `None` for any other value.
+    /// The count that this `≢` step had when recorded, or `None` for another value. Replay checks the concrete input layouts before using it.
     fn count(&self) -> Option<&Value> {
         let counted = self.read.of != OUTSIDE && matches!(self.tracer.builder().nodes[self.read.of].origin, Origin::Step(Step::Shape { .. }));
         if counted { self.known.get().and_then(Option::as_ref) } else { None }
@@ -250,9 +247,6 @@ pub(crate) fn per_item(left: Option<&Value>, right: &Value) -> Result<(), Error>
 
 /// Stops the running trace before a random draw or `⍎`. A replay of the trace's program would run neither, though each must run on every call. `Ok` where no trace runs.
 pub(crate) fn each_call(reason: &'static str) -> Result<(), Error> { if session().tracing().is_none() { return Ok(()); } Err(stopped(reason)) }
-
-/// Notes that the running trace's program must key its arguments' exact lengths, for code that unrolls a loop by a traced length or builds a constant from a traced shape. Steps and views that hold lengths need no note: `build` finds them. Nothing where no trace runs.
-pub(crate) fn exact(reason: &'static str) { if let Some((_, tracer)) = session().tracing() { tracer.exact(reason); } }
 
 /// The stop of the running trace, after noting `reason` for `•explain`, for code that meets what a program can't hold.
 pub(crate) fn stopped(reason: &'static str) -> Error {
@@ -445,10 +439,10 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
     Some(Ok(node(level, role, &tracer, desc, step)))
 }
 
-/// `p`, `≢` or `⍴`, of `right`, a traced value `t` in the program: the value that `p`'s own code gives from `right`'s layout. A count by `≢` is also a step (`Step::Shape`), which each replay computes from the actual layout, so the program keeps length classes until code reads the count as a value (`Traced::held`). A shape by `⍴` takes the narrowest width that holds its lengths under dynamic kinds, which no one description holds at every length, so it stays a constant and the program keys exact lengths.
+/// `≢` or `⍴` of the traced input's layout. A count is recorded as `Step::Shape` and remains available to structural parameters (`Traced::held`). Shape stays constant because its dynamic integer width depends on its lengths. Both are valid while replay's concrete-layout guards hold.
 fn shape_query(p: Primitive, t: &Traced, right: &Value, level: u64) -> Result<Value, Error> {
     let value = p.run_axis(None, right, None, &crate::fusion::FORCING)?;
-    if matches!(p, Primitive::Shape) { t.tracer.exact("a shape read as a value"); return Ok(value); }
+    if matches!(p, Primitive::Shape) { return Ok(value); }
     let Some(desc) = Desc::of(&Value::integer(i64::MAX)) else { unreachable!("a program describes an integer atom") };
     let counted = node(level, Role::Trace, &t.tracer, Desc { range: Range::NONNEGATIVE, ..desc }, Step::Shape { p, of: t.read.clone() });
     if let Some(c) = counted.carrier().and_then(Carrier::traced) { let _ = c.known.set(Some(value)); }
@@ -520,7 +514,7 @@ fn free(free: Free, value: &Value, level: u64, tracer: &Arc<Tracer>) -> Option<V
     Some(traced(level, Role::Trace, Read::new(node, desc.layout.clone()), &desc, tracer))
 }
 
-/// The recording that `call` builds when it runs on traced arguments, as the interpreter runs it, with the free values that the trace read, which a later call must hold for the trace's outcome to apply to it (`Entry::reread`). Each leaf of `left` and `right` becomes one of the program's inputs (`transform::walk`). So does each of `data`, the data of a function other than a dfn, as a free name does, and `call` gets traced inputs in their place. Each leaf of the call's value gives one of its results: the first is the program's result, and the others are its outputs. The recording keys exact lengths where anything that it holds depends on them: a step that holds a length (`Step::holds_lengths`), a read under a layout of its own, which a view gives, or a note (`exact`). An interrupt, a timeout or another level's stop passes through. Any other error ends the trace without a program. The interpreter then runs the call and gives the error where it arises.
+/// The recording that `call` builds when it runs on traced arguments, as the interpreter runs it, with the free values that the trace read, which a later call must hold for the trace's outcome to apply to it (`Entry::reread`). Each leaf of `left` and `right` becomes one of the program's inputs (`transform::walk`). So does each of `data`, the data of a function other than a dfn, as a free name does, and `call` gets traced inputs in their place. Each leaf of the call's value gives one of its results: the first is the program's result, and the others are its outputs. The recording keys concrete input and captured layouts because its nodes and block stages retain concrete lengths. An interrupt, a timeout or another level's stop passes through. Any other error ends the trace without a program. The interpreter then runs the call and gives the error where it arises.
 pub(crate) fn build(
     left: Option<&Value>, right: &Value, data: &[Value], call: &dyn Fn(&[Value], Option<&Value>, &Value) -> Result<Value, Error>
 ) -> (Result<Recording, Ended>, Vec<Captured>) {
@@ -567,20 +561,16 @@ pub(crate) fn build(
         }
         Err(reason) => { fell = Some(reason); None }
     });
-    let viewed = { let b = tracer.builder(); reads.iter().any(|r| r.layout != b.nodes[r.of].desc.layout) };
     let mut reads = reads.into_iter();
     let (Some(result), Some(first)) = (result, reads.next()) else { return end(Ended::Fell(fell.unwrap_or("a value that programs can't hold"))) };
-    let Builder { nodes, inputs, captured, named, exact, .. } = std::mem::take(&mut *tracer.builder());
+    let Builder { nodes, inputs, captured, named, .. } = std::mem::take(&mut *tracer.builder());
     let program = super::layout::ordered(Program { outputs: reads.map(|r| r.of).collect(), ..Program::new(nodes, first) }.live());
-    let exact = exact.is_some() || viewed || program.nodes.iter().any(|n| match &n.origin {
-        Origin::Step(step) => step.holds_lengths() || step.operands().any(|r| r.view(&program.nodes)), Origin::Input(_) | Origin::Held(_) => false
-    });
-    (Ok(Recording { program, inputs, result, named, exact }), captured)
+    (Ok(Recording { program, inputs, result, named }), captured)
 }
 
-/// A program that a call's trace built, with what its replays need: where each of the program's inputs comes from at a call, its result's description, the names that `•index` drew in it, and whether it keys its arguments' exact lengths, or only the class of each unkeyed axis's length (`build`). The `Entry` that keeps it holds the argument types, layouts and settings that it was built for, and the free values that it read.
+/// A recorded call's program, input sources, result description and generated names. The `Entry` keeps the concrete argument layouts, settings and captured values that it was built for.
 #[derive(Debug)]
-pub(crate) struct Recording { program: Program, inputs: Vec<Input>, result: Descs, named: Vec<Arc<str>>, exact: bool }
+pub(crate) struct Recording { program: Program, inputs: Vec<Input>, result: Descs, named: Vec<Arc<str>> }
 
 /// Where an input comes from at a call: a leaf of the left or right argument, by its place in `transform::walk`'s order, or the value of the free name that `Recording::captured` lists at that index.
 #[derive(Clone, Copy, Debug)]
@@ -603,7 +593,7 @@ impl Key {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Descs { Leaf(Desc), Nested(Layout, Vec<Descs>) }
 
-/// Whether `a` and `b` describe arguments that one program serves: the same, where the program keys exact lengths, and otherwise the same but for the lengths of unkeyed axes (`laid_alike`).
+/// Whether the arguments match a built program's concrete descriptions, or a stopped outcome's length classes.
 fn alike(a: &Descs, b: &Descs, exact: bool) -> bool {
     match (a, b) {
         (Descs::Leaf(x), Descs::Leaf(y)) => x.kind == y.kind && x.atom == y.atom && x.range == y.range && laid_alike(&x.layout, &y.layout, exact),
@@ -611,7 +601,7 @@ fn alike(a: &Descs, b: &Descs, exact: bool) -> bool {
     }
 }
 
-/// Whether layouts `a` and `b` are the same for a program, which takes the lengths of unkeyed axes at each run unless it keys exact lengths: the same names and keys, the same length on each keyed axis, and on each other axis a length of the same class, 0, 1 or more, since empty arrays and agreement treat those apart.
+/// Whether layouts match exactly for a built program, or by unkeyed length class (0, 1, more) for a stopped outcome.
 fn laid_alike(a: &Layout, b: &Layout, exact: bool) -> bool {
     if exact { return a == b; }
     let class = |n: usize| n.min(2);
@@ -725,8 +715,8 @@ impl Entry {
             (Found::Value(v), Expect::Same(w)) if v.same(w) => Some(None), (Found::Value(v), Expect::Held(w)) if v.same(w) => Some(Some(v)), _ => None
         }).collect()
     }
-    /// Whether this entry's program keys exact lengths (`Recording::exact`). A stop keys length classes.
-    fn exact(&self) -> bool { matches!(&self.outcome, Outcome::Built(recording) if recording.exact) }
+    /// Built programs retain concrete layouts and counts; stopped outcomes key length classes.
+    fn exact(&self) -> bool { matches!(&self.outcome, Outcome::Built(_)) }
 }
 
 /// The most outcomes that one definition, or one structure of function, keeps. The oldest goes first.
@@ -864,7 +854,6 @@ pub(crate) fn programmed(
     let inputs: Vec<&Value> = recording.inputs.iter().map(|input| match *input {
         Input::Left(k) => &x[k], Input::Right(k) => &y[k], Input::Name(i) => names[i].as_ref().expect("a free name that a program reads has a value")
     }).collect();
-    // A program that keys length classes holds no views, so each result is its node's value as the run gives it (`run::read`).
     let result = run::values(program, &crate::program::planned(program), &inputs, span).map(|values| match &recording.result {
             Descs::Leaf(_) => run::read(program, &values, &program.result),
             // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.

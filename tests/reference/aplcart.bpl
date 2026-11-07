@@ -480,7 +480,7 @@ Y←3 1 2 1 ⋄ ⍒Y   ⍝ [0 2 1 3]ₓ
 [2 4 1 3 5 0;"nnaaaB";0 2 4 1 3 5;"Bnnaaa"]ₓ
 
 ⍝ aplcart/table.tsv:144 — Expand last axis of Y
-[3 2 4 # 1 0 1 #⁻¹ 7 8;1 0 1 0 1 #⁻¹ "Hat"]   ⍝ [7 7 7 0 0 8 8 8 8;"H a t"]
+[3 2 4 # 1 0 1 #⁻ 7 8;1 0 1 0 1 #⁻ "Hat"]   ⍝ [7 7 7 0 0 8 8 8 8;"H a t"]
 
 ⍝ aplcart/table.tsv:145 — Scan: f between items of Y in progressively longer vectors along last axis
 mat← [1 3 6 10⋄5 11 18 26⋄9 19 30 42]
@@ -489,7 +489,7 @@ mat← [1 3 6 10⋄5 11 18 26⋄9 19 30 42]
 [1 3 6 10 15;[1 4 10 20⋄5 16 34 60⋄9 28 58 100]]
 
 ⍝ aplcart/table.tsv:146 — Expand leading axis of Y
-mat←3 4⍴⍳12ₓ ⋄ 1 1 2 1 # 1 0 1 1 #⁻¹ mat
+mat←3 4⍴⍳12ₓ ⋄ 1 1 2 1 # 1 0 1 1 #⁻ mat
 [0 1 2 3⋄0 0 0 0⋄4 5 6 7⋄4 5 6 7⋄8 9 10 11]ₓ
 
 ⍝ aplcart/table.tsv:147 — Scan First: f between items of Y in progressively longer vectors along first axis
@@ -637,7 +637,7 @@ mat ← 3 2⍴⍳6ₓ ⋄ 1 1 2 ⊆₀ mat   ⍝ [[0 1⋄2 3] [4 5⋄]]ₓ
 mat ← 3 2⍴⍳6ₓ ⋄ 1 ⌷₁ mat   ⍝ [1 3 5]ₓ
 
 ⍝ aplcart/table.tsv:200 — Expand axis ax of Y
-mat ← 3 2⍴⍳6ₓ ⋄ 1 0 1 1 #⁻¹₀ mat   ⍝ [0 1⋄0 0⋄2 3⋄4 5]ₓ
+mat ← 3 2⍴⍳6ₓ ⋄ 1 0 1 1 #⁻₀ mat   ⍝ [0 1⋄0 0⋄2 3⋄4 5]ₓ
 
 ⍝ aplcart/table.tsv:201 — Scan: f between items of Y in progressively longer vectors along axis ax
 mat ← 3 2⍴⍳6ₓ ⋄ +\₀mat   ⍝ [0 1⋄2 4⋄6 9]ₓ
@@ -892,7 +892,7 @@ N←0.25 0.5 0.75 ⋄ 8↣○N
 N←3j4 0j2 ⋄ ⊣/∨N   ⍝ 3 0
 
 ⍝ aplcart/table.tsv:571 — Arcsine N
-N←0.25 0.5 0.75 ⋄ 1○⁻¹N
+N←0.25 0.5 0.75 ⋄ 1○⁻N
 0.2526802551420786 0.5235987755982988 0.848062078981481
 
 ⍝ aplcart/table.tsv:572 — +N (complex conjugate)
@@ -906,29 +906,29 @@ N←0 0.5 1 ⋄ ○N
 1 0.8775825618903728j0.479425538604203 0.5403023058681398j0.8414709848078965
 
 ⍝ aplcart/table.tsv:575 — Arccosine N
-N←0.25 0.5 0.75 ⋄ 2○⁻¹N
+N←0.25 0.5 0.75 ⋄ 2○⁻N
 1.318116071652818 1.047197551196598 0.7227342478134157
 
 ⍝ aplcart/table.tsv:576 — Arctangent N
-N←0.25 0.5 0.75 ⋄ 3○⁻¹N
+N←0.25 0.5 0.75 ⋄ 3○⁻N
 0.2449786631268641 0.4636476090008061 0.6435011087932844
 
 ⍝ aplcart/table.tsv:577 — cosh → sinh: (N+1)×((N-1)÷N+1)*.5 (more precise sinh arcosh N or tan arcsec N)
-N←1 2 3 ⋄ 4○⁻¹N   ⍝ 0 1.732050807568877 2.82842712474619
+N←1 2 3 ⋄ 4○⁻N   ⍝ 0 1.732050807568877 2.82842712474619
 
 ⍝ aplcart/table.tsv:579 — Hyperbolic arsin N
-N←0.25 0.5 0.75 ⋄ 5○⁻¹N
+N←0.25 0.5 0.75 ⋄ 5○⁻N
 0.2474664615472635 0.4812118250596035 0.6931471805599453
 
 ⍝ aplcart/table.tsv:580 — Hyperbolic arcos N
-N←1 2 3 ⋄ 6○⁻¹N   ⍝ 0 1.316957896924817 1.762747174039086
+N←1 2 3 ⋄ 6○⁻N   ⍝ 0 1.316957896924817 1.762747174039086
 
 ⍝ aplcart/table.tsv:581 — Hyperbolic artan N
-N←0.25 0.5 0.75 ⋄ 7○⁻¹N
+N←0.25 0.5 0.75 ⋄ 7○⁻N
 0.2554128118829953 0.5493061443340549 0.9729550745276566
 
 ⍝ aplcart/table.tsv:582 — icos ↔ -isin: -(-1+N*2)*.5
-N←0.25 0.5 0.75 ⋄ 8○⁻¹N
+N←0.25 0.5 0.75 ⋄ 8○⁻N
 0j¯1.030776406404415 0j¯1.118033988749895 0j¯1.25
 
 ⍝ aplcart/table.tsv:583 — N (identity)
@@ -1252,10 +1252,10 @@ Y←⍳5ₓ
 Iv (1+⍸)↣⊆ Y   ⍝ [0 1;2 3 4]ₓ
 
 ⍝ aplcart/table.tsv:688 — Limit: apply inverse of X∘f until stable; output expression returned directly
-f←+↢÷ ⋄ 1 f⁻¹⍣≡ 0   ⍝ ¯0.618033988749894
+f←+↢÷ ⋄ 1 f⁻⍣≡ 0   ⍝ ¯0.618033988749894
 
 ⍝ aplcart/table.tsv:689 — Limit: apply inverse of f until stable; output expression returned directly
-f←1↣+∘÷ ⋄ f⁻¹⍣≡0   ⍝ ¯0.618033988749894
+f←1↣+∘÷ ⋄ f⁻⍣≡0   ⍝ ¯0.618033988749894
 
 ⍝ aplcart/table.tsv:690 — Permutation vector that sorts like Y
 Y←3 1 2 1 ⋄ ⍋∘⍋Y   ⍝ [3 0 2 1]ₓ
@@ -1461,12 +1461,12 @@ Xs@0 Y   ⍝ [99 99 99⋄3 4 5]ₓ
 X←3
 f←+
 Y←1 2 3
-X f⁻¹ Y   ⍝ ¯2 ¯1 0
+X f⁻ Y   ⍝ ¯2 ¯1 0
 
 ⍝ aplcart/table.tsv:737 — Inverse: find Z such that Y ≡ f Z
 f←-
 Y←1 2 3
-f⁻¹ Y   ⍝ ¯1 ¯2 ¯3
+f⁻ Y   ⍝ ¯1 ¯2 ¯3
 
 ⍝ aplcart/table.tsv:738 — Rotate figure Nv in direction of point Ms
 Ms←1j1
@@ -1522,7 +1522,7 @@ B←[1 1 1⋄1 0 1] ⋄ ∧/∘,B   ⍝ 0
 Y←[1 2;3 4 5;2 2⍴⍳4ₓ] ⋄ ↑∘⍴¨Y   ⍝ [2 3 2]ₓ
 
 ⍝ aplcart/table.tsv:751 — Pad elements of vector of arrays Yv to equal shape
-Yv←[1 2;3 4 5] ⋄ ⊂⍤¯1∘⊃Yv   ⍝ [1 2 0;3 4 5]
+Yv←[1 2;3 4 5] ⋄ ⊂⁻¹∘⊃Yv   ⍝ [1 2 0;3 4 5]
 
 ⍝ aplcart/table.tsv:752 — Selective picking from array
 X←[0 1;1 0]
@@ -1692,31 +1692,31 @@ N←4 9 16 ⋄ (2×π)N
 ⍝ aplcart/table.tsv:794 — Angle of right triangle with height M and width N
 M←1
 N←1 2
-M 3○⁻¹÷ N
+M 3○⁻÷ N
 ⍝ =>
 0.7853981633974483 0.4636476090008061
 
 ⍝ aplcart/table.tsv:795 — Arccosecant
-N←4 9 16 ⋄ 1○⁻¹÷ N
+N←4 9 16 ⋄ 1○⁻÷ N
 0.2526802551420786 0.1113410143409639 0.06254076179649139
 
 ⍝ aplcart/table.tsv:796 — Arcsecant
-N←4 9 16 ⋄ 2○⁻¹÷ N
+N←4 9 16 ⋄ 2○⁻÷ N
 1.318116071652818 1.459455312453933 1.508255564998405
 
 ⍝ aplcart/table.tsv:797 — Arccotangent
-N←4 9 16 ⋄ 3○⁻¹÷ N
+N←4 9 16 ⋄ 3○⁻÷ N
 0.2449786631268641 0.1106572211738956 0.06241880999595735
 
 ⍝ aplcart/table.tsv:798 — Hyperbolic area cosecant
-N←4 9 16 ⋄ 5○⁻¹÷ N
+N←4 9 16 ⋄ 5○⁻÷ N
 0.2474664615472635 0.1108837483012855 0.06245938125554031
 
 ⍝ aplcart/table.tsv:799 — Hyperbolic area secant
-N←0.25 0.5 1 ⋄ 6○⁻¹÷ N   ⍝ 2.063437068895561 1.316957896924817 0
+N←0.25 0.5 1 ⋄ 6○⁻÷ N   ⍝ 2.063437068895561 1.316957896924817 0
 
 ⍝ aplcart/table.tsv:800 — Hyperbolic area cotangent
-N←4 9 16 ⋄ 7○⁻¹÷ N
+N←4 9 16 ⋄ 7○⁻÷ N
 0.2554128118829953 0.1115717756571049 0.06258157147700301
 
 ⍝ aplcart/table.tsv:801 — Map 0/1 to ¯1/1
@@ -1917,7 +1917,7 @@ Y←3 1 3 2 ⋄ 0⊥⍴ Y   ⍝ 4ₓ
 ⍝ aplcart/table.tsv:854 — N in Base M
 M←2
 N←5 8 15
-M⊥⁻¹N   ⍝ [0 1 0 1⋄1 0 0 0⋄1 1 1 1]
+M⊥⁻N   ⍝ [0 1 0 1⋄1 0 0 0⋄1 1 1 1]
 
 ⍝ aplcart/table.tsv:855 — Number of digit positions in Js (depends on ⎕PP)
 Js←4 ⋄ ≢⍕ Js   ⍝ 1ₓ
@@ -2038,7 +2038,7 @@ J←4 9 16
 I ⌊1+⍟ J   ⍝ [3 3 3]ₓ
 
 ⍝ aplcart/table.tsv:893 — Complementary Angle
-N←0 0.25 0.5 ⋄ 2○⁻¹1○⊢ N
+N←0 0.25 0.5 ⋄ 2○⁻1○⊢ N
 1.570796326794897 1.320796326794897 1.070796326794897
 
 ⍝ aplcart/table.tsv:894 — Vector having as many ones as Ym has rows
@@ -2329,10 +2329,10 @@ Js←4 ⋄ +\↦ Js   ⍝ 1 3 6 10
 Js←4 ⋄ -/¨,\↦Js   ⍝ 1 ¯1 2 ¯2
 
 ⍝ aplcart/table.tsv:970 — Difference of adjacent pairs with seed value; optional {X} instantiated as dyadic use
-N←4 9 16 ⋄ +\⁻¹N   ⍝ 4 5 7
+N←4 9 16 ⋄ +\⁻N   ⍝ 4 5 7
 
 ⍝ aplcart/table.tsv:971 — Convert binary to reflected Gray code; optional {X} instantiated as dyadic use
-B←1 1 0 1 0 1 0 ⋄ ≠\⁻¹B   ⍝ 1 0 1 1 1 1 1
+B←1 1 0 1 0 1 0 ⋄ ≠\⁻B   ⍝ 1 0 1 1 1 1 1
 
 ⍝ aplcart/table.tsv:972 — Is Nm a Hermitian matrix?; optional {X} instantiated as dyadic use
 Nm←[1 2j3⋄2j¯3 4] ⋄ ⍉≡+ Nm   ⍝ $t
@@ -2369,10 +2369,10 @@ Bv←$t $t $t $f $f ⋄ ⊥⍨~ Bv   ⍝ 2ₓ
 Y←3 1 3 2 ⋄ ⍳0ₓ⊥⍴ Y   ⍝ [0 1 2 3]ₓ
 
 ⍝ aplcart/table.tsv:982 — Digits of N; optional {X} instantiated as dyadic use
-N←123 450 7 ⋄ 10↣⊥⁻¹N   ⍝ [1 2 3⋄4 5 0⋄0 0 7]
+N←123 450 7 ⋄ 10↣⊥⁻N   ⍝ [1 2 3⋄4 5 0⋄0 0 7]
 
 ⍝ aplcart/table.tsv:983 — Binary representation of J; optional {X} instantiated as dyadic use
-J←3 8 15 ⋄ 2↣⊥⁻¹J   ⍝ [0 0 1 1⋄1 0 0 0⋄1 1 1 1]
+J←3 8 15 ⋄ 2↣⊥⁻J   ⍝ [0 0 1 1⋄1 0 0 0⋄1 1 1 1]
 
 ⍝ aplcart/table.tsv:984 — Is Nm an Orthogonal matrix?; optional {X} instantiated as dyadic use
 Nm←[0 1⋄¯1 0] ⋄ ⍉≡⌹ Nm   ⍝ $t
@@ -2688,7 +2688,7 @@ Ms 1↣+↣⊥ N   ⍝ 641
 ⍝ aplcart/table.tsv:1079 — Base-Is digit sum
 Is←10
 J←123 450 7
-Is +/⊥⁻¹ J   ⍝ 6 9 7
+Is +/⊥⁻ J   ⍝ 6 9 7
 
 ⍝ aplcart/table.tsv:1080 — An array that begins with 1↑N and has pair-wise sums 1↓N
 [(¯1⊥¨,\) 3,4 5 5 6;+/∘ 2↣↕ (¯1⊥¨,\) 3,4 5 5 6]
@@ -2900,7 +2900,7 @@ Js←12 ⋄ ∪⊢∨(1↓⍳) Js   ⍝ 1 2 3 4 6
 Y←3 1 3 2 ⋄ ⍳⍨∪↣⍳ Y   ⍝ [0 1 0 3]ₓ
 
 ⍝ aplcart/table.tsv:1137 — Main branch of the Lambert W function (N≥-*¯1)
-(×↢*⍨⁻¹) [0 1 (*1) (*1+*1) (2÷⍨*÷2)]
+(×↢*⍨⁻) [0 1 (*1) (*1+*1) (2÷⍨*÷2)]
 0 0.567143290409784 1 2.718281828459045 0.5
 
 ⍝ aplcart/table.tsv:1138 — Is-smallest (default: the smallest) major cell of Y
@@ -2962,13 +2962,13 @@ Dv← "/ab/cd/ef"  ⋄ ↑+.=⊢ Dv   ⍝ 3ₓ
 Jm←[1 1 2⋄1 2 3] ⋄ 1+(⍴⊥⍉∘(¯1↣+)) Jm   ⍝ 1 2 6
 
 ⍝ aplcart/table.tsv:1152 — Hamming weight
-J←0 3 15 ⋄ 2↣ +/⊥⁻¹ J   ⍝ 0 2 4
+J←0 3 15 ⋄ 2↣ +/⊥⁻ J   ⍝ 0 2 4
 
 ⍝ aplcart/table.tsv:1153 — ISBN check digit generator from ten first digits Jv
 Jv←0 3 0 6 4 0 6 1 5 ⋄ |¯11|1⊥+\ Jv   ⍝ 5
 
 ⍝ aplcart/table.tsv:1154 — Survivor number in the Josephus problem of order Js
-Js←10 ⋄ 2⊥1⊖2⊥⁻¹⊢ Js   ⍝ 5
+Js←10 ⋄ 2⊥1⊖2⊥⁻⊢ Js   ⍝ 5
 
 ⍝ aplcart/table.tsv:1155 — Convert decimal degrees/hours to hours,minutes,seconds
 ××(0 60 60⊤3600×|) 1.25   ⍝ 1 15 0
@@ -3210,7 +3210,7 @@ N←2 0⍴0 ⋄ +/÷(1⌈0⊥⍴) N   ⍝ 0 0
 ⍝ aplcart/table.tsv:1219 — Base-Is digital root
 Is←10
 J←123 999
-Is(+/⊥⁻¹)⍣≡J   ⍝ 6 9
+Is(+/⊥⁻)⍣≡J   ⍝ 6 9
 
 ⍝ aplcart/table.tsv:1220 — Weighted average of columns of Nm with weights Mv
 Mv←1 2
@@ -3413,7 +3413,7 @@ Mv +.×⍨÷(1⊥⊣) Nm
 ⍝ aplcart/table.tsv:1281 — Digital sum in base Is
 Is←10
 Js←12345
-Is ⊣⊥⊣|(1⊥⊥⁻¹) Js   ⍝ 5
+Is ⊣⊥⊣|(1⊥⊥⁻) Js   ⍝ 5
 
 ⍝ aplcart/table.tsv:1282 — Indices of Iv'th elements in ravel order of an array of dimensions Jv
 Iv←1 4 6
@@ -3630,7 +3630,7 @@ Ms ⊢↢⊂+(¯0.5 0.5×⊣) N
 0 0 0 0 (2*↢÷⍨1⊥2*⍨-) 0 3 4 0   ⍝ 5
 
 ⍝ aplcart/table.tsv:1337 — Encode a vector of positive integers as equal-width fields of digits in an integer
-(10⊥↢,10↣⊥⁻¹) 31 1 27 0   ⍝ 31012700
+(10⊥↢,10↣⊥⁻) 31 1 27 0   ⍝ 31012700
 
 ⍝ aplcart/table.tsv:1340 — Truncated division
 ¯10 10 ¯10 10 (××↢⌊|)÷ ¯3 ¯3 3 3   ⍝ [3 ¯3 ¯3 3]ₓ
@@ -3781,7 +3781,7 @@ Nv←100 200 300
 Ms ⊢↢⌽⊥⍨↢÷(1+⊣) Nv   ⍝ 529.7520661157024
 
 ⍝ aplcart/table.tsv:1381 — Join digits of strictly positive integers into a single integer
-(10⊥↢∊10↣⊥⁻¹¨) 31 1 27   ⍝ 31127
+(10⊥↢∊10↣⊥⁻¨) 31 1 27   ⍝ 31127
 
 ⍝ aplcart/table.tsv:1382 — Is Js an abundant number?
 Js←12 ⋄ +⍨<(1⊥↢∪⍳↣∨) Js   ⍝ $t
@@ -3806,7 +3806,7 @@ Jv←2 3 2 ⋄ ⊢⊤⍳∘ ×/ Jv
 [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄0 2 0⋄0 2 1⋄1 0 0⋄1 0 1⋄1 1 0⋄1 1 1⋄1 2 0⋄1 2 1]
 
 ⍝ aplcart/table.tsv:1388 — Vertical column headings for character matrix of width Js; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-$d⌷⍨↢⊂⍉∘ 10⊥⁻¹⍳ 12   ⍝ ["000000000011"⋄"012345678901"]
+$d⌷⍨↢⊂⍉∘ 10⊥⁻⍳ 12   ⍝ ["000000000011"⋄"012345678901"]
 
 ⍝ aplcart/table.tsv:1389 — Detect case of characters (1:uppercase, ¯1:lowercase, 0:neither)
 D←"Abc 19 Σς!"  ⋄ ¯1↣•c↣≠-1↣•c↣≠ D   ⍝ [1 ¯1 ¯1 0 0 0 0 1 ¯1 0]ₓ
@@ -3833,52 +3833,52 @@ Y←1 2 1 3 ⋄ (∪=⊗⊢)⍳⍨ Y   ⍝ 3 4⍴[$t $f $t $f $f $t $f $f $f $f 
 ⍝ aplcart/table.tsv:1396 — Bit-wise OR for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((∨⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 6 11 20
+I 2⊥((∨⌿⍤2)2⊥⁻,⍤0) J   ⍝ 6 11 20
 
 ⍝ aplcart/table.tsv:1397 — Bit-wise AND for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((∧⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 0 1 0
+I 2⊥((∧⌿⍤2)2⊥⁻,⍤0) J   ⍝ 0 1 0
 
 ⍝ aplcart/table.tsv:1398 — Bit-wise converse nonimplication for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((<⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 4 8 16
+I 2⊥((<⌿⍤2)2⊥⁻,⍤0) J   ⍝ 4 8 16
 
 ⍝ aplcart/table.tsv:1399 — Bit-wise implication for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((≤⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 29 29 27
+I 2⊥((≤⌿⍤2)2⊥⁻,⍤0) J   ⍝ 29 29 27
 
 ⍝ aplcart/table.tsv:1400 — Bit-wise XNOR for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((=⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 25 21 11
+I 2⊥((=⌿⍤2)2⊥⁻,⍤0) J   ⍝ 25 21 11
 
 ⍝ aplcart/table.tsv:1401 — Bit-wise converse implication for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((≥⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 27 23 15
+I 2⊥((≥⌿⍤2)2⊥⁻,⍤0) J   ⍝ 27 23 15
 
 ⍝ aplcart/table.tsv:1402 — Bit-wise nonimplication for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((>⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 2 2 4
+I 2⊥((>⌿⍤2)2⊥⁻,⍤0) J   ⍝ 2 2 4
 
 ⍝ aplcart/table.tsv:1403 — Bit-wise XOR for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((≠⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 6 10 20
+I 2⊥((≠⌿⍤2)2⊥⁻,⍤0) J   ⍝ 6 10 20
 
 ⍝ aplcart/table.tsv:1404 — Bit-wise NOR for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((⊽⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 25 20 11
+I 2⊥((⊽⌿⍤2)2⊥⁻,⍤0) J   ⍝ 25 20 11
 
 ⍝ aplcart/table.tsv:1405 — Bit-wise NAND for positive integers
 I←2 3 4
 J←4 9 16
-I 2⊥((⊼⌿⍤2)2⊥⁻¹,⍤0) J   ⍝ 31 30 31
+I 2⊥((⊼⌿⍤2)2⊥⁻,⍤0) J   ⍝ 31 30 31
 
 ⍝ aplcart/table.tsv:1406 — Date (⎕TS format) to YYYY-MM-DD
 Jv←2026 9 18 ⋄ ('-'@4 7∘⍕1000⊥3↣↑)Jv   ⍝ "2026-09-18"
@@ -4100,7 +4100,7 @@ Is←9
 Dv← "abc"
 Is ⊢↑⍨↢-↢⌊+↢≢÷2⍨ Dv   ⍝ "   abc"
 
-⍝ aplcart/table.tsv:1469 — Expansion vector (left argument for #⁻¹) to insert a new element after each one in Bv
+⍝ aplcart/table.tsv:1469 — Expansion vector (left argument for #⁻) to insert a new element after each one in Bv
 Bv←$t $f $t $f ⋄ ⍪↣,↢1#⍥,⍪,~ Bv   ⍝ $t $f $t $t $f $t
 
 ⍝ aplcart/table.tsv:1470 — Expansion vector for Y with zeros after indices Iv
@@ -4125,7 +4125,7 @@ Yv← 'b' "aa" 'a' "ab"  ⋄ ⊂⊃¨⍨↢⍋(≢,⊂)¨ Yv   ⍝ 'a' 'b' "aa" 
 ⍝ aplcart/table.tsv:1475 — Descending shortlex sort
 Yv← 'b' "aa" 'a' "ab"  ⋄ ⊂⊃¨⍨↢⍒(≢,⊂)¨ Yv   ⍝ "ab" "aa" 'b' 'a'
 
-⍝ aplcart/table.tsv:1476 — Expansion vector (left argument for #⁻¹) to insert Jv[i] elements before i'th element
+⍝ aplcart/table.tsv:1476 — Expansion vector (left argument for #⁻) to insert Jv[i] elements before i'th element
 Jv←2 0 1 ⋄ +\∊⍨↢↦+/ 1↣+ Jv   ⍝ $f $f $t $t $f $t
 
 ⍝ aplcart/table.tsv:1477 — Sort each column in ascending order
@@ -4183,7 +4183,7 @@ X←2 4
 Y←1 2 3 4 2
 X ⊂∘⍋∘∊⍨⍥(⊂⍤¯1)⌷⊢ Y   ⍝ 1 3 2 4 2
 
-⍝ aplcart/table.tsv:1489 — Expansion vector (left argument for #⁻¹) to insert Jv[i] elements after i'th element
+⍝ aplcart/table.tsv:1489 — Expansion vector (left argument for #⁻) to insert Jv[i] elements after i'th element
 Jv←2 0 1 ⋄ ¯1⌽(+\∊⍨↢↦+/) 1↣+ Jv   ⍝ $t $f $f $t $t $f
 
 ⍝ aplcart/table.tsv:1490 — Changing node matrix Im (starts,ends) to a connection matrix
@@ -4210,7 +4210,7 @@ Dv← "a+'hello'+'world'+b"  ⋄ ~∧≠\ ∘=↢'''↣⊆Dv
 "hello" "world"
 
 ⍝ aplcart/table.tsv:1496 — Underlines non-blanks in a string
-Dv← "ab cd"  ⋄ ⊢{[⍺⋄⍵]}('¯'#⁻¹⍨≠↢' ') Dv   ⍝ ["ab cd"⋄"¯¯ ¯¯"]
+Dv← "ab cd"  ⋄ ⊢{[⍺⋄⍵]}('¯'#⁻⍨≠↢' ') Dv   ⍝ ["ab cd"⋄"¯¯ ¯¯"]
 
 ⍝ aplcart/table.tsv:1497 — Diagonal matrix with elements of Yv (filled appropriately)
 Yv←1 2 3 ⋄ ⌽∘⍳∘≢⌽⊢,(0↣⍴⍴⍨(0 ¯1+≢)) Yv   ⍝ [0 1 0⋄0 0 2⋄3 0 0]
@@ -4271,14 +4271,14 @@ Y←1 2 1 3 1 2 ⋄ {⍵⌷⍨⊂⍒⊢/⍵},↢≢⌸ Y   ⍝ [1 3⋄2 2⋄3 1]
 ⍝ aplcart/table.tsv:1511 — First one (<\) in each subvector of Bv indicated by Av (fast ∊<\¨Av⊂Bv)
 Av←1 0 0 1 0 0
 Bv←$f $t $t $t $f $t
-Av ∧∨⊢{⍵#⁻¹ </∘ 2↣↕ 0,⍵#⍺}∨ Bv
+Av ∧∨⊢{⍵#⁻ </∘ 2↣↕ 0,⍵#⍺}∨ Bv
 ⍝ =>
 0 1 0 1 0 0
 
 ⍝ aplcart/table.tsv:1512 — State of switch given Bv on and Av off spikes
 Av←0 0 1 0 0 1
 Bv←$t $f $f $f $t $f
-Av ≠\∨{⍺#⁻¹ ≠/∘ 2↣↕ 0,⍺#⍵}⊢ Bv
+Av ≠\∨{⍺#⁻ ≠/∘ 2↣↕ 0,⍺#⍵}⊢ Bv
 ⍝ =>
 $t $t $f $f $t $f
 
@@ -4301,7 +4301,7 @@ X {¯1+≢⍵}⌸⍸,⍨⍳∘(1+≢)∘⊣ Y   ⍝ 2 2 2
 ⍝ aplcart/table.tsv:1521 — Leading ones (∧⍀) in each subvector of Bv indicated by Av
 Av←1 0 0 1 0 0
 Bv←$t $t $f $t $f $t
-Av ≥{~≠\⍺#⁻¹(≠/∘(2↣↕))1,⍺#⍵}⊢ Bv
+Av ≥{~≠\⍺#⁻(≠/∘(2↣↕))1,⍺#⍵}⊢ Bv
 ⍝ =>
 $t $t $f $t $f $f
 
@@ -4735,7 +4735,7 @@ X⊣⍣Bs Y   ⍝ 3 1 3 2
 ⍝ aplcart/table.tsv:1691 — Partitioned enclose of Y according (along last axis) beginning enclosures at indices Iv
 Iv←0 2 4
 Y←⍳6ₓ
-Iv⍸⁻¹↣⊂Y   ⍝ [[0 1] [2 3] [4 5]]ₓ
+Iv⍸⁻↣⊂Y   ⍝ [[0 1] [2 3] [4 5]]ₓ
 
 ⍝ aplcart/table.tsv:1692 — Count number of trailing elements that are equal between two vectors of equal length
 "Cloud" (1⊥=) "Proud"   ⍝ 3
@@ -4964,7 +4964,7 @@ B←0 1 1 0
 2 3 4 5 6 {⍉(0,⍤0⍺)⊤⍵} 10   ⍝ [5 3 2 2 1⋄0 1 2 0 4]
 
 ⍝ aplcart/table.tsv:1812 — Replacing major cells of Y not satisfying Bv with prototypical cells
-[1 1 0 1 1 1 0 1 {⍺#⁻¹⍺#⍵} "Amazing!";1 1 0 {⍺#⁻¹⍺#⍵} [3 1 4;2 7 18;1 6 18]]
+[1 1 0 1 1 1 0 1 {⍺#⁻⍺#⍵} "Amazing!";1 1 0 {⍺#⁻⍺#⍵} [3 1 4;2 7 18;1 6 18]]
 ["Am zin !" [3 1 4;2 7 18;0 0 0]]
 
 ⍝ aplcart/table.tsv:1813 — Count number of leading elements that are equal between two vectors of equal length
@@ -4985,7 +4985,7 @@ Yv←[1 2 3;["ab"⋄"cd"⋄"ef"]] ⋄ {⍉⊃{1ₓ=≢⍴⍵?⍵;↓⍵}¨⍵}Yv
 3 2⍴[1 "ab" 2 "cd" 3 "ef"]
 
 ⍝ aplcart/table.tsv:1818 — Bit-wise NOT for positive integers
-J←1 2 3 7 8 ⋄ 2⊥~2⊥⁻¹J   ⍝ 14 13 12 8 7
+J←1 2 3 7 8 ⋄ 2⊥~2⊥⁻J   ⍝ 14 13 12 8 7
 
 ⍝ aplcart/table.tsv:1820 — Locate fill elements formed by replicating Y by Iv
 Iv←2 ¯1 1
@@ -5000,7 +5000,7 @@ Js←5
 ⍝ aplcart/table.tsv:1822 — Locate fill elements formed by expanding Y by Iv
 Iv←1 0 1 0 1
 Y←10 20 30
-~Iv#⁻¹1⍨¨Y   ⍝ $f $t $f $t $f
+~Iv#⁻1⍨¨Y   ⍝ $f $t $f $t $f
 
 ⍝ aplcart/table.tsv:1823 — Find with wildcards; Concrete APLcart recipe; setup from april/libraries/dfns/array/demo.lisp:201; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 [match:]←•load "lib/array.bpl"
@@ -5031,10 +5031,10 @@ Nv←[1 2 3;4 5;,6] ⋄ ⌽+⌿⊃⌽¨Nv   ⍝ 1 6 14
 6 7⍴[$f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t]
 
 ⍝ aplcart/table.tsv:1835 — All binary representations up to Js (truth table)
-Js←5 ⋄ 2⊥⁻¹ ⍳1ₓ+Js   ⍝ [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄1 0 0⋄1 0 1]
+Js←5 ⋄ 2⊥⁻ ⍳1ₓ+Js   ⍝ [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄1 0 0⋄1 0 1]
 
 ⍝ aplcart/table.tsv:1836 — Binary format of decimal number Js
-Js←13 ⋄ ∊⍕¨2⊥⁻¹Js   ⍝ "1101"
+Js←13 ⋄ ∊⍕¨2⊥⁻Js   ⍝ "1101"
 
 ⍝ aplcart/table.tsv:1838 — Adjacency matrix of size Iv (n or m,n) from list of (a,b) arcs Jv
 4 7 {$t@⍵ $f⍴⍨2⍴⍺} [0 5;1 6;2 0]
@@ -5133,7 +5133,7 @@ Is↑Y⍪Is#¯1↑Y
 [1 2⋄3 4⋄3 4⋄3 4⋄3 4]
 
 ⍝ aplcart/table.tsv:1874 — Zero-padded character matrix from vector of integers; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{[10⊥⁻¹⍵]⌷$d}31 0 2718   ⍝ ["0031"⋄"0000"⋄"2718"]
+{[10⊥⁻⍵]⌷$d}31 0 2718   ⍝ ["0031"⋄"0000"⋄"2718"]
 
 ⍝ aplcart/table.tsv:1875 — Remove consecutive duplicate rows from ordered matrix Ym
 Ym←[1 2⋄1 2⋄3 4⋄3 4] ⋄ Ym#⍨1,∨/ ≢/₁∘ 2↣↕ Ym   ⍝ [1 2⋄3 4]
@@ -5143,7 +5143,7 @@ Ym←[1 2⋄1 2⋄3 4⋄3 4] ⋄ Ym#⍨1,∨/ ≢/₁∘ 2↣↕ Ym   ⍝ [1 2�
 6 7⍴[$f $f $f $f $f $f $f $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f]
 
 ⍝ aplcart/table.tsv:1877 — Spacing out text; Double the expansion-mask length so its one-count matches the input length; upstream recipe raises LENGTH ERROR. Concrete character vector checked in Dyalog
-D←"abcd" ⋄ D#⁻¹⍨1 0⍴⍨2×⊃⌽⍴D   ⍝ "a b c d "
+D←"abcd" ⋄ D#⁻⍨1 0⍴⍨2×⊃⌽⍴D   ⍝ "a b c d "
 
 ⍝ aplcart/table.tsv:1878 — Reversal (⊖) of each subvector of Y indicated by Av (fast ∊⌽¨Av⊂Yv)
 Av←1 0 1 0 0
@@ -5175,7 +5175,7 @@ Js←2
 Iv⊂↣⌷⍣Js⍳≢Iv   ⍝ [2 0 1]ₓ
 
 ⍝ aplcart/table.tsv:1885 — Compression vector Av for partitioned array indicated by Bv (Fast Av/⍨≢¨⊆⍨Bv)
-1 0 1 0 {≠\⍵#⁻¹⍺≠¯1↓0,⍺} 1 0 0 1 0 1 0 1 0   ⍝ $t $t $t $f $f $t $t $f $f
+1 0 1 0 {≠\⍵#⁻⍺≠¯1↓0,⍺} 1 0 0 1 0 1 0 1 0   ⍝ $t $t $t $f $f $t $t $f $f
 
 ⍝ aplcart/table.tsv:1886 — 1-rotate on each subvector of Bv indicated by Av (Fast ∊1⌽¨Av⊂Bv)
 1 0 0 0 1 0 0 {[⍋⍺++\⍺]⌷⍵} "abcdEFG"   ⍝ "bcdaFGE"
@@ -5295,7 +5295,7 @@ Xv⊂↣∊⌽↢Yv¨⍳≢Yv   ⍝ $t
 ⍝ aplcart/table.tsv:1926 — Adding an empty cell into Y at fractional position Ms
 Ms←2.5
 Y←3 2⍴⍳6ₓ
-Y#⁻¹⍨Ms⌊↣≠⍳1ₓ+≢Y
+Y#⁻⍨Ms⌊↣≠⍳1ₓ+≢Y
 ⍝ =>
 ([0 1⋄2 3⋄0 0⋄4 5])ₓ
 
@@ -5404,7 +5404,7 @@ Nv←1 5 2 6
 Mv+ -/₁∘ 2↣↕ ⌈⍀0⍪+⍀Mv-Nv   ⍝ 1 3 3 3
 
 ⍝ aplcart/table.tsv:1957 — Convert to hexadecimal; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
-{[16⊥⁻¹⍵]⌷$d,$a}65535   ⍝ "FFFF"
+{[16⊥⁻⍵]⌷$d,$a}65535   ⍝ "FFFF"
 
 ⍝ aplcart/table.tsv:1958 — Maxima of elements of subsets of Nv specified by A (one mask per column)
 A←[1 0⋄0 1⋄1 1]
@@ -5459,7 +5459,7 @@ Nv←1 1 1 1
 ⍝ aplcart/table.tsv:1969 — Not leading zeroes (∨\) in each subvector of Bv indicated by Av (fast ∊∨\¨Av⊂Nv)
 Av←1 0 1 0 0
 Bv←$t $t $t $f $t
-Av{≠⍀b#⁻¹ ≠/₁∘ 2↣↕ 0⍪⍵#⍨b←⍺∨⍵}Bv
+Av{≠⍀b#⁻ ≠/₁∘ 2↣↕ 0⍪⍵#⍨b←⍺∨⍵}Bv
 ⍝ =>
 $t $t $t $t $t
 
@@ -5529,7 +5529,7 @@ X#⍨~(⍳≢X)∊X⍳Y   ⍝ [1 2⋄5 6]
 Ym←2 3⍴⍳6ₓ ⋄ Ym⊂∘⊢⌸⍥,⍨+/⊃⍳⍴Ym   ⍝ [[0] [1 3] [2 4] [5]]ₓ
 
 ⍝ aplcart/table.tsv:1985 — Powerset: All subsets of Y, excluding the empty set (0⌿Y) but including Y itself
-[{#↢⍵¨↓⌽2⊥⁻¹1+⍳¯1ₓ+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻¹1+⍳¯1ₓ+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
+[{#↢⍵¨↓⌽2⊥⁻1+⍳¯1ₓ+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻1+⍳¯1ₓ+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
 [["A" "B" "AB" "C" "AC" "BC" "ABC" "D" "AD" "BD" "ABD" "CD" "ACD" "BCD" "ABCD"] [1 2⍴"Aa";1 2⍴"Bb";["Aa"⋄"Bb"];1 2⍴"Cc";["Aa"⋄"Cc"];["Bb"⋄"Cc"];["Aa"⋄"Bb"⋄"Cc"]]]
 
 ⍝ aplcart/table.tsv:1987 — Accumulate deposits Nv at rate Ms
@@ -5583,17 +5583,17 @@ X{⍎⍵,'⍺'⍴⍨' '∧.=⍵}Dv   ⍝ 42
 Y←42 "Pete" "Πέτρος"  ⋄ {⍵⌷⍨⊂⍋{[•c⍵ ⍵]}¨⍵}Y   ⍝ 42 "Pete" "Πέτρος"
 
 ⍝ aplcart/table.tsv:2004 — Powerset: All subsets of Y, excluding the empty set (0⌿Y) and Y itself
-[{#↢⍵¨↓⌽2⊥⁻¹1+⍳¯2ₓ+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻¹1+⍳¯2ₓ+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
+[{#↢⍵¨↓⌽2⊥⁻1+⍳¯2ₓ+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻1+⍳¯2ₓ+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
 [["A" "B" "AB" "C" "AC" "BC" "ABC" "D" "AD" "BD" "ABD" "CD" "ACD" "BCD"] [1 2⍴"Aa";1 2⍴"Bb";["Aa"⋄"Bb"];1 2⍴"Cc";["Aa"⋄"Cc"];["Bb"⋄"Cc"]]]
 
 ⍝ aplcart/table.tsv:2005 — Powerset: All subsets of Y, including the empty set (0⌿Y) and Y itself
-[{#↢⍵¨↓⌽2ₓ⊥⁻¹⍳2ₓ*≢⍵} "ABCD";{#↢⍵¨↓⌽2ₓ⊥⁻¹⍳2ₓ*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
+[{#↢⍵¨↓⌽2ₓ⊥⁻⍳2ₓ*≢⍵} "ABCD";{#↢⍵¨↓⌽2ₓ⊥⁻⍳2ₓ*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
 [["" "A" "B" "AB" "C" "AC" "BC" "ABC" "D" "AD" "BD" "ABD" "CD" "ACD" "BCD" "ABCD"] [0 2⍴' ';1 2⍴"Aa";1 2⍴"Bb";["Aa"⋄"Bb"];1 2⍴"Cc";["Aa"⋄"Cc"];["Bb"⋄"Cc"];["Aa"⋄"Bb"⋄"Cc"]]]
 
 ⍝ aplcart/table.tsv:2006 — Cumulative all-true (∧\) in each subvectors of Bv indicated by Av (fast ∊∧\¨Av⊂Bv)
 Av←1 0 1 0 0
 Bv←$t $t $t $f $t
-Av{~≠\z#⁻¹(≠/∘(2↣↕))0,~⍵#⍨z←⍺≥⍵}Bv
+Av{~≠\z#⁻(≠/∘(2↣↕))0,~⍵#⍨z←⍺≥⍵}Bv
 ⍝ =>
 $t $t $t $f $f
 
@@ -5675,7 +5675,7 @@ N←1 2 3
 (+⌿(N*Ms)÷≢N)*÷Ms   ⍝ 2.160246899469286
 
 ⍝ aplcart/table.tsv:2024 — Powerset: All subsets of Y, including the empty set (0⌿Y) but excluding Y itself
-[{#↢⍵¨↓⌽2⊥⁻¹⍳¯1+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻¹⍳¯1+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
+[{#↢⍵¨↓⌽2⊥⁻⍳¯1+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻⍳¯1+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
 [["" "A" "B" "AB" "C" "AC" "BC" "ABC" "D" "AD" "BD" "ABD" "CD" "ACD" "BCD"] [0 2⍴' ';1 2⍴"Aa";1 2⍴"Bb";["Aa"⋄"Bb"];1 2⍴"Cc";["Aa"⋄"Cc"];["Bb"⋄"Cc"]]]
 
 ⍝ aplcart/table.tsv:2025 — Centering flush left character array
@@ -5685,14 +5685,14 @@ Dm← ["ab    "⋄"cde   "]  ⋄ Dm⌽⍨-⌊2÷⍨+/∧\' '=⌽Dm
 ⍝ aplcart/table.tsv:2026 — Cumulative sum (+⍀) in each subvector of N indicated by Av (fast ∊+\¨Av⊂Nv)
 Av←1 0 1 0 0
 N←1 2 3 4 5
-+⍀N-Av#⁻¹ -/∘⌽∘ 2↣↕ 0⍪Av#+⍀¯1↓0⍪N
++⍀N-Av#⁻ -/∘⌽∘ 2↣↕ 0⍪Av#+⍀¯1↓0⍪N
 ⍝ =>
 1 3 3 7 12
 
 ⍝ aplcart/table.tsv:2027 — Running parity (≠⍀) in each subvector of B indicated by Av (fast ∊≠\¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-≠⍀B≠Av#⁻¹ ≠/∘ 2↣↕ 0⍪Av#≠⍀¯1↓0⍪B
+≠⍀B≠Av#⁻ ≠/∘ 2↣↕ 0⍪Av#≠⍀¯1↓0⍪B
 ⍝ =>
 $t $t $t $f $f
 
@@ -5727,7 +5727,7 @@ Av{⍵⌷⍨⊂z⍳⌊\z←⍋⍋⍺+\↣,⍪⍵}Y   ⍝ 3 1 1 1 1
 ⍝ aplcart/table.tsv:2036 — Cumulative reverse parity (=⍀) in each subvector B as indicated by Av (fast ∊=\¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-=⍀B≠Av#⁻¹ ≠/∘ 2↣↕ 0⍪~Av#=⍀¯1↓1⍪B
+=⍀B≠Av#⁻ ≠/∘ 2↣↕ 0⍪~Av#=⍀¯1↓1⍪B
 ⍝ =>
 $t $f $t $t $f
 
@@ -5799,13 +5799,13 @@ Bv←$t $t $t $f $t
 Av{(⍺#y)∧z#1⌽z←⍺#⍨⍺≥y←⍵=1⌽⍺}Bv   ⍝ 0 0
 
 ⍝ aplcart/table.tsv:2050 — Cumulative less than or equal scan on each subvector of Bv indicated by Av (Fast ∊≤\¨Av⊂Bv)
-1 0 0 0 1 0 0 {(⍺≤⍵)>b#⁻¹z<¯1↓1,z←⍵#⍨b←⍵≤⍺} 1 0 1 0 1 1 0
+1 0 0 0 1 0 0 {(⍺≤⍵)>b#⁻z<¯1↓1,z←⍵#⍨b←⍵≤⍺} 1 0 1 0 1 1 0
 $t $f $t $t $t $t $f
 
 ⍝ aplcart/table.tsv:2051 — Not first zero (≤\) in each subvector of B indicated by Av (fast ∊≤\¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-Av{(b∧⍺)⊽c#⁻¹ </∘ 2↣↕ 0⍪(c←b∨⍺)#b←~⍵}B
+Av{(b∧⍺)⊽c#⁻ </∘ 2↣↕ 0⍪(c←b∨⍺)#b←~⍵}B
 ⍝ =>
 $t $f $t $t $f
 
@@ -5838,7 +5838,7 @@ Y←1 2 1 3 2 1 ⋄ {m←≠⍵ ⋄ 1+o-[⍵⍳⍨⍵#⍨m]⌷m#o←⍋⍋⍵}Y 
 ⍝ aplcart/table.tsv:2063 — Adding an empty cell into Y at fractional positions Mv
 Mv←0.5 2.5
 Y←1 2 3
-Y#⁻¹⍨~(⍳Mv+⍥≢Y)∊Mv⌊↣+⍳≢Mv   ⍝ 0 1 2 0 3
+Y#⁻⍨~(⍳Mv+⍥≢Y)∊Mv⌊↣+⍳≢Mv   ⍝ 0 1 2 0 3
 
 ⍝ aplcart/table.tsv:2064 — Inverted Table Grade Up (⍋Y where Y is unverted Yv)
 Yv←[2 1 2;["ba"⋄"ca"⋄"db"]] ⋄ {{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑⍵}Yv   ⍝ [1 0 2]ₓ
@@ -5851,10 +5851,10 @@ Yv←[2 1 2;["ba"⋄"ca"⋄"db"]] ⋄ {{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑
 Jm←[0 1⋄1 2⋄2 0] ⋄ {s⍴1@ s₁⊥⍵ 0⍴⍨×/s←0 0+1+⌈/,⍵}Jm
 [0 1 0⋄0 0 1⋄1 0 0]
 
-⍝ aplcart/table.tsv:2067 — Expansion vector (left argument for #⁻¹) to insert Iv[i] elements after i'th subvector (subvectors indicated by Bv)
+⍝ aplcart/table.tsv:2067 — Expansion vector (left argument for #⁻) to insert Iv[i] elements after i'th subvector (subvectors indicated by Bv)
 Iv←2 1
 Bv←$t $f $t $f $f
-(⍳Bv≢↣++/Iv)∊+\0,1+¯1↓Iv#⁻¹⍨1⌽Bv
+(⍳Bv≢↣++/Iv)∊+\0,1+¯1↓Iv#⁻⍨1⌽Bv
 ⍝ =>
 $t $t $f $f $t $t $t $f
 
@@ -5873,70 +5873,70 @@ Is{⍺>⍵?0;↑⌽1(+\×)⍣(⍵-⍺)⍨↦⍺}Js   ⍝ 7
 ⍝ — 2's-complement bit-wise OR; positive operands (aplcart/table.tsv:2070)
 I←3 2 1
 J←2 5 2
-I{2⊥(-∨/0>b),∨⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-∨/0>b),∨⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 3 7 3
 
 ⍝ — 2's-complement bit-wise AND; positive operands (aplcart/table.tsv:2071)
 I←3 2 1
 J←2 5 2
-I{2⊥(-∧/0>b),∧⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-∧/0>b),∧⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 2 0 0
 
 ⍝ — 2's-complement bit-wise converse nonimplication; positive operands (aplcart/table.tsv:2072)
 I←3 2 1
 J←2 5 2
-I{2⊥(-</0>b),<⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-</0>b),<⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 0 5 2
 
 ⍝ — 2's-complement bit-wise implication; positive operands (aplcart/table.tsv:2073)
 I←3 2 1
 J←2 5 2
-I{2⊥(-≤/0>b),≤⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-≤/0>b),≤⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 ¯2 ¯3 ¯2
 
 ⍝ — 2's-complement bit-wise XNOR; positive operands (aplcart/table.tsv:2074)
 I←3 2 1
 J←2 5 2
-I{2⊥(-=/0>b),=⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-=/0>b),=⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 ¯2 ¯8 ¯4
 
 ⍝ — 2's-complement bit-wise converse implication; positive operands (aplcart/table.tsv:2075)
 I←3 2 1
 J←2 5 2
-I{2⊥(-≥/0>b),≥⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-≥/0>b),≥⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 ¯1 ¯6 ¯3
 
 ⍝ — 2's-complement bit-wise nonimplication; positive operands (aplcart/table.tsv:2076)
 I←3 2 1
 J←2 5 2
-I{2⊥(->/0>b),>⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(->/0>b),>⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 1 2 1
 
 ⍝ — 2's-complement bit-wise XOR; positive operands (aplcart/table.tsv:2077)
 I←3 2 1
 J←2 5 2
-I{2⊥(-≠/0>b),≠⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-≠/0>b),≠⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 1 7 3
 
 ⍝ — 2's-complement bit-wise NOR; positive operands (aplcart/table.tsv:2078)
 I←3 2 1
 J←2 5 2
-I{2⊥(-⊽/0>b),⊽⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-⊽/0>b),⊽⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 ¯4 ¯8 ¯4
 
 ⍝ — 2's-complement bit-wise NAND; positive operands (aplcart/table.tsv:2079)
 I←3 2 1
 J←2 5 2
-I{2⊥(-⊼/0>b),⊼⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)}J
+I{2⊥(-⊼/0>b),⊼⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)}J
 ⍝ =>
 ¯3 ¯1 ¯1
 
@@ -5983,12 +5983,12 @@ Cm←["ab  "⋄"cde "]
 ⍝ aplcart/table.tsv:2095 — Vector (Iv[1]⍴1),(Jv[1]⍴0),(Iv[2]⍴1),…
 Iv←2 1 3
 Jv←1 2 0
-(⍳+/Iv,Jv)∊+\0,1+¯1↓Jv#⁻¹⍨(⍳+/Iv)∊¯1++\Iv
+(⍳+/Iv,Jv)∊+\0,1+¯1↓Jv#⁻⍨(⍳+/Iv)∊¯1++\Iv
 ⍝ =>
 $t $t $f $t $f $f $t $t $t
 
 ⍝ aplcart/table.tsv:2096 — Grade up in each subvector of Bv indicated by Av (Fast ∊⍋¨Av⊂Nv)
-1 0 0 0 1 0 0 {(⍋⍵++\⍺#⁻¹2×⌈/|0,⍵)-⌈\⍺#⁻¹⍸⍺} 10 20 40 30 ¯5 ¯10 ¯7
+1 0 0 0 1 0 0 {(⍋⍵++\⍺#⁻2×⌈/|0,⍵)-⌈\⍺#⁻⍸⍺} 10 20 40 30 ¯5 ¯10 ¯7
 [0 1 3 2 1 2 0]ₓ
 
 ⍝ aplcart/table.tsv:2097 — Evaluate Roman numeral
@@ -6010,7 +6010,7 @@ Nv←1 2 4 6 7
 +/((⊢×Is÷⌈/)Nv-⌊/Nv)≥⊗⍳Is   ⍝ [1 1 2 3 3]ₓ
 
 ⍝ aplcart/table.tsv:2103 — Grade down in each subvector of Bv indicated by Av (Fast ∊⍒¨Av⊂Nv)
-1 0 0 0 1 0 0 {(⍋⍵-⍨+\⍺#⁻¹2×⌈/|0,⍵)-⌈\⍺#⁻¹⍸⍺} 10 20 40 30 ¯5 ¯10 ¯7
+1 0 0 0 1 0 0 {(⍋⍵-⍨+\⍺#⁻2×⌈/|0,⍵)-⌈\⍺#⁻⍸⍺} 10 20 40 30 ¯5 ¯10 ¯7
 [2 3 1 0 0 2 1]ₓ
 
 ⍝ aplcart/table.tsv:2104 — Grade up (⍋) for sorting subarrays of Y having lengths Iv (≢Y ↔ +/Iv)
@@ -6069,7 +6069,7 @@ $t
 ⍝ aplcart/table.tsv:2113 — Vector (Jv[1]+⍳Iv[1]),(Jv[2]+⍳Iv[2]),(Jv[3]+⍳Iv[3]),… (≢Iv ↔ ≢Jv)
 Iv←2 3 1
 Jv←10 20 30
-+\1+((⍳+/Iv)∊+\0,Iv)#⁻¹Jv-¯1↓1,Iv+Jv
++\1+((⍳+/Iv)∊+\0,Iv)#⁻Jv-¯1↓1,Iv+Jv
 ⍝ =>
 10 11 20 21 22 30
 
@@ -6097,7 +6097,7 @@ Y←[3 1 2⋄6 4 5]
 [1 2 3⋄4 5 6]
 
 ⍝ aplcart/table.tsv:2122 — Permutation vector for Is-rotate on each subvector indicated by Bv (Fast ∊Is⌽¨⍵⊂⍳≢Bv)
-[p←2 {⍋j+([j←¯1++\⍵]⌷i|⍺)≥+\1-⍵#⁻¹¯1↓0,i←i-¯1↓0,i←1+⍸1⌽⍵} 1 0 0 0 0 1 0 0 0;[p]⌷"abcdeABCD"]
+[p←2 {⍋j+([j←¯1++\⍵]⌷i|⍺)≥+\1-⍵#⁻¯1↓0,i←i-¯1↓0,i←1+⍸1⌽⍵} 1 0 0 0 0 1 0 0 0;[p]⌷"abcdeABCD"]
 [2 3 4 0 1 7 8 5 6;"cdeabCDAB"]ₓ
 
 ⍝ aplcart/table.tsv:2123 — Clamp non-negative N to fit in ⍕ field Iv[1 2]
@@ -6122,7 +6122,7 @@ X{[⍺⍳∘≢↣∩⍺(R⍨⍳R←≢∘⊢⍴↢⍋↢⍋⍺⍨⍳⍪⍨)⍵]
 ⍝ aplcart/table.tsv:2126 — Intersperse: Insert cell X between major cells in Y
 X←9
 Y←1 2 3
-X{m←(¯1+2×≢⍵)⍴1,-≢⍺ ⋄ ⍺⍴⍨↢⍴@ ⍸m|↣#m<0 (|m)#(m>0)#⁻¹⍵}Y
+X{m←(¯1+2×≢⍵)⍴1,-≢⍺ ⋄ ⍺⍴⍨↢⍴@ ⍸m|↣#m<0 (|m)#(m>0)#⁻⍵}Y
 ⍝ =>
 1 9 2 9 3
 
@@ -6142,7 +6142,7 @@ Is{⍺|↑⍵{0=⍵?1 0;(⍵∇⍵|⍺)+.×0 1,⍪1,-⌊⍺÷⍵}⍺}Js
 
 ⍝ aplcart/table.tsv:2131 — Moving all blanks to end of each row (fast (~,∩)∘' '⍤1)
 D← ["a b "⋄" cd "]
-{⍵⍴↣⍴(,(+/b)>⊗⍳¯1↑⍴⍵)#⁻¹⍵#⍨⍥,b←⍵≠' '}D
+{⍵⍴↣⍴(,(+/b)>⊗⍳¯1↑⍴⍵)#⁻⍵#⍨⍥,b←⍵≠' '}D
 ⍝ =>
 ["ab  "⋄"cd  "]
 
@@ -6180,7 +6180,7 @@ r≡Is↑⍒Yv   ⍝ $t
 
 ⍝ aplcart/table.tsv:2138 — Decommenting a matrix representation of a function (⎕CR)
 Dm← ["x←1 ⍝abc"⋄"'⍝' ⍝def"]
-{a∨/↣#⍵⍴↣⍴a,↣(#⁻¹)⍵#⍨⍥,a←∧\('⍝'≠⍵)∨≠\⍵='''}Dm
+{a∨/↣#⍵⍴↣⍴a,↣(#⁻)⍵#⍨⍥,a←∧\('⍝'≠⍵)∨≠\⍵='''}Dm
 ⍝ =>
 ["x←1     "⋄"'⍝'     "]
 
@@ -6418,7 +6418,7 @@ X f{⍵ ⍹⍨ ⍶ ⍺}g Y   ⍝ ¯6
 ⍝ aplcart/table.tsv:2231 — Bit-wise application of f over positive integers Jv
 f←∨
 J←3 5 6
-f{2⊥⍶/2⊥⁻¹⍉⍵}J   ⍝ 7
+f{2⊥⍶/2⊥⁻⍉⍵}J   ⍝ 7
 
 ⍝ aplcart/table.tsv:2232 — Index of last element where not X f Y (f returns Boolean result)
 X←1 2 3 4
@@ -6634,13 +6634,13 @@ Mv Is{⌽⍵⌹⍺*⊗⍳1ₓ+⍶} Nv   ⍝ 1 1 1
 I←3 5
 f←≠
 J←6 2
-I f{2⊥⍶⌿⍤2(2⊥⁻¹⍉[⍺⋄⍵])} J   ⍝ 5 7
+I f{2⊥⍶⌿⍤2(2⊥⁻⍉[⍺⋄⍵])} J   ⍝ 5 7
 
 ⍝ aplcart/table.tsv:2274 — Justifying left fields of Yv (lengths Iv) to length Is
 Iv←2 1
 Is←3
 Yv←"abc"
-Iv Is{⍵#⁻¹⍨,⍺>⊗⍳⍶} Yv   ⍝ "ab c  "
+Iv Is{⍵#⁻⍨,⍺>⊗⍳⍶} Yv   ⍝ "ab c  "
 
 ⍝ aplcart/table.tsv:2275 — Left Scan with initial value: f⍨/⌽(⊂X),Yv with intermediate values
 10-{c←⍺ ⋄ ⍶{c⊢←c ⍶ ⍵}¨⍵}3 1 4   ⍝ 7 6 2
@@ -6664,7 +6664,7 @@ X f{(⍵ ⍹ ⍺)⍶(⍺ ⍹ ⍵)}g Y
 Iv←2 1
 Is←3
 Yv←"abc"
-Iv Is{⍵#⁻¹⍨,⍺>⊗⌽⍳⍶} Yv   ⍝ " ab  c"
+Iv Is{⍵#⁻⍨,⍺>⊗⌽⍳⍶} Yv   ⍝ " ab  c"
 
 ⍝ aplcart/table.tsv:2279 — Multi-dimensional arithmetic progression with dimensions Jv starting at Mv with steps Nv
 Mv←10 20
@@ -6691,12 +6691,12 @@ X←2
 f←+
 g←⍟
 Y←3
-X f{⍹⁻¹ ⍺ ⍶⍥⍹ ⍵}g Y   ⍝ 6
+X f{⍹⁻ ⍺ ⍶⍥⍹ ⍵}g Y   ⍝ 6
 
 ⍝ aplcart/table.tsv:2284 — Inverse of outer product selfie (∘.f⍨⍣¯1)
 f←+
 Y←[2 3 4⋄3 4 5⋄4 5 6]
-f{⍶⍨⁻¹⍵⍉⍨r⍴⍳2ₓ÷⍨r←⍴⍴⍵}Y   ⍝ 1 2 3
+f{⍶⍨⁻⍵⍉⍨r⍴⍳2ₓ÷⍨r←⍴⍴⍵}Y   ⍝ 1 2 3
 
 ⍝ aplcart/table.tsv:2286 — Generalised convolution
 Mv←1 2 3
@@ -6732,7 +6732,7 @@ X A{⍶#⍥,⍵ @[⍶⍨] ⍺} Y   ⍝ 1 20 3
 ⍝ aplcart/table.tsv:2292 — 2's-complement bit-wise application of f over Jv
 f←∨
 J←3 5 6
-f{⍉2⊥(-⍶/0>b)⍪⍶/2⊥⁻¹b←⍵}J   ⍝ 7
+f{⍉2⊥(-⍶/0>b)⍪⍶/2⊥⁻b←⍵}J   ⍝ 7
 
 ⍝ aplcart/table.tsv:2293 — Is-point spline of Nm Bezier matrix with Mv control points
 Nm←[¯1 1⋄1 0]
@@ -6837,7 +6837,7 @@ Is f{a+.×⍶⍵↑↣-(a←-/⍵÷-⍺)×¯0.5-⍳⍺} Nv
 I←3 5
 f←≠
 J←6 2
-I f{2⊥(-⍶/0>b),⍶⌿⍤2(2⊥⁻¹b←[⍺⋄⍵]ᵀ)} J
+I f{2⊥(-⍶/0>b),⍶⌿⍤2(2⊥⁻b←[⍺⋄⍵]ᵀ)} J
 ⍝ =>
 5 7
 
@@ -6853,7 +6853,7 @@ M f{↑+/,(⍶⊗⍨0 1)×[1-⍺ ⍺]×⊗[1-⍵ ⍵]} N
 Xv←10 20
 Av←0 1 0 1 1
 Yv←1 2 3
-Xv Av{⍶⊃¨(⍶~↣(#⁻¹)⍺),¨(⍶#⁻¹⍵)} Yv
+Xv Av{⍶⊃¨(⍶~↣(#⁻)⍺),¨(⍶#⁻⍵)} Yv
 ⍝ =>
 10 1 20 2 3
 
@@ -6866,13 +6866,13 @@ f{⍶{⍵,⍨⊂⍺⍶↑⍵}/1↓⍬(⊢,↢⊂⍴)¯1⌽⍵}Y   ⍝ 2 ¯1 3
 Mv←2 3
 Ns←7
 Jv←5 4
-Mv Ns{⍶{⍶|⍺×⍶|×⍨⍵}⌿⍺*⍤1⊖0⍪⍉2⊥⁻¹⍵} Jv   ⍝ 4 4
+Mv Ns{⍶{⍶|⍺×⍶|×⍨⍵}⌿⍺*⍤1⊖0⍪⍉2⊥⁻⍵} Jv   ⍝ 4 4
 
 ⍝ aplcart/table.tsv:2314 — Mesh matrices Xm and Ym along rows under control of Av (0:cell from Xm, 1:cell from Ym, …)
 Xm←[10 20⋄30 40]
 Av←0 1 0 1 1
 Ym←[1 2 3⋄4 5 6]
-Xm Av{⍶⊃¨⍤1 (⍶~↣(#⁻¹₋₁)⍺),¨(⍶#⁻¹₋₁⍵)} Ym
+Xm Av{⍶⊃¨⍤1 (⍶~↣(#⁻₋₁)⍺),¨(⍶#⁻₋₁⍵)} Ym
 ⍝ =>
 [10 1 20 2 3⋄30 4 40 5 6]
 
@@ -6880,7 +6880,7 @@ Xm Av{⍶⊃¨⍤1 (⍶~↣(#⁻¹₋₁)⍺),¨(⍶#⁻¹₋₁⍵)} Ym
 Xm←[10 20⋄30 40]
 Av←0 1 0 1 1
 Ym←[1 2⋄3 4⋄5 6]
-Xm Av{⍶⊃¨⍤0 1 (⍶~↣(#⁻¹)⍺),¨(⍶#⁻¹⍵)} Ym
+Xm Av{⍶⊃¨⍤0 1 (⍶~↣(#⁻)⍺),¨(⍶#⁻⍵)} Ym
 ⍝ =>
 [10 20⋄1 2⋄30 40⋄3 4⋄5 6]
 
@@ -6918,7 +6918,7 @@ Is(As{⍺>⍵?0;↑⌽⊃+\∘×/1,⍨⌽(⊣\⍣⍶),/⍺↕↦⍵-1})Js
 Iv←2 1
 Jv←0 2
 Y←10 20 30
-Iv{⍵#⁻¹⍨(↦⍵≢↣++/⍶)∊+\1+⍶#⁻¹⍨⍹∊⍨⍳≢⍵}Jv Y
+Iv{⍵#⁻⍨(↦⍵≢↣++/⍶)∊+\1+⍶#⁻⍨⍹∊⍨⍳≢⍵}Jv Y
 ⍝ =>
 0 0 10 20 0 30
 
@@ -6926,7 +6926,7 @@ Iv{⍵#⁻¹⍨(↦⍵≢↣++/⍶)∊+\1+⍶#⁻¹⍨⍹∊⍨⍳≢⍵}Jv Y
 Xv←10 20
 Am←[0 1 0 1⋄1 0 1 0]
 Yv←1 2
-Xv Am{⍶⊃¨⍤1 (⍶~↣(#⁻¹)⍤1 ⍺),¨(⍶#⁻¹⍤1 ⍵)} Yv
+Xv Am{⍶⊃¨⍤1 (⍶~↣(#⁻)⍤1 ⍺),¨(⍶#⁻⍤1 ⍵)} Yv
 ⍝ =>
 [10 1 20 2⋄1 10 2 20]
 
@@ -6934,7 +6934,7 @@ Xv Am{⍶⊃¨⍤1 (⍶~↣(#⁻¹)⍤1 ⍺),¨(⍶#⁻¹⍤1 ⍵)} Yv
 Xm←[10 20⋄30 40]
 Am←[0 1 0 1⋄1 0 1 0]
 Ym←[1 2⋄3 4]
-Xm Am{⍶⊃¨⍤1 (⍶~↣(#⁻¹)⍤1 ⍺),¨(⍶#⁻¹⍤1 ⍵)} Ym
+Xm Am{⍶⊃¨⍤1 (⍶~↣(#⁻)⍤1 ⍺),¨(⍶#⁻⍤1 ⍵)} Ym
 ⍝ =>
 [10 1 20 2⋄3 30 4 40]
 
@@ -6960,7 +6960,7 @@ Iv Is{[(≢⍵)⌊⍋(⍳≢⍵),⍺⍴⍨⍶×≢⍺]⌷⍵⍪⍹}Y Z
 Xv←10 20
 Am←[0 1 0 1⋄1 0 1 0]
 Yv←1 2
-Xv Am{⍉⍶⊃¨⍤1 (⍶~↣(#⁻¹)⍤1⍉⍺),¨(⍶#⁻¹⍤1⍉⍵)} Yv
+Xv Am{⍉⍶⊃¨⍤1 (⍶~↣(#⁻)⍤1⍉⍺),¨(⍶#⁻⍤1⍉⍵)} Yv
 ⍝ =>
 [10 1⋄1 10⋄20 2⋄2 20]
 
@@ -6968,7 +6968,7 @@ Xv Am{⍉⍶⊃¨⍤1 (⍶~↣(#⁻¹)⍤1⍉⍺),¨(⍶#⁻¹⍤1⍉⍵)} Yv
 Xm←[10 20⋄30 40]
 Am←[0 1 0 1⋄1 0 1 0]
 Ym←[1 2⋄3 4]
-Xm Am{⍉⍶⊃¨⍤1 (⍶~↣(#⁻¹)⍤1⍉⍺),¨(⍶#⁻¹⍤1⍉⍵)} Ym
+Xm Am{⍉⍶⊃¨⍤1 (⍶~↣(#⁻)⍤1⍉⍺),¨(⍶#⁻⍤1⍉⍵)} Ym
 ⍝ =>
 [10 2⋄1 20⋄30 4⋄3 40]
 
@@ -6983,7 +6983,7 @@ f{[{((⌈/⍵)↦⌊/⍵)=⊗⍵}⌊0.5+⍶⍵]⌷" ∘"}Nv
 Iv←2 1
 Jv←0 2
 Y←10 20 30
-Iv{⍵#⁻¹⍨(↦⍵≢↣++/⍶)∊+\1+¯1↓0,⍶#⁻¹⍨⍹∊⍨⍳≢⍵}Jv Y
+Iv{⍵#⁻⍨(↦⍵≢↣++/⍶)∊+\1+¯1↓0,⍶#⁻⍨⍹∊⍨⍳≢⍵}Jv Y
 ⍝ =>
 10 0 0 20 30 0
 
@@ -7510,7 +7510,7 @@ N←1 2 3 4 ⋄ ¯1⊥¨⍪⍀N   ⍝ 1 1 2 2
 ⍝ aplcart/tt.tsv:54 — Angle of right triangle with height M and width N; Reuse concrete inputs from aplcart/table.tsv:794; execute this alternate recipe independently
 M←1
 N←1 2
-3○⁻¹M÷N
+3○⁻M÷N
 ⍝ =>
 0.7853981633974483 0.4636476090008061
 
@@ -7544,27 +7544,27 @@ Y←1+2 3⍴⍳6ₓ
 [1 2 3 0⋄4 5 6 0⋄1 2 3 4]
 
 ⍝ aplcart/tt.tsv:70 — Arccosecant; Reuse concrete inputs from aplcart/table.tsv:795; execute this alternate recipe independently
-N←4 9 16 ⋄ 1○⁻¹÷N
+N←4 9 16 ⋄ 1○⁻÷N
 0.2526802551420786 0.1113410143409639 0.06254076179649139
 
 ⍝ aplcart/tt.tsv:72 — Arccosine N; Reuse concrete inputs from aplcart/table.tsv:575; execute this alternate recipe independently
-N←0.25 0.5 0.75 ⋄ 2○⁻¹N
+N←0.25 0.5 0.75 ⋄ 2○⁻N
 1.318116071652818 1.047197551196598 0.7227342478134157
 
 ⍝ aplcart/tt.tsv:74 — Arccotangent; Reuse concrete inputs from aplcart/table.tsv:797; execute this alternate recipe independently
-N←4 9 16 ⋄ 3○⁻¹÷N
+N←4 9 16 ⋄ 3○⁻÷N
 0.2449786631268641 0.1106572211738956 0.06241880999595735
 
 ⍝ aplcart/tt.tsv:76 — Arcsecant; Reuse concrete inputs from aplcart/table.tsv:796; execute this alternate recipe independently
-N←4 9 16 ⋄ 2○⁻¹÷N
+N←4 9 16 ⋄ 2○⁻÷N
 1.318116071652818 1.459455312453933 1.508255564998405
 
 ⍝ aplcart/tt.tsv:78 — Arcsine N; Reuse concrete inputs from aplcart/table.tsv:571; execute this alternate recipe independently
-N←0.25 0.5 0.75 ⋄ 1○⁻¹N
+N←0.25 0.5 0.75 ⋄ 1○⁻N
 0.2526802551420786 0.5235987755982988 0.848062078981481
 
 ⍝ aplcart/tt.tsv:80 — Arctangent N; Reuse concrete inputs from aplcart/table.tsv:576; execute this alternate recipe independently
-N←0.25 0.5 0.75 ⋄ 3○⁻¹N
+N←0.25 0.5 0.75 ⋄ 3○⁻N
 0.2449786631268641 0.4636476090008061 0.6435011087932844
 
 ⍝ aplcart/tt.tsv:82 — Are I and J co-prime?; Reuse concrete inputs from aplcart/table.tsv:780; execute this alternate recipe independently
@@ -7844,7 +7844,7 @@ Yv←1 2 3 ⋄ -∘⍳∘≢⌽⊢,(0 ¯1+≢)⍴0↣⍴ Yv   ⍝ [1 0 0⋄0 2 0
 ⍝ aplcart/tt.tsv:451 — Digital sum in base Is; Reuse concrete inputs from aplcart/table.tsv:1281; execute this alternate recipe independently; Rename setup bindings to the alternate recipe’s parameter names
 Is←10
 J←12345
-Is ⊣⊥⊣|(+/⊥⁻¹) J   ⍝ 5
+Is ⊣⊥⊣|(+/⊥⁻) J   ⍝ 5
 
 ⍝ aplcart/tt.tsv:460 — Distribute major cells of Y into Is (default Is:≢Y) groups as evenly as possible
 Is←3
@@ -7866,7 +7866,7 @@ Y←2 3⍴⍳6ₓ ⋄ 0↣#Y   ⍝ (0 3⍴0)ₓ
 Ym←1+2 3⍴⍳6ₓ ⋄ ⊂₀Ym   ⍝ [1 4;2 5;3 6]
 
 ⍝ aplcart/tt.tsv:508 — Encode a vector of positive integers as equal-width fields of digits in an integer
-Jv←12 3 456 ⋄ 10⊥↢,10↣⊥⁻¹ Jv   ⍝ 12003456
+Jv←12 3 456 ⋄ 10⊥↢,10↣⊥⁻ Jv   ⍝ 12003456
 
 ⍝ aplcart/tt.tsv:516 — Enlist (∊Y) but keep leaf simple arrays intact
 Y←[1 2;[3 4;5 6]] ⋄ {,/,¨⊆¨⍵}⍣≡Y   ⍝ [1 2;3 4;5 6]
@@ -7906,7 +7906,7 @@ Mv⊥⍨↢⍪Nv   ⍝ 9 18 31
 ⍝ aplcart/tt.tsv:548 — Even integers from 0 to 2×Js
 Js←4 ⋄ 2×⍳∘ 1+ Js   ⍝ 0 2 4 6 8
 
-⍝ aplcart/tt.tsv:559 — Expansion vector (left argument for #⁻¹) to insert a new element after each one in Bv; Reuse concrete inputs from aplcart/table.tsv:1469; execute this alternate recipe independently
+⍝ aplcart/tt.tsv:559 — Expansion vector (left argument for #⁻) to insert a new element after each one in Bv; Reuse concrete inputs from aplcart/table.tsv:1469; execute this alternate recipe independently
 Bv←$t $f $t $f ⋄ (1,⍨⍪)#⍥,⍪,~ Bv   ⍝ $t $f $t $t $f $t
 
 ⍝ aplcart/tt.tsv:561 — Expansion vector for Y with zeros after indices Iv; Reuse concrete inputs from aplcart/table.tsv:1470; execute this alternate recipe independently
@@ -8316,12 +8316,12 @@ Bv←$t $f $f $t $f $t ⋄ ≢(⊢-⍨1↣↓∘(⊢,⊣))⍸ Bv   ⍝ [3 2 1]�
 X←10
 f←-
 Y←5
-X f⁻¹⍣≡ Y   ⍝ 5
+X f⁻⍣≡ Y   ⍝ 5
 
 ⍝ aplcart/tt.tsv:1116 — Limit: apply inverse of f until stable
 f←⌽
 Y←1 2 1
-f⁻¹⍣≡Y   ⍝ 1 2 1
+f⁻⍣≡Y   ⍝ 1 2 1
 
 ⍝ aplcart/tt.tsv:1119 — Locate all instances of maximum of N; Reuse concrete inputs from aplcart/table.tsv:744; execute this alternate recipe independently
 N←3 1 3 2 3 ⋄ ⊢=⌈⌿ N   ⍝ $t $f $t $f $t
@@ -8857,7 +8857,7 @@ X ¯1↣-∘ ⍳⍨↢⊖⍨-↢≢⊣ Y   ⍝ 3 ¯1
 1⍭10ₓ+⍳10ₓ   ⍝ $f $t $f $t $f $f $f $t $f $t
 
 ⍝ aplcart/table.tsv:1687 — number of primes less than ⍵; dfns.pco uses ⍭/⨸
-⍭⁻¹2 3 10 20   ⍝ [0 1 4 8]ₓ
+⍭⁻2 3 10 20   ⍝ [0 1 4 8]ₓ
 
 ⍝ aplcart/table.tsv:1688 — next prime larger than ⍵; dfns.pco uses ⍭/⨸
 2⍭2 3 10 20   ⍝ [3 5 11 23]ₓ
@@ -9610,7 +9610,7 @@ K⍪⊃(:¨rows)
 +/¨:["price":[1 2 3] "qty":[4 5 6]]   ⍝ 6 15
 
 ⍝ aplcart/table.tsv:220 — CSV export with a separator option
-("separator":';') •csv⁻¹ ↓["ab"⋄"cd"]ᵀ
+("separator":';') •csv⁻ ↓["ab"⋄"cd"]ᵀ
 •ucs 97 59 98 10 99 59 100 10
 
 ⍝ aplcart/table.tsv:221 — CSV import with a separator option
@@ -9622,7 +9622,7 @@ K⍪⊃(:¨rows)
 ["name" "score"⋄"Ada" "12"⋄"Ben" "7"]
 
 ⍝ aplcart/table.tsv:388 — Convert CSV data from APL matrix
-•csv⁻¹ ↓['a' "b,c"⋄'d' 'e']ᵀ
+•csv⁻ ↓['a' "b,c"⋄'d' 'e']ᵀ
 •ucs 97 44 34 98 44 99 34 10 100 44 101 10
 
 ⍝ aplcart/table.tsv:452 — Convert CSV data to APL inverted table (character data as matrices)
@@ -9634,11 +9634,11 @@ K⍪⊃(:¨rows)
 [["a" "b"] ["12" "7"]]
 
 ⍝ aplcart/table.tsv:505 — Convert CSV data from APL inverted table (character data as matrices)
-•csv⁻¹ ↓¨[["a"⋄"b"] ["c"⋄"d"]]
+•csv⁻ ↓¨[["a"⋄"b"] ["c"⋄"d"]]
 •ucs 97 44 99 10 98 44 100 10
 
 ⍝ aplcart/table.tsv:506 — Convert CSV data from APL inverted table (character data as vectors of vectors)
-•csv⁻¹ ["ab" "cd";"ef" "gh"]
+•csv⁻ ["ab" "cd";"ef" "gh"]
 •ucs 97 98 44 101 102 10 99 100 44 103 104 10
 
 ⍝ aplcart/table.tsv:1729 — Data matrix and column titles as 2-element vector from CSV (file or vector of vectors), with apparent numbers as numbers
@@ -9652,34 +9652,34 @@ T←•csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 [12 ¯3 7]ₓ
 
 ⍝ aplcart/table.tsv:1837 — Validate inverted table (character data as matrices)
-{∞::0 ⋄ 1⊣•csv⁻¹ ⍵}¨[[1 2 3;4 5 6] [1 2;3 4 5]]   ⍝ 1 0
+{∞::0 ⋄ 1⊣•csv⁻ ⍵}¨[[1 2 3;4 5 6] [1 2;3 4 5]]   ⍝ 1 0
 
 ⍝ aplcart/table.tsv:328 — Convert JSON text to APL array
 •json "[1,2,""many""]"   ⍝ 1ₓ 2ₓ "many"
 
 ⍝ aplcart/table.tsv:330 — Convert APL array to JSON text
-•json⁻¹ 1ₓ 2ₓ "many"   ⍝ "[1,2,""many""]"
+•json⁻ 1ₓ 2ₓ "many"   ⍝ "[1,2,""many""]"
 
 ⍝ aplcart/table.tsv:492 — Convert JSON to high rank APL array
 (⊃⍣≡•json)"[[[1,2],[3,4]],[[5,6],[7,8]]]"
 2 2 2⍴[1 2 3 4 5 6 7 8]ₓ
 
 ⍝ aplcart/table.tsv:1533 — Convert any rank APL array to JSON
-•json⁻¹ 2 2 2⍴⍳8ₓ   ⍝ "[[[0,1],[2,3]],[[4,5],[6,7]]]"
+•json⁻ 2 2 2⍴⍳8ₓ   ⍝ "[[[0,1],[2,3]],[[4,5],[6,7]]]"
 
 ⍝ aplcart/table.tsv:1867 — Convert JSON Lines text Dv to APL vector
 {•json¨⍵⊆⍨⍵≠•ucs 10}"{""a"":1}",(•ucs 10 10),"{""a"":2}"
 [["a":1] ["a":2]]ₓ
 
 ⍝ aplcart/table.tsv:1930 — Convert APL vector Y to JSON Lines text
-{∊(•json⁻¹¨⍵),¨(•ucs 10)}[["a":1ₓ] ["a":2ₓ]]
+{∊(•json⁻¨⍵),¨(•ucs 10)}[["a":1ₓ] ["a":2ₓ]]
 "{""a"":1}",(•ucs 10),"{""a"":2}",•ucs 10
 
 ⍝ aplcart/tt.tsv:315 — Convert any rank APL array to JSON
-•json⁻¹ [1 2⋄3 4]ₓ   ⍝ "[[1,2],[3,4]]"
+•json⁻ [1 2⋄3 4]ₓ   ⍝ "[[1,2],[3,4]]"
 
 ⍝ aplcart/tt.tsv:316 — Convert any rank APL array to JSON
-•json⁻¹ 2 1 2⍴⍳4ₓ   ⍝ "[[[0,1]],[[2,3]]]"
+•json⁻ 2 1 2⍴⍳4ₓ   ⍝ "[[[0,1]],[[2,3]]]"
 
 ⍝ aplcart/table.tsv:996 — Vector of empty keyed records
 {⍬:⍬}¨⍳3ₓ   ⍝ [(⍬:⍬) (⍬:⍬) (⍬:⍬)]
@@ -9805,7 +9805,7 @@ testpath •nput 'a',(•ucs 9),'b',(•ucs 10),'c',•ucs 10
 
 ⍝ aplcart/table.tsv:1842 — Convert APL vector X to JSON Lines file Dv
 X←[["a":1ₓ] ["a":2ₓ]]
-testpath •nput ∊(•json⁻¹¨X),¨•ucs 10
+testpath •nput ∊(•json⁻¨X),¨•ucs 10
 •nget testpath
 ⍝ =>
 "{""a"":1}",(•ucs 10),"{""a"":2}",•ucs 10
@@ -9853,14 +9853,14 @@ testpath •nput "{""a"":1}",(•ucs 10 10),"{""a"":2}",•ucs 10
 "<0|3|0>"
 
 ⍝ aplcart/table.tsv:2154 — Add natural numbers as decimal strings
-•json⁻¹ (•json "123")+•json "456"   ⍝ "579"
+•json⁻ (•json "123")+•json "456"   ⍝ "579"
 
 ⍝ aplcart/table.tsv:2176 — Multiset intersection
 inter←{0ₓ=≢⍺?⍺;i←⍵⍳↑⍺ ⋄ i=≢⍵?(1↓⍺)∇⍵;(1↑⍺),(1↓⍺)∇(i≠⍳≢⍵)#⍵}
 1 1 2 inter 1 2 2   ⍝ 1 2
 
 ⍝ aplcart/table.tsv:2182 — Add large integers as decimal strings
-•json⁻¹ (•json "99999999999999999999")+•json '1'
+•json⁻ (•json "99999999999999999999")+•json '1'
 "1e+20"
 
 ⍝ aplcart/table.tsv:2186 — Exact rational addition
@@ -10127,26 +10127,26 @@ mat←3 4⍴↦12ₓ ⋄ 1 0 2#mat   ⍝ [1 2 3 4⋄9 10 11 12⋄9 10 11 12]ₓ
 ⍝ aplcart/table.tsv:670 — Filtering major cells of Y according to mask Av (forces ⌿ to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
 mat←3 4⍴↦12ₓ ⋄ 1 0 1#mat   ⍝ [1 2 3 4⋄9 10 11 12]ₓ
 
-⍝ aplcart/table.tsv:691 — Expand last axis of Y (forces \ to be a function even with a function on its left); Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`.
-N←3 ¯2 4 ⋄ [((1⌈|N)#(N>0)#⁻¹7 8) (1 0 1 0 1#⁻¹"Hat")]
+⍝ aplcart/table.tsv:691 — Expand last axis of Y (forces \ to be a function even with a function on its left); Expand written with `#⁻`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻Y`.
+N←3 ¯2 4 ⋄ [((1⌈|N)#(N>0)#⁻7 8) (1 0 1 0 1#⁻"Hat")]
 [[7 7 7 0 0 8 8 8 8] "H a t"]
 
-⍝ aplcart/table.tsv:692 — Expand leading axis of Y (forces ⍀ to be a function even with a function on its left); Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+⍝ aplcart/table.tsv:692 — Expand leading axis of Y (forces ⍀ to be a function even with a function on its left); Expand written with `#⁻`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻Y`. Positions count from 0, so `⍳n` became `1+⍳n`
 N←1 0 2 1
 mat←3 4⍴↦12ₓ
-(1⌈|N)#(N>0)#⁻¹mat
+(1⌈|N)#(N>0)#⁻mat
 ⍝ =>
 [1 2 3 4⋄0 0 0 0⋄5 6 7 8⋄5 6 7 8⋄9 10 11 12]ₓ
 
-⍝ aplcart/tt.tsv:550 — Expand last axis of Y (forces \ to be a function even with a function on its left); Expand written with `#⁻¹`, which replaces `\` and `⍀`. Positions count from 0, so `⍳n` became `1+⍳n`
+⍝ aplcart/tt.tsv:550 — Expand last axis of Y (forces \ to be a function even with a function on its left); Expand written with `#⁻`, which replaces `\` and `⍀`. Positions count from 0, so `⍳n` became `1+⍳n`
 Iv←1 0 1 0 1 1
 Y←2 4⍴↦8ₓ
-Iv#⁻¹₋₁Y   ⍝ [1 0 2 0 3 4⋄5 0 6 0 7 8]ₓ
+Iv#⁻₋₁Y   ⍝ [1 0 2 0 3 4⋄5 0 6 0 7 8]ₓ
 
-⍝ aplcart/tt.tsv:552 — Expand leading axis of Y (forces ⍀ to be a function even with a function on its left); Expand written with `#⁻¹`, which replaces `\` and `⍀`. Positions count from 0, so `⍳n` became `1+⍳n`
+⍝ aplcart/tt.tsv:552 — Expand leading axis of Y (forces ⍀ to be a function even with a function on its left); Expand written with `#⁻`, which replaces `\` and `⍀`. Positions count from 0, so `⍳n` became `1+⍳n`
 Iv←1 0 1
 Y←2 3⍴↦6ₓ
-Iv#⁻¹Y   ⍝ [1 2 3⋄0 0 0⋄4 5 6]ₓ
+Iv#⁻Y   ⍝ [1 2 3⋄0 0 0⋄4 5 6]ₓ
 
 ⍝ aplcart/tt.tsv:602 — Filtering columns of Y according to mask Av (forces / to be a function even with a function on its left); Replicate written with `#`, which replaces `/` and `⌿`. Positions count from 0, so `⍳n` became `1+⍳n`
 Av←1 0 1
@@ -10213,7 +10213,7 @@ testpath •nput "hello" ⋄ (•metadata testpath).len   ⍝ [5]ₓ
 
 ⍝ aplcart/table.tsv:359 — Return last local modification time (⎕TS-style) for tns/files; Ported with the filesystem functions on a `testpath` fixture; The expectation follows from the fixture
 testpath •nput "x"
-2024≤(["zone":"local"] •date⁻¹ (•metadata testpath).modified).year
+2024≤(["zone":"local"] •date⁻ (•metadata testpath).modified).year
 ⍝ =>
 ,$t
 
@@ -10226,7 +10226,7 @@ $t $f
 
 ⍝ aplcart/table.tsv:365 — Return last local access time (⎕TS-style) for tns/files; Ported with the filesystem functions on a `testpath` fixture; The expectation follows from the fixture
 testpath •nput "x"
-2024≤(["zone":"local"] •date⁻¹ (•metadata testpath).accessed).year
+2024≤(["zone":"local"] •date⁻ (•metadata testpath).accessed).year
 ⍝ =>
 ,$t
 
@@ -10302,250 +10302,250 @@ E←["recurse":1] •readdir testpath
 u←["unique":1] •mkdir testpath ⋄ (•metadata u).kind   ⍝ ["dir"]
 
 ⍝ aplcart/table.tsv:1946 — Date (⎕TS format) to H:mm:sstt; Ported with a strftime pattern on a record of fields; The expectation follows from the time 14:05:09
-{"%-I:%M:%S%p" •date⁻¹ •date ["year" "month" "day" "hour" "minute" "second"]:⍵} 2024 5 6 14 5 9
+{"%-I:%M:%S%p" •date⁻ •date ["year" "month" "day" "hour" "minute" "second"]:⍵} 2024 5 6 14 5 9
 "2:05:09PM"
 
 ⍝ aplcart/table.tsv:1962 — Convert Extended ISO date ('1234-05-06 10:20:30.456' or '1234-05-06T10:20:30.456' or prefix thereof) to ⎕DR type Is; Ported with `•date`, which gives Unix seconds; The expectation is the proleptic Gregorian count of seconds from 1970-01-01
 •date "1234-05-06T10:20:30.456"   ⍝ ¯23215037969.544
 
-⍝ aplcart/table.tsv:2728 — Current UNIX time; Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
+⍝ aplcart/table.tsv:2728 — Current UNIX time; Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
 1714990830<•time 0   ⍝ $t
 
-⍝ aplcart/table.tsv:2729 — Current UTC date and time; Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
-2024≤(•date⁻¹ •time 0).year   ⍝ $t
+⍝ aplcart/table.tsv:2729 — Current UTC date and time; Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
+2024≤(•date⁻ •time 0).year   ⍝ $t
 
-⍝ aplcart/table.tsv:2765 — Packing current date (YYMMDD); Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
+⍝ aplcart/table.tsv:2765 — Packing current date (YYMMDD); Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
 t←•time 0
-(⍎ "%y%m%d" •date⁻¹ t)=(•date⁻¹ t).(100⊥100|[year month day])
+(⍎ "%y%m%d" •date⁻ t)=(•date⁻ t).(100⊥100|[year month day])
 ⍝ =>
 $t
 
 ⍝ aplcart/table.tsv:2772 — Current directory; Ported as `•host "cwd"`. The case checks that the working directory is a directory
 (•metadata •host "cwd").kind   ⍝ ["dir"]
 
-⍝ aplcart/table.tsv:2791 — Current ISO day-of-year; Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
-{(1≤⍵)∧⍵≤366}(•date⁻¹ •time 0).ordinal   ⍝ $t
+⍝ aplcart/table.tsv:2791 — Current ISO day-of-year; Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
+{(1≤⍵)∧⍵≤366}(•date⁻ •time 0).ordinal   ⍝ $t
 
-⍝ aplcart/table.tsv:2792 — Current ISO week number; Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
-{(1≤⍵)∧⍵≤53}(•date⁻¹ •time 0).iso_week   ⍝ $t
+⍝ aplcart/table.tsv:2792 — Current ISO week number; Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
+{(1≤⍵)∧⍵≤53}(•date⁻ •time 0).iso_week   ⍝ $t
 
-⍝ aplcart/table.tsv:2903 — Short Finnish weekday names ('MA' 'TI'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"fi_FI"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2903 — Short Finnish weekday names ('MA' 'TI'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"fi_FI"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "MA" "TI"
 
-⍝ aplcart/table.tsv:2904 — Finnish weekday names ('Maanantai' 'Tiistai'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"fi_FI"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2904 — Finnish weekday names ('Maanantai' 'Tiistai'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"fi_FI"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Maanantai" "Tiistai"
 
-⍝ aplcart/table.tsv:2905 — Short French weekday names ('LUN.' 'MAR.'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"fr_FR"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2905 — Short French weekday names ('LUN.' 'MAR.'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"fr_FR"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "LUN." "MAR."
 
-⍝ aplcart/table.tsv:2906 — French weekday names ('Lundi' 'Mardi'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"fr_FR"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2906 — French weekday names ('Lundi' 'Mardi'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"fr_FR"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Lundi" "Mardi"
 
-⍝ aplcart/table.tsv:2907 — Short Swedish weekday names ('MÅN' 'TIS'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"sv_SE"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2907 — Short Swedish weekday names ('MÅN' 'TIS'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"sv_SE"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "MÅN" "TIS"
 
-⍝ aplcart/table.tsv:2908 — Swedish weekday names ('Måndag' 'Tisdag'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"sv_SE"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2908 — Swedish weekday names ('Måndag' 'Tisdag'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"sv_SE"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Måndag" "Tisdag"
 
-⍝ aplcart/table.tsv:2910 — Danish weekday names ('Mandag' 'Tirsdag'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"da_DK"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2910 — Danish weekday names ('Mandag' 'Tirsdag'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"da_DK"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Mandag" "Tirsdag"
 
-⍝ aplcart/table.tsv:2911 — Short German weekday names ('MO' 'DI'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"de_DE"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2911 — Short German weekday names ('MO' 'DI'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"de_DE"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "MO" "DI"
 
-⍝ aplcart/table.tsv:2912 — German weekday names ('Montag' 'Dienstag'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%A" "locale":"de_DE"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2912 — German weekday names ('Montag' 'Dienstag'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%A" "locale":"de_DE"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Montag" "Dienstag"
 
-⍝ aplcart/table.tsv:2914 — Spanish weekday names ('Lunes' 'Martes'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"es_ES"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2914 — Spanish weekday names ('Lunes' 'Martes'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"es_ES"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Lunes" "Martes"
 
-⍝ aplcart/table.tsv:2915 — Short Greek weekday names ('ΔΕΥ' 'ΤΡΙ'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"el_GR"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2915 — Short Greek weekday names ('ΔΕΥ' 'ΤΡΙ'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"el_GR"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "ΔΕΥ" "ΤΡΙ"
 
-⍝ aplcart/table.tsv:2916 — Greek weekday names ('Δευτέρα' 'Τρίτη'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%A" "locale":"el_GR"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2916 — Greek weekday names ('Δευτέρα' 'Τρίτη'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%A" "locale":"el_GR"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Δευτέρα" "Τρίτη"
 
-⍝ aplcart/table.tsv:2917 — Short Italian weekday names ('LUN' 'MAR'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"it_IT"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2917 — Short Italian weekday names ('LUN' 'MAR'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"it_IT"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "LUN" "MAR"
 
-⍝ aplcart/table.tsv:2918 — Italian weekday names ('Lunedì' 'Martedì'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"it_IT"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2918 — Italian weekday names ('Lunedì' 'Martedì'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"it_IT"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Lunedì" "Martedì"
 
-⍝ aplcart/table.tsv:2919 — Short Japanese weekday names ('月' '火'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%a" "locale":"ja_JP"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2919 — Short Japanese weekday names ('月' '火'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%a" "locale":"ja_JP"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "月" "火"
 
-⍝ aplcart/table.tsv:2920 — Japanese weekday names ('月曜日' '火曜日'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%A" "locale":"ja_JP"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2920 — Japanese weekday names ('月曜日' '火曜日'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%A" "locale":"ja_JP"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "月曜日" "火曜日"
 
-⍝ aplcart/table.tsv:2922 — Norwegian Bokmål weekday names ('Mandag' 'Tirsdag'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"nb_NO"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2922 — Norwegian Bokmål weekday names ('Mandag' 'Tirsdag'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"nb_NO"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Mandag" "Tirsdag"
 
-⍝ aplcart/table.tsv:2923 — Short Dutch weekday names ('MA' 'DI'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"nl_NL"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2923 — Short Dutch weekday names ('MA' 'DI'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"nl_NL"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "MA" "DI"
 
-⍝ aplcart/table.tsv:2924 — Dutch weekday names ('Maandag' 'Dinsdag'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"nl_NL"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2924 — Dutch weekday names ('Maandag' 'Dinsdag'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%A" "locale":"nl_NL"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Maandag" "Dinsdag"
 
-⍝ aplcart/table.tsv:2925 — Short Norwegian Nynorsk weekday names ('MÅ.' 'TY.'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"nn_NO"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2925 — Short Norwegian Nynorsk weekday names ('MÅ.' 'TY.'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"nn_NO"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "MÅ." "TY."
 
-⍝ aplcart/table.tsv:2929 — Short Portuguese weekday names ('SEG' 'TER'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"pt_PT"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2929 — Short Portuguese weekday names ('SEG' 'TER'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"pt_PT"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "SEG" "TER"
 
-⍝ aplcart/table.tsv:2931 — Short Russian weekday names ('ПН' 'ВТ'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%a" "locale":"ru_RU"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2931 — Short Russian weekday names ('ПН' 'ВТ'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%a" "locale":"ru_RU"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "ПН" "ВТ"
 
-⍝ aplcart/table.tsv:2932 — Russian weekday names ('Понедельник' 'Вторник'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%A" "locale":"ru_RU"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2932 — Russian weekday names ('Понедельник' 'Вторник'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%A" "locale":"ru_RU"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Понедельник" "Вторник"
 
-⍝ aplcart/table.tsv:2934 — Chinese weekday names ('星期一' '星期二'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%A" "locale":"zh_CN"] •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2934 — Chinese weekday names ('星期一' '星期二'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%A" "locale":"zh_CN"] •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "星期一" "星期二"
 
-⍝ aplcart/table.tsv:2935 — Short English weekday names ('MON' 'TUE'…); Ported with `•date⁻¹`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
-1•c "%a" •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2935 — Short English weekday names ('MON' 'TUE'…); Ported with `•date⁻`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
+1•c "%a" •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "MON" "TUE" "WED" "THU" "FRI" "SAT" "SUN"
 
-⍝ aplcart/table.tsv:2936 — English weekday names ('Monday' 'Tuesday'…); Ported with `•date⁻¹`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
-"%A" •date⁻¹ 1714953600ₓ+86400ₓ×⍳7ₓ
+⍝ aplcart/table.tsv:2936 — English weekday names ('Monday' 'Tuesday'…); Ported with `•date⁻`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
+"%A" •date⁻ 1714953600ₓ+86400ₓ×⍳7ₓ
 "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday"
 
-⍝ aplcart/table.tsv:2947 — Local time-zone offset from UTC; Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
-≢ ["zone":"local" "pattern":"%z"] •date⁻¹ •time 0   ⍝ 5ₓ
+⍝ aplcart/table.tsv:2947 — Local time-zone offset from UTC; Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
+≢ ["zone":"local" "pattern":"%z"] •date⁻ •time 0   ⍝ 5ₓ
 
-⍝ aplcart/table.tsv:2950 — Short Finnish month names ('TAMMI' 'HELMI'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"fi_FI"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2950 — Short Finnish month names ('TAMMI' 'HELMI'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"fi_FI"] •date⁻ •date ["year":2024 "month":↦12]
 "TAMMI" "HELMI"
 
-⍝ aplcart/table.tsv:2951 — Finnish month names ('Tammikuu' 'Helmikuu'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"fi_FI"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2951 — Finnish month names ('Tammikuu' 'Helmikuu'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"fi_FI"] •date⁻ •date ["year":2024 "month":↦12]
 "Tammikuu" "Helmikuu"
 
-⍝ aplcart/table.tsv:2952 — Short French month names ('JANV.' 'FÉVR.'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"fr_FR"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2952 — Short French month names ('JANV.' 'FÉVR.'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"fr_FR"] •date⁻ •date ["year":2024 "month":↦12]
 "JANV." "FÉVR."
 
-⍝ aplcart/table.tsv:2953 — French month names ('Janvier' 'Février'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"fr_FR"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2953 — French month names ('Janvier' 'Février'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"fr_FR"] •date⁻ •date ["year":2024 "month":↦12]
 "Janvier" "Février"
 
-⍝ aplcart/table.tsv:2954 — Short Swedish month names ('JAN' 'FEB'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"sv_SE"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2954 — Short Swedish month names ('JAN' 'FEB'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"sv_SE"] •date⁻ •date ["year":2024 "month":↦12]
 "JAN" "FEB"
 
-⍝ aplcart/table.tsv:2955 — Swedish month names ('Januari' 'Februari'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"sv_SE"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2955 — Swedish month names ('Januari' 'Februari'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"sv_SE"] •date⁻ •date ["year":2024 "month":↦12]
 "Januari" "Februari"
 
-⍝ aplcart/table.tsv:2956 — Short Danish month names ('JAN' 'FEB'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"da_DK"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2956 — Short Danish month names ('JAN' 'FEB'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"da_DK"] •date⁻ •date ["year":2024 "month":↦12]
 "JAN" "FEB"
 
-⍝ aplcart/table.tsv:2957 — Danish month names ('Januar' 'Februar'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"da_DK"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2957 — Danish month names ('Januar' 'Februar'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"da_DK"] •date⁻ •date ["year":2024 "month":↦12]
 "Januar" "Februar"
 
-⍝ aplcart/table.tsv:2958 — Short German month names ('JAN' 'FEB'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"de_DE"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2958 — Short German month names ('JAN' 'FEB'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"de_DE"] •date⁻ •date ["year":2024 "month":↦12]
 "JAN" "FEB"
 
-⍝ aplcart/table.tsv:2959 — German month names ('Januar' 'Februar'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%B" "locale":"de_DE"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2959 — German month names ('Januar' 'Februar'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%B" "locale":"de_DE"] •date⁻ •date ["year":2024 "month":↦12]
 "Januar" "Februar"
 
-⍝ aplcart/table.tsv:2961 — Spanish month names ('Enero' 'Febrero'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"es_ES"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2961 — Spanish month names ('Enero' 'Febrero'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"es_ES"] •date⁻ •date ["year":2024 "month":↦12]
 "Enero" "Febrero"
 
-⍝ aplcart/table.tsv:2962 — Short Greek month names ('ΙΑΝ' 'ΦΕΒ'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"el_GR"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2962 — Short Greek month names ('ΙΑΝ' 'ΦΕΒ'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"el_GR"] •date⁻ •date ["year":2024 "month":↦12]
 "ΙΑΝ" "ΦΕΒ"
 
-⍝ aplcart/table.tsv:2964 — Short Italian month names ('GEN' 'FEB'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"it_IT"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2964 — Short Italian month names ('GEN' 'FEB'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"it_IT"] •date⁻ •date ["year":2024 "month":↦12]
 "GEN" "FEB"
 
-⍝ aplcart/table.tsv:2965 — Italian month names ('Gennaio' 'Febbraio'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"it_IT"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2965 — Italian month names ('Gennaio' 'Febbraio'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"it_IT"] •date⁻ •date ["year":2024 "month":↦12]
 "Gennaio" "Febbraio"
 
-⍝ aplcart/table.tsv:2967 — Japanese month names ('1月' '2月'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%B" "locale":"ja_JP"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2967 — Japanese month names ('1月' '2月'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%B" "locale":"ja_JP"] •date⁻ •date ["year":2024 "month":↦12]
 "1月" "2月"
 
-⍝ aplcart/table.tsv:2969 — Norwegian Bokmål month names ('Januar' 'Februar'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"nb_NO"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2969 — Norwegian Bokmål month names ('Januar' 'Februar'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"nb_NO"] •date⁻ •date ["year":2024 "month":↦12]
 "Januar" "Februar"
 
-⍝ aplcart/table.tsv:2970 — Short Dutch month names ('JAN' 'FEB'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"nl_NL"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2970 — Short Dutch month names ('JAN' 'FEB'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"nl_NL"] •date⁻ •date ["year":2024 "month":↦12]
 "JAN" "FEB"
 
-⍝ aplcart/table.tsv:2971 — Dutch month names ('Januari' 'Februari'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"nl_NL"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2971 — Dutch month names ('Januari' 'Februari'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"nl_NL"] •date⁻ •date ["year":2024 "month":↦12]
 "Januari" "Februari"
 
-⍝ aplcart/table.tsv:2973 — Norwegian Nynorsk month names ('Januar' 'Februar'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"nn_NO"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2973 — Norwegian Nynorsk month names ('Januar' 'Februar'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"nn_NO"] •date⁻ •date ["year":2024 "month":↦12]
 "Januar" "Februar"
 
-⍝ aplcart/table.tsv:2974 — Short Polish month names ('STY' 'LUT'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"pl_PL"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2974 — Short Polish month names ('STY' 'LUT'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"pl_PL"] •date⁻ •date ["year":2024 "month":↦12]
 "STY" "LUT"
 
-⍝ aplcart/table.tsv:2976 — Short Portuguese month names ('JAN' 'FEV'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"pt_PT"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2976 — Short Portuguese month names ('JAN' 'FEV'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"pt_PT"] •date⁻ •date ["year":2024 "month":↦12]
 "JAN" "FEV"
 
-⍝ aplcart/table.tsv:2977 — Portuguese month names ('Janeiro' 'Fevereiro'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"pt_PT"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2977 — Portuguese month names ('Janeiro' 'Fevereiro'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ {(1•c 1↑⍵),1↓⍵}¨ ["pattern":"%B" "locale":"pt_PT"] •date⁻ •date ["year":2024 "month":↦12]
 "Janeiro" "Fevereiro"
 
-⍝ aplcart/table.tsv:2978 — Short Russian month names ('ЯНВ' 'ФЕВ'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ 1•c ["pattern":"%b" "locale":"ru_RU"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2978 — Short Russian month names ('ЯНВ' 'ФЕВ'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ 1•c ["pattern":"%b" "locale":"ru_RU"] •date⁻ •date ["year":2024 "month":↦12]
 "ЯНВ" "ФЕВ"
 
-⍝ aplcart/table.tsv:2980 — Short Chinese month names ('1月' '2月'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%b" "locale":"zh_CN"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2980 — Short Chinese month names ('1月' '2月'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%b" "locale":"zh_CN"] •date⁻ •date ["year":2024 "month":↦12]
 "1月" "2月"
 
-⍝ aplcart/table.tsv:2981 — Chinese month names ('一月' '二月'…); Ported with `•date⁻¹` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
-2↑ ["pattern":"%B" "locale":"zh_CN"] •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2981 — Chinese month names ('一月' '二月'…); Ported with `•date⁻` and chrono's glibc locale data; The upstream description gives only the first two names, which the case compares
+2↑ ["pattern":"%B" "locale":"zh_CN"] •date⁻ •date ["year":2024 "month":↦12]
 "一月" "二月"
 
-⍝ aplcart/table.tsv:2982 — Short English month names ('JAN' 'FEB'…); Ported with `•date⁻¹`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
-1•c "%b" •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2982 — Short English month names ('JAN' 'FEB'…); Ported with `•date⁻`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
+1•c "%b" •date⁻ •date ["year":2024 "month":↦12]
 "JAN" "FEB" "MAR" "APR" "MAY" "JUN" "JUL" "AUG" "SEP" "OCT" "NOV" "DEC"
 
-⍝ aplcart/table.tsv:2983 — English month names ('January' 'February'…); Ported with `•date⁻¹`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
-"%B" •date⁻¹ •date ["year":2024 "month":↦12]
+⍝ aplcart/table.tsv:2983 — English month names ('January' 'February'…); Ported with `•date⁻`. The moments are the days from Monday 6 May 2024, or the first day of each month of 2024
+"%B" •date⁻ •date ["year":2024 "month":↦12]
 "January" "February" "March" "April" "May" "June" "July" "August" "September" "October" "November" "December"
 
-⍝ aplcart/table.tsv:3766 — Current ISO timestamp; Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
-≢ "%Y-%m-%dT%H:%M:%S" •date⁻¹ •time 0   ⍝ 19ₓ
+⍝ aplcart/table.tsv:3766 — Current ISO timestamp; Ported with `•time 0` and `•date⁻`. The case checks structure, because the current time changes
+≢ "%Y-%m-%dT%H:%M:%S" •date⁻ •time 0   ⍝ 19ₓ
 
 ⍝ aplcart/table.tsv:3776 — Generate random UUIDv7; Ported as `•uuid 7`. The case checks the length and the version digit, because the UUID is random
 {(36ₓ=≢⍵)∧'7'=14⌷⍵} •uuid 7   ⍝ $t
@@ -10664,11 +10664,11 @@ m≡⌊0.5+(r.u×⍤1 r.s)+.×+⍉r.v   ⍝ $t
 ⍝ aplcart/table.tsv:2703 — Deserialise Array; Ported as `•literal`, which reads data from BPL source text; Dyalog's serialised form is binary, and BPL's is text
 •literal "[1 [2 3ₓ] ""ab""]"   ⍝ [1 [2 3ₓ] "ab"]
 
-⍝ aplcart/table.tsv:2710 — Serialise Array; Ported as `•literal⁻¹`, which writes data as BPL source text; The case checks that `•literal` reads the text back; Dyalog's serialised form is binary, and BPL's is text
-x≡•literal •literal⁻¹ x←[1 [2 3ₓ] "ab" ["k":1ᵣ3] (2 2⍴⍳4ₓ)]   ⍝ $t
+⍝ aplcart/table.tsv:2710 — Serialise Array; Ported as `•literal⁻`, which writes data as BPL source text; The case checks that `•literal` reads the text back; Dyalog's serialised form is binary, and BPL's is text
+x≡•literal •literal⁻ x←[1 [2 3ₓ] "ab" ["k":1ᵣ3] (2 2⍴⍳4ₓ)]   ⍝ $t
 
-⍝ aplcart/table.tsv:2717 — Hash Array; Ported as `•hash •literal⁻¹ Y`, which hashes an array's BPL source text with SHA-256. Dyalog's hash values differ; The case checks that equal arrays hash equally and different arrays differently
-h←{•hash •literal⁻¹ ⍵}
+⍝ aplcart/table.tsv:2717 — Hash Array; Ported as `•hash •literal⁻ Y`, which hashes an array's BPL source text with SHA-256. Dyalog's hash values differ; The case checks that equal arrays hash equally and different arrays differently
+h←{•hash •literal⁻ ⍵}
 ((h 1 2 3)≡h 1 2 3)∧(h 1 2 3)≢h 1 2 4   ⍝ $t
 
 ⍝ aplcart/table.tsv:2825 — Unicode Normalise via canonical decomposition; Ported as `"NFD" •normalize`, with é as a concrete input

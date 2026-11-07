@@ -9,7 +9,7 @@ k←["n":2 "i":3]⍴⍳6
 •index⍴k                   ⍝ ["n":[0 1]ₓ "i":[0 1 2]ₓ]
 ```
 
-A name that starts with `_` is hidden. Plain display leaves hidden axis names out. Any key or name that starts with `_` and contains `·` displays up to its last `·`, then `…`. Box mode, `⍴` and error messages show a fresh name as `_b·…`. To keep a long key or name of your own short on screen, start it with `_` and put a `·` before the part to leave out: `["_note·long description":3]` displays as `["_note·…":3]`. `•literal⁻¹` writes every name in full. A hidden name meets a visible one as if that axis had no name, and the result keeps the visible name:
+A name that starts with `_` is hidden. Plain display leaves hidden axis names out. Any key or name that starts with `_` and contains `·` displays up to its last `·`, then `…`. Box mode, `⍴` and error messages show a fresh name as `_b·…`. To keep a long key or name of your own short on screen, start it with `_` and put a `·` before the part to leave out: `["_note·long description":3]` displays as `["_note·…":3]`. `•literal⁻` writes every name in full. A hidden name meets a visible one as if that axis had no name, and the result keeps the visible name:
 
 ```bpl
 i←•index 3 ⋄ v←⍳["v":3]
@@ -27,14 +27,14 @@ m←[1 2 3⋄4 5 6⋄7 8 9]
 +/m.[i i]            ⍝ 15
 ```
 
-Indices name the axes of a formula, as einsum's letters do. In this product, [`+.×⍠k`](../glyphs/dot.qmd) sums along `k`, the index that both operands share. `b` and `o` build the result's grid. [`⍉⁻¹`](../glyphs/circle-backslash.qmd) reorders its axes by name:
+Indices name the axes of a formula, as einsum's letters do. In this product, [`+.×⍠k`](../glyphs/dot.qmd) sums along `k`, the index that both operands share. `b` and `o` build the result's grid. [`⍉⁻`](../glyphs/circle-backslash.qmd) reorders its axes by name:
 
 ```bpl
 xu←[2 3]⍴⍳6ₓ ⋄ wu←[3 4]⍴⍳12ₓ
 [b o k]←•index 2 4 3
 y←xu.[b k]+.×⍠k⁝wu.[k o]
 ∧/,y=xu+.×wu                 ⍝ $t
-∧/, [o b]⍉⁻¹y = ⍉xu+.×wu     ⍝ $t
+∧/, [o b]⍉⁻y = ⍉xu+.×wu     ⍝ $t
 ```
 
 [Models in index notation](../index-notation.qmd) builds a neural network and a transformer's attention with indices.

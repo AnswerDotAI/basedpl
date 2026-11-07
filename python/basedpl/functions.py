@@ -72,7 +72,7 @@ class Function(_Combinators):
     def _invoke(self, args): return bpl._call(self._inner, args, _show).value
 
 class _Attaching(Function):
-    "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻¹←g` and `f∂←g` do in BPL."
+    "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻←g` and `f∂←g` do in BPL."
     def __init__(self, glyph, f, attach, valence):
         super().__init__(_build(glyph, f)._inner, valence)
         self._f, self._attach = f, attach
@@ -97,10 +97,10 @@ def _python_name(name):
 
 # Every documented name of an operator is a property, in Python spelling. Its glyph name gives the derived function with both
 # valences, and each name for what it does gives the valences that name covers. A dyadic operator's property waits for its right
-# operand. `f[axis]` spells `⍠`, `f.undo` spells `⁻¹`, and number-marker properties use their native word names.
+# operand. `f[axis]` spells `⍠`, `f.undo` spells `⁻`, and number-marker properties use their native word names.
 # `f.undo(g)` and `f.derivative(g)` attach `g` as an inverse or derivative.
 _marks = dict(_number_marks)
-_operators = {'undo': ('⁻¹', False, 0)} | {name: (glyph, False, 0) for glyph, name in _marks.items()}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
+_operators = {'undo': ('⁻', False, 0)} | {name: (glyph, False, 0) for glyph, name in _marks.items()}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
 _operator_names = {}  # An operator's glyph: its glyph name, then its names with one argument and with two, in Python spelling
 for _s in symbols:
     if not _s['kind'].endswith('-operator'): continue

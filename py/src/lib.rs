@@ -458,7 +458,7 @@ impl PyFunction {
         Function::build(kind, operands).map(|inner| Self { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
     }
     fn __repr__(&self) -> String { self.inner.bpl() }
-    /// This function with `g` attached as its inverse, as BPL's `f⁻¹←g` attaches it.
+    /// This function with `g` attached as its inverse, as BPL's `f⁻←g` attaches it.
     fn with_inverse(&self, g: PyRef<'_, PyFunction>) -> Self { Self { inner: self.inner.with_inverse(g.inner.clone()) } }
     /// This function with `g` attached as its derivative, as BPL's `f∂←g` attaches it.
     fn with_derivative(&self, g: PyRef<'_, PyFunction>) -> Self { Self { inner: self.inner.with_derivative(g.inner.clone()) } }

@@ -7,7 +7,7 @@ Function. Keys: `Alt-o u`. Hanzi: `因`. Ranks: `0` monadic, `0 0` dyadic
 ```bpl
 ⨸700                 ⍝ [2 2 5 5 7]ₓ
 ⨸1                   ⍝ ⍬ₓ
-⨸⁻¹⨸700              ⍝ 700ₓ
+⨸⁻⨸700              ⍝ 700ₓ
 ```
 
 Inverse: product. A product of machine integers past 64 bits gives the largest 64-bit integer. `K⨸N` selects exponents or a factor table.

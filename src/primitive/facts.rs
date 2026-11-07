@@ -476,7 +476,7 @@ impl Primitive {
             // Fast combinations, which the form rewriter puts in place of their spellings. `log1p` and `expm1` map their argument. `eval::combined` runs the others, before any running level, which then sees the functions they combine.
             Self::Special(Special::Log1p) => &const { row("⍟1+", "log1p", monad("log1p", 0, PERVASIVE.cost(12)), NO_DYAD) },
             Self::Special(Special::Expm1) => &const { row("¯1+*", "expm1", monad("expm1", 0, PERVASIVE.cost(7)), NO_DYAD) },
-            Self::Special(Special::LambertW) => &const { row("(×↢*)⁻¹", "lambertw", monad("lambertw", 0, PERVASIVE.cost(100)), NO_DYAD) },
+            Self::Special(Special::LambertW) => &const { row("(×↢*)⁻", "lambertw", monad("lambertw", 0, PERVASIVE.cost(100)), NO_DYAD) },
             Self::Special(Special::Selected(..)) => &const { row("↑⍋", "selected", monad("selected", W, of(Own)), dyad("selected", [W, W], of(Own))) },
             Self::Special(Special::Ranks(_)) => &const { row("⍋⍋", "ranks", monad("ranks", W, of(Own)), NO_DYAD) },
             Self::Special(Special::GroupCounts) => {

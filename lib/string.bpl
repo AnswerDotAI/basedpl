@@ -56,7 +56,7 @@ htx ← {  ⍝ Extract html segments.
   xtags←{seg sep squeeze vec ⍵}  ⍝ extract tags, where:
   seg←{0ₓ=2ₓ|⍳⍴⍵ # ⍵}
   sep←{(fm⍷⍵ ∨ to⍷⍵)⊂⍵}  ⍝ html separated at tags.
-  vec←{(~⍵∊•ucs 8 10 13){⍺#⁻¹⍺#⍵}⍵}
+  vec←{(~⍵∊•ucs 8 10 13){⍺#⁻⍺#⍵}⍵}
   rlt←{≥+/∧\'>'≠⍵ ↓ ⍵}  ⍝ remove leading tag.
   att←{⍵,to,'>'}  ⍝ append trailing tag.
   [fm to]←'<' "</",¨⊂⍺~"<>"  ⍝ opening and closing html tags.
@@ -120,7 +120,7 @@ wrap_3 ← {⍺←102ₓ  ⍝ ⍺-wrap (John Daintree).
 
 ⍝ From http://dfns.dyalog.com/c_unwrap.htm
 
-unwrap ← {(~⍵∊•ucs 10 13 133){⍺#⁻¹⍺#⍵}⍵}  ⍝ Replace <LF> with blanks.
+unwrap ← {(~⍵∊•ucs 10 13 133){⍺#⁻⍺#⍵}⍵}  ⍝ Replace <LF> with blanks.
 
 ⍝ From http://dfns.dyalog.com/c_justify.htm
 
@@ -135,7 +135,7 @@ justify ← {  ⍝ Justify line-vector to width ⍺.
   breps←required split¨ blanks  ⍝ blank replication vectors.
   last←1ₓ⌈≤⍴sizes  ⍝ last line split point.
   brep←∊ last↑breps , ×last↓breps  ⍝ blank replication vector.
-  (~sp + sp#⁻¹∊brep)#⍵  ⍝ ⍺-justified line-vector.
+  (~sp + sp#⁻∊brep)#⍵  ⍝ ⍺-justified line-vector.
 }
 
 ⍝ From http://dfns.dyalog.com/c_vtrim.htm
@@ -148,7 +148,7 @@ vtrim ← {  ⍝ Trim trailing blanks from line-vector.
     comp←mask#types  ⍝ ignoring duplicate blanks,
     csl←[2 1 0]ₓ⍷comp  ⍝ sequence: ch, sp, ··· sp, lf.
     lsl←[0 1 0]ₓ⍷comp  ⍝ sequence: lf, sp, ··· sp, lf.
-    from←mask#⁻¹csl∨lsl  ⍝ sequence: xx, sp, ··· sp, lf.
+    from←mask#⁻csl∨lsl  ⍝ sequence: xx, sp, ··· sp, lf.
     upto←[1 0]ₓ⍷types  ⍝ sequence: ··········· sp, lf.
     ~¯1⌽≠\from∨upto # ⍵  ⍝ compressed out: <sp, ··· sp>, lf.
   }lf,⍵,lf  ⍝ bracketed with linefeeds chars.
@@ -199,13 +199,13 @@ xtabs ← {  ⍝ Expand/compress HT chars.
     sync←tabs≥chs  ⍝ sync at tab and end of line.
     segs←≤{⍵-¯1ₓ,¯1↓⍵}⍸sync
     pads←0ₓ⌈⍺-⍺|(sync#tabs)#segs  ⍝ padding lengths.
-    nabs+tabs#⁻¹pads # nabs#⁻¹nabs#⍵  ⍝ padded char vector.
+    nabs+tabs#⁻pads # nabs#⁻nabs#⍵  ⍝ padded char vector.
   }⍵;
   ⍺<0ₓ?(-⍺){  ⍝ -ive ⍺: squeeze blanks → tabs.
     [bks nks]←$t $f=⊂⍵=' '  ⍝ blanks and non-blanks
     runs←{⍵{⍵-⌈\⍵×~⍺}+\⍵}  ⍝ runs of adjacent 1s.
     tabs←bks∧chs∧0ₓ=⍺|runs chs  ⍝ tab positions.
-    onoff←{(⍺≠⍵){≠\⍺#⁻¹≠/↕¯1ₓ,⍺#⍵}⍺-⍵}
+    onoff←{(⍺≠⍵){≠\⍺#⁻≠/↕¯1ₓ,⍺#⍵}⍺-⍵}
     pretab←⌽(⌽tabs)onoff⌽nks  ⍝ blanks that precede tabs.
     pretab≤tabs # (•ucs 9)@(⍸tabs) ⍵
   }⍵

@@ -1,5 +1,5 @@
 ⍝⍝ setup
-mx←¯0.5+¿[1024 64]⍴0
+mx←¯0.5+¿[(1024 size 8) 64]⍴0
 my←1○+/mx
 mp←["w":0.25×¯0.5+¿[64 256]⍴0 "b":256⍴0 "v":0.1×¯0.5+¿256⍴0 "c":0]
 ⍝ Mean squared error of a one-hidden-layer tanh network.
@@ -9,10 +9,10 @@ mlp←{
   h←7○b(+⍤1)x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
-gx←¿[1000 32]⍴0
+gx←¿[(1000 size 8) 32]⍴0
 gi←=⊗⍨⍳32
-glow←>⊗⍨⍳32
-gp←["alpha":¿25⍴0 "mu":¿[25 32]⍴0 "q":0.1×¿[25 32]⍴0 "l":0.1×¿[25 32 32]⍴0]
+glow←>⊗⍨⍳32 ⋄ components←25 size 4
+gp←["alpha":¿components⍴0 "mu":¿[components 32]⍴0 "q":0.1×¿[components 32]⍴0 "l":0.1×¿[components 32 32]⍴0]
 ⍝ Gaussian-mixture objective with a Wishart prior, in index notation. `n` names the points, `k` the components, and `d` and `e` the dimensions. The log-sum-exp shifts read detached values, which `∂` treats as constants.
 gmm←{
   [alpha mu q l]←⍵
@@ -30,15 +30,15 @@ gmm←{
 gmmr←{
   [alpha mu q l]←⍵
   L←l×⍤2 glow
-  Q←L+(*q)×⍤[1 2]gi
-  sq←+/⊼(⍺(-⍤1)⍤[2 1]mu)+.×⍤2⍉⍤2⁝Q
+  Q←L+(*q)×¹ ²gi
+  sq←+/⊼(⍺(-⍤1)² ¹mu)+.×⍤2⍉⍤2⁝Q
   t←(alpha++/q)-0.5×sq
   m←⌈⌿•detach t
   am←⌈/•detach alpha
   (+/m+⍟+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am
 }
-kx←¿[16384 32]⍴0
-kc←¿[64 32]⍴0
+kx←¿[(16384 size 16) 32]⍴0
+kc←¿[(64 size 4) 32]⍴0
 ⍝ Sum of squared distances to the nearest cluster centres.
 kmeans←{+/⌊⌿(+/⊼⍵ +⊗ +/⊼⍺)-2×⍵+.×⍉⍺}
 ⍝ The same sum in index notation, which subtracts before it squares. `n` names the points, `c` the centres and `d` the dimensions.
@@ -46,18 +46,18 @@ kmeansi←{
   [[n d] c]←•index[⍴⍺ ≢⍵]
   +/⌊/⍠c+/⍠d⊼⍺.[n d]-⍵.[c d]
 }
-sg←¿[128 128]⍴0
+sg←¿[(128 size 8) (128 size 8)]⍴0
 sk←[1 2 1⋄2 4 2⋄1 2 1]÷16
-n←65536
-dx←¿1048576⍴0
+n←65536 size 1024
+dx←¿(1048576 size 1024)⍴0
 dv←¿n⍴0
 dw←dv-0.5
 dp←["w":¿[64 256]⍴0 "b":¿256⍴0 "v":¿256⍴0 "c":1]
 rw←{0.1×¯0.5+¿⍵⍴0}
-tid←¿[4 64]⍴512ₓ
-ttg←¿[4 64]⍴512ₓ
-tmk←¯1E9× ⍳64 <⊗ ⍳64
-tp←["E":rw[512 128] "P":rw[64 128] "ga":128⍴1 "ba":128⍴0 "wqkv":rw[128 3 4 32] "wo":rw[128 128] "gb":128⍴1 "bb":128⍴0 "wu":rw[128 512] "cu":512⍴0 "wd":rw[512 128] "cd":128⍴0 "gc":128⍴1 "bc":128⍴0 "U":rw[128 512]]
+tokens←64 size 8 ⋄ tid←¿[(4 size 2) tokens]⍴512ₓ
+ttg←¿[(4 size 2) tokens]⍴512ₓ
+tmk←¯1E9× ⍳tokens <⊗ ⍳tokens
+tp←["E":rw[512 128] "P":rw[tokens 128] "ga":128⍴1 "ba":128⍴0 "wqkv":rw[128 3 4 32] "wo":rw[128 128] "gb":128⍴1 "bb":128⍴0 "wu":rw[128 512] "cu":512⍴0 "wd":rw[512 128] "cd":128⍴0 "gc":128⍴1 "bc":128⍴0 "U":rw[128 512]]
 gelu_scale←√2÷π1
 ⍝ GELU activation using its tanh approximation.
 gelu←{0.5×⍵×1+7○gelu_scale×⍵+0.044715×⍵*3}
@@ -69,7 +69,7 @@ dec←{
   norm←{[g o]←⍺ ⋄ z←⍵-(+/÷≢)⍠d⍵ ⋄ o.[d]+g.[d]×z÷√1E¯5+(+/÷≢)⍠d⊼z}
   x←E.[ids.[b t] d]+P.[t d]
   ⍝ q, k and v, each by sequence, token, head and the head's feature.
-  [q k v]←:[r b t h j]⍉⁻¹+/⍠d([ga ba]norm x)×wqkv.[d r h j]
+  [q k v]←:[r b t h j]⍉⁻+/⍠d([ga ba]norm x)×wqkv.[d r h j]
   s←tmk.[t u] + +/⍠j⁝q.[b t h j]×k.[b u h j] ÷ √≢j
   e←*s-⌈/⍠u⁝s
   x←x++/⍠[h j](+/⍠u e÷+/⍠u⁝e × v.[b u h j])×wo.[j+(≢j)×h d]
@@ -79,18 +79,18 @@ dec←{
   m←⌈/⍠c⁝lg
   +/÷≢ , m+⍟+/⍠c*lg-m - lg.[b t tg.[b t]]
 }
-cx←¿[8 3 32 32]⍴0
+cx←¿[(8 size 2) 3 (32 size 8) (32 size 8)]⍴0
 ck←0.2×¯0.5+¿[16 3 3 3]⍴0
-cy←¿[8 16 32 32]⍴0
+cy←¿[(8 size 2) 16 (32 size 8) (32 size 8)]⍴0
 ⍝ A 3 by 3 convolution of 8 images of 3 channels, each 32 by 32, into 16 channels, in index notation. `•edge` gives NaN for a position past an edge, and a NaN position reads 0, so the images are padded with zeros.
 conv←{
   [[n c i j] o a b]←•index[⍴⍺ ≢⍵ 3 3]
   [h w]←2↓⍴⍺
-  [n o i j]⍉⁻¹+/⍠[c a b]⍺.[n c h•edge⁝i+a-1 w•edge⁝j+b-1]×⍵.[o c a b]
+  [n o i j]⍉⁻+/⍠[c a b]⍺.[n c h•edge⁝i+a-1 w•edge⁝j+b-1]×⍵.[o c a b]
 }
 ⍝ Mean squared error of one convolutional layer with tanh units, against the targets `cy`.
 closs←{+/÷≢ ,⊼cy-7○⍺conv⍵}
-hu←¿[512 512]⍴0
+hu←¿[(512 size 16) (512 size 16)]⍴0
 ⍝ One step of heat diffusion: each cell moves towards the mean of its four neighbours. A neighbour past an edge is the edge cell itself (`clamp`).
 heat←{
   [i j]←•index⍴⍵ ⋄ [h w]←⍴⍵ ⋄ clamp←•edge"clamp"

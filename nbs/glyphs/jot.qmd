@@ -11,8 +11,8 @@ See [Rank](jot-diaeresis.qmd) for applying a function to cells of a chosen rank.
 
 ## Inverse
 
-`(f∘g)⁻¹Y` is `g⁻¹ f⁻¹ Y`. `X(f∘g)⁻¹Y` is `X g⁻¹ f⁻¹ Y`.
+`(f∘g)⁻Y` is `g⁻ f⁻ Y`. `X(f∘g)⁻Y` is `X g⁻ f⁻ Y`.
 
 ```bpl
-(-∘÷)⁻¹¯0.5   ⍝ 2
+(-∘÷)⁻¯0.5   ⍝ 2
 ```

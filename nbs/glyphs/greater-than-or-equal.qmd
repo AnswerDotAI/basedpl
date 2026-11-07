@@ -18,8 +18,8 @@ Function. Keys: `Alt->`. Hanzi: `达/进` (`達/進`). Ranks: `0` monadic, `0 0`
 
 ## Inverse
 
-`≥⁻¹Y` decrements `Y`.
+`≥⁻Y` decrements `Y`.
 
 ```bpl
-≥⁻¹5   ⍝ 4
+≥⁻5   ⍝ 4
 ```

@@ -26,8 +26,8 @@ Where it can, Each calls `f` once on all the items together, in a [batched call]
 
 ## Inverse
 
-`f¨⁻¹` is `f⁻¹¨`.
+`f¨⁻` is `f⁻¨`.
 
 ```bpl
-⊽¨⁻¹[2 4;6]   ⍝ [1 2;3]
+⊽¨⁻[2 4;6]   ⍝ [1 2;3]
 ```

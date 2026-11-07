@@ -26,8 +26,8 @@ Vector counts apply to successive leading axes. `N↑⍠K Y` applies the counts 
 
 ## Inverse
 
-`↑⁻¹Y` encloses `Y`.
+`↑⁻Y` encloses `Y`.
 
 ```bpl
-↑⁻¹5   ⍝ ⊂5
+↑⁻5   ⍝ ⊂5
 ```

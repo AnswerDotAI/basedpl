@@ -226,14 +226,14 @@ const fn same(a: &[u8], b: &[u8]) -> bool {
     true
 }
 
-/// `f⁻¹` for a system function `f` that has an inverse.
+/// `f⁻` for a system function `f` that has an inverse.
 pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     use crate::distribution::Operation::{Cdf, Quantile};
     if let Call::Distribution(d, op @ (Cdf | Quantile)) = &f.call {
         return crate::distribution::call(d, if matches!(op, Cdf) { Quantile } else { Cdf }, left, right, span);
     }
     let (call, valence) = f.inverse.ok_or_else(|| Error::domain("this function has no known inverse"))?;
-    valence.check(&format!("{}⁻¹", f.name), left)?;
+    valence.check(&format!("{}⁻", f.name), left)?;
     observed_call(call, left, right, span)
 }
 
@@ -460,10 +460,10 @@ fn normalize(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Err
     Ok(crate::keyed::text(&crate::host::normalize(&form, &text)))
 }
 
-/// `•literal⁻¹ Y` writes `Y` as BPL source, which `•literal` reads back. A value that holds a function or an operator is a DOMAIN error.
+/// `•literal⁻ Y` writes `Y` as BPL source, which `•literal` reads back. A value that holds a function or an operator is a DOMAIN error.
 pub(crate) fn write_literal(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     crate::transform::formats(None, right)?;
-    if right.holds_function() { return Err(Error::domain("•literal⁻¹ writes data, not functions")); }
+    if right.holds_function() { return Err(Error::domain("•literal⁻ writes data, not functions")); }
     Ok(crate::keyed::text(&right.source(crate::display::Elide { plain: None, ..crate::display::Elide::NONE })))
 }
 

@@ -19,5 +19,5 @@ Function. Keys: `Alt-Shift-=`. Hanzi: `别/初` (`別/初`). Ranks: `∞` monadi
 On Booleans, `≠` is its own inverse with either argument fixed.
 
 ```bpl
-1 0≠⁻¹1 1   ⍝ $f $t
+1 0≠⁻1 1   ⍝ $f $t
 ```

@@ -20,11 +20,11 @@ Uses complex logarithms where needed. `⍟0` is `¯∞`. `1⍟1` gives zero when
 
 ## Inverse
 
-`⍟⁻¹` is `*`. With the right argument fixed, `(⍟↢X)⁻¹Y` is `X*÷Y`.
+`⍟⁻` is `*`. With the right argument fixed, `(⍟↢X)⁻Y` is `X*÷Y`.
 
 ```bpl
-2⍟⁻¹3      ⍝ 8
-(⍟↢8)⁻¹3   ⍝ 2
+2⍟⁻3      ⍝ 8
+(⍟↢8)⁻3   ⍝ 2
 ```
 
 ## Fast combinations

@@ -1,17 +1,17 @@
 ⍝⍝ setup
-v←¿65536⍴0
-n←≢v
-sg←¿[128 128]⍴0
-g←0.6<¿[128 128]⍴0
-X←¿[4096 8]⍴0
+v←¿(65536 size 256)⍴0
+n←≢v ⋄ outer_side←256 size 16 ⋄ map_steps←1000 size 8 ⋄ descent_steps←100 size 2
+sg←¿[(128 size 8) (128 size 8)]⍴0
+g←0.6<¿[(128 size 8) (128 size 8)]⍴0
+X←¿[(4096 size 8) 8]⍴0
 thz←¿8⍴0
 vv←¿8⍴0
-cs←¿400⍴0
-big←¿[4 256 256]⍴0
-st←¿[4096 4 4]⍴0
-irow←(¿[10000 8]⍴100)ₓ
+cs←¿(400 size 32)⍴0
+big←¿[4 (256 size 8) (256 size 8)]⍴0
+st←¿[(4096 size 16) 4 4]⍴0
+irow←(¿[(10000 size 16) 8]⍴100)ₓ
 nest←⊂⍤1⁝irow
-rag←{¿[2 ⍵]⍴0}¨1+15|⍳4096
+rag←{¿[2 ⍵]⍴0}¨1+15|⍳(4096 size 32)
 ⍝ Sum of squared sines.
 f←{+/⊼1○⍵}
 ⍝ Sum of squared sines of linear projections over rows of X.
@@ -39,7 +39,7 @@ lifew←{
 }
 sq←{⍵×⍵}
 sq∂←{⍺×3×⍵}
-imgs←¿[64 32 32 3]⍴0
+imgs←¿[(64 size 2) (32 size 8) (32 size 8) 3]⍴0
 ck←0.1×¯0.5+¿[27 32]⍴0
 cb←32⍴0
 ⍝ Valid 3 by 3 convolution over all input channels.
@@ -58,7 +58,7 @@ norm←{
 }
 ⍝ Convolution, ReLU, max pooling and channel normalization.
 cnn←{norm pool 0⌈cb+⍤1(ck conv ⍵)}
-Y←¿[4096 8]⍴0
+Y←¿[(4096 size 8) 8]⍴0
 ⍝⍝ maps
 ⍝ Each, Rank and `⌺` first try one call of their operand on batches of all their cells, and call it once for each cell where that call stops. Maps inside `∂` batch too. Each mapped case sits beside the same computation written with whole arrays, whose cost a batched map should approach.
 ⍝ Expected: `{⍵×⍵+1}¨v` 2.5 copies: as `v×v+1`; `v×v+1` 2.5 copies: two passes below the fusion threshold, one copy then two reads and a write; `{+/,⍵}⌺[3 3] sg` 2 copies: nine reads for each of 16,384 windows, and their sums; `+/+/¯3 ¯3↕sg` 0.75 copies: a padded copy and two sliding passes over 16,384 items.
@@ -161,7 +161,7 @@ hvw∂ thz
 ⍝ 1000 Each calls on one atom, in turn. A map over one cell of atoms calls its operand without trying a batched call.
 ⍝ Expected: 27 copies: 1,000 calls of about 200 ns each.
 ⍝ Linux: 46 copies, because scalar work costs about 1.7 times as many copies on CI's x86 runner, as `v⍳w`'s comment in `arrays.bpl` says.
-{⍵+1}¨⍣1000,0
+{⍵+1}¨⍣map_steps,0
 ⍝⍝: 54	63	60
 
 ⍝ 16 steps of an elementwise body. After its first step, a loop runs such a body as ordinary code, so each step's add waits and all 16 run as one block stage, as the chain written out does (`v+v+v` and so on).
@@ -171,7 +171,7 @@ hvw∂ thz
 
 ⍝ 100 steps of gradient descent on `lossw`. Each step after the first replays the recording of `descend`'s body, the gradient and the update, as one program.
 ⍝ Expected: 300 copies: 100 gradients at `lossw∂ thz`'s 3 copies each. On this Mac on 1 November 2026 it measured 217, 2.17 a step, against 2.40 for one call of `lossw∂ thz`.
-(descend⍣100)thz
+(descend⍣descent_steps)thz
 ⍝⍝: 450	600	710
 
 ⍝ The gradient of a sum through a loop with a predicate, which halves `v` until every item is under 1e¯3: 10 steps, a number the data decide. `∂` gives two loop nodes: the forward loop, and one that reruns it from its first carry, keeping the carries, then folds the body's VJP back over them.
@@ -206,11 +206,11 @@ X - +/X ÷ 8
 ⍝ An outer product of a dfn makes one batched call, with both arguments laid over the result's frame.
 ⍝ Expected: 1 copy: the operand on views laid over the frame, and one write of `n` items.
 ⍝⍝⍝ held macos 4.54: both arguments are laid over the 65,536-item frame, so `⍵+1` runs at every frame position (open.md, dfn operands of scans, folds, outer products); stage 6 keeps each framed value to its own frame axes (main's decision 23)
-⍳256 {⍺×⍵+1}⊗ ⍳256
+⍳outer_side {⍺×⍵+1}⊗ ⍳outer_side
 ⍝⍝: 2	11	9.1
 
 ⍝ Expected: 0.73 copies: 0.5 for writing 8 bytes an item, and one node, about 0.23 copies of 65,536 floats (`fusion::MAC_NODE_NS`, 1,800 ns), because the lone outer product waits under the cost rule and nothing fuses with it (decision 13), as for its twin `⍳√n ×⊗ ⍳√n` in arrays.bpl. In the browser the call runs at once, because the cost rule's limit there is about 830 KB, above the call's 512 KB. The expected cost was 0.5 until 31 October 2026, when cf2_ found that the two cases time alike (1.31 and 1.27 copies under load).
-⍳256 ×⊗ 1+⍳256
+⍳outer_side ×⊗ 1+⍳outer_side
 ⍝⍝: 1.5	1.5	1.9
 
 ⍝ A roll in a batched map draws once, on the whole frame. Each cell's item reads the word at its place in one stream that the map's cells share, the word that the cell reads when drawn alone (`rustymath::random::Items::cells`), so the map costs what one roll on its frame costs.

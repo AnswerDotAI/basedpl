@@ -9,7 +9,7 @@ Dyadic operator. Keys: `Alt-1 8`. Hanzi: `次/止`
 2(+⍣3)1            ⍝ 7
 ```
 
-Negative counts apply the known inverse. With a [superscript](../scripts.ipynb#superscripts), `f⍣¯1` is written `f⁻¹`, and `f⍣2` is written `f²`.
+Negative counts apply the known inverse. Bare [`⁻`](superscript-minus.qmd) writes `f⍣¯1` as `f⁻`. Repeat with `f⍣2`; `f²` instead means rank 2.
 
 ```bpl
 ⊽⍣¯1⁝10           ⍝ 5
@@ -40,10 +40,10 @@ Positive counts run first, then negative counts run the inverse, also from `Y`. 
 
 ## Fixed point
 
-A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a vector of counts. Here `n` is Newton's step towards √2. It gives half of its argument (`⊽⁻¹`, the inverse of double) plus the argument's reciprocal (`÷`).
+A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a vector of counts. Here `n` is Newton's step towards √2. It gives half of its argument (`⊽⁻`, the inverse of double) plus the argument's reciprocal (`÷`).
 
 ```bpl
-n←⊽⁻¹+÷
+n←⊽⁻+÷
 n⍣∞⁝1                 ⍝ 1.414213562373095
 n⍣[0 ∞]1               ⍝ 1 1.414213562373095
 ```
@@ -55,17 +55,17 @@ The until form keeps every state when its predicate is in a one-item vector: `f�
 ```bpl
 ≥⍣[{⍺=3}]0           ⍝ 0 1 2 3
 ⊢⍣[≡]4                ⍝ 4 4
-n←⊽⁻¹+÷ ⋄ ≢n⍣[≡]1         ⍝ 7ₓ
+n←⊽⁻+÷ ⋄ ≢n⍣[≡]1         ⍝ 7ₓ
 ```
 
 See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).
 
 ## Inverse
 
-`(f⍣n)⁻¹` is `f⍣(-n)`.
+`(f⍣n)⁻` is `f⍣(-n)`.
 
 ```bpl
-(⊽⍣3)⁻¹16   ⍝ 2
+(⊽⍣3)⁻16   ⍝ 2
 ```
 
 ## Errors

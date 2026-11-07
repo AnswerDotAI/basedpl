@@ -30,11 +30,11 @@ An integer divided by zero gives the integer limit of its sign: i64's under dyna
 
 ## Inverse
 
-`÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`. These recover the original value for nonzero floating or rational division; integer floor division loses the remainder.
+`÷⁻` is `÷`. With the right argument fixed, `(÷↢X)⁻Y` is `Y×X`. These recover the original value for nonzero floating or rational division; integer floor division loses the remainder.
 
 ```bpl
-12÷⁻¹4     ⍝ 3
-(÷↢4)⁻¹3   ⍝ 12
+12÷⁻4     ⍝ 3
+(÷↢4)⁻3   ⍝ 12
 ```
 
 ## Errors

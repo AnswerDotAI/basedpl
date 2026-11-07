@@ -29,11 +29,11 @@ See also function [power `⍣`](star-diaeresis.qmd).
 
 ## Inverse
 
-`*⁻¹` is `⍟`. With the right argument fixed, `(*↢X)⁻¹Y` is `Y*÷X`.
+`*⁻` is `⍟`. With the right argument fixed, `(*↢X)⁻Y` is `Y*÷X`.
 
 ```bpl
-2*⁻¹8      ⍝ 3
-(*↢2)⁻¹9   ⍝ 3
+2*⁻8      ⍝ 3
+(*↢2)⁻9   ⍝ 3
 ```
 
 ## Fast combinations

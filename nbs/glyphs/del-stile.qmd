@@ -36,8 +36,8 @@ v←30 10 20 50 40 60 70 80 90 0
 
 ## Inverse
 
-`⍒⁻¹P` gives an array whose descending grade is the permutation `P`. Any other `P` is a `DOMAIN` error.
+`⍒⁻P` gives an array whose descending grade is the permutation `P`. Any other `P` is a `DOMAIN` error.
 
 ```bpl
-⍒⁻¹2 0 1   ⍝ [1 0 2]ₓ
+⍒⁻2 0 1   ⍝ [1 0 2]ₓ
 ```

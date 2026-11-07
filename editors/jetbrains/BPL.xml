@@ -524,6 +524,11 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="inverse" value="⁻" description="⁻" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="inverted-question" value="¿" description="¿" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -1150,6 +1155,11 @@
     </context>
   </template>
   <template name="superscript-b" value="ᵇ" description="ᵇ" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="superscript-minus" value="⁻" description="⁻" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

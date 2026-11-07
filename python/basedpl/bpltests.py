@@ -941,10 +941,11 @@ def _or_dash(x, spec): return '-' if x is None else format(x, spec)
 def _over(cost, budget): return budget is not None and cost > budget
 
 class SpeedCosts(list):
-    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build or a machine with no budgets. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it. `footprints` maps the `(section, code)` of each case whose footprint passes one core's cache (`rustymath::timing::footprint`) to that footprint in bytes and the time for each item, in nanoseconds, of a copy of it measured beside the case. A case's `ns` divided by that time is its cost in copies of its footprint. `holds` maps the `(section, code)` of each case whose budget a `held` or `busy` line raises to `(hold, rule, stale)`: `'held'` for a gap in the code or `'busy'` for CI's busy hosts, the rule budget that its footer gives, and whether a gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides. The display marks each case `over`, `stale`, `held` or `busy`, in that order of precedence."
-    def __init__(self, rows=(), cpu=None, platform=None, copies=(), footprints=None, holds=None):
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build or a machine with no budgets. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it. `footprints` maps the `(section, code)` of each case whose footprint passes one core's cache (`rustymath::timing::footprint`) to that footprint in bytes and the time for each item, in nanoseconds, of a copy of it measured beside the case. A case's `ns` divided by that time is its cost in copies of its footprint. `holds` maps the `(section, code)` of each case whose budget a `held` or `busy` line raises to `(hold, rule, stale)`: `'held'` for a gap in the code or `'busy'` for CI's busy hosts, the rule budget that its footer gives, and whether a gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides. The display marks each case `over`, `stale`, `held` or `busy`, in that order of precedence. `obligations` maps each `(section, code)` to its full-size warm-up route obligations."
+    def __init__(self, rows=(), cpu=None, platform=None, copies=(), footprints=None, holds=None, obligations=None):
         super().__init__(rows)
         self.cpu, self.platform, self.copies, self.footprints, self.holds = cpu, platform, list(copies), dict(footprints or {}), dict(holds or {})
+        self.obligations = dict(obligations or {})
     @classmethod
     def from_records(cls, records, platform=None):
         "Read measured values; descriptive budget, hold and footprint fields are optional."
@@ -953,8 +954,9 @@ class SpeedCosts(list):
         copies = logged_costs(copy_log, platform=platform)
         footprints = {(c['section'], c['label']): (f['bytes'], f['seconds']*1e9) for c in records if (f := c.get('footprint'))}
         holds = {(c['section'], c['label']): (c['hold'], c['rule'], c['stale']) for c in records if c.get('hold')}
+        obligations = {(c['section'], c['label']): c['obligations'] for c in records if c.get('obligations')}
         values = ((c['section'], c['label'], c['cost'], c.get('budget'), c['seconds']*1e9) for c in records)
-        return cls(values, cpu=copies.cpu, platform=platform, copies=copies.copies, footprints=footprints, holds=holds)
+        return cls(values, cpu=copies.cpu, platform=platform, copies=copies.copies, footprints=footprints, holds=holds, obligations=obligations)
 
     def __repr__(self):
         fp = {k: f' {b/2**20:8.1f} MiB {ns:6.3f} ns' for k, (b, ns) in self.footprints.items()}
@@ -962,7 +964,8 @@ class SpeedCosts(list):
         def mark(s, c, cost, b):
             hold, _, stale = self.holds.get((s, c), ('', None, False))
             return 'over' if _over(cost, b) else 'stale' if stale else hold
-        return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {_or_dash(ns, ".3f"):>9} {mark(s, c, cost, b):5}{fp.get((s, c), pad)}  {s} {c}' for s, c, cost, b, ns in self)
+        rows = [f'{cost:>9.2f} {_or_dash(b, "g"):>9} {_or_dash(ns, ".3f"):>9} {mark(s, c, cost, b):5}{fp.get((s, c), pad)}  {s} {c}' for s, c, cost, b, ns in self]
+        return '\n'.join([*rows, *(f'route obligation [{s}] {c}: {v}' for (s, c), vs in self.obligations.items() for v in vs)])
 
 def _node():
     "The Node binary for basedpl's browser and editor tests, of the major version that `.node-version` names for CI: `node` on `PATH` where it has that version or where there's no `.node-version`, else Homebrew's `node@N`. Raises `ValueError` where neither runs."
@@ -1402,8 +1405,8 @@ def set_budgets(
     if edits: path.write_bytes(data)
     return changes
 
-def _wasm_batches(files, size=16):
-    "Partition budgeted cases by file and code, keeping repeated code in different sections together for the wasm selector."
+def _speed_batches(files, size=16):
+    "Partition budgeted cases by file and code, keeping repeated code in different sections together for native and browser selectors."
     for f in files:
         cases = [c for c in parse(f['text']) if c.budgets]
         codes = list(dict.fromkeys(c.code for c in cases))
@@ -1435,6 +1438,11 @@ def _steps(out, node, profile):
     B, R, wasm = _ROOT, _RUSTYMATH, str(out/'wasm')
     dev, rdev = 'basedpl: cargo develop', 'rustymath: cargo develop'
     develop_cmd = ['cargo', 'develop', '--profile', profile]
+    batches = list(_speed_batches([dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))]))
+    kernels = ['-v', 'v+w', 'v×2']
+    native = [row for batch in batches if batch['file'] == 'arrays.bpl' for row in batch['rows'] if row[1] == 'copies' and row[2] in kernels]
+    assert [row[2] for row in native] == kernels, 'uncompiled kernel cases must exist exactly once'
+    native = dict(file='arrays.bpl', codes=kernels, rows=native)
     return [
         _Step(dev, develop_cmd, B, (rdev,), timeout=None),
         _Step(rdev, develop_cmd, R, timeout=None),
@@ -1448,14 +1456,15 @@ def _steps(out, node, profile):
         _Step('basedpl: nbdev', ['nbdev-prepare'], B, (dev, 'basedpl: BPL notebooks')),
         _Step('rustymath: nbdev', ['nbdev-prepare'], R, (rdev,)),
         *(_Step(f'{r.name}: cargo test', _cargo_test(r, '--profile', profile), r, (d,), timeout=None) for r, d in ((B, dev), (R, rdev))),
-        _Step('basedpl: route test', _cargo_test(B, '--profile', profile, '--test', 'explain'), B, (dev,), timeout=None),
-        _Step('basedpl: speed test', _cargo_test(B, '--profile', profile, '--test', 'speed'), B, (dev,), dict(BASEDPL_COSTS='1'), None, True),
+        *(_Step(f'basedpl: speed {i} {batch["file"]}', _cargo_test(B, '--profile', profile, '--test', 'speed'), B, (dev,),
+            dict(BASEDPL_COSTS='1', BASEDPL_SPEED_BATCH=json.dumps(batch)), None, True) for i, batch in enumerate(batches, 1)),
+        _Step('basedpl: uncompiled kernels', _cargo_test(B, '--profile', profile, '--test', 'speed'), B, (dev,),
+            dict(BASEDPL_COSTS='1', BASEDPL_COMPILE='never', BASEDPL_SPEED_BATCH=json.dumps(native)), None, True),
         _Step('rustymath: speed test', _cargo_test(R, '--profile', profile, '--test', 'speed'), R, (rdev,), dict(RUSTYMATH_COSTS='1'), None, True),
         _Step('rustymath: Python speed test', ['pytest', '-q', 'tests/test_speed.py'], R, (rdev,), dict(RUSTYMATH_COSTS='1'), 600, True),
-        _Step('basedpl: thread scaling', ['bpl-tests', 'thread_scaling'], B, (dev,), timing=True),
+        *(_Step(f'basedpl: thread scaling {code}', ['bpl-tests', 'thread_scaling', '--cases', code], B, (dev,), timing=True) for code in _SCALING),
         *(_Step(f'basedpl: browser speed {i} {batch["file"]}', ['bpl-tests', 'wasm_test', wasm, '--speed'], B, ('target builds',),
-            dict(BASEDPL_SPEED_BATCH=json.dumps(batch)), timing=True)
-            for i, batch in enumerate(_wasm_batches([dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))]), 1))]
+            dict(BASEDPL_SPEED_BATCH=json.dumps(batch)), timing=True) for i, batch in enumerate(batches, 1))]
 
 def _preflight():
     "What `prerelease` reads before it starts: notes for its summary, the problems that stop it, and the Node binary that `_node` chooses."

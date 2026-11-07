@@ -98,6 +98,7 @@ impl Layout {
     pub(crate) fn zeros(&self, zero: &Value) -> Value { if self.shape().is_empty() { zero.clone() } else { self.filled(zero) } }
     /// The layout that cells share when assembled by trailing-axis agreement. Shorter cells pad with fill; keys survive only along unpadded axes, and keys and names must agree.
     pub(crate) fn assembled<'a>(cells: impl Iterator<Item = &'a Self> + Clone) -> Result<Self, ErrorKind> {
+        if let Some(first) = cells.clone().next() && cells.clone().all(|cell| cell == first) { return Ok(first.clone().with_renderer(None)); }
         let rank = cells.clone().map(|c| c.shape().len()).max().unwrap_or(0);
         let mut shape = vec![0; rank];
         for cell in cells.clone() {
@@ -1020,7 +1021,10 @@ impl Value {
     pub(crate) fn mix(&self, widening: Widening, chosen: Option<&Value>) -> Result<Self, ErrorKind> {
         if self.is_atom() { return self.relaid(Layout::from(Vec::<usize>::new())); }
         if self.is_simple() { return Ok(self.clone()); }
-        let cells: Vec<_> = self.elements().collect();
+        let cells = if self.holds_values() {
+            let Items::Values(items) = self.as_items() else { unreachable!("nested arrays hold values") };
+            Cow::Borrowed(items)
+        } else { Cow::Owned(self.elements().collect::<Vec<_>>()) };
         Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening, chosen, None)
     }
     /// `cells` assembled by trailing-axis agreement into an array whose frame is `frame`, as `Layout::assemble` and `mix` assemble them. The cells' layout is `cell_layout` where the caller knows it, and otherwise the layout that the cells agree on (`Layout::assembled`).

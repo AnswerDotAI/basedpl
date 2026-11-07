@@ -46,7 +46,7 @@ def test_python_printer():
         '+/⍠1': 'add.reduce[1.]', '1↣+⍣[≡]': 'add.left(1.).power([match])', '+⌿': 'add.reduce_first', '-⍨': 'subtract.tilde_diaeresis',
         '+∘×': 'conjugate.atop(times)', '+⍥×': 'plus.over(sign)', '-↣+': 'negate.before(add)', '+↢-': 'add.after(negate)', '-⊘+': 'negate.valences(add)',
         '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2⋄3 4]↣+': 'add.left(bpl("[1 2⋄3 4]"))',
-        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻¹': 'multiply(2.).undo',
+        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻': 'multiply(2.).undo',
     }.items(): teq(to_python(bpl(code)), expected)
     teq(to_python(bpl('×'), dyad=True), 'multiply')
     teq(to_python(bpl('-⍨'), dyad=True), 'subtract.commute')

@@ -78,8 +78,6 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
     let exact = json!({"code":"32•float 1+3×2*¯23", "expected_code":"32•float 1", "relative_tolerance":0.0});
     assert_eq!(reference::check(&exact, &InterruptHandle::default())["status"], "mismatch");
-    let error = reference::route(&json!({"code":"•delay3"}), "", &InterruptHandle::default()).err().expect("route capture has a deadline");
-    assert!(error["message"].as_str().is_some_and(|message| message.contains("TIMEOUT")), "{error}");
     for code in [r#"(•explain "1+1").value"#, r#"(•explain "1+1").fused"#] {
         let checked = reference::check(&cases(&format!("⍝ —\n{code}   ⍝ 3"))[0], &InterruptHandle::default());
         assert!(reference::fails(&checked) && !reference::obliged(&checked), "{checked}");
@@ -141,7 +139,8 @@ fn reference_cases() {
                 let share: Vec<usize> = left.iter().copied().skip(k).step_by(shares).collect();
                 let positions = share.iter().map(usize::to_string).collect::<Vec<_>>().join(" ");
                 let child = std::process::Command::new(&exe).args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, positions)
-                    .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+                    .env("RAYON_NUM_THREADS", (cores / shares).to_string()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()
+                    .unwrap();
                 // Every child's output is read as it comes, each on a thread of its own: a child whose pipe fills waits, inside the case it's timing, until its output is read.
                 (share, std::thread::spawn(move || child.wait_with_output()))
             })

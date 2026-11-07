@@ -68,7 +68,7 @@ dice←{
 ⍝ From https://dfns.dyalog.com/c_packN.htm
 packN←{  ⍝ Null packing: shape, non-null mask, non-null items.
   cmp←{mask←,⍵≠1↑0⍴⍵ ⋄ [⍴⍵ mask mask#,⍵]}
-  exp←{[shape mask items]←⍵ ⋄ shape⍴mask#⁻¹items}
+  exp←{[shape mask items]←⍵ ⋄ shape⍴mask#⁻items}
   ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
 }
 
@@ -302,10 +302,10 @@ mayan←{  ⍝ Mayan numbers; left 0 uses base 20, left 1 uses the calendar base
     [comp part]←[0 5]ₓ⊤⍵
     top←dot{
       ⍵=0ₓ?0 5⍴"";
-      ⍵=1ₓ?0 0 1 0 0#⁻¹⍺;
-      ⍵=2ₓ?0 1 0 1 0#⁻¹⍺;
-      ⍵=3ₓ?0 1 1 1 0#⁻¹⍺;
-      ⍵=4ₓ?1 1 1 1 0#⁻¹⍺
+      ⍵=1ₓ?0 0 1 0 0#⁻⍺;
+      ⍵=2ₓ?0 1 0 1 0#⁻⍺;
+      ⍵=3ₓ?0 1 1 1 0#⁻⍺;
+      ⍵=4ₓ?1 1 1 1 0#⁻⍺
     }part
     top⍪[comp 5]⍴bar
   }¨{-1⌈+/∨\⍵≠0ₓ ↑ ⍵}base⊤⍵
@@ -449,7 +449,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   State←1,≢,⍵ ⍴ ⍵ ⋄ NMoves←,0 ⋄ ENode←,0ₓ
   x←extend0
   ∧/Fin=0ₓ?"There are no solutions";
-  i←∨/{i#⁻¹n=⌊/n←(i←Fin=⍵)#NPath}¨≥⍳≢Target
+  i←∨/{i#⁻n=⌊/n←(i←Fin=⍵)#NPath}¨≥⍳≢Target
   x←[[≤i#Fin]⌷Target]⌷"Top-right" "Bottom-left" "Bottom-right"
   x←[x⋄(⊂"in "),¨(0⍕¨i#NPath),¨⊂" moves"]
   x⍪i#Moves
@@ -467,7 +467,7 @@ refmt←{  ⍝ Indent code and align comments.
     [clean coms]
   }⍤1 ⊃⍵
   dents←{
-    toks←unqt⍵ {⍺#⁻¹⍺#⍵} ⍵
+    toks←unqt⍵ {⍺#⁻⍺#⍵} ⍵
     dvec←-⌿0 1⌽+\"{}"=⊗toks
     lmask←toks='·'
     dent×lmask#dvec #¨ ' '
@@ -577,7 +577,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
   fmt←{
     chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟"
     expd←1↓,⊃⍺⍴⊂0 1
-    ⊂⍤2 expd#⁻¹₋₁chars
+    ⊂⍤2 expd#⁻₋₁chars
   }
   squares←[⍳⌈⍵÷2],1↓⍵⍴⊂⍳⍵
   ⍵ fmt ⍬ search squares
@@ -849,7 +849,7 @@ packH←{                      ⍝ Huffman packing.
 
      ⍺ ⍶{⍶ ⍵}{
 
-         Under←{⍹⁻¹ ⍹⍺ ⍶ ⍹⍵}    ⍝ dyadic case of "under" operator
+         Under←{⍹⁻ ⍹⍺ ⍶ ⍹⍵}    ⍝ dyadic case of "under" operator
          p_2←{(¯1⌽k↓⍺)⊂⍠⍶(⍶⍴0 , k←-$t⍳⍨⌽⍺)↓⍵}
          Blk_1←{0ₓ=≢⍺?⍵;0ₓ=≢↑⍺?1↓⍺ (≥⍶)⍢ ⍵;1↓⍺ (≥⍶)⍢ ⊃(⊂↑⍺)⊂⍠⍶¨⍵}
          Blk_2←{0ₓ=≢⍺?⍵;0ₓ=≢↑⍺?1↓⍺ (≥⍶)⍢ ⍵;1↓⍺ (≥⍶)⍢ ⊃(⊂↑⍺)(⍶ p_2)¨⍵}
@@ -1046,7 +1046,7 @@ eis←{{⊂1#⍵}⍣ 1ₓ=≡,⍵ ⍵}⊘{eis⍺ , eis⍵}  ⍝ Enclose if simpl
          defn←{≥cats↣⍳¨ ⊂"." segs¨ ":→"segs⍵}   ⍝ split a.b:c.d→z defn
          dist←{,,⊗/2↑⍵ ,¨ ↑⌽⍵}                 ⍝ distribution of productions
          lmat←dist∘defn¨¨¨defs                   ⍝ loading matrix
-         bftz←,/bonds,¨¨(,/)²¨lmat           ⍝ bond-from-to-rslt tuples
+         bftz←,/bonds,¨¨((,/)⍣2)¨lmat           ⍝ bond-from-to-rslt tuples
          [cats reps bkts blabs],⊂₀ ₁⊃{        ⍝ binding structure.
              [bond fm to rslt]←⍺                 ⍝ binding and resulting cats.
              (⊂[bond rslt])@ ⊂≤[fm to] ⍵       ⍝ populate cell
@@ -1343,7 +1343,7 @@ ratsum←{
         [lw rw]←⌈\⍴¨[lru rru]
         mw←⍴man~"."
         _lru←[digs⍳lru]⌷cdigs
-        _man←". "repl(man≠'.')#⁻¹mw⍴_lru
+        _man←". "repl(man≠'.')#⁻mw⍴_lru
         _rru←rw⍴mw⌽_lru
         _lmr←[_lru _man _rru]
         lmrr←[lru man rw⍴rru]

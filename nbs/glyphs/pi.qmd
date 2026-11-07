@@ -20,10 +20,10 @@ Use [`○`](circle.qmd) to turn an angle into a unit-circle point.
 
 ## Inverse
 
-`π⁻¹Y` divides `Y` by π. `Xπ⁻¹Y` is `XπY`. With the right argument fixed, `(π↢X)⁻¹Y` is `Y×X÷π1`.
+`π⁻Y` divides `Y` by π. `Xπ⁻Y` is `XπY`. With the right argument fixed, `(π↢X)⁻Y` is `Y×X÷π1`.
 
 ```bpl
-π⁻¹π2      ⍝ 2
-2π⁻¹4      ⍝ π0.5
-(π↢2)⁻¹4   ⍝ 8÷π1
+π⁻π2      ⍝ 2
+2π⁻4      ⍝ π0.5
+(π↢2)⁻4   ⍝ 8÷π1
 ```

@@ -170,7 +170,7 @@ B←["product":4 3]⍴2
 [["a":11 "b":22 "c":30] ["a":11 "b":22 "c":30] ["a":11 22 "c":30]]
 
 ⍝ fill-option-forms — `⍠["fill":v]` gives the item that each form that fills reads: a keyed call where an argument lacks a key, take past the end, replicate at a negative count, expand, mix, pick and first on an empty axis, index and pick at a NaN position, reshape of an empty array, and the windows of `↕` and `⌺`
-[("p" "q":1 2)+⍠["fill":10] "q" "r":3 4 ; 5↑⍠["fill":¯1] 1 2 3 ; 1 ¯2 1#⍠["fill":9] 1 2 3 ; [1 0 1]#⁻¹⍠["fill":9] 5 6 ; ⊃⍠["fill":¯1] (1 2)(,3) ; 0⊃⍠["fill":9] ⍬ ; ↑⍠["fill":9] 0 3⍴5 ; [[$n 1]]⌷⍠["fill":¯1] 10 20 30 ; $n⊃⍠["fill":¯1] 10 20 ; 3⍴⍠["fill":7] ⍬ ; ["size":¯3 "fill":¯1]↕1 2 3 ; +/⌺["size":3 "fill":100] 1 2 3 4]
+[("p" "q":1 2)+⍠["fill":10] "q" "r":3 4 ; 5↑⍠["fill":¯1] 1 2 3 ; 1 ¯2 1#⍠["fill":9] 1 2 3 ; [1 0 1]#⁻⍠["fill":9] 5 6 ; ⊃⍠["fill":¯1] (1 2)(,3) ; 0⊃⍠["fill":9] ⍬ ; ↑⍠["fill":9] 0 3⍴5 ; [[$n 1]]⌷⍠["fill":¯1] 10 20 30 ; $n⊃⍠["fill":¯1] 10 20 ; 3⍴⍠["fill":7] ⍬ ; ["size":¯3 "fill":¯1]↕1 2 3 ; +/⌺["size":3 "fill":100] 1 2 3 4]
 ⍝ =>
 [["p":11 "q":5 "r":14] ; 1 2 3 ¯1 ¯1 ; 1 9 9 3 ; 5 9 6 ; [1 2⋄3 ¯1] ; 9 ; 9 9 9 ; ¯1 20 ; ¯1 ; 7 7 7 ; [¯1 1 2⋄1 2 3⋄2 3 ¯1] ; 103 6 9 107]
 
@@ -237,7 +237,7 @@ v←2⊃3↑⍠["fill":9ₓ₂][1 'a'] ⋄ [v ; (•storage v).kind]   ⍝ [9ₓ
 {0<+/⍵?+/⍵×⍵;0}∂1 2   ⍝ 2 4
 
 ⍝ fill-option-through — A fill reaches its primitive through a bound argument and through `f⍠A`. A primitive's own axis form reads the axes with the fill, and any other function takes the fill on each cell. Arguments with no keyed axis fill nothing, and give the plain call's result
-[(3↑₁)⍠["fill":¯1] [1 2⋄3 4] ; (3↑)⍠["fill":¯1] 1 2 ; (-↢1)⍠["fill":0] 5 ; 1 ¯2 (#₁)⍠["fill":9] [1 2⋄3 4] ; (⊃₀)⍠["fill":¯1] (1 2)(,3) ; [[$n 1]]⌷₁⍠["fill":¯1] [1 2⋄3 4] ; ("p" "q":[1 2⋄3 4])+₀⍠["fill":0] "q" "r":10 20 ; (1 0 1 #⁻¹₁)⍠["fill":9] [1 2⋄3 4] ; [2 3] (⍴₁)⍠["fill":7] 2 0⍴0]
+[(3↑₁)⍠["fill":¯1] [1 2⋄3 4] ; (3↑)⍠["fill":¯1] 1 2 ; (-↢1)⍠["fill":0] 5 ; 1 ¯2 (#₁)⍠["fill":9] [1 2⋄3 4] ; (⊃₀)⍠["fill":¯1] (1 2)(,3) ; [[$n 1]]⌷₁⍠["fill":¯1] [1 2⋄3 4] ; ("p" "q":[1 2⋄3 4])+₀⍠["fill":0] "q" "r":10 20 ; (1 0 1 #⁻₁)⍠["fill":9] [1 2⋄3 4] ; [2 3] (⍴₁)⍠["fill":7] 2 0⍴0]
 ⍝ =>
 [[1 2 ¯1⋄3 4 ¯1] ; 1 2 ¯1 ; 4 ; [1 9 9⋄3 9 9] ; [1 3⋄2 ¯1] ; [¯1 2⋄¯1 4] ; ("p" "q" "r":[1 2⋄13 14⋄20 20]) ; [1 9 2⋄3 9 4] ; 2 2 3⍴7]
 
@@ -279,7 +279,7 @@ s←⍉[0 $n ; :]⌷⍠["fill":2]3 100⍴1
 [¯23 ¯22 ¯21 ; ¯21 ¯20 ¯19 ; ¯63 ¯62 ¯61]
 
 ⍝ axis-gap-json — A JSON object needs a key for every entry
-•json⁻¹ ["a":1 2]
+•json⁻ ["a":1 2]
 ⍝ error: DOMAIN ERROR
 
 ⍝ axis-colon — Colon binds as a function, including in a dfn, and literal separators keep their meanings
@@ -327,22 +327,22 @@ M←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[1 2 3⋄4 5 6]
 ⍝ =>
 [3 2 3]ₓ
 
-⍝ axis-unkey-inverse — `K:⁻¹` removes only the labels that `K:` attaches. A keyed `K` names the axes it labels, so its inverse removes those names with the keys. A plain list of key lists names no axes, so a named `Y` keeps its names, and keys on axes that `K` doesn't label stay
+⍝ axis-unkey-inverse — `K:⁻` removes only the labels that `K:` attaches. A keyed `K` names the axes it labels, so its inverse removes those names with the keys. A plain list of key lists names no axes, so a named `Y` keeps its names, and keys on axes that `K` doesn't label stay
 axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"] ⋄ M←axes:[1 2 3⋄4 5 6]
 K←["a" "b";"x" "y" "z"] ⋄ Y←["r":2 "c":3]⍴⍳6 ⋄ L←"a" "b" ⋄ W←"x" "y" "z":₁ [1 2 3⋄4 5 6]
-[⍴axes:⁻¹M ; ⍳₁axes:⁻¹M ; ⍴K:⁻¹K:Y ; ⍳₀K:⁻¹K:Y ; ⍳₁L:⁻¹L:W]
+[⍴axes:⁻M ; ⍳₁axes:⁻M ; ⍴K:⁻K:Y ; ⍳₀K:⁻K:Y ; ⍳₁L:⁻L:W]
 ⍝ =>
 [[2 3]ₓ ; [0 1 2]ₓ ; ["r":2 "c":3]ₓ ; ["r":2]⍴[0 1]ₓ ; "x" "y" "z"]
 
-⍝ axis-unkey-under — Under through `K:` gives a result with the argument's own labels and no others, because `K:⁻¹` removes only what `K:` attaches
+⍝ axis-unkey-under — Under through `K:` gives a result with the argument's own labels and no others, because `K:⁻` removes only what `K:` attaches
 axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"] ⋄ K←["a" "b";"x" "y" "z"] ⋄ Y←["r":2 "c":3]⍴⍳6
 [⍴(10×)@(axes:)[1 2 3⋄4 5 6] ; ⍴(10×)@(K:)Y ; ⍳₀ (10×)@(K:)Y]
 ⍝ =>
 [[2 3]ₓ ; ["r":2 "c":3]ₓ ; ["r":2]⍴[0 1]ₓ]
 
-⍝ axis-unkey-inverse-entry — A single key makes `K:Y` a record of one entry, so `K:⁻¹` gives back the entry's value, and Under through `K:` works on that value
+⍝ axis-unkey-inverse-entry — A single key makes `K:Y` a record of one entry, so `K:⁻` gives back the entry's value, and Under through `K:` works on that value
 k←"a"
-[(k:⁻¹["a":5]) ; (k:⁻¹k:1 2) ; (10×)@(k:)5]
+[(k:⁻["a":5]) ; (k:⁻k:1 2) ; (10×)@(k:)5]
 ⍝ =>
 [5 ; 1 2 ; 50]
 
@@ -504,28 +504,28 @@ b←{⎕←+/⍵ ⋄ ⍵-1+0×+/√⍵} ⋄ +/|b⍣3⁝2 1.5 3   ⍝ 2.5
 f←{⍵×⍴•index⁝3} ⋄ (f∂2)≡f∂2   ⍝ $f
 
 ⍝ program-tacit — `∂` of a function other than a dfn, such as a train or an inverse, runs from a program, which later calls replay. Programs are kept by the function's structure for the session. Its gradient is the dfn form's
-v←1 2 3 ⋄ f←+/×⍨ ⋄ g←+/(2×)⁻¹ ⋄ ef←•explain "[f∂v ; f∂v ; f∂v]" ⋄ eg←•explain "[g∂v ; g∂v ; g∂v]" ⋄ [(↑⌽ef.programs.event)≡"replayed" ; (↑⌽eg.programs.event)≡"replayed" ; ↑ef.value ; ↑eg.value]   ⍝ [$t $t [2 4 6] [0.5 0.5 0.5]]
+v←1 2 3 ⋄ f←+/×⍨ ⋄ g←+/(2×)⁻ ⋄ ef←•explain "[f∂v ; f∂v ; f∂v]" ⋄ eg←•explain "[g∂v ; g∂v ; g∂v]" ⋄ [(↑⌽ef.programs.event)≡"replayed" ; (↑⌽eg.programs.event)≡"replayed" ; ↑ef.value ; ↑eg.value]   ⍝ [$t $t [2 4 6] [0.5 0.5 0.5]]
 
 ⍝ program-tacit-data — a train built afresh at each call, because it reads a name, runs from its structure's program. Each array that it binds as an argument is an input, as a free name of a dfn is, so a replay takes each call's new values
 v←1 2 3 ⋄ g←{w←⍺ ⋄ (+/w×⊢)∂⍵} ⋄ e←•explain "[4 5 6 g v ; 7 8 9 g v ; 1 1 1 g v]" ⋄ [(↑⌽e.programs.event)≡"replayed" ; e.value]   ⍝ [$t (4 5 6⋄7 8 9⋄1 1 1)]
 
 ⍝ program-positions — `∂` of a dfn that selects at positions from its left argument runs from a program, which reads the positions again at each replay. A pick from each row, as `⌷⍤[0 1]` makes it, selects every row at once. No trace stops
-v←0.5×⍳10 ⋄ m←0.1×3 4⍴⍳12 ⋄ p←[3 5 3]ₓ ⋄ q←[1 2 2]ₓ ⋄ r←[0 3 1]ₓ ⋄ s←[2 2 0]ₓ ⋄ f←{+/(⍵.[⍺])*2} ⋄ g←{+/(⍺⌷⍤[0 1]⍵)*2} ⋄ e←•explain "[p f∂ v ; q f∂ v ; r g∂ m ; s g∂ m]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[0 0 0 6 0 5 0 0 0 0] [0 1 4 0 0 0 0 0 0 0] [0 0 0 0⋄0 0 0 1.4⋄0 1.8 0 0] [0 0 0.4 0⋄0 0 1.2 0⋄1.6 0 0 0] 4ₓ 0ₓ]
+v←0.5×⍳10 ⋄ m←0.1×3 4⍴⍳12 ⋄ p←[3 5 3]ₓ ⋄ q←[1 2 2]ₓ ⋄ r←[0 3 1]ₓ ⋄ s←[2 2 0]ₓ ⋄ f←{+/(⍵.[⍺])*2} ⋄ g←{+/(⍺⌷⁰ ¹⍵)*2} ⋄ e←•explain "[p f∂ v ; q f∂ v ; r g∂ m ; s g∂ m]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[0 0 0 6 0 5 0 0 0 0] [0 1 4 0 0 0 0 0 0 0] [0 0 0 0⋄0 0 0 1.4⋄0 1.8 0 0] [0 0 0.4 0⋄0 0 1.2 0⋄1.6 0 0 0] 4ₓ 0ₓ]
 
 ⍝ program-positions-range — Out-of-range positions read fill with zero derivative. Changing source and index-vector lengths within the same length class still uses current positions and shape
 v←0.5×⍳10 ⋄ f←{+/(⍵.[⍺])*2} ⋄ p←[3 5 3]ₓ ⋄ q←[3 50 3]ₓ ⋄ a←p f∂ v ⋄ b←q f∂ v ⋄ c←[0 2 2 3]ₓ f∂ 1 2 3 4 ⋄ [b ; c ; ⍴c]   ⍝ [[0 0 0 6 0 0 0 0 0 0] [2 0 12 8] [4]ₓ]
 
 ⍝ program-rank-fork — `∂` of a dfn that applies a fork by Rank or along a named axis, as a layer norm's mean `(+/÷≢)⍤1` does, runs from a program, and so does a pick from each row at positions that a free name holds. A replay after the name changes picks the new positions [batched]
-m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ t←[2 0 3]ₓ ⋄ f←{+/,⊼⍵-(+/÷≢)⍤1⍵} ⋄ g←{+/,⊼⍵-(+/÷≢)⍠d⍵} ⋄ h←{+/t⌷⍤[0 1]⍵×⍵} ⋄ e←•explain "[f∂m ; ,g∂x ; h∂m]" ⋄ t←[1 1 1]ₓ ⋄ [(≢e.programs.event),≢e.stopped.reason ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3⋄¯3 ¯1 1 3⋄¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0⋄8 0 0 0⋄0 0 0 22]] [0 2 0 0⋄0 10 0 0⋄0 18 0 0]]
+m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ t←[2 0 3]ₓ ⋄ f←{+/,⊼⍵-(+/÷≢)⍤1⍵} ⋄ g←{+/,⊼⍵-(+/÷≢)⍠d⍵} ⋄ h←{+/t⌷⁰ ¹⍵×⍵} ⋄ e←•explain "[f∂m ; ,g∂x ; h∂m]" ⋄ t←[1 1 1]ₓ ⋄ [(≢e.programs.event),≢e.stopped.reason ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3⋄¯3 ¯1 1 3⋄¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0⋄8 0 0 0⋄0 0 0 22]] [0 2 0 0⋄0 10 0 0⋄0 18 0 0]]
 
 ⍝ program-map-dfn-replay — Rank and Each of a dfn inside a differentiated dfn replay their second invocation on new input values, including when already warm [batched]
 f←{+/{⊼⍵}⍤0⍵} ⋄ g←{+/{⊼⍵}¨⍵} ⋄ a←f∂1 2 3 ⋄ b←•explain "f∂4 5 6" ⋄ c←g∂1 2 3 ⋄ d←•explain "g∂4 5 6" ⋄ [(b.programs.event≡,⊂"replayed")∧d.programs.event≡,⊂"replayed" ; [a ; b.value ; c ; d.value]]   ⍝ [$t [2 4 6 ; 8 10 12 ; 2 4 6 ; 8 10 12]]
 
 ⍝ program-rank-named — `∂` of a dfn that applies a pervasive function by Rank to arguments whose frames have the same names runs from a program, and gives the gradient of the same dfn without names
-m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ f←{c←+/⍠d ⍵ ⋄ +/,⊼⍵-⍤[1 0]c} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{c←+/⍤1⍵ ⋄ +/,⊼⍵-⍤[1 0]c}∂m]   ⍝ (1ₓ 0ₓ⋄24 26 28 30 96 98 100 102 168 170 172 174⋄24 26 28 30 96 98 100 102 168 170 172 174)
+m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ f←{c←+/⍠d ⍵ ⋄ +/,⊼⍵-¹ ⁰c} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{c←+/⍤1⍵ ⋄ +/,⊼⍵-¹ ⁰c}∂m]   ⍝ (1ₓ 0ₓ⋄24 26 28 30 96 98 100 102 168 170 172 174⋄24 26 28 30 96 98 100 102 168 170 172 174)
 
 ⍝ program-rank-pick-named — `∂` of a dfn that picks from each row by Rank, with positions on the same named frame as the rows, runs from a program, and gives the gradient of the same dfn without names
-m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ u←[2 0 3]ₓ ⋄ p←u.[n] ⋄ f←{+/,⊼p⌷⍤[0 1]⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{+/,⊼u⌷⍤[0 1]⍵}∂m]   ⍝ (1ₓ 0ₓ⋄0 0 4 0 8 0 0 0 0 0 0 22⋄0 0 4 0 8 0 0 0 0 0 0 22)
+m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ u←[2 0 3]ₓ ⋄ p←u.[n] ⋄ f←{+/,⊼p⌷⁰ ¹⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{+/,⊼u⌷⁰ ¹⍵}∂m]   ⍝ (1ₓ 0ₓ⋄0 0 4 0 8 0 0 0 0 0 0 22⋄0 0 4 0 8 0 0 0 0 0 0 22)
 
 ⍝ program-fold-ravel-windows — `∂` of a dfn that sums windows of a ravel down their starts, each window longer than the source's last axis, runs from a program and gives the gradient of the windows' sums
 x←1×2 3 4⍴⍳24 ⋄ f←{+/,⊼+⌿["size":13 "step":4]↕,⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value]   ⍝ (1ₓ 0ₓ⋄24 30 36 42 72 84 96 108 144 162 180 198 216 132 144 156 168 78 84 90 96 0 0 0)
@@ -611,7 +611,7 @@ A +⍤1 B
 S←3 3⍴⍳9 ⋄ m←["r":2 "c":4]⍴⍳8 ⋄ [(1 2 3+⊢)⍤1 S ; (+/,≢)⍤1 S ; (+/÷≢)⍤1 m]   ⍝ [[1 3 5⋄4 6 8⋄7 9 11] [3 3⋄12 3⋄21 3] ["r":2]⍴[1.5 5.5]]
 
 ⍝ rank-named-frames — Rank pairs named frames by name before it calls its function on each pair of cells. The same name pairs. A different name adds a frame axis before the cells, and a frame name never pairs with a cell axis of the other argument
-x←["n":2 "d":3]⍴⍳6 ⋄ y←["n":2]⍴10 20 ⋄ m←["m":4]⍴10×⍳4 ⋄ e←["d":3]⍴10×⍳3 ⋄ [x+⍤[1 0]y ; ⍴x+⍤[1 0]m ; :⍴x+⍤[1 0]e]   ⍝ [["n":2 "d":3]⍴[10 11 12⋄23 24 25] ["n":2 "m":4 "d":3]ₓ [2 3 3]ₓ]
+x←["n":2 "d":3]⍴⍳6 ⋄ y←["n":2]⍴10 20 ⋄ m←["m":4]⍴10×⍳4 ⋄ e←["d":3]⍴10×⍳3 ⋄ [x+¹ ⁰y ; ⍴x+¹ ⁰m ; :⍴x+¹ ⁰e]   ⍝ [["n":2 "d":3]⍴[10 11 12⋄23 24 25] ["n":2 "m":4 "d":3]ₓ [2 3 3]ₓ]
 
 ⍝ axis-windows — Windows have no keys on their windowed axes; stencil centres keep their axis labels
 V←"aa" "bb" "cc":1 2 3
@@ -742,7 +742,7 @@ g←⊂[1 2 0⋄1 0 2]ₓ ↣⌻
 V←"aa" "bb":1 3
 B←"row1" "row2":10 20
 f←(×↢*)⍨
-[(+\)⁻¹ V;B↣(+⊗)⁻¹ ⊖B+⊗V;⍳₀ f⁻¹ f V]
+[(+\)⁻ V;B↣(+⊗)⁻ ⊖B+⊗V;⍳₀ f⁻ f V]
 ⍝ =>
 [["aa":1 "bb":2] ["aa":1 "bb":3] ["aa" "bb"]]
 
@@ -1121,10 +1121,10 @@ f←{(≢⍺)*⌊⍵} ⋄ a←1 2 f 3 ⋄ b←1 2 3 f 4 ⋄ c←1 2 f ¯3 ⋄ [0
 ○0j1   ⍝ 0.36787944117144233
 
 ⍝ — Principal inverses of root and circle
-[√⁻¹3 ○⁻¹○0.5]   ⍝ 9 0.5
+[√⁻3 ○⁻○0.5]   ⍝ 9 0.5
 
 ⍝ — Bound pi fractions invert either argument
-(1↣π)⁻¹1π4   ⍝ 4
+(1↣π)⁻1π4   ⍝ 4
 
 ⍝ rewrite-log1p-data — `⍟1+x` computes log1p on data in every spelling: an expression, spaced or parenthesised, a train, a composition, a named train and a dfn
 {x←⍵ ⋄ f←⍟1+ ⋄ 1E17×[⍟1+x ; ⍟ 1+x ; ⍟(x+1) ; (⍟1+)x ; ⍟∘(1+)x ; f x ; {⍟1+⍵}x]}1E¯17   ⍝ 7⍴1
@@ -1151,12 +1151,12 @@ x←(4 9)ₛ ⋄ (•storage √ₐ x).kind   ⍝ "float32"
 (0j1)*ₐ2   ⍝ ¯1
 x←(¯8 4)ₛ ⋄ [(•storage x*ₐ0.5).kind ; (•storage 2ₓ₁*ₐ3ₓ₁).kind]   ⍝ "float32" "float32"
 
-⍝ mark-circle-kernels — `○ₐ` and `○⁻¹ₐ` give the real part of a circle code's principal value outside the code's real domain, through one kernel for a constant code: arcsin of 2 is π÷2, `2○⁻¹ₐ¯2` is π, `4○⁻¹ₐ` takes APL's branch, and `8○ₐ` is 0 on reals, where `8○` is imaginary. A complex argument gives the real part of the complex result
+⍝ mark-circle-kernels — `○ₐ` and `○⁻ₐ` give the real part of a circle code's principal value outside the code's real domain, through one kernel for a constant code: arcsin of 2 is π÷2, `2○⁻ₐ¯2` is π, `4○⁻ₐ` takes APL's branch, and `8○ₐ` is 0 on reals, where `8○` is imaginary. A complex argument gives the real part of the complex result
 ⍝⍝⍝ route vector kernel
-1○⁻¹ₐ¯2 0.5 2   ⍝ ¯1.5707963267948966 0.5235987755982988 1.5707963267948966
-[2○⁻¹ₐ¯2 2 ; 4○⁻¹ₐ¯2 0.5 ; 6○⁻¹ₐ¯2 0.5 ; 7○⁻¹ₐ¯2 0.5 ; 0○ₐ¯2 0.5 ; 8○ₐ¯2 0.5]   ⍝ [3.141592653589793 0 ; ¯1.7320508075688772 0 ; 1.3169578969248166 0 ; ¯0.5493061443340549 0.5493061443340549 ; 0 0.8660254037844386 ; 0 0]
-[8○ₐ 3j4 ; 8○⁻¹ₐ 3j4 ; 1○⁻¹ₐ 0j1 ; 2○ₐ 1j1]   ⍝ 3.920372032964854 ¯3.920372032964854 0 0.8337300251311489
-x←(¯2 0.5)ₛ ⋄ (•storage 1○⁻¹ₐ x).kind   ⍝ "float32"
+1○⁻ₐ¯2 0.5 2   ⍝ ¯1.5707963267948966 0.5235987755982988 1.5707963267948966
+[2○⁻ₐ¯2 2 ; 4○⁻ₐ¯2 0.5 ; 6○⁻ₐ¯2 0.5 ; 7○⁻ₐ¯2 0.5 ; 0○ₐ¯2 0.5 ; 8○ₐ¯2 0.5]   ⍝ [3.141592653589793 0 ; ¯1.7320508075688772 0 ; 1.3169578969248166 0 ; ¯0.5493061443340549 0.5493061443340549 ; 0 0.8660254037844386 ; 0 0]
+[8○ₐ 3j4 ; 8○⁻ₐ 3j4 ; 1○⁻ₐ 0j1 ; 2○ₐ 1j1]   ⍝ 3.920372032964854 ¯3.920372032964854 0 0.8337300251311489
+x←(¯2 0.5)ₛ ⋄ (•storage 1○⁻ₐ x).kind   ⍝ "float32"
 
 ⍝ — `○ₐ` with codes that vary by item gives each item's real part
 0 1 2 8○ₐ 2   ⍝ 0 0.9092974268256816 ¯0.4161468365471424 0
@@ -1169,12 +1169,12 @@ x←(¯2 0.5)ₛ ⋄ (•storage 1○⁻¹ₐ x).kind   ⍝ "float32"
 ⍝⍝⍝ route trace
 {+/2 ¯8*ₐ⍵}∂[0.5;÷3]   ⍝ 0.9802581434685472 ¯3.3619565510228174
 
-⍝ — Under `∂`, `○ₐ` and `○⁻¹ₐ` take their real parts' slopes: 0 where a clamp or a constant 0 gives the real part, and finite on both sides of a code's real domain, second derivatives included
-{+/1○⁻¹ₐ⍵}∂¯2 0.5 2   ⍝ 0 1.1547005383792517 0
-{+/{+/1○⁻¹ₐ⍵}∂⍵}∂¯2 0.5   ⍝ 0 0.7698003589195014
-[{+/4○⁻¹ₐ⍵}∂¯2 0.5 ; {+/6○⁻¹ₐ⍵}∂¯2 0.5 ; {+/0○ₐ⍵}∂ 0.6 2 ; {+/8○⁻¹ₐ⍵}∂ 0.5]   ⍝ [1.1547005383792517 0 ; ¯0.5773502691896258 0 ; ¯0.75 0 ; 0]
+⍝ — Under `∂`, `○ₐ` and `○⁻ₐ` take their real parts' slopes: 0 where a clamp or a constant 0 gives the real part, and finite on both sides of a code's real domain, second derivatives included
+{+/1○⁻ₐ⍵}∂¯2 0.5 2   ⍝ 0 1.1547005383792517 0
+{+/{+/1○⁻ₐ⍵}∂⍵}∂¯2 0.5   ⍝ 0 0.7698003589195014
+[{+/4○⁻ₐ⍵}∂¯2 0.5 ; {+/6○⁻ₐ⍵}∂¯2 0.5 ; {+/0○ₐ⍵}∂ 0.6 2 ; {+/8○⁻ₐ⍵}∂ 0.5]   ⍝ [1.1547005383792517 0 ; ¯0.5773502691896258 0 ; ¯0.75 0 ; 0]
 ⍝⍝⍝ route trace
-{+/7○⁻¹ₐ⍵}∂ 2 0.5   ⍝ ¯0.3333333333333333 1.3333333333333333
+{+/7○⁻ₐ⍵}∂ 2 0.5   ⍝ ¯0.3333333333333333 1.3333333333333333
 
 ⍝ — A train with a computed bound addend gives the same result grouped, inside a dfn and as a spaced run
 x←1 ⋄ y←3 ⋄ [(⍟(x)+⊢)y ; {(⍟(x)+⊢) ⍵}y ; ⍟(x)+⊢ y]   ⍝ 3⍴1.3862943611198906
@@ -1256,7 +1256,7 @@ f←{⍵₁}fs
 
 ⍝ — Inverse enclose discloses a callable function
 fs←[+ ×]
-f←⊂⁻¹ [⊂1]⌷fs
+f←⊂⁻ [⊂1]⌷fs
 2 f 3   ⍝ 6
 
 ⍝ — Each assembles function results back into an array
@@ -3289,13 +3289,13 @@ a←⍎""
 [2ₓ [1 3]ₓ]⌻[0 1 2 3]ₓ   ⍝ [6 0 ¯2 0]ₓ
 
 ⍝ — Convert multiplier and roots to constant-first coefficients
-⌻⁻¹[2ₓ [1 3]ₓ]   ⍝ [6 ¯8 2]ₓ
+⌻⁻[2ₓ [1 3]ₓ]   ⍝ [6 ¯8 2]ₓ
 
 ⍝ — Enclosed roots imply a leading coefficient of one
-⌻⁻¹⊂[1 3]ₓ   ⍝ [3 ¯4 1]ₓ
+⌻⁻⊂[1 3]ₓ   ⍝ [3 ¯4 1]ₓ
 
 ⍝ — Convert an exponent table for x⁵-1, filling missing degrees with zero
-⌻⁻¹⊂[1 5⋄¯1 0]ₓ   ⍝ [¯1 0 0 0 0 1]ₓ
+⌻⁻⊂[1 5⋄¯1 0]ₓ   ⍝ [¯1 0 0 0 0 1]ₓ
 
 ⍝ — Fractional exponents evaluate numerically even with exact input
 (⊂[2ₓ 1r2⋄3ₓ 1r4])⌻16ₓ   ⍝ 14
@@ -3316,7 +3316,7 @@ a←⍎""
 [0 0]ₓ⌻2ₓ   ⍝ 0ₓ
 
 ⍝ — A multiplier with no roots is a constant polynomial
-⌻⁻¹[2ₓ 0⍴0ₓ]   ⍝ [2]ₓ
+⌻⁻[2ₓ 0⍴0ₓ]   ⍝ [2]ₓ
 
 ⍝ — Differentiate the bound polynomial evaluator
 f←[1 2 3]ₓ↣⌻ ⋄ f∂2ₓ   ⍝ 14
@@ -3368,11 +3368,11 @@ f←√ ⋄ a←4
 [f∂4;√∂a;√∂(1+3);{⍵×√4}∂0]   ⍝ 0.25 0.25 0.25 2
 
 ⍝ ad-opaque-invocation-replay — A forced scalar derivative replays with the same literal
-s←•json⁻¹ √∂4 ⋄ √∂4   ⍝ 0.25
+s←•json⁻ √∂4 ⋄ √∂4   ⍝ 0.25
 
 ⍝ ad-pending-input-refill — Serializing two gradients warms the graph before the input length changes
 sq←{+/⊼⍵}
-s←•json⁻¹ sq∂1 2 3 ⋄ s←•json⁻¹ sq∂4 5 6 ⋄ sq∂4 5 6 7   ⍝ 8 10 12 14
+s←•json⁻ sq∂1 2 3 ⋄ s←•json⁻ sq∂4 5 6 ⋄ sq∂4 5 6 7   ⍝ 8 10 12 14
 
 ⍝ — A shared unit coordinate sums the partial derivatives
 f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂3ₓ   ⍝ 12
@@ -3387,7 +3387,7 @@ r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r∂3   ⍝ 6
 r←{⍵×⍵} ⋄ r∂←{⍺×7} ⋄ {1+r ⍵}∂3   ⍝ 7
 
 ⍝ mark-inverse-rule — A mark keeps an inverse function's attached derivative
-r←*⁻¹ ⋄ r∂←{⍺×7} ⋄ rₐ∂3   ⍝ 7
+r←*⁻ ⋄ r∂←{⍺×7} ⋄ rₐ∂3   ⍝ 7
 
 ⍝ — A function with an attached derivative applies the function itself
 r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r 3   ⍝ 9
@@ -3411,7 +3411,7 @@ f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂3ₓ   ⍝ 45
 f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂∂3ₓ   ⍝ 30
 
 ⍝ — The inverse inverts the function, not its derivative
-k←3× ⋄ k∂←{3×⍺} ⋄ k⁻¹ 6   ⍝ 2
+k←3× ⋄ k∂←{3×⍺} ⋄ k⁻ 6   ⍝ 2
 
 ⍝ — A rule describes a function of one argument, so ∂ through a call with two gives an error
 r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ 10 r∂ 3
@@ -3719,7 +3719,7 @@ E←0.5×[4 5]⍴⍳20 ⋄ I←[2 3]⍴2 0 3 1 1 2 ⋄ f←{ids←⍺ ⋄ [[b t]
 
 ⍝ — Under dynamic kinds, ranges settle the type of an inverse sine whose argument lies from ¯1 to 1, so its gradient traces
 ⍝⍝⍝ route trace
-{+/1○⁻¹0.5×1○⍵}∂0.1 0.2   ⍝ 0.4981230507594946 0.4924690006744106
+{+/1○⁻0.5×1○⍵}∂0.1 0.2   ⍝ 0.4981230507594946 0.4924690006744106
 
 ⍝ — An inverse's tangent is -R+.×tA+.×R, floating even for an exact argument, and nested ∂ differentiates it again
 [{⌹⍵}∂ 2; {⌹⍵}∂ 2ₓ; {⌹⍵}∂∂ 2]   ⍝ [¯0.25; ¯0.25; 0.25]
@@ -3808,11 +3808,11 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ — The derivative of `|` at an integer is a float, the sign that `∂` records in floats
 {|⍵}∂¯3ₓ   ⍝ ¯1
 
-⍝ — •json⁻¹ writes a dual as its plain value, as ⍕ does, so the length of its text has derivative 0
-{≢•json⁻¹ ⍵}∂ 3   ⍝ 0
+⍝ — •json⁻ writes a dual as its plain value, as ⍕ does, so the length of its text has derivative 0
+{≢•json⁻ ⍵}∂ 3   ⍝ 0
 
-⍝ — A batched map stops at •json⁻¹, so each cell writes its own value
-{t←•json⁻¹ ⍵×100 ⋄ ⍵×≢t}¨[3 40]   ⍝ 15 240
+⍝ — A batched map stops at •json⁻, so each cell writes its own value
+{t←•json⁻ ⍵×100 ⋄ ⍵×≢t}¨[3 40]   ⍝ 15 240
 
 ⍝ — A system function is outside the subset
 {•ucs ⍵}∂3
@@ -3826,7 +3826,7 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Negative exponents cannot be converted to a coefficient vector
-⌻⁻¹⊂[1 ¯1⋄]
+⌻⁻⊂[1 ¯1⋄]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A nested result needs a number argument
@@ -3848,7 +3848,7 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ error: LENGTH ERROR
 
 ⍝ — Converting coefficients to roots and back gives the coefficients again [atol=1e-10]
-[⌻⁻¹⌻0 16 ¯12 2;⌻⁻¹⌻1 0 1;⌻⁻¹⌻1 ¯2 1]
+[⌻⁻⌻0 16 ¯12 2;⌻⁻⌻1 0 1;⌻⁻⌻1 ¯2 1]
 [0 16 ¯12 2;1 0 1;1 ¯2 1]
 
 ⍝⍝ ∂ through forms that move or order items
@@ -3944,13 +3944,13 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ derivative-moves-reorder-axes — reorder axes (`⍉`) moves a tangent with its primal, in forward mode and in reverse mode
 [{0 0⍉⍵×[1 2⋄3 4]}∂ 1; {+/1 2×0 0⍉⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[1 4] [1 0⋄0 2]]
 
-⍝ derivative-moves-named-reorder — a named `⍉⁻¹` moves a tangent as the numeric spec that orders the same axes does
-y←2 3 4⍴⍳24 ⋄ W←4 2 3⍴⍳24 ⋄ {[b i j]←•index⍴⍵ ⋄ +/,W×:[j b i]⍉⁻¹⍵.[b i j]}∂ y
+⍝ derivative-moves-named-reorder — a named `⍉⁻` moves a tangent as the numeric spec that orders the same axes does
+y←2 3 4⍴⍳24 ⋄ W←4 2 3⍴⍳24 ⋄ {[b i j]←•index⍴⍵ ⋄ +/,W×:[j b i]⍉⁻⍵.[b i j]}∂ y
 ⍝ =>
-y←2 3 4⍴⍳24 ⋄ W←4 2 3⍴⍳24 ⋄ {+/,W×2 0 1⍉⁻¹⍵}∂ y
+y←2 3 4⍴⍳24 ⋄ W←4 2 3⍴⍳24 ⋄ {+/,W×2 0 1⍉⁻⍵}∂ y
 
-⍝ derivative-moves-reorder-merge — a `⍉⁻¹` that merges axes moves a tangent as the reshape that merges them does
-y←2 3 4⍴⍳24 ⋄ W←6 4⍴⌽⍳24 ⋄ {+/,W×[[0 1] 2]⍉⁻¹⍵}∂ y
+⍝ derivative-moves-reorder-merge — a `⍉⁻` that merges axes moves a tangent as the reshape that merges them does
+y←2 3 4⍴⍳24 ⋄ W←6 4⍴⌽⍳24 ⋄ {+/,W×[[0 1] 2]⍉⁻⍵}∂ y
 ⍝ =>
 y←2 3 4⍴⍳24 ⋄ W←6 4⍴⌽⍳24 ⋄ {+/,W×6 4⍴⍵}∂ y
 
@@ -4199,7 +4199,7 @@ n←4 ⋄ ⍭n   ⍝ 11ₓ
 ¯2⍭3 4 5 6   ⍝ [2 3 3 5]ₓ
 
 ⍝ — Count primes strictly below each argument
-⍭⁻¹1 2 3 4 5 6   ⍝ [0 0 1 2 2 3]ₓ
+⍭⁻1 2 3 4 5 6   ⍝ [0 0 1 2 2 3]ₓ
 
 ⍝ — Test primality rather than indexing the prime sequence
 1⍭¯1 0 1 2 3 4   ⍝ $f $f $f $t $t $f
@@ -4238,10 +4238,10 @@ n←4 ⋄ ⍭n   ⍝ 11ₓ
 ¯∞⨸1   ⍝ 2 0⍴0ₓ
 
 ⍝ — Inverse prime lookup recovers the positions, counting from 0
-⍭⁻¹⍭⍳10ₓ   ⍝ ⍳10ₓ
+⍭⁻⍭⍳10ₓ   ⍝ ⍳10ₓ
 
 ⍝ — Inverse factorization multiplies the factors
-⨸⁻¹⨸700   ⍝ 700ₓ
+⨸⁻⨸700   ⍝ 700ₓ
 
 ⍝ — Primality accepts exact integers at and beyond the unsigned 64-bit boundary
 1⍭[18446744073709551557ᵣ 18446744073709551615ᵣ 170141183460469231731687303715884105727ᵣ]
@@ -4396,19 +4396,19 @@ v←¿3000⍴0 ⋄ k←¿3 4⍴0 ⋄ wr←["size":50 "edge":"wrap"] ⋄ cl←["s
 ⍝⍝ Assigned inverses, under and trajectories
 
 ⍝ — Negative power uses an assigned inverse
-f←{⍵+1} ⋄ f⁻¹←{⍵-1} ⋄ f⍣¯2⁝5   ⍝ 3
+f←{⍵+1} ⋄ f⁻←{⍵-1} ⋄ f⍣¯2⁝5   ⍝ 3
 
 ⍝ — A dyadic assigned inverse recovers the right argument with the left fixed
-f←{⍺+⍵} ⋄ f⁻¹←{⍵-⍺} ⋄ 3 f⁻¹ 8   ⍝ 5
+f←{⍺+⍵} ⋄ f⁻←{⍵-⍺} ⋄ 3 f⁻ 8   ⍝ 5
 
 ⍝ — Binding the left argument retains the assigned inverse
-f←{⍺+⍵} ⋄ f⁻¹←{⍵-⍺} ⋄ (3↣f)⁻¹8   ⍝ 5
+f←{⍺+⍵} ⋄ f⁻←{⍵-⍺} ⋄ (3↣f)⁻8   ⍝ 5
 
 ⍝ — Inverting a function with an assigned inverse recovers the function
-f←{⍵+1} ⋄ f⁻¹←{⍵-1} ⋄ (f⁻¹)⁻¹5   ⍝ 6
+f←{⍵+1} ⋄ f⁻←{⍵-1} ⋄ (f⁻)⁻5   ⍝ 6
 
 ⍝ — Assigning an inverse inside a dfn updates the nearest binding, as selective assignment does
-f←{⍵+1} ⋄ g←{⍵-1} ⋄ {f⁻¹←g ⋄ 0}0 ⋄ f⁻¹ 5   ⍝ 4
+f←{⍵+1} ⋄ g←{⍵-1} ⋄ {f⁻←g ⋄ 0}0 ⋄ f⁻ 5   ⍝ 4
 
 ⍝ — Dyadic under transforms both arguments, then inverts the result
 3 +@ 2× 4   ⍝ 7
@@ -4486,7 +4486,7 @@ n←0 ⋄ v←10 20 30 ⋄ r←(1+)@{n+←1 ⋄ 1↑⍵} v ⋄ n r   ⍝ [1 [11 
 {⌊⍵÷2}⍣[0 1 ∞] 100ₓ   ⍝ [100 50 0]ₓ
 
 ⍝ — A negative infinite count runs the inverse until it converges
-d←{2×⍵} ⋄ d⁻¹←{⌊⍵÷2} ⋄ d⍣¯∞⁝100   ⍝ 0ₓ
+d←{2×⍵} ⋄ d⁻←{⌊⍵÷2} ⋄ d⍣¯∞⁝100   ⍝ 0ₓ
 
 ⍝ — A zero count in a list keeps the initial value without calling the operand
 {1÷0}⍣[0] "ab"   ⍝ ["ab"]
@@ -4501,14 +4501,14 @@ stop←[{⍺≥limit}]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A list of counts is not inverted as if it were ordinary repeated application
-((1+)⍣ ⍳3ₓ)⁻¹1 2 3
+((1+)⍣ ⍳3ₓ)⁻1 2 3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Parenthesizing power leaves the following backslash as ordinary scan
 (+⍣1)\1 2 3   ⍝ 1 3 6
 
 ⍝ — An assigned inverse recovers the right argument only, so it gives no left-argument inverse
-p←+ ⋄ p⁻¹←- ⋄ (p↢3)⁻¹8
+p←+ ⋄ p⁻←- ⋄ (p↢3)⁻8
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
@@ -4516,363 +4516,363 @@ p←+ ⋄ p⁻¹←- ⋄ (p↢3)⁻¹8
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Repeated power counts reuse iterates rather than calling the operand again
-f←{⎕←⍵+1} ⋄ f⁻¹←{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⁝0
+f←{⎕←⍵+1} ⋄ f⁻←{⎕←⍵-1} ⋄ f⍣3 ¯2 3 0⁝0
 3 ¯2 3 0
 ⍝ ⎕: 1\n2\n3\n¯1\n¯2
 
 ⍝ — Under transforms right then left, calls the operand, then applies the inverse
-g←{⎕←⍵ ⋄ 2×⍵} ⋄ g⁻¹←{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+@g)4
+g←{⎕←⍵ ⋄ 2×⍵} ⋄ g⁻←{⎕←⍵ ⋄ ⍵÷2} ⋄ 3(+@g)4
 7
 ⍝ ⎕: 4\n3\n14
 
 ⍝⍝ Inverse power
 
 ⍝ — Inverting x×exp(x) gives the principal Lambert W function
-W←×↢*⍨⁻¹ ⋄ ⌊1E12×W [0 1 *1 ¯0.1 1j1]
+W←×↢*⍨⁻ ⋄ ⌊1E12×W [0 1 *1 ¯0.1 1j1]
 0 567143290409 1000000000000 ¯111832559159 656966069230j325450339413
 
 ⍝ — Lambert W reaches -1 at its real branch point -1/e
-W←×↢*⍨⁻¹ ⋄ W ¯1÷*1   ⍝ ¯1
+W←×↢*⍨⁻ ⋄ W ¯1÷*1   ⍝ ¯1
 
 ⍝ — Lambert W pervades nested exact input and produces approximate values
-W←×↢*⍨⁻¹ ⋄ W [[0 0]ₓ 0⍴0ₓ]   ⍝ [0 0;⍬]
+W←×↢*⍨⁻ ⋄ W [[0 0]ₓ 0⍴0ₓ]   ⍝ [0 0;⍬]
 
 ⍝ — Check W(x)exp(W(x))=x across tiny and large real inputs
-W←×↢*⍨⁻¹
+W←×↢*⍨⁻
 x←1E¯100 ¯1E¯100 1E¯12 ¯1E¯12 0.099 ¯0.099 1E300
 ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ $t
 
 ⍝ — Check the Lambert W inverse identity on complex inputs
-W←×↢*⍨⁻¹
+W←×↢*⍨⁻
 x←¯1j0.1 1j¯1
 ∧/1E¯12>|1-(W x)×(*W x)÷x   ⍝ $t
 
 ⍝ — A real Lambert W argument below -1/e gives the complex principal value
-×↢*⍨⁻¹ ¯1   ⍝ ¯0.31813150520476396j1.3372357014306895
+×↢*⍨⁻ ¯1   ⍝ ¯0.31813150520476396j1.3372357014306895
 
 ⍝ — An array of real arguments reruns on complex numbers where an item lies below -1/e
-×↢*⍨⁻¹ ,¯1   ⍝ [¯0.31813150520476396j1.3372357014306895]
+×↢*⍨⁻ ,¯1   ⍝ [¯0.31813150520476396j1.3372357014306895]
 
 ⍝ —
-×↢*⍨⁻¹ 'a'
+×↢*⍨⁻ 'a'
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Invert an outer subtraction with its right vector fixed
-(-⊗↢4 5)⁻¹[¯3 ¯4⋄¯2 ¯3]   ⍝ 1 2
+(-⊗↢4 5)⁻[¯3 ¯4⋄¯2 ¯3]   ⍝ 1 2
 
 ⍝ — Invert an outer subtraction with its left vector fixed
-4 5↣(-⊗)⁻¹[3 2⋄4 3]   ⍝ 1 2
+4 5↣(-⊗)⁻[3 2⋄4 3]   ⍝ 1 2
 
 ⍝ — Outer-product inversion preserves exact rational results
-(×⊗↢[4 5]ₓ)⁻¹[2ᵣ 5r2⋄1ᵣ 5r4]   ⍝ 1r2 1r4
+(×⊗↢[4 5]ₓ)⁻[2ᵣ 5r2⋄1ᵣ 5r4]   ⍝ 1r2 1r4
 
 ⍝ — A fixed matrix occupies the trailing axes of the outer-product result
-(×⊗↢[1 2⋄3 4])⁻¹3 2 2⍴1 2 3 4 2 4 6 8 3 6 9 12   ⍝ 1 2 3
+(×⊗↢[1 2⋄3 4])⁻3 2 2⍴1 2 3 4 2 4 6 8 3 6 9 12   ⍝ 1 2 3
 
 ⍝ — Outer inversion with a fixed number recovers a vector
-4↣(×⊗)⁻¹4 8   ⍝ 1 2
+4↣(×⊗)⁻4 8   ⍝ 1 2
 
 ⍝ — Removing the fixed vector's axes can leave a scalar
-(×⊗↢4 5)⁻¹4 5   ⍝ ⊂1
+(×⊗↢4 5)⁻4 5   ⍝ ⊂1
 
 ⍝ — Outer inversion recovers an empty argument from an empty result frame
-(+⊗↢4 5)⁻¹0 2⍴0   ⍝ ⍬
+(+⊗↢4 5)⁻0 2⍴0   ⍝ ⍬
 
 ⍝ — With the left vector fixed, the remaining axes describe the recovered matrix
-4 5↣(-⊗)⁻¹2 2 2⍴3 2 1 0 4 3 2 1   ⍝ [1 2⋄3 4]
+4 5↣(-⊗)⁻2 2 2⍴3 2 1 0 4 3 2 1   ⍝ [1 2⋄3 4]
 
 ⍝ — Outer inversion preserves zero dimensions in the recovered frame
-(+⊗↢4 5)⁻¹3 0 2⍴0   ⍝ 3 0⍴0
+(+⊗↢4 5)⁻3 0 2⍴0   ⍝ 3 0⍴0
 
 ⍝ — Every outer-product cell must imply the same recovered value
-(×⊗↢4 5)⁻¹[4 5⋄8 11]
+(×⊗↢4 5)⁻[4 5⋄8 11]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — The result axes must agree with the fixed outer-product argument
-(×⊗↢4 5)⁻¹2 3⍴⍳6ₓ
+(×⊗↢4 5)⁻2 3⍴⍳6ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ — An empty fixed argument contains no information to invert
-(×⊗↢⍬)⁻¹2 0⍴0
+(×⊗↢⍬)⁻2 0⍴0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Multiplication by an all-zero fixed argument is not invertible
-(×⊗↢0 0)⁻¹2 2⍴0
+(×⊗↢0 0)⁻2 2⍴0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse iota returns the generating shape as an exact vector
-⍳⁻¹0 1 2   ⍝ [3]ₓ
+⍳⁻0 1 2   ⍝ [3]ₓ
 
 ⍝ — Inverse iota also recognizes multidimensional index arrays
-⍳⁻¹⍳[2 3]ₓ   ⍝ [2 3]ₓ
+⍳⁻⍳[2 3]ₓ   ⍝ [2 3]ₓ
 
 ⍝ —
 1(+⍣¯3)10   ⍝ 7
 
 ⍝ — Invert a Celsius-to-Fahrenheit section in reverse function order
-(32+1.8×)⁻¹32 212   ⍝ 0 100
+(32+1.8×)⁻32 212   ⍝ 0 100
 
 ⍝ — Inverse sum scan recovers successive differences
-+\⁻¹1 3 6 10   ⍝ 1 2 3 4
++\⁻1 3 6 10   ⍝ 1 2 3 4
 
 ⍝ — Inverse scan retains the exact numeric domain
-+\⁻¹[1 3 6]ₓ   ⍝ [1 2 3]ₓ
++\⁻[1 3 6]ₓ   ⍝ [1 2 3]ₓ
 
 ⍝ — Inverse Boolean xor scan recovers changes between adjacent values
-≠\⁻¹[1 1 0 0]ₓ   ⍝ [1 0 1 0]ₓ
+≠\⁻[1 1 0 0]ₓ   ⍝ [1 0 1 0]ₓ
 
 ⍝ — Inverse base-two decode chooses the required number of digits
-2↣⊥⁻¹9   ⍝ 1 0 0 1
+2↣⊥⁻9   ⍝ 1 0 0 1
 
 ⍝ — Exact base and value produce exact inverse-decode digits
-2ₓ↣⊥⁻¹9ₓ   ⍝ [1 0 0 1]ₓ
+2ₓ↣⊥⁻9ₓ   ⍝ [1 0 0 1]ₓ
 
 ⍝ — Invert mixed-radix time decoding into hours, minutes and seconds
-[0 60 60]ₓ↣⊥⁻¹3661ₓ   ⍝ [1 1 1]ₓ
+[0 60 60]ₓ↣⊥⁻3661ₓ   ⍝ [1 1 1]ₓ
 
 ⍝ — Inverse encode decodes the supplied digits
-2ₓ↣⊤⁻¹[1 0 1]ₓ   ⍝ 5ₓ
+2ₓ↣⊤⁻[1 0 1]ₓ   ⍝ 5ₓ
 
 ⍝ — Inverse decode permits a fractional least-significant digit
-2↣⊥⁻¹2.5   ⍝ 1 0.5
+2↣⊥⁻2.5   ⍝ 1 0.5
 
 ⍝ — Inverse transpose applies the inverse axis permutation
-1 0↣⍉⁻¹2 3⍴⍳6ₓ   ⍝ [0 3⋄1 4⋄2 5]ₓ
+1 0↣⍉⁻2 3⍴⍳6ₓ   ⍝ [0 3⋄1 4⋄2 5]ₓ
 
 ⍝ — Inverting self-addition halves the argument exactly
-+⍨⁻¹3ᵣ   ⍝ 3r2
++⍨⁻3ᵣ   ⍝ 3r2
 
 ⍝ — Inverse sine selects a branch which maps back to the input
-0.5=1↣○1↣○⁻¹0.5   ⍝ $t
+0.5=1↣○1↣○⁻0.5   ⍝ $t
 
 ⍝ — Inverse sine within the real domain has no imaginary component
-⊢/∨1↣○⁻¹0.5   ⍝ 0
+⊢/∨1↣○⁻0.5   ⍝ 0
 
 ⍝ — sqrt(1+x²) avoids overflowing its intermediate square
 4○1E300   ⍝ 1E300
 
 ⍝ — Signed sqrt(x²-1) avoids intermediate overflow for large negative x
-4○⁻¹¯1E300   ⍝ ¯1E300
+4○⁻¯1E300   ⍝ ¯1E300
 
 ⍝ — Inversion preserves rank-zero application
-(2ₓ↣+⍤0)⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
+(2ₓ↣+⍤0)⁻[3 4]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Inverse where counts repeated indices
-⍸⁻¹0 2 2   ⍝ [1 0 2]ₓ
+⍸⁻0 2 2   ⍝ [1 0 2]ₓ
 
 ⍝ — Inverse where infers multidimensional shape from coordinate vectors
-⍸⁻¹[0 1;1 0]   ⍝ [0 1⋄1 0]ₓ
+⍸⁻[0 1;1 0]   ⍝ [0 1⋄1 0]ₓ
 
 ⍝ — Inverse where of no indices returns an empty exact count vector
-⍸⁻¹⍬   ⍝ ⍬ₓ
+⍸⁻⍬   ⍝ ⍬ₓ
 
 ⍝ — Zero needs no digits in minimal-width inverse decode
-2↣⊥⁻¹0   ⍝ ⍬
+2↣⊥⁻0   ⍝ ⍬
 
 ⍝ —
-3ₓ+⁻¹5ₓ   ⍝ 2ₓ
+3ₓ+⁻5ₓ   ⍝ 2ₓ
 
 ⍝ — Inversion distributes through each
-(2ₓ↣+)¨⁻¹[3 4]ₓ   ⍝ [1 2]ₓ
+(2ₓ↣+)¨⁻[3 4]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Inverting self-multiplication selects the positive square root
-×⍨⁻¹4   ⍝ 2
+×⍨⁻4   ⍝ 2
 
 ⍝ —
-⌽⁻¹⍳3ₓ   ⍝ [2 1 0]ₓ
+⌽⁻⍳3ₓ   ⍝ [2 1 0]ₓ
 
 ⍝ —
-⊂⁻¹⊂[1 2]ₓ   ⍝ [1 2]ₓ
+⊂⁻⊂[1 2]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Multiplication by zero has no inverse
-0↣×⁻¹0
+0↣×⁻0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse where counts positions in any order
-⍸⁻¹3 1   ⍝ [0 1 0 1]ₓ
+⍸⁻3 1   ⍝ [0 1 0 1]ₓ
 
 ⍝ —
-⍸⁻¹¯1
+⍸⁻¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-2↣⊥⁻¹¯1
+2↣⊥⁻¯1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse decode keeps the low digits of a value beyond its radix range
-2 2↣⊥⁻¹5   ⍝ 0 1
+2 2↣⊥⁻5   ⍝ 0 1
 
 ⍝⍝ Inverse combinations
 
 ⍝ — An array at the start of a train binds the following function's left argument
-(3+)⁻¹8   ⍝ 5
+(3+)⁻8   ⍝ 5
 
 ⍝ — Right binding requires inversion with respect to the left argument of composition
-(+↢-↢2)⁻¹3   ⍝ 5
+(+↢-↢2)⁻3   ⍝ 5
 
 ⍝ — Commute swaps which argument must be recovered
-2 (+↢-)⍨⁻¹ 3   ⍝ 5
+2 (+↢-)⍨⁻ 3   ⍝ 5
 
 ⍝ — Invert atop with a fixed right argument
-(÷∘-↢2)⁻¹0.5   ⍝ 4
+(÷∘-↢2)⁻0.5   ⍝ 4
 
 ⍝ — Invert over with a fixed right argument
-(-⍥-↢2)⁻¹¯3   ⍝ 5
+(-⍥-↢2)⁻¯3   ⍝ 5
 
 ⍝ — Before transforms the fixed left argument before solving for the right
-3 -↣+⁻¹ 7   ⍝ 10
+3 -↣+⁻ 7   ⍝ 10
 
 ⍝ — Right-bound before also inverts the left-side transformation
-(-↣+↢3)⁻¹¯7   ⍝ 10
+(-↣+↢3)⁻¯7   ⍝ 10
 
 ⍝ — Right-bound each recovers every left element
-(-¨↢2)⁻¹3 4   ⍝ 5 6
+(-¨↢2)⁻3 4   ⍝ 5 6
 
 ⍝ — Right-bound rank recovers vector cells against the fixed number
-(-⍤1 0↢2)⁻¹3 4   ⍝ 5 6
+(-⍤1 0↢2)⁻3 4   ⍝ 5 6
 
 ⍝ — Invert left-accumulating subtraction scan
--\⁻¹1 ¯1 ¯4   ⍝ 1 2 3
+-\⁻1 ¯1 ¯4   ⍝ 1 2 3
 
 ⍝ — Inverse seeded scan uses the seed to recover the first input
-10-\⁻¹9 7 4   ⍝ 1 2 3
+10-\⁻9 7 4   ⍝ 1 2 3
 
 ⍝ — A weak seed takes the width of the items' floats, as a scan's seed does, so it doesn't widen them
-v←0.5+\⁻¹1.5 3.5 6.5ₛ ⋄ [(•storage v).kind;v]   ⍝ ["float32";1 2 3]
+v←0.5+\⁻1.5 3.5 6.5ₛ ⋄ [(•storage v).kind;v]   ⍝ ["float32";1 2 3]
 
 ⍝ — Binding the seed retains scan inversion
-10↣(+\)⁻¹11 13 16   ⍝ 1 2 3
+10↣(+\)⁻11 13 16   ⍝ 1 2 3
 
 ⍝ — Scan inversion calls the composed operand's inverse
 ⍝⍝⍝ gap itemwise "inverse scan": a composed scan inverse should use whole-array adjacent pairs
-(-↢-)\⁻¹1 3 6   ⍝ 1 2 3
+(-↢-)\⁻1 3 6   ⍝ 1 2 3
 
 ⍝ — Inverting seeded division scan retains exact fractions
-2ᵣ÷\⁻¹1ᵣ 1r3 1r12   ⍝ [2 3 4]ᵣ
+2ᵣ÷\⁻1ᵣ 1r3 1r12   ⍝ [2 3 4]ᵣ
 
 ⍝ — Axis-one scan inversion uses a separate seed for each column
-⍉ 10 20 +\⁻¹⍤0 1 [11 22⋄14 26]ᵀ   ⍝ [1 2⋄3 4]
+⍉ 10 20 +\⁻⍤0 1 [11 22⋄14 26]ᵀ   ⍝ [1 2⋄3 4]
 
 ⍝ —
-+\⁻¹⍬   ⍝ ⍬
++\⁻⍬   ⍝ ⍬
 
 ⍝ — A seeded scan of a number still needs its first step undone
-10+\⁻¹13   ⍝ 3
+10+\⁻13   ⍝ 3
 
 ⍝ — Inverse axis-enclosure restores both shape and axis order
-(⊂₁ ₀)⁻¹ ⊂₁ ₀ [2 3 4]⍴⍳24ₓ   ⍝ 2 3 4⍴⍳24ₓ
+(⊂₁ ₀)⁻ ⊂₁ ₀ [2 3 4]⍴⍳24ₓ   ⍝ 2 3 4⍴⍳24ₓ
 
 ⍝ — Inverse split restores the original matrix axis
-(↓₀)⁻¹ ↓₀ [2 3]⍴⍳6ₓ   ⍝ 2 3⍴⍳6ₓ
+(↓₀)⁻ ↓₀ [2 3]⍴⍳6ₓ   ⍝ 2 3⍴⍳6ₓ
 
 ⍝ — Inverse mix along an axis recovers the original nested vectors
-⊃⁻¹₀ [1 4⋄2 5⋄3 6]   ⍝ [1 2 3;4 5 6]
+⊃⁻₀ [1 4⋄2 5⋄3 6]   ⍝ [1 2 3;4 5 6]
 
 ⍝ — Inverting a pervasive function with an axis aligns the fixed left vector with rows
-10 20 +⁻¹₀ [11 12 13⋄24 25 26]   ⍝ [1 2 3⋄4 5 6]
+10 20 +⁻₀ [11 12 13⋄24 25 26]   ⍝ [1 2 3⋄4 5 6]
 
 ⍝ — A zero product prefix loses information about subsequent factors
-×\⁻¹1 0 0
+×\⁻1 0 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A zero product seed loses information from the first step
-0 ×\⁻¹ 0 0
+0 ×\⁻ 0 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Monadic (-↣+) is constant zero, so its input cannot be recovered
--↣+⁻¹ 0
+-↣+⁻ 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Rank checks agreement between row seeds and cells
-1 2 3 (+\⁻¹)⍤0 1 [2 3]⍴⍳6ₓ
+1 2 3 (+\⁻)⍤0 1 [2 3]⍴⍳6ₓ
 ⍝ error: LENGTH ERROR
 
 ⍝ — Inverse polar form rebuilds complex numbers
-∧⁻¹ ∧ 3j4 1j1   ⍝ 3j4 1j1
+∧⁻ ∧ 3j4 1j1   ⍝ 3j4 1j1
 
 ⍝ — Inverse real and imaginary parts read the pairs on the last axis
-∨⁻¹ [3 4⋄1 0]   ⍝ 3j4 1
+∨⁻ [3 4⋄1 0]   ⍝ 3j4 1
 
 ⍝ — Inverse cis and inverse real and imaginary parts keep 32-bit parts
-{(•storage ⍵).kind}¨[○⁻¹○1.5ₛ ; ∨⁻¹[1.5 2.5]ₛ]   ⍝ "complex64" "complex64"
+{(•storage ⍵).kind}¨[○⁻○1.5ₛ ; ∨⁻[1.5 2.5]ₛ]   ⍝ "complex64" "complex64"
 
 ⍝ — Inverse grade gives an array whose grade is the permutation
-⍋⁻¹ 2 0 1   ⍝ [1 2 0]ₓ
+⍋⁻ 2 0 1   ⍝ [1 2 0]ₓ
 
 ⍝ — Inverse grade down
-⍒ ⍒⁻¹ 2 0 1   ⍝ [2 0 1]ₓ
+⍒ ⍒⁻ 2 0 1   ⍝ [2 0 1]ₓ
 
 ⍝ — Only a permutation is a grade
-⍋⁻¹ 2 2 1
+⍋⁻ 2 2 1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse execute writes source that execute reads back
-⍎⁻¹ [1 2.5;"ab"]   ⍝ "[[1 2.5]ₚ ""ab""]"
+⍎⁻ [1 2.5;"ab"]   ⍝ "[[1 2.5]ₚ ""ab""]"
 
 ⍝ — Inverse ravel and table give back a vector
-[,⁻¹ 1 2 3;⍪⁻¹ ⍪1 2 3]   ⍝ [1 2 3;1 2 3]
+[,⁻ 1 2 3;⍪⁻ ⍪1 2 3]   ⍝ [1 2 3;1 2 3]
 
 ⍝ — Inverse pairs and windows rebuild the array
-[↕⁻¹ ↕⍳4ₓ;3↕⁻¹ 3↕"abcde"]   ⍝ [0 1 2 3;"abcde"]ₓ
+[↕⁻ ↕⍳4ₓ;3↕⁻ 3↕"abcde"]   ⍝ [0 1 2 3;"abcde"]ₓ
 
 ⍝ — Inverse reshape with the shape fixed ravels
-2 3⍴⁻¹ 2 3⍴⍳6ₓ   ⍝ [0 1 2 3 4 5]ₓ
+2 3⍴⁻ 2 3⍴⍳6ₓ   ⍝ [0 1 2 3 4 5]ₓ
 
 ⍝ — Inverse index-of with the table fixed selects from it
-"abc"⍳⁻¹ 2 0   ⍝ "ca"
+"abc"⍳⁻ 2 0   ⍝ "ca"
 
 ⍝ — An index that wasn't found reads the fill
-"abc"⍳⁻¹ 3   ⍝ ' '
+"abc"⍳⁻ 3   ⍝ ' '
 
 ⍝ — Inverse keyed with the keys fixed removes them
-"a" "b":⁻¹ ["a":1 "b":2]   ⍝ 1 2
+"a" "b":⁻ ["a":1 "b":2]   ⍝ 1 2
 
 ⍝ — Equal on Booleans is its own inverse
-1 0=⁻¹ 1 1   ⍝ $t $f
+1 0=⁻ 1 1   ⍝ $t $f
 
 ⍝ — Inverse partitioned enclose and partition join the parts
-[1 2 0⊂⁻¹ 1 2 0⊂1 2 3;1 1 2⊆⁻¹ 1 1 2⊆1 2 3]   ⍝ [1 2 3;1 2 3]
+[1 2 0⊂⁻ 1 2 0⊂1 2 3;1 1 2⊆⁻ 1 1 2⊆1 2 3]   ⍝ [1 2 3;1 2 3]
 
 ⍝ — A partition that dropped items has no argument
-0 1 1⊂⁻¹ (2⋄3)
+0 1 1⊂⁻ (2⋄3)
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse •ucs converts back, with or without an encoding
-[•ucs⁻¹ 97 98;"UTF-8" •ucs⁻¹ 195 169]   ⍝ ["ab";"é"]
+[•ucs⁻ 97 98;"UTF-8" •ucs⁻ 195 169]   ⍝ ["ab";"é"]
 
 ⍝ — A distribution's cdf and quantile invert each other
-d←•distribution "normal" ⋄ [d.cdf⁻¹ 0.5;d.quantile⁻¹ 0]   ⍝ 0 0.5
+d←•distribution "normal" ⋄ [d.cdf⁻ 0.5;d.quantile⁻ 0]   ⍝ 0 0.5
 
 ⍝ route-batched-sample-shape — Each requested sample shape contributes one cell
 ⍝⍝⍝ gap fallbacks "an earlier stop: a cell's value": sampling should accept batched shape vectors
 d←•distribution "normal" ⋄ ⍴{d.sample ⍵}⍤1[1 2⋄1 2]   ⍝ [2 1 2]ₓ
 
 ⍝ — Inverse •decompose multiplies SVD factors back into the matrix
-"svd" •decompose⁻¹ "svd" •decompose 3 2⍴1 2 3 4 5 6
+"svd" •decompose⁻ "svd" •decompose 3 2⍴1 2 3 4 5 6
 ⍝ =>
 [1 2⋄3 4⋄5 6]
 
 ⍝ — Inverse •decompose multiplies thin QR factors of a wide matrix back
-"qr" •decompose⁻¹ "qr" •decompose 2 3⍴1 2 3 4 5 6
+"qr" •decompose⁻ "qr" •decompose 2 3⍴1 2 3 4 5 6
 ⍝ =>
 [1 2 3⋄4 5 6]
 
 ⍝ — Inverse •decompose multiplies a complex Cholesky factor by its conjugate transpose
-"cholesky" •decompose⁻¹ "cholesky" •decompose 2 2⍴4 1j1 1j¯1 3
+"cholesky" •decompose⁻ "cholesky" •decompose 2 2⍴4 1j1 1j¯1 3
 ⍝ =>
 [4 1j1⋄1j¯1 3]
 
 ⍝ — Inverse •decompose rebuilds a matrix from complex eigenvalues and eigenvectors
-"eigen" •decompose⁻¹ "eigen" •decompose 2 2⍴0 ¯1 1 0
+"eigen" •decompose⁻ "eigen" •decompose 2 2⍴0 ¯1 1 0
 ⍝ =>
 [0 ¯1⋄1 0]
 
 ⍝ — Eigenvectors that aren't independent can't give back a defective matrix
-"eigen" •decompose⁻¹ "eigen" •decompose 2 2⍴1 1 0 1
+"eigen" •decompose⁻ "eigen" •decompose 2 2⍴1 1 0 1
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Inverse •decompose needs factors whose sizes agree
-"qr" •decompose⁻¹ ["q":2 2⍴1 0 0 1;"r":3 3⍴1]
+"qr" •decompose⁻ ["q":2 2⍴1 0 0 1;"r":3 3⍴1]
 ⍝ error: LENGTH ERROR
 
 ⍝ — Under writes back through the positions that ↕ selects
@@ -4999,7 +4999,7 @@ n←1-1e¯15 ⋄ on←[~[0 n];(1+1e¯15)⊼n;0⊽n]
 [[[$t $f] $f $f] 1]
 
 ⍝ — Structural functions keep machine storage. A rational prototype stays unbounded
-x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3ₓ;1 0 1#⁻¹[1 2]ₓ;+\⍳3ₓ;-¨⍳3ₓ;[1 2]ₓ∪[2 3]ₓ;[1 2]ₓ∩[2]ₓ;
+x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3ₓ;1 0 1#⁻[1 2]ₓ;+\⍳3ₓ;-¨⍳3ₓ;[1 2]ₓ∪[2 3]ₓ;[1 2]ₓ∩[2]ₓ;
   2ₓ~[1]ₓ;,⊃[[1 2]ₓ 3ₓ];,⍉2 2⍴⍳4ₓ;,(1ₓ+⍳2ₓ)×⊗1ₓ+⍳2ₓ;0ₓ@1⍳3ₓ;{+/,⍵}⌺3⍳3ₓ;[2 2]ₓ⊤3ₓ;⍴2 3⍴1ₓ;⍳0ₓ;⍴1ₓ;↑0⍴⊂1r2 1r3]
 [x {(•storage ⍵).kind}¨x]
 ⍝ =>
@@ -5110,7 +5110,7 @@ a←1○(1+⍳64)×⊗1+⍳16
 
 ⍝ — •decompose's "lu" factors rebuild the matrix, and its options leave out vectors or complete QR
 f←"lu" •decompose [1 2⋄3 4]
-["lu" •decompose⁻¹ f;f.p;⍴(["kind":"qr" "complete":$t]•decompose [1 2⋄3 4⋄5 6]).r;≢(["kind":"eigen" "vectors":$f]•decompose [2 1⋄1 2]).values]
+["lu" •decompose⁻ f;f.p;⍴(["kind":"qr" "complete":$t]•decompose [1 2⋄3 4⋄5 6]).r;≢(["kind":"eigen" "vectors":$f]•decompose [2 1⋄1 2]).values]
 ⍝ =>
 [[1 2⋄3 4] [1 0]ₓ [3 2]ₓ 2ₓ]
 
@@ -5123,7 +5123,7 @@ f←"lu" •decompose [1 2⋄3 4]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — lu's p must hold each position once
-"lu" •decompose⁻¹ ["l":[1 0⋄0 1] "u":[1 0⋄0 1] "p":[0 0]]
+"lu" •decompose⁻ ["l":[1 0⋄0 1] "u":[1 0⋄0 1] "p":[0 0]]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — $m is the machine epsilon of the session's float width, or of a width mark
@@ -5357,7 +5357,7 @@ x←10 10⊤[12 34]ₓ ⋄ [x (•storage x).kind]   ⍝ [[1 2⋄3 4];"float64"]
 'K'
 
 ⍝ — Empty coordinates can repeatedly pick an atom without changing it
-(⍬↣⊃)⁵ 10   ⍝ 10
+(⍬↣⊃)⍣5⁝10   ⍝ 10
 
 ⍝ — An empty pick path returns the whole argument
 ⍬⊃1 2   ⍝ 1 2
@@ -5835,7 +5835,7 @@ x←¿300000⍴0 ⋄ y←32ₓ •float x×2 ⋄ z←32ₓ •float (1000↑x)×
 [$t "float32" $t ["×"]]
 
 ⍝ fusion:gathered-cycle — An array that a grid reads through a transposed map and broadcasts along an outer axis, as `⍵.[k e]` is over `n e k`, has one cycle of its items gathered once, in a fused group and in an eager call alike. Reading through the map instead walks every item. `walked` counts the items that a walk copies.
-mu←¿[25 32]⍴0 ⋄ close←{(⌈/,|⍺-⍵)≤1e¯12×⌈/,|⍵} ⋄ sq←{[[n e] k]←•index[⍴⍺ ≢⍵] ⋄ +/,⊼⍺.[n e]-⍵.[k e]} ⋄ tq←{+/,⊼⍺(-⍤1)⍤[2 1]⍵}
+mu←¿[25 32]⍴0 ⋄ close←{(⌈/,|⍺-⍵)≤1e¯12×⌈/,|⍵} ⋄ sq←{[[n e] k]←•index[⍴⍺ ≢⍵] ⋄ +/,⊼⍺.[n e]-⍵.[k e]} ⋄ tq←{+/,⊼⍺(-⍤1)² ¹⍵}
 x←¿[1000 32]⍴0 ⋄ y←¿[100 32]⍴0 ⋄ walked←{e←•explain ⍵ ⋄ +/(e.declined.reason≡¨⊂"steps other than a forward run")#e.declined.items}
 [(x sq mu) close x tq mu ; (y sq mu) close y tq mu ; walked "x sq mu" ; walked "y sq mu"]   ⍝ $t $t 800ₓ 800ₓ
 
@@ -6037,8 +6037,8 @@ g←{+/16•float ⍵×⍵}∂ 32•float 1 2 3
 ⍝ — ₛ and ₚ mark a float's width, and after a list's closing bracket they mark every number in it
 {(•storage ⍵).kind}¨[1.5ₛ 1.5ₚ [1 2]ₛ [1ₓ 2]ₚ ⍬ₛ []ₛ]   ⍝ "float32" "float64" "float32" "float64" "float32" "float32"
 
-⍝ — •literal⁻¹ marks every float with its width, so the text reads back at either default width
-•literal⁻¹ [1.5 2.5]ₛ   ⍝ "[1.5 2.5]ₛ"
+⍝ — •literal⁻ marks every float with its width, so the text reads back at either default width
+•literal⁻ [1.5 2.5]ₛ   ⍝ "[1.5 2.5]ₛ"
 
 ⍝ — ₛ, ₚ and ₕ mark the width of a complex number's parts, after the number or after a list. ₕ gives 32-bit parts
 {(•storage ⍵).kind}¨[[2j3]ₛ [2j3]ₚ [2j3]ₕ [1j2 3]ₛ]   ⍝ "complex64" "complex128" "complex64" "complex64"
@@ -6052,8 +6052,8 @@ g←{+/16•float ⍵×⍵}∂ 32•float 1 2 3
 [1j2 3]ₛ
 ⍝ ⎕: [1ⱼ2 3]ₛ
 
-⍝ — •literal⁻¹ marks the width of complex numbers' parts once after the list
-•literal⁻¹¨[[1j2 3]ₛ;1j2 3]   ⍝ "[1ⱼ2 3]ₛ" "[1ⱼ2 3]ₚ"
+⍝ — •literal⁻ marks the width of complex numbers' parts once after the list
+•literal⁻¨[[1j2 3]ₛ;1j2 3]   ⍝ "[1ⱼ2 3]ₛ" "[1ⱼ2 3]ₚ"
 
 ⍝ — •float rounds complex numbers' parts to the width, and 16 bits gives 32-bit parts
 {(•storage ⍵).kind}¨[64•float [1j2]ₛ;32•float [1j2];16•float [1j2]]   ⍝ "complex128" "complex64" "complex64"
@@ -6103,7 +6103,7 @@ x₀←0ₓ
 
 ⍝ — Rearranging or combining mixed storage keeps it mixed while its items need it
 m←1ₓ 0.5 2ₓ
-{(•storage ⍵).kind}¨[⌽m;2↑m;4↑m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
+{(•storage ⍵).kind}¨[⌽m;2↑m;4↑m;1 0 1 1#⁻m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
 ⍝ =>
 17⍴⊂"mixed"
 
@@ -6166,7 +6166,7 @@ x←1ₓ 0.5
 "float64" "mixed" "integer" "mixed"
 
 ⍝ import-shared-texts — `•csv` and `•json` store each distinct text once, so a column of repeated texts takes less memory than copies of its texts
-v←1000⍴"ab" "cd" ⋄ c←(•csv •csv⁻¹ ["s":v]).s ⋄ j←•json •json⁻¹ v ⋄ {(•memory ⍵).bytes<(•memory {⍵,""}¨⍵).bytes}¨[c j]   ⍝ $t $t
+v←1000⍴"ab" "cd" ⋄ c←(•csv •csv⁻ ["s":v]).s ⋄ j←•json •json⁻ v ⋄ {(•memory ⍵).bytes<(•memory {⍵,""}¨⍵).bytes}¨[c j]   ⍝ $t $t
 
 ⍝ — CSV columns take the same import rule
 nl←•ucs 10
@@ -6743,7 +6743,7 @@ v←1+⍳20 ⋄ m←[4 20]⍴v ⋄ z←v+0j1×v ⋄ [(-\v)≡{⍺-⍵}\v;(5-\v)�
 
 ⍝ native-scan-lanes — Bulk comparisons on numbers and Booleans cross chunks and keep lane starts, seeds and inverse heads
 m←[17 503]⍴3ₓ|⍳8551ₓ ⋄ b←m=1
-[(<\m)≡{⍺<⍵}\m (<⍀m)≡{⍺<⍵}⍀m (0.5<⍀m)≡0.5{⍺<⍵}⍀m (+⍀⁻¹+⍀m)≡m (1ₓ<\b)≡1ₓ{⍺<⍵}\b (¯1ₓ≥⍀b)≡¯1ₓ{⍺≥⍵}⍀b (0.5≠\b)≡0.5{⍺≠⍵}\b ($t<⍀b)≡$t{⍺<⍵}⍀b]
+[(<\m)≡{⍺<⍵}\m (<⍀m)≡{⍺<⍵}⍀m (0.5<⍀m)≡0.5{⍺<⍵}⍀m (+⍀⁻+⍀m)≡m (1ₓ<\b)≡1ₓ{⍺<⍵}\b (¯1ₓ≥⍀b)≡¯1ₓ{⍺≥⍵}⍀b (0.5≠\b)≡0.5{⍺≠⍵}\b ($t<⍀b)≡$t{⍺<⍵}⍀b]
 ⍝ =>
 $t $t $t $t $t $t $t $t
 
@@ -6892,7 +6892,7 @@ s←+/ ⋄ s⍠0 [1 2 3⋄4 5 6]   ⍝ 5 7 9
 (3 4 2⍴0 12 1 13 2 14 3 15 4 16 5 17 6 18 7 19 8 20 9 21 10 22 11 23)ₓ
 
 ⍝ — The inverse of a short transpose list restores the argument
-2⍉⁻¹2⍉2 3 4⍴⍳24ₓ   ⍝ 2 3 4⍴⍳24ₓ
+2⍉⁻2⍉2 3 4⍴⍳24ₓ   ⍝ 2 3 4⍴⍳24ₓ
 
 ⍝ transpose:names — Forward transpose routes to positions, not existing axis names
 ["w" "b" "h"]⍉["b":2 "h":3 "w":4]⍴⍳24ₓ
@@ -6900,9 +6900,9 @@ s←+/ ⋄ s⍠0 [1 2 3⋄4 5 6]   ⍝ 5 7 9
 
 ⍝ transpose:inverse-names — Inverse transpose lists source axes in output order
 x←["b":2 "h":3 "w":4]⍴⍳24ₓ
-["w" 0 "h"]⍉⁻¹x
+["w" 0 "h"]⍉⁻x
 ⍝ =>
-2 0 1⍉⁻¹["b":2 "h":3 "w":4]⍴⍳24ₓ
+2 0 1⍉⁻["b":2 "h":3 "w":4]⍴⍳24ₓ
 
 ⍝ transpose:split — Split one input axis, then route its factors independently
 [0 [2 2;1 3]]⍉2 6⍴⍳12ₓ
@@ -6912,12 +6912,12 @@ x←["b":2 "h":3 "w":4]⍴⍳24ₓ
 ⍝ transpose:inverse — A bound split permutation has a genuine inverse
 x←2 3 4⍴⍳24ₓ
 f←[0 2 [1 2;3 ∞]]⍉
-(f⁻¹f x)≡x   ⍝ $t
+(f⁻f x)≡x   ⍝ $t
 
 ⍝ transpose:attention — Declared names label both sides of a bound split-and-route function
 x←["b":2 "t":3 "d":8]⍴⍳48ₓ
 f←["b":0 "t":2 "d":["h":1 2;"f":3 ∞]]⍉
-[⍴f x;(f⁻¹f x)≡x;⍴+/⍠"h" f x]
+[⍴f x;(f⁻f x)≡x;⍴+/⍠"h" f x]
 ⍝ =>
 [["b":2 "h":2 "t":3 "f":4]ₓ $t ["b":2 "t":3 "f":4]ₓ]
 
@@ -6925,28 +6925,28 @@ f←["b":0 "t":2 "d":["h":1 2;"f":3 ∞]]⍉
 images←["b":1 "h":4 "w":6 "c":2]⍴⍳48ₓ
 f←["b":0 "h":["i":1 ∞;"y":3 2] "w":["j":2 ∞;"x":4 3] "c":5]⍉
 y←f images
-[⍴y (f⁻¹y)≡images ⍴["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻¹y]
+[⍴y (f⁻y)≡images ⍴["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻y]
 ⍝ =>
 [["b":1 "i":2 "j":2 "y":2 "x":3 "c":2]ₓ $t ["b":1 "patch":4 "pixel":12]ₓ]
 
 ⍝ transpose:merge — The inverse can omit factor sizes supplied by its input
-[0 [2 1]]⍉⁻¹0 2 1⍉2 2 3⍴⍳12ₓ
+[0 [2 1]]⍉⁻0 2 1⍉2 2 3⍴⍳12ₓ
 ⍝ =>
 2 6⍴⍳12ₓ
 
 ⍝ transpose:merge-names — Merging named axes preserves only untouched axis names
 x←["b":2 "h":3 "p":4]⍴⍳24ₓ
-["b" ["h" "p"]]⍉⁻¹x
+["b" ["h" "p"]]⍉⁻x
 ⍝ =>
 ["b":2 12]⍴⍳24ₓ
 
 ⍝ transpose:named-arrays — A named array in the left argument names its axis, as a string does, alone or in a merge
 x←["i":2 "k":2 "j":3]⍴⍳12ₓ
 i←⍳["i":2] ⋄ k←⍳["k":2] ⋄ j←⍳["j":3]
-[j⍉⁻¹x [[i k]]⍉⁻¹x]
+[j⍉⁻x [[i k]]⍉⁻x]
 ⍝ =>
 x←["i":2 "k":2 "j":3]⍴⍳12ₓ
-["j"⍉⁻¹x [["i" "k"]]⍉⁻¹x]
+["j"⍉⁻x [["i" "k"]]⍉⁻x]
 
 ⍝ transpose:partial — A grouped partial map fills unused axes in order
 [[1 2;0 ∞]]⍉6 4⍴⍳24ₓ
@@ -6964,7 +6964,7 @@ x←"a" "b":2 6⍴⍳12ₓ
 ⍝ error: LENGTH ERROR
 
 ⍝ transpose:bad-size — Inverse transpose checks supplied factor sizes
-[[0 2;1 ∞]]⍉⁻¹3 2⍴⍳6ₓ
+[[0 2;1 ∞]]⍉⁻3 2⍴⍳6ₓ
 ⍝ error: LENGTH ERROR
 
 ⍝ transpose:ambiguous — Zero times an inferred factor does not determine that factor
@@ -6973,7 +6973,7 @@ x←"a" "b":2 6⍴⍳12ₓ
 
 ⍝ transpose:under — Under writes back through inverse transpose, which moves and merges axes without dropping items
 x←["b":2 "h":3 "w":4]⍴⍳24ₓ
-[((10×)@(2 0 1⍉⁻¹) x)≡10×x ((10×)@(["b" ["h" "w"]]⍉⁻¹) x)≡10×x (⌽@(["w" "b" "h"]⍉⁻¹) x)≡(⌽⍠"h")x]   ⍝ $t $t $t
+[((10×)@(2 0 1⍉⁻) x)≡10×x ((10×)@(["b" ["h" "w"]]⍉⁻) x)≡10×x (⌽@(["w" "b" "h"]⍉⁻) x)≡(⌽⍠"h")x]   ⍝ $t $t $t
 
 ⍝ transpose:repeated-name — A key cannot give a name that another result axis has
 ["w":0]⍉["b":2 "h":3 "w":4]⍴⍳24ₓ
@@ -6983,10 +6983,10 @@ x←["b":2 "h":3 "w":4]⍴⍳24ₓ
 2 ¯1 1#10 20 30   ⍝ 10 10 0 30
 
 ⍝ — Inverse replicate gives a fill for a zero or negative count
-2 0 ¯1 1#⁻¹10 10 0 30   ⍝ 10 0 0 30
+2 0 ¯1 1#⁻10 10 0 30   ⍝ 10 0 0 30
 
 ⍝ — Expansion uses character fill for inserted positions
-1 0 1#⁻¹"ab"   ⍝ "a b"
+1 0 1#⁻"ab"   ⍝ "a b"
 
 ⍝ — Negative positions count from the end
 ¯1⌷1 2   ⍝ 2
@@ -7037,8 +7037,8 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ
 ⍝ =>
 [[2 1 0 1 1]ₓ [¯1 ¯2 0 ¯2 ¯2]ₓ [1 3 0 0 3]ₓ [0 0 0 0 0]ₓ]
 
-⍝ — Floor applies comparison tolerance near integers
-⌊1.000000000000001 ¯1.000000000000001   ⍝ [1 ¯1]ₓ
+⍝ — Floor applies comparison tolerance near integers, including across a storage-width boundary
+[⌊1.000000000000001 ¯1.000000000000001;⌊255.9999999999999 0]   ⍝ [[1 ¯1]ₓ [256 0]ₓ]
 
 ⍝ — Ceiling of a float is an exact integer
 ⌈¯2.3 0.1 3   ⍝ [¯2 1 3]ₓ
@@ -7095,7 +7095,7 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Exponential, logarithm, pi times and circle functions
-[*1 2⍟32 π1 1○⁻¹1]   ⍝ 2.718281828459045 5 3.141592653589793 1.5707963267948966
+[*1 2⍟32 π1 1○⁻1]   ⍝ 2.718281828459045 5 3.141592653589793 1.5707963267948966
 
 ⍝ — A negative number to a fractional power is complex
 ¯4*0.5   ⍝ 0j2
@@ -7148,17 +7148,17 @@ z←1+16E¯15
 ⍝ — `#/` rebuilds the argument from its runs
 #/#"mississippi"   ⍝ "mississippi"
 
-⍝ — `#⁻¹` decodes runs, so it inverts `#`
-#⁻¹#"mississippi"   ⍝ "mississippi"
+⍝ — `#⁻` decodes runs, so it inverts `#`
+#⁻#"mississippi"   ⍝ "mississippi"
 
-⍝ — A unit encodes with a rank-0 length, so `#⁻¹` gives the unit back
-#⁻¹#5   ⍝ 5
+⍝ — A unit encodes with a rank-0 length, so `#⁻` gives the unit back
+#⁻#5   ⍝ 5
 
 ⍝ — Any other one-number length replicates
-#⁻¹ 3 5   ⍝ 5 5 5
+#⁻ 3 5   ⍝ 5 5 5
 
-⍝ — A keyed leading axis adds the key of every position, which `#⁻¹` attaches again
-#⁻¹#["x":1 "y":1 "z":2]   ⍝ ["x":1 "y":1 "z":2]
+⍝ — A keyed leading axis adds the key of every position, which `#⁻` attaches again
+#⁻#["x":1 "y":1 "z":2]   ⍝ ["x":1 "y":1 "z":2]
 
 ⍝ — Under `#` changes the runs and decodes them again
 (2×)@(0⊃)@# "aab"   ⍝ "aaaabb"
@@ -7667,10 +7667,10 @@ r←⊂⍤1⁝[1000 300]⍴1.5+⍳300000
 (•explain "{x←•ucs ""a"" ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — So does a system function's inverse [batched]
-(•explain "{•json⁻¹ ⍵}¨1 2").fallbacks.reason   ⍝ 0⍴⊂""
+(•explain "{•json⁻ ⍵}¨1 2").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — Each cell then gets its own result
-{•json⁻¹ ⍵}¨1 22   ⍝ "1.0" "22.0"
+{•json⁻ ⍵}¨1 22   ⍝ "1.0" "22.0"
 
 ⍝ — A write to a name outside the map stops a batched run [batched]
 n←0
@@ -7680,13 +7680,13 @@ n←0
 (•explain "{""DOMAIN""::¯1 ⋄ ⍵○0.5}¨1 2 13").fallbacks.reason   ⍝ ["a caught error"]
 
 ⍝ — A system function's inverse writes each cell's literal
-{•literal⁻¹ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
+{•literal⁻ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
 
 ⍝ — Each cell's literal has its own length
-{≢•literal⁻¹ ⍵}¨1 22 333   ⍝ [2 3 4]ₓ
+{≢•literal⁻ ⍵}¨1 22 333   ⍝ [2 3 4]ₓ
 
 ⍝ — The inverse of ⍎ writes each cell's literal too
-{⍎⁻¹ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
+{⍎⁻ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
 
 ⍝ — ⍎ of each cell's text stops the batched run, because each cell holds its own code [batched]
 (•explain "{⍎⍵}⍤1⁝2 3⍴""1+1""").fallbacks.reason   ⍝ ["a cell's value"]
@@ -7795,19 +7795,19 @@ x←1100000⍴0.5
 (•explain "{+/x×⍵}¨1 2 3 4 5").fallbacks.reason   ⍝ ["too many items"]
 
 ⍝ — A batched run whose constants, repeated for every cell, would hold too many items runs on chunks of cells instead [batched]
-x←⍳4096ₓ ⋄ c←⍳1024ₓ
+x←256ₓ+⍳128ₓ ⋄ c←256ₓ+⍳67ₓ
 (•explain "{+/(x-⍵)×x-⍵}¨c").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — Chunks of cells give what the run over cells gives, cell by cell
-x←⍳4096ₓ ⋄ c←⍳1024ₓ ⋄ f←{+/(x-⍵)×x-⍵} ⋄ a←f¨c
+x←256ₓ+⍳128ₓ ⋄ c←256ₓ+⍳67ₓ ⋄ f←{+/(x-⍵)×x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
 ⍝ — A chunk whose later call repeats a larger constant starts the chunks over, with smaller chunks
-x←⍳1024ₓ ⋄ y←⍳2048ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵} ⋄ a←f¨c
+x←256ₓ+⍳64ₓ ⋄ y←256ₓ+⍳128ₓ ⋄ c←256ₓ+⍳131ₓ ⋄ f←{(+/y×⍵)++/x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
 ⍝ — Chunked draws repeat after reseeding the same spelling, but a successive read uses a fresh stream
-•prefs ["seed":7] ⋄ x←⍳4096ₓ ⋄ c←⍳1024ₓ ⋄ f←{(+/x-⍵)+¿100} ⋄ a←f¨c
+•prefs ["seed":7] ⋄ x←256ₓ+⍳128ₓ ⋄ c←256ₓ+⍳67ₓ ⋄ f←{(+/x-⍵)+¿100} ⋄ a←f¨c
 •prefs ["seed":7] ⋄ b←f¨c ⋄ repeated←a≡b ⋄ d←f¨c ⋄ repeated∧~(a≡d)   ⍝ $t
 
 ⍝ — An inner product with draws repeats after reseeding the same spelling, but a successive read uses a fresh stream
@@ -7824,22 +7824,22 @@ x←⍳1024ₓ ⋄ y←⍳2048ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵
 (•explain "{⊤[⍵ 1]}¨1 2").fallbacks.reason   ⍝ ["no batch rule"]
 
 ⍝ — Each cell selects at positions of its own, by `⌷`, `⊃` and bracket indexing, from an array that every cell shares or from its own cell
-i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{⍵⌷10 20 30}¨i ; i {⍺⊃⍵}⍤[0 1] m ; {[⍵ 2]⌷m}¨i ; i {⍵.[⍺]}⍤[0 1] m ; {⍵.[[0 2]]}⍤1 m ; i(⌷⍤0 1)m]   ⍝ [30 10 20 10 ; 3 4 8 10 ; 9 3 6 3 ; 3 4 8 10 ; [1 3⋄4 6⋄7 9⋄10 12] ; 3 4 8 10]
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{⍵⌷10 20 30}¨i ; i {⍺⊃⍵}⁰ ¹ m ; {[⍵ 2]⌷m}¨i ; i {⍵.[⍺]}⁰ ¹ m ; {⍵.[[0 2]]}⍤1 m ; i(⌷⍤0 1)m]   ⍝ [30 10 20 10 ; 3 4 8 10 ; 9 3 6 3 ; 3 4 8 10 ; [1 3⋄4 6⋄7 9⋄10 12] ; 3 4 8 10]
 
 ⍝ — A NaN position reads a fill in each cell that holds one
-q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ q {⍵.[⍺]}⍤[1 1] m   ⍝ [1 3⋄5 0⋄9 9⋄0 10]
+q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ q {⍵.[⍺]}¹ ¹ m   ⍝ [1 3⋄5 0⋄9 9⋄0 10]
 
 ⍝ — Selections at each cell's own positions make no fallback [batched]
-i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{⍵⌷10 20 30}¨i ; i {⍺⊃⍵}⍤[0 1] m ; {[⍵ 2]⌷m}¨i ; i {⍵.[⍺]}⍤[0 1] m ; {⍵.[[0 2]]}⍤1 m]").fallbacks.reason   ⍝ 0⍴⊂""
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{⍵⌷10 20 30}¨i ; i {⍺⊃⍵}⁰ ¹ m ; {[⍵ 2]⌷m}¨i ; i {⍵.[⍺]}⁰ ¹ m ; {⍵.[[0 2]]}⍤1 m]").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — In a batched map, `∂` through a selection at each cell's own positions sends each cell's gradient to those positions
-q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ q {a←⍺ ⋄ {+/⍵.[a]×1 2}∂⍵}⍤[1 1] m   ⍝ [1 0 2⋄0 1 0⋄0 0 3⋄2 0 0]
+q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ q {a←⍺ ⋄ {+/⍵.[a]×1 2}∂⍵}¹ ¹ m   ⍝ [1 0 2⋄0 1 0⋄0 0 3⋄2 0 0]
 
 ⍝ — `∂` of a running maximum and of a selection at each cell's own positions makes no fallback in a batched map [batched]
-q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{{+/⌈\⍵}∂⍵}⍤1 m ; q {a←⍺ ⋄ {+/⍵.[a]×1 2}∂⍵}⍤[1 1] m]").fallbacks.reason   ⍝ 0⍴⊂""
+q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{{+/⌈\⍵}∂⍵}⍤1 m ; q {a←⍺ ⋄ {+/⍵.[a]×1 2}∂⍵}¹ ¹ m]").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — Each cell writes at positions of its own, or at positions every cell shares, by Under and by selective assignment, into its own cell or into an array that every cell shares
-i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{1@[⍵] 3⍴0}⍤0 i ; i {(-)@[⍺] ⍵}⍤[0 1] m ; {(2×)@[0 2] ⍵}⍤1 m ; {x←⍵ ⋄ x₀←99 ⋄ x}⍤1 m ; {v←3⍴0 ⋄ v.[⍵]←1 ⋄ v}⍤0 i]   ⍝ [[0 0 1⋄1 0 0⋄0 1 0⋄1 0 0] [1 2 ¯3⋄¯4 5 6⋄7 ¯8 9⋄¯10 11 12] [2 2 6⋄8 5 12⋄14 8 18⋄20 11 24] [99 2 3⋄99 5 6⋄99 8 9⋄99 11 12] [0 0 1⋄1 0 0⋄0 1 0⋄1 0 0]]
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{1@[⍵] 3⍴0}⍤0 i ; i {(-)@[⍺] ⍵}⁰ ¹ m ; {(2×)@[0 2] ⍵}⍤1 m ; {x←⍵ ⋄ x₀←99 ⋄ x}⍤1 m ; {v←3⍴0 ⋄ v.[⍵]←1 ⋄ v}⍤0 i]   ⍝ [[0 0 1⋄1 0 0⋄0 1 0⋄1 0 0] [1 2 ¯3⋄¯4 5 6⋄7 ¯8 9⋄¯10 11 12] [2 2 6⋄8 5 12⋄14 8 18⋄20 11 24] [99 2 3⋄99 5 6⋄99 8 9⋄99 11 12] [0 0 1⋄1 0 0⋄0 1 0⋄1 0 0]]
 
 ⍝ cell-write-fill — A NaN position writes nothing in a mapped update
 [{(-)@[⍵]1 2 3}¨[0 $n] ; {v←1 2 3 ⋄ v.[⍵]+←10 ⋄ v}¨[0 $n]]
@@ -7847,7 +7847,7 @@ i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{1@[⍵] 3⍴0}⍤0 
 [[¯1 2 3;1 2 3];[11 2 3;1 2 3]]
 
 ⍝ — Writes at each cell's own positions, or at positions every cell shares, make no fallback [batched]
-i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{1@[⍵] 3⍴0}⍤0 i ; i {(-)@[⍺] ⍵}⍤[0 1] m ; {(2×)@[0 2] ⍵}⍤1 m ; {x←⍵ ⋄ x₀←99 ⋄ x}⍤1 m ; {v←3⍴0 ⋄ v.[⍵]←1 ⋄ v}⍤0 i]").fallbacks.reason   ⍝ 0⍴⊂""
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{1@[⍵] 3⍴0}⍤0 i ; i {(-)@[⍺] ⍵}⁰ ¹ m ; {(2×)@[0 2] ⍵}⍤1 m ; {x←⍵ ⋄ x₀←99 ⋄ x}⍤1 m ; {v←3⍴0 ⋄ v.[⍵]←1 ⋄ v}⍤0 i]").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — A write that a batch can't hold, which mixes a cell's items or writes inside a nested item, gives each cell's own result
 i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ n←[1 2 3;4 5 6] ⋄ f←{[{'a'@[0] ⍵}⍤1 m ; {x←n ⋄ (1⊃x).[⍵]←0 ⋄ x}¨i]} ⋄ a←f 0 ⋄ •prefs ["batch":$f] ⋄ b←f 0 ⋄ •prefs ["batch":$t] ⋄ [a≡b ; 0⌷0⌷a]   ⍝ [$t ; 'a' 2 3]
@@ -7876,7 +7876,7 @@ a   ⍝ 1 1 1 1 1
 ⍝ ⎕: 1\n2
 
 ⍝ — A system function runs on each cell
-{•json⁻¹ ⍵}¨1 2   ⍝ "1.0" "2.0"
+{•json⁻ ⍵}¨1 2   ⍝ "1.0" "2.0"
 
 ⍝ — Each cell of a map reads the fill at a position outside its axis
 {⍵⊃10 20}¨0 5   ⍝ 10 0
@@ -7954,7 +7954,7 @@ w←{⍵×2} ⋄ w∂←{⍺×10} ⋄ {+/w¨⍵}∂ 1 2 3   ⍝ 10 10 10
 m←[2 2]⍴1 2 3 4 ⋄ [(•explain "{{(⍵*2),+/⍵}∂⍵}⍤1 m").fallbacks.reason;(•explain "{{+/(⍵,1)*2}∂⍵}⍤1 m").fallbacks.reason]   ⍝ [0⍴⊂"" 0⍴⊂""]
 
 ⍝ batch-ad-shared-frame — Gradients and Hessians keep independent rows when an argument has a unit frame
-w←[1 2⋄3 4] ⋄ x←1 2⍴10 20 ⋄ [w {a←⍺ ⋄ {+/a×⍵}∂⍵}⍤[1 1] x ; w {a←⍺ ⋄ {+/a×⊼⍵}∂∂⍵}⍤[1 1] x]   ⍝ [[1 2⋄3 4] ; 2 2 2⍴2 0 0 4 6 0 0 8]
+w←[1 2⋄3 4] ⋄ x←1 2⍴10 20 ⋄ [w {a←⍺ ⋄ {+/a×⍵}∂⍵}¹ ¹ x ; w {a←⍺ ⋄ {+/a×⊼⍵}∂∂⍵}¹ ¹ x]   ⍝ [[1 2⋄3 4] ; 2 2 2⍴2 0 0 4 6 0 0 8]
 
 ⍝ — `∂` inside the operand refuses complex cells, as it refuses a complex argument outside a map
 {{⍵×⍵}∂ ⍵}¨1j1 2j1
@@ -8282,10 +8282,10 @@ f←{⍵×+⍵}
 {(•storage ⍵).kind}¨[1j2 2×1j¯2 2;1j2 2×1j2 2]   ⍝ "complex128" "complex128"
 
 ⍝ — A real part too small to change 1 still changes the smaller part of √(1+z²), √(1-z²) and √(z²-1). Complex-step differentiation reads 4○'s derivative at 0.4, 0.4÷√1.16, from its imaginary part
-1e200×[(∨4○0.4j1e¯200)₁ (∨0○1e¯200j0.4)₁ (∨(4○⁻¹)1e¯200j0.4)₀]   ⍝ 0.3713906763541037 ¯0.3713906763541037 0.3713906763541037
+1e200×[(∨4○0.4j1e¯200)₁ (∨0○1e¯200j0.4)₁ (∨(4○⁻)1e¯200j0.4)₀]   ⍝ 0.3713906763541037 ¯0.3713906763541037 0.3713906763541037
 
 ⍝ — Reals whose results are complex for some items give what each item gives alone
-[⍟¯1 2.5;2√¯4 9.5;1○⁻¹2 0.5]≡[(⍟¯1),⍟2.5 (2√¯4),2√9.5 (1○⁻¹2),1○⁻¹0.5]   ⍝ $t
+[⍟¯1 2.5;2√¯4 9.5;1○⁻2 0.5]≡[(⍟¯1),⍟2.5 (2√¯4),2√9.5 (1○⁻2),1○⁻0.5]   ⍝ $t
 
 ⍝ — Complex storage holds infinities as reals, and an infinity equals only itself
 [1j2 2 ∞ ∞=5 2 5 ∞;1j2 ∞=∞ 1j2]   ⍝ [[$f $t $f $t];[$f $f]]
@@ -8927,7 +8927,7 @@ widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1 s
 (•explain "{•ucs ⍵}¨""abc""").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — Cells whose system-function results don't stack into one array fall back [batched]
-(•explain "{•json⁻¹ ⍵}¨1 22").fallbacks.reason   ⍝ ["no batch rule"]
+(•explain "{•json⁻ ⍵}¨1 22").fallbacks.reason   ⍝ ["no batch rule"]
 
 ⍝ — ⍕ of a cell stops a batched run for an effect [batched]
 (•explain "{⍕⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
@@ -8949,7 +8949,7 @@ widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1 s
 (|¯∞),∨¯∞   ⍝ ∞ ¯∞ 0
 
 ⍝ — Principal Lambert W has limit infinity
-×↢*⍨⁻¹∞   ⍝ ∞
+×↢*⍨⁻∞   ⍝ ∞
 
 ⍝ — Mathish division leaves other indeterminate arithmetic unchanged
 [0÷0 ∞-∞ 0×∞ ∞×0ₓ ∞÷∞]   ⍝ [0 $n $n $n $n]
@@ -9848,7 +9848,7 @@ u←[0 1]ₓ₁ ⋄ x←u ⋄ x,←9ₓ ⋄ y←u ⋄ y,←300ₓ ⋄ [u,9ₓ;9�
 x←[0 1]ₓ₁ ⋄ x₀←300ₓ ⋄ [(•storage x).kind;x]   ⍝ ["int16";[300 1]ₓ₂]
 
 ⍝ sized-approximate — Matrix division, polar, Lambert W, the inverses of `π`, `×⍨` and `∨`, and the derivatives of `!` and `π` give fixed integers floats, or complex numbers with parts, of the width their division gives, on atoms, arrays and empty arrays alike
-[(•storage ⌹(2 2⍴[2 1 1 3]ₓ)ₓ₁).kind;(•storage ⌹(2 2⍴[2 1 1 3]ₓ)ₓ₈).kind;(•storage ∧[3 4]ₓ₁).kind;(•storage {2ₓ₁!⍵}∂5ₓ₁).kind;(•storage {2ₓ₁!⍵}∂[5 6]ₓ₁).kind;(•storage (×↢*)⁻¹ 3ₓ₂).kind;(•storage (×↢*)⁻¹ [3]ₓ₂).kind;(•storage (×↢*)⁻¹ 0⍴3ₓ₂).kind;(•storage {!⍵}∂3ₓ₁).kind;(•storage {π⍵}∂3ₓ₁).kind;(•storage π⁻¹ 3ₓ₁).kind;(•storage ×⍨⁻¹ 9ₓ₁).kind;(•storage ∨⁻¹[1 2]ₓ₁).kind]   ⍝ ["float32";"float64";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"complex64"]
+[(•storage ⌹(2 2⍴[2 1 1 3]ₓ)ₓ₁).kind;(•storage ⌹(2 2⍴[2 1 1 3]ₓ)ₓ₈).kind;(•storage ∧[3 4]ₓ₁).kind;(•storage {2ₓ₁!⍵}∂5ₓ₁).kind;(•storage {2ₓ₁!⍵}∂[5 6]ₓ₁).kind;(•storage (×↢*)⁻ 3ₓ₂).kind;(•storage (×↢*)⁻ [3]ₓ₂).kind;(•storage (×↢*)⁻ 0⍴3ₓ₂).kind;(•storage {!⍵}∂3ₓ₁).kind;(•storage {π⍵}∂3ₓ₁).kind;(•storage π⁻ 3ₓ₁).kind;(•storage ×⍨⁻ 9ₓ₁).kind;(•storage ∨⁻[1 2]ₓ₁).kind]   ⍝ ["float32";"float64";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"float32";"complex64"]
 
 ⍝ sized-roll-zero — A roll of fixed integers gives integers, so a bound of 0, which rolls a float, is a DOMAIN error
 ¿[0 3]ₓ₁
@@ -10027,7 +10027,7 @@ Q←"aa" "bb" "cc":10 20 5
 3↑"aa" "bb":1 2   ⍝ ["aa":1 "bb":2 0]
 
 ⍝ axis-expand — Expand leaves inserted positions unnamed
-1 0 1#⁻¹("aa" "bb":1 2)   ⍝ ["aa":1 0 "bb":2]
+1 0 1#⁻("aa" "bb":1 2)   ⍝ ["aa":1 0 "bb":2]
 
 ⍝ axis-scan — Scan retains labels along its accumulated axis
 +\("aa" "bb" "cc":1 2 3)   ⍝ "aa" "bb" "cc":1 3 6
@@ -10198,20 +10198,20 @@ src←'n',nl," 2 "
 
 ⍝ — Export and import retain numeric domains, strings and headers
 T←["price":10.5 20;"qty":[2 4]ₓ;"note":"a,b" "say ""hi"""]
-•csv •csv⁻¹ T
+•csv •csv⁻ T
 ⍝ =>
 ["price":10.5 20;"qty":[2 4]ₓ;"note":"a,b" "say ""hi"""]
 
 ⍝ — Export uses CSV minus signs and no exact suffix
-•csv⁻¹ "n":[¯2 3]ₓ   ⍝ 'n',(•ucs 10),"-2",(•ucs 10),'3',•ucs 10
+•csv⁻ "n":[¯2 3]ₓ   ⍝ 'n',(•ucs 10),"-2",(•ucs 10),'3',•ucs 10
 
 ⍝ — Infinity remains a number unless fill is explicitly configured
-T←"n":1ₓ ∞ ⋄ [•csv⁻¹ T;("fill":∞) •csv⁻¹ T]
+T←"n":1ₓ ∞ ⋄ [•csv⁻ T;("fill":∞) •csv⁻ T]
 ['n',(•ucs 10),'1',(•ucs 10),"inf",•ucs 10;'n',(•ucs 10),'1',(•ucs 10),"""""",•ucs 10]
 
 ⍝ — Export dialect and CRLF
 T←"n":,1234.5
-["separator":';' "decimal":',' "thousands":'.' "lineending":(•ucs 13 10)] •csv⁻¹ T
+["separator":';' "decimal":',' "thousands":'.' "lineending":(•ucs 13 10)] •csv⁻ T
 ⍝ =>
 'n',(•ucs 13 10),"1.234,5",•ucs 13 10
 
@@ -10236,21 +10236,21 @@ T←"n":,1234.5
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Export requires equal-length column vectors
-•csv⁻¹ "a" "b":[1 2;,3]
+•csv⁻ "a" "b":[1 2;,3]
 ⍝ error: LENGTH ERROR
 
 ⍝ — Export rejects nested cells
-•csv⁻¹ "a":,⊂1 2
+•csv⁻ "a":,⊂1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Quote-free export errors when a field needs quoting
-("quotechar":"") •csv⁻¹ "a":,⊂"x,y"
+("quotechar":"") •csv⁻ "a":,⊂"x,y"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Escape characters round-trip inside quoted text
 T←"note":,⊂"a\b""c"
 opts←["escapechar":'\' "doublequote":0]
-csv←opts •csv⁻¹ T
+csv←opts •csv⁻ T
 opts •csv csv   ⍝ "note":,⊂"a\b""c"
 
 ⍝⍝ JSON
@@ -10267,7 +10267,7 @@ opts •csv csv   ⍝ "note":,⊂"a\b""c"
 
 ⍝ — Explicit null fill works recursively in both directions
 fill←"fill":¯1ₓ
-fill •json⁻¹ fill •json "{""x"":[null,2]}"
+fill •json⁻ fill •json "{""x"":[null,2]}"
 ⍝ =>
 "{""x"":[null,2]}"
 
@@ -10276,27 +10276,27 @@ fill •json⁻¹ fill •json "{""x"":[null,2]}"
 9.223372036854776ₑ18 1 100
 
 ⍝ — Large exact integers export without rounding
-•json⁻¹ 9223372036854775808ᵣ   ⍝ "9223372036854775808"
+•json⁻ 9223372036854775808ᵣ   ⍝ "9223372036854775808"
 
 ⍝ — JSON true and false read as Booleans and write back unchanged
-•json⁻¹ •json "[true,false]"   ⍝ "[true,false]"
+•json⁻ •json "[true,false]"   ⍝ "[true,false]"
 
 ⍝ — Empty objects, arrays and strings retain their distinct meanings
-•json⁻¹ •json "[{},[],""""]"   ⍝ "[{},[],""""]"
+•json⁻ •json "[{},[],""""]"   ⍝ "[{},[],""""]"
 
 ⍝ — JSON strings remain strings, including one-character strings
-•json⁻¹ •json "[""a"","""",[""b"",""c""]]"
+•json⁻ •json "[""a"","""",[""b"",""c""]]"
 "[""a"","""",[""b"",""c""]]"
 
 ⍝ — Ordinary matrices export as nested JSON arrays
-•json⁻¹ [1 2⋄3 4]ₓ   ⍝ "[[1,2],[3,4]]"
+•json⁻ [1 2⋄3 4]ₓ   ⍝ "[[1,2],[3,4]]"
 
 ⍝ — Keyed axes export as object levels
-•json⁻¹ "row":"col" "val":[1 2]ₓ
+•json⁻ "row":"col" "val":[1 2]ₓ
 "{""row"":{""col"":1,""val"":2}}"
 
 ⍝ — Unkeyed scalar arrays export their contents
-•json⁻¹ ⊂2ₓ   ⍝ "2"
+•json⁻ ⊂2ₓ   ⍝ "2"
 
 ⍝ — Duplicate object members follow the JSON library's last-value rule
 •json "{""name"":1,""name"":2}"   ⍝ "name":2ₓ
@@ -10315,19 +10315,19 @@ fill •json⁻¹ fill •json "{""x"":[null,2]}"
 •json "[1, NaN]"   ⍝ [1 $n]
 
 ⍝ — Infinity requires explicit fill on export
-•json⁻¹ ∞
+•json⁻ ∞
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Rationals that aren't whole have no JSON number representation
-•json⁻¹ 1r3
+•json⁻ 1r3
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Complex values have no JSON number representation
-•json⁻¹ 1j2
+•json⁻ 1j2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Functions have no JSON representation
-•json⁻¹ [+ -]
+•json⁻ [+ -]
 ⍝ error: DOMAIN ERROR
 
 ⍝ — LZW repeated-code expansion and capped dictionary
@@ -10519,14 +10519,14 @@ v←¿1000000⍴0 ⋄ ↑5<1E6×[{⍵×2}]•time v   ⍝ $t
 ⍝ — •date reads RFC 3339, a date and time with no offset, and a date alone
 •date "2024-05-06T10:20:30+02:00" "1970-01-01T00:00:01.5" "1970-01-02"   ⍝ 1714983630 1.5 86400
 
-⍝ — •date⁻¹ writes each moment's fields, which •date reads back
-R←•date⁻¹ 0 1714990830
+⍝ — •date⁻ writes each moment's fields, which •date reads back
+R←•date⁻ 0 1714990830
 [R.year;R.weekday;R.iso_week;•date R]
 ⍝ =>
 [[1970 2024]ₓ;[4 1]ₓ;[1 19]ₓ;0 1714990830]
 
 ⍝ — A pattern reads and writes text, and a locale names months and days
-["pattern":"%A %e %B" "locale":"de_DE"] •date⁻¹ 1714990830   ⍝ "Montag  6 Mai"
+["pattern":"%A %e %B" "locale":"de_DE"] •date⁻ 1714990830   ⍝ "Montag  6 Mai"
 
 ⍝ — A pattern also reads text
 "%d/%m/%Y" •date "06/05/2024"   ⍝ 1714953600
@@ -10547,11 +10547,11 @@ R←•date⁻¹ 0 1714990830
 
 ⍝⍝ Paths and the filesystem
 
-⍝ — •path splits paths into parts, and •path⁻¹ joins them
-P←•path "a/b.tsv" "c" ⋄ [P.parent;P.extension;•path⁻¹ P]   ⍝ [["a" ""];["tsv" ""];"a/b.tsv" "c"]
+⍝ — •path splits paths into parts, and •path⁻ joins them
+P←•path "a/b.tsv" "c" ⋄ [P.parent;P.extension;•path⁻ P]   ⍝ [["a" ""];["tsv" ""];"a/b.tsv" "c"]
 
 ⍝ — The absolute option joins a relative path to the working directory
-(["absolute":1] •path "a/b").parent≡•path⁻¹ ["parent":(•host "cwd") "stem":"a"]   ⍝ $t
+(["absolute":1] •path "a/b").parent≡•path⁻ ["parent":(•host "cwd") "stem":"a"]   ⍝ $t
 
 ⍝ — •readdir lists a directory, its subdirectories with recurse, and entries that match a glob
 •mkdir testpath,"/s"
@@ -10714,7 +10714,7 @@ n←10ᵣ*400ₓ ⋄ [n<∞;n=∞;∞≤n;¯∞<-n]   ⍝ [$t $f $f $t]
 •prefs ["kinds":"static"] ⋄ f←{⍵⌊∞} ⋄ [f[1 2]ₓ;f(0⍴0ₓ)]   ⍝ [[1 2]ₓ;0⍴0ₓ]
 
 ⍝ whole-cell-native-gather-ad — A framed native gather and its transpose share the same selection relationship
-i←[2 0]ₓ ⋄ f←{+/i{⍺⊃⍵}⍤[0 1]⍵}
+i←[2 0]ₓ ⋄ f←{+/i{⍺⊃⍵}⁰ ¹⍵}
 g←{a←⍵ ⋄ +/{[⍵ 1ₓ]⌷a}¨[0 0]ₓ}
 [f∂[1 2 3⋄4 5 6];g∂[1 2⋄3 4]]   ⍝ [[0 0 1⋄1 0 0];[0 2⋄0 0]]
 

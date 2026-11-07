@@ -21,8 +21,8 @@ kind←{(•storage ⍵).kind} ⋄ compiled←{∧/(∨/⍵.routes.route≡¨⊂
 [¯8*÷3;¯8 ¯4*ₐ[÷3;0.5];kind ¯8*ₐ÷3]
 [$n [0.99999994 0] "float32"]
 
-⍝ — `○ₐ` and `○⁻¹ₐ` give the real part where `○` and `○⁻¹` give NaN, as floats of the arguments' width
-[2○⁻¹ₐ2;1○⁻¹ₐ¯2 2;7○⁻¹ₐ 2;8○ₐ 2;kind 2○⁻¹ₐ2]
+⍝ — `○ₐ` and `○⁻ₐ` give the real part where `○` and `○⁻` give NaN, as floats of the arguments' width
+[2○⁻ₐ2;1○⁻ₐ¯2 2;7○⁻ₐ 2;8○ₐ 2;kind 2○⁻ₐ2]
 [0 [¯1.5707964 1.5707964] 0.54930615 0 "float32"]
 
 ⍝ — A count that doesn't fit the int width saturates to its maximum, as a conversion does. An empty array can have an axis that long
@@ -97,11 +97,11 @@ j←[¯3 0 3 1000]ₓ ⋄ j=3   ⍝ $f $f $t $f
 [[2] ; [¯1] ; 2]
 
 ⍝ — Under static kinds, a function whose results are approximate gives floats for integer arguments, at the width ÷ gives them: ⌹ inverts and solves integer matrices as floats, polar gives an integer's magnitude and angle as floats, and the derivatives of `!` and Lambert W give an atom the floats they give an array. Exact fractions stay exact
-[{(•storage ⍵).kind}¨[⌹2 2⍴[2 1 1 3]ₓ;[1 2]ₓ⌹2 2⍴[2 1 1 3]ₓ;(⌹⍤2)2 2 2⍴[2 1 1 3]ₓ;∧[3 ¯4]ₓ;∧3ₓ;{2ₓ!⍵}∂5ₓ;{2ₓ!⍵}∂[5 6]ₓ;{!⍵}∂3ₓ;{!⍵}∂[3]ₓ;(×↢*)⁻¹ 3ₓ;(×↢*)⁻¹ [3]ₓ];⌹1r3]
+[{(•storage ⍵).kind}¨[⌹2 2⍴[2 1 1 3]ₓ;[1 2]ₓ⌹2 2⍴[2 1 1 3]ₓ;(⌹⍤2)2 2 2⍴[2 1 1 3]ₓ;∧[3 ¯4]ₓ;∧3ₓ;{2ₓ!⍵}∂5ₓ;{2ₓ!⍵}∂[5 6]ₓ;{!⍵}∂3ₓ;{!⍵}∂[3]ₓ;(×↢*)⁻ 3ₓ;(×↢*)⁻ [3]ₓ];⌹1r3]
 ["float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32";3ᵣ]
 
-⍝ — Dyadic `○` and `○⁻¹` give an integer argument the kind that they give a float, at every code from 0 to 8, under both kinds settings: none of their formulas has an integer form
-c←0↦8 ⋄ k←{x←⍵ ⋄ ({kind ⍵○x}¨c),{kind ⍵○⁻¹x}¨c} ⋄ s←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"dynamic"] ⋄ d←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"static"] ⋄ s d
+⍝ — Dyadic `○` and `○⁻` give an integer argument the kind that they give a float, at every code from 0 to 8, under both kinds settings: none of their formulas has an integer form
+c←0↦8 ⋄ k←{x←⍵ ⋄ ({kind ⍵○x}¨c),{kind ⍵○⁻x}¨c} ⋄ s←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"dynamic"] ⋄ d←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"static"] ⋄ s d
 $t $t
 
 ⍝ — Under static kinds, `∂` computes an integer argument as floats of the width `÷` gives it: the derivative of `-⍵` at `3ₓ` is the float ¯1

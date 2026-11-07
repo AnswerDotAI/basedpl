@@ -1,5 +1,5 @@
 ⍝⍝ setup
-side←256
+side←256 size 32
 n←side×side
 v←¿n⍴0
 w←¿n⍴0
@@ -26,7 +26,7 @@ sps←ss(+⍤2)16×=⊗⍨⍳8
 t←[n÷16 16]⍴v
 tq←¿[n÷4 24]⍴0
 z←v+0j1×w
-zm←128 128↑m+0j1×⊖m
+zm←[(128 size 16) (128 size 16)]↑m+0j1×⊖m
 f←"svd"•decompose m
 h←"eigen"•decompose m+⍉m
 bm←[side side]⍴b
@@ -38,8 +38,8 @@ ia←ir.[¿side⍴side]
 id←•index side
 lut←256↑v
 ux←(¿n⍴256)ₓ₁
-rka←•literal⁻¹¨⍳n
-rkb←•literal⁻¹¨⍳n
+rka←•literal⁻¨⍳n
+rkb←•literal⁻¨⍳n
 ra←rka:v
 rb←rkb:w
 ⍝⍝ copies
@@ -368,19 +368,19 @@ i (+/⊢)⌸ v
 
 ⍝ Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]⍴v` 3.4 against 2. Scans along a leading axis make no call for each row: `+⍀[16384 4]⍴v` cost 28 copies while each row of 4 items made two calls that stayed out of line.
 ⍝ Expected: `=\[32768 2]⍴jv` 4 copies and `<\[16384 4]⍴v` 6, set on the Mac on 22 October 2026 by a route for comparison scans along short lanes that's since gone (basedpl's `Scan::compared` through rustymath's `comparison_scan`). Both now run rustymath's ordered scan: `scan_read`, then `ordered_scan` with one kernel step for each item; `≠\[16384 4]⍴b` 0.5 copies: word-wide bit operations; `+\[16384 4]⍴v` 2 copies: eight lanes run side by side, about 1 cycle an item; `+⍀[16384 4]⍴v` 3 copies: each row waits on the row before, which it reads back from the output through a store-to-load forwarding before it adds, about 6 cycles for each row of 4 items.
-=\[32768 2]⍴jv
+=\[n÷2;2]⍴jv
 ⍝⍝: 8	6.7	8.8
 
-<\[16384 4]⍴v
+<\[n÷4;4]⍴v
 ⍝⍝: 12	14	23
 
-≠\[16384 4]⍴b
+≠\[n÷4;4]⍴b
 ⍝⍝: 1	2	2.3
 
-+\[16384 4]⍴v
++\[n÷4;4]⍴v
 ⍝⍝: 4	3.4	3
 
-+⍀[16384 4]⍴v
++⍀[n÷4;4]⍴v
 ⍝⍝: 6	4.6	3.4
 
 ⍝ A residue scan waits on the result before each item. An exact seed, or a whole float seed that stands for an integer, keeps it in integers.
@@ -392,11 +392,11 @@ i (+/⊢)⌸ v
 ⍝⍝: 33	63	64
 
 ⍝ An inverse scan by `+`, `-`, `=` or `≠` combines each item with the item before it, in one pass.
-⍝ Expected: `+\⁻¹v` 1 copy: one read and one write per item; `≠\⁻¹b` 0.13 copies: 1-byte reads and writes.
-+\⁻¹v
+⍝ Expected: `+\⁻v` 1 copy: one read and one write per item; `≠\⁻b` 0.13 copies: 1-byte reads and writes.
++\⁻v
 ⍝⍝: 2	1.9	2.4
 
-≠\⁻¹b
+≠\⁻b
 ⍝⍝: 0.5	0.5	0.5
 
 ⍝ Each item waits for a read from a random place.
@@ -554,7 +554,7 @@ cnt⍚[- ⊢ 10×] v
 ⍝⍝: 16	17	57
 
 ⍝ The hyperbolic functions build on rustymath's `exp` and `expm1`, with a division. The inverse circle functions evaluate a polynomial of 10 or 12 terms after a reduction with a square root or a division.
-⍝ Expected: `5○v` 10 copies: about 40 vector operations an item, for `expm1`'s 34 and the arithmetic around it, with a division that overlaps them; `7○v` 7.5 copies: rustymath's f64 `Tanh`, whose `expm1` needs no guards for |x| up to 20, as rustymath's `tests/speed.txt` counts it; `6○v` 7.25 copies: about 29 vector operations an item, for `exp`'s 26 and the arithmetic around it, with a division that overlaps them; `1○⁻¹v` 7 copies and `2○⁻¹v` 7.5 copies: about 28 and 30 vector operations an item, for the reduction, the polynomial of 12 terms, the selects that undo the reduction and the check for a NaN made from a number, with a square root that overlaps them; `3○⁻¹v` 7.25 copies: about 29 vector operations an item, for the selects that pick one of three intervals, the polynomial of 10 terms, the selects of the added multiple of π/4 and the sign, with a division that overlaps them. `5○v` and `7○v` were 10.5 copies until `expm1` stopped selecting -0 for a zero argument, which only set the sign of a zero result. `5○v`, `6○v` and `7○v` were 11, 6.5 and 6.5 copies before that, from `exp`'s old count of 18, two exponentials for `5○v` where it computes one `expm1`, and 2 copies for each division. `1○⁻¹v`, `2○⁻¹v` and `3○⁻¹v` were 6, 6 and 5.5 copies, from counts of 16, 16 and 14 that left out most of the selects and the check, and charged the square root or division 2 copies.
+⍝ Expected: `5○v` 10 copies: about 40 vector operations an item, for `expm1`'s 34 and the arithmetic around it, with a division that overlaps them; `7○v` 7.5 copies: rustymath's f64 `Tanh`, whose `expm1` needs no guards for |x| up to 20, as rustymath's `tests/speed.txt` counts it; `6○v` 7.25 copies: about 29 vector operations an item, for `exp`'s 26 and the arithmetic around it, with a division that overlaps them; `1○⁻v` 7 copies and `2○⁻v` 7.5 copies: about 28 and 30 vector operations an item, for the reduction, the polynomial of 12 terms, the selects that undo the reduction and the check for a NaN made from a number, with a square root that overlaps them; `3○⁻v` 7.25 copies: about 29 vector operations an item, for the selects that pick one of three intervals, the polynomial of 10 terms, the selects of the added multiple of π/4 and the sign, with a division that overlaps them. `5○v` and `7○v` were 10.5 copies until `expm1` stopped selecting -0 for a zero argument, which only set the sign of a zero result. `5○v`, `6○v` and `7○v` were 11, 6.5 and 6.5 copies before that, from `exp`'s old count of 18, two exponentials for `5○v` where it computes one `expm1`, and 2 copies for each division. `1○⁻v`, `2○⁻v` and `3○⁻v` were 6, 6 and 5.5 copies, from counts of 16, 16 and 14 that left out most of the selects and the check, and charged the square root or division 2 copies.
 5○v
 ⍝⍝: 20	20	58
 
@@ -564,18 +564,18 @@ cnt⍚[- ⊢ 10×] v
 7○v
 ⍝⍝: 15	14	54
 
-1○⁻¹v
+1○⁻v
 ⍝⍝: 14	16	52
 
-2○⁻¹v
+2○⁻v
 ⍝⍝: 15	17	52
 
-3○⁻¹v
+3○⁻v
 ⍝⍝: 15	17	51
 
 ⍝ The inverse hyperbolic functions build on `ln`'s reduction, after a square root or a division. `4○` is √(1 + x²), computed as rustymath's `hypot` of x and 1.
-⍝ Expected: `5○⁻¹v` 10.75 copies: about 43 vector operations an item, for the forms near 0 and beyond 2^52, `ln`'s split, the polynomial and the selects for NaN and ∞, with a square root and a division that overlap them; `4○v` 4 copies: about 16 vector operations an item, for scaling x and 1 by the power of two that keeps x² finite and the selects for the larger and for ∞, with a square root that overlaps them. `5○⁻¹v` was 7.3 copies, from a square root and a `log1p` charged the old way. `4○v` was 2.5 copies, from a square root charged 2 copies and two operations, without `hypot`'s scaling.
-5○⁻¹v
+⍝ Expected: `5○⁻v` 10.75 copies: about 43 vector operations an item, for the forms near 0 and beyond 2^52, `ln`'s split, the polynomial and the selects for NaN and ∞, with a square root and a division that overlap them; `4○v` 4 copies: about 16 vector operations an item, for scaling x and 1 by the power of two that keeps x² finite and the selects for the larger and for ∞, with a square root that overlaps them. `5○⁻v` was 7.3 copies, from a square root and a `log1p` charged the old way. `4○v` was 2.5 copies, from a square root charged 2 copies and two operations, without `hypot`'s scaling.
+5○⁻v
 ⍝⍝: 22	26	57
 
 4○v
@@ -656,7 +656,7 @@ lg.quantile v
 ⍝⍝: 58	74	140
 
 ⍝ The other closed-form laws compute at their arguments' width. A law's logarithm, arctangent, tangent, power or root comes from rustymath's slice form of `Log1p`, `Ln`, `Atan`, `Tan`, `Pow` or `Root`, a block at a time, between a pass that writes the block's arguments and a pass that finishes its results and checks them for NaN. The uniform and Laplace cdfs are single loops.
-⍝ Expected: `ud.cdf v` 2.5 copies: a division of about 1 cycle an item, which the subtraction and the clamp's compares and selects overlap; `ex.quantile v` 13.25 copies: `Log1p`'s 40 vector operations, a pass that negates each item, and a pass of about 9 for the range check, the scaling and the NaN check; `ca.cdf v` 12.5 copies: `Atan`'s 29 operations, as `3○⁻¹v` counts them, a pass of about 6 with a division that picks z or -1/z, and a pass of about 13 that rebuilds the cdf and checks it; `ca.quantile v` 13.5 copies: `Tan`'s 32 operations, as `3○v` counts them, a pass of about 7 that picks the argument's region, and a pass of about 15 with a division that rebuilds the quantile and checks it; `lp.cdf v` 9.25 copies: about 37 operations in one loop, for the full `exp` of -|z|, the select between the two halves and the NaN check; `lp.quantile v` 9.25 copies: `Ln`'s 26 operations, a pass of about 4 and a pass of about 7; `lo.quantile v` 10 copies: `Ln`'s 26 operations, a pass whose division of about 1 cycle an item forms the odds, and a pass of about 4; `wb.cdf v` 24.5 copies: `Pow`'s 15 copies, as `v*w` expects them, a pass of 3 operations, and a pass of about 34 for the full `expm1` and the NaN check; `wb.quantile v` 28.5 copies: `Log1p`'s 10 copies, a pass that negates its results, `Root`'s cost taken as `Pow`'s 15, and two short passes.
+⍝ Expected: `ud.cdf v` 2.5 copies: a division of about 1 cycle an item, which the subtraction and the clamp's compares and selects overlap; `ex.quantile v` 13.25 copies: `Log1p`'s 40 vector operations, a pass that negates each item, and a pass of about 9 for the range check, the scaling and the NaN check; `ca.cdf v` 12.5 copies: `Atan`'s 29 operations, as `3○⁻v` counts them, a pass of about 6 with a division that picks z or -1/z, and a pass of about 13 that rebuilds the cdf and checks it; `ca.quantile v` 13.5 copies: `Tan`'s 32 operations, as `3○v` counts them, a pass of about 7 that picks the argument's region, and a pass of about 15 with a division that rebuilds the quantile and checks it; `lp.cdf v` 9.25 copies: about 37 operations in one loop, for the full `exp` of -|z|, the select between the two halves and the NaN check; `lp.quantile v` 9.25 copies: `Ln`'s 26 operations, a pass of about 4 and a pass of about 7; `lo.quantile v` 10 copies: `Ln`'s 26 operations, a pass whose division of about 1 cycle an item forms the odds, and a pass of about 4; `wb.cdf v` 24.5 copies: `Pow`'s 15 copies, as `v*w` expects them, a pass of 3 operations, and a pass of about 34 for the full `expm1` and the NaN check; `wb.quantile v` 28.5 copies: `Log1p`'s 10 copies, a pass that negates its results, `Root`'s cost taken as `Pow`'s 15, and two short passes.
 ⍝ macOS: at f64 `Pow` and `Root` read tables that NEON can't gather, and `v*w` measures about 28 copies on this Mac against its expected 15. With that cost, `wb.cdf v` and `wb.quantile v` expect 37.5 and 41.5 copies on macOS, and measured 36 and 37 on 30 October 2026. Wasm: twice each native cost, because wasm's SIMD has no fused multiply-add, as for `lg.density v`, and for the Weibull cases twice the macOS cost, 75 and 83, because wasm can't gather either. CI measured them at 67 to 71 and 71 to 73 in wasm in runs 56 to 62. `ud.cdf v` multiplies and adds nothing, so its wasm budget is its native one.
 ud.cdf v
 ⍝⍝: 5	4.7	6.5
@@ -810,8 +810,8 @@ cm+.=⍉cm
 zm+.×zm
 ⍝⍝: 12	55	77
 
-⍝ Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath. Its own speed test times each factorisation on a 256×256 matrix, the size of `m`, and least squares on a 4096×16 matrix, the size of `t`. On macOS, Accelerate runs matrix products and triangular solves, and the SVD, the Hermitian eigendecomposition and the real nonsymmetric eigendecomposition from the sizes that rustymath's DEV.md gives. rustymath's own code runs LU, Householder QR, Cholesky, the complex nonsymmetric eigendecomposition and the smaller matrices' decompositions, with their block products and triangular solves on Accelerate. On Linux it runs all of them. These cases time basedpl's part on top of each factorisation: reading the arguments, writing the results, the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, and rebuilding a matrix from factors. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
-⍝ Expected, taking each factorisation's cost from rustymath's speed test on the same platform: `⌹⍤2 ms` 30 copies: 1,024 inverses of 8×8, each about 1,000 cycles of small-matrix work; `ms⌹⍤2 sps` 45 copies: 1,024 solves of 8×8 with 8 right sides, about 1.5 times the inverses; `⌹m` 42 copies on macOS and 133 on Linux: `linalg::Lu::inverse`, 40 and 131, then a read and a write; `(side↑w)⌹m` 25 copies on macOS and 52 on Linux: `linalg::Lu::solve`, 24 and 51, then a read; `((n÷16)↑w)⌹t` 14 copies on macOS: `linalg::lstsq` on the same shape, 13, then a read; `⌹t` 16 copies on macOS: the same tall QR, about 13, then two products with 16 columns and a write; `((n÷4)↑w)⌹tq` 29 copies on macOS: CholeskyQR2 forms two Gram matrices of `tq`'s 24 columns, 288 flops an item each, at about 40 flops in a copy's time, 7.2 each, which Accelerate measured for this Gram product, far above its tall thin Gram rate, whose 4096×16 product spends most of its time on a fixed cost, then solves with a 24×24 triangle, 144 flops an item at the rank-k rate, 4.8, copies `tq`, which holds 6 copies of data, 6, and scans `tq` and multiplies it by `b`, about 3.5; `"qr"•decompose tq` 38 copies on macOS: the same, with a second triangular solve for Q, 4.8, in place of the product with `b`, then writing Q, 6; `"qr"•decompose⍤2 ms` 60 copies: 1,024 QRs of 8×8, each about 2,000 cycles of small-matrix work; `"qr"•decompose m` 56 copies on macOS and 194 on Linux: `linalg::qr`, 54 and 192, then writing Q and R; `"cholesky"•decompose⍤2 sps` 30 copies: 1,024 Cholesky factors of 8×8, each about 1,000 cycles; `"svd"•decompose⍤2 ms` 400 copies: 1,024 iterative SVDs of 8×8, each about 10,000 operations; `"svd"•decompose⁻¹ f` 13 copies on macOS and 68 on Linux: a 256×256 product, which costs what `m+.×m` costs, 8.8 and 64, and four passes that scale U by `s`, transpose V, convert the product and write it; `["kind":"svd" "rank":8]•decompose m` 22 copies on macOS and 66 on Linux: Halko's range finder, with 18 columns and two power iterations, makes six products of 256×256 by 18 columns, 36 flops an item each, five thin QRs and the SVD of an 18×256 matrix, which on Accelerate cost 5.4 for the three products of `m` by 256×18, at about 20 flops in a copy's time, measured for that shape, between the matrix-vector and rank-k rates, 10.3 for the two of `m`'s transpose at the matrix-vector rate, 1.2 for Qᴴ times `m` at the rank-k rate, and 4.6 for the QRs and the SVD, about 32 flops an item at the matrix-vector rate, while products this thin run at about 3.5 flops in a copy's time on rustymath's own kernels, which cost 66 copies on macOS with `--native`; `"eigen"•decompose⁻¹ h` 54 copies on macOS and 200 on Linux: `linalg::Lu::inverse`, 40 and 131, three passes for the vectors' condition number, scaling the vectors by the values, then a 256×256 product, 8.8 and 64, and a write; `"eigen"•decompose⍤2 ss` 300 copies: 1,024 symmetric eigendecompositions of 8×8, each about 5,000 operations; `"eigen"•decompose⍤2 ms` 700 copies: 1,024 nonsymmetric eigendecompositions of 8×8, each about 13,000 operations; `⌹zm` 21 copies on macOS and 67 on Linux: a complex 128×128 inverse, 8n³/3 complex multiply-adds, about 341 real ones an item, at the rate `linalg::Lu::inverse` reaches on a 256×256 matrix, about 17 and 5.2 in a copy's time, then a read and a write; `-.×m` 24 copies on macOS and 51 on Linux: the LU in `linalg::Lu::solve`, whose solve costs under a copy; `-.×⍤2 ms` 20 copies: 1,024 LUs of 8×8. In wasm, which rustymath's speed test doesn't time, the expected costs stay the flop counts at about 4 in a copy's time: `⌹m` 128, `(side↑w)⌹m` 42, `((n÷16)↑w)⌹t` 8, `⌹t` 12, `((n÷4)↑w)⌹tq` 95, `"qr"•decompose tq` 130, `"qr"•decompose m` 170, `"svd"•decompose⁻¹ f` 128, `"eigen"•decompose⁻¹ h` 128, `⌹zm` 86 and `-.×m` 42.
+⍝ Matrix division, `•decompose`, `•decompose⁻` and the determinant `-.×` run on rustymath. Its own speed test times each factorisation on a 256×256 matrix, the size of `m`, and least squares on a 4096×16 matrix, the size of `t`. On macOS, Accelerate runs matrix products and triangular solves, and the SVD, the Hermitian eigendecomposition and the real nonsymmetric eigendecomposition from the sizes that rustymath's DEV.md gives. rustymath's own code runs LU, Householder QR, Cholesky, the complex nonsymmetric eigendecomposition and the smaller matrices' decompositions, with their block products and triangular solves on Accelerate. On Linux it runs all of them. These cases time basedpl's part on top of each factorisation: reading the arguments, writing the results, the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, and rebuilding a matrix from factors. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
+⍝ Expected, taking each factorisation's cost from rustymath's speed test on the same platform: `⌹⍤2 ms` 30 copies: 1,024 inverses of 8×8, each about 1,000 cycles of small-matrix work; `ms⌹⍤2 sps` 45 copies: 1,024 solves of 8×8 with 8 right sides, about 1.5 times the inverses; `⌹m` 42 copies on macOS and 133 on Linux: `linalg::Lu::inverse`, 40 and 131, then a read and a write; `(side↑w)⌹m` 25 copies on macOS and 52 on Linux: `linalg::Lu::solve`, 24 and 51, then a read; `((n÷16)↑w)⌹t` 14 copies on macOS: `linalg::lstsq` on the same shape, 13, then a read; `⌹t` 16 copies on macOS: the same tall QR, about 13, then two products with 16 columns and a write; `((n÷4)↑w)⌹tq` 29 copies on macOS: CholeskyQR2 forms two Gram matrices of `tq`'s 24 columns, 288 flops an item each, at about 40 flops in a copy's time, 7.2 each, which Accelerate measured for this Gram product, far above its tall thin Gram rate, whose 4096×16 product spends most of its time on a fixed cost, then solves with a 24×24 triangle, 144 flops an item at the rank-k rate, 4.8, copies `tq`, which holds 6 copies of data, 6, and scans `tq` and multiplies it by `b`, about 3.5; `"qr"•decompose tq` 38 copies on macOS: the same, with a second triangular solve for Q, 4.8, in place of the product with `b`, then writing Q, 6; `"qr"•decompose⍤2 ms` 60 copies: 1,024 QRs of 8×8, each about 2,000 cycles of small-matrix work; `"qr"•decompose m` 56 copies on macOS and 194 on Linux: `linalg::qr`, 54 and 192, then writing Q and R; `"cholesky"•decompose⍤2 sps` 30 copies: 1,024 Cholesky factors of 8×8, each about 1,000 cycles; `"svd"•decompose⍤2 ms` 400 copies: 1,024 iterative SVDs of 8×8, each about 10,000 operations; `"svd"•decompose⁻ f` 13 copies on macOS and 68 on Linux: a 256×256 product, which costs what `m+.×m` costs, 8.8 and 64, and four passes that scale U by `s`, transpose V, convert the product and write it; `["kind":"svd" "rank":8]•decompose m` 22 copies on macOS and 66 on Linux: Halko's range finder, with 18 columns and two power iterations, makes six products of 256×256 by 18 columns, 36 flops an item each, five thin QRs and the SVD of an 18×256 matrix, which on Accelerate cost 5.4 for the three products of `m` by 256×18, at about 20 flops in a copy's time, measured for that shape, between the matrix-vector and rank-k rates, 10.3 for the two of `m`'s transpose at the matrix-vector rate, 1.2 for Qᴴ times `m` at the rank-k rate, and 4.6 for the QRs and the SVD, about 32 flops an item at the matrix-vector rate, while products this thin run at about 3.5 flops in a copy's time on rustymath's own kernels, which cost 66 copies on macOS with `--native`; `"eigen"•decompose⁻ h` 54 copies on macOS and 200 on Linux: `linalg::Lu::inverse`, 40 and 131, three passes for the vectors' condition number, scaling the vectors by the values, then a 256×256 product, 8.8 and 64, and a write; `"eigen"•decompose⍤2 ss` 300 copies: 1,024 symmetric eigendecompositions of 8×8, each about 5,000 operations; `"eigen"•decompose⍤2 ms` 700 copies: 1,024 nonsymmetric eigendecompositions of 8×8, each about 13,000 operations; `⌹zm` 21 copies on macOS and 67 on Linux: a complex 128×128 inverse, 8n³/3 complex multiply-adds, about 341 real ones an item, at the rate `linalg::Lu::inverse` reaches on a 256×256 matrix, about 17 and 5.2 in a copy's time, then a read and a write; `-.×m` 24 copies on macOS and 51 on Linux: the LU in `linalg::Lu::solve`, whose solve costs under a copy; `-.×⍤2 ms` 20 copies: 1,024 LUs of 8×8. In wasm, which rustymath's speed test doesn't time, the expected costs stay the flop counts at about 4 in a copy's time: `⌹m` 128, `(side↑w)⌹m` 42, `((n÷16)↑w)⌹t` 8, `⌹t` 12, `((n÷4)↑w)⌹tq` 95, `"qr"•decompose tq` 130, `"qr"•decompose m` 170, `"svd"•decompose⁻ f` 128, `"eigen"•decompose⁻ h` 128, `⌹zm` 86 and `-.×m` 42.
 ⌹⍤2 ms
 ⍝⍝: 60	88	100
 
@@ -855,8 +855,8 @@ side↑w ⌹ m
 "svd"•decompose⍤2 ms
 ⍝⍝: 600	430	390
 
-⍝ `"svd"•decompose⁻¹ f` costs a 256×256 product plus four passes. On CI it measured 90.5 when `m+.×m` measured 79.6. Its expected cost used to take the product from rustymath's `linalg::PlusTimes`, 21 copies on Linux, a figure that basedpl's single-threaded product doesn't reach.
-"svd"•decompose⁻¹ f
+⍝ `"svd"•decompose⁻ f` costs a 256×256 product plus four passes. On CI it measured 90.5 when `m+.×m` measured 79.6. Its expected cost used to take the product from rustymath's `linalg::PlusTimes`, 21 copies on Linux, a figure that basedpl's single-threaded product doesn't reach.
+"svd"•decompose⁻ f
 ⍝⍝: 26	85	160
 
 ⍝ `["kind":"svd" "rank":8]•decompose m` in wasm: 82 copies, as CI's x86 V8 measured it on 22 October 2026, at 15.7 ns an item against a copy of 0.192 ns. That's about 2.8 flops in a copy's time, where the group's wasm rate of 4 would give 58. Thin products take 70% of its instructions on rustymath's own kernels, at 70 to 80% of a square product's flops per instruction. CI measured 79 to 92 in seven runs from 22 October 2026. This Mac's V8 takes about the same time, 14.3 ns an item, against a copy 1.6 times faster than CI's, and measures 118 to 121 copies, up to 153 under load.
@@ -865,7 +865,7 @@ side↑w ⌹ m
 ⍝⍝: 44	84	120
 
 ⍝⍝⍝ held macos 76.5: about a third of its macOS time is our own code, building vectors and rustymath's LU (`profile`, 29 October 2026)
-"eigen"•decompose⁻¹ h
+"eigen"•decompose⁻ h
 ⍝⍝: 81	240	390
 
 ⍝ `"eigen"•decompose⍤2 ss` runs rustymath's own Hermitian solver on every platform, because 8×8 lies below rustymath's `HEEVD_FROM`. On macOS it measures about 298, against 392 on Accelerate's `?heevd`.
@@ -966,7 +966,7 @@ m+.×m
 ⍝⍝: 0.65	0.63	0.55
 
 ⍝ rustymath's sine and cosine reduce in f32 with fused multiply-adds, and run a polynomial of 4 terms in place of 7.
-⍝ Expected: `1○v`, `2○v`, `3○v`, `7○v`, `1○⁻¹v` and `3○⁻¹v` 0.4 of the 64-bit time: 4 polynomial terms in place of 7, and twice the lanes; `v*2` and `v*w` 0.5 of the 64-bit time: half the bytes, and twice the lanes.
+⍝ Expected: `1○v`, `2○v`, `3○v`, `7○v`, `1○⁻v` and `3○⁻v` 0.4 of the 64-bit time: 4 polynomial terms in place of 7, and twice the lanes; `v*2` and `v*w` 0.5 of the 64-bit time: half the bytes, and twice the lanes.
 1○v
 ⍝⍝: 0.65	0.71	0.75
 
@@ -979,10 +979,10 @@ m+.×m
 7○v
 ⍝⍝: 0.65	0.58	0.54
 
-1○⁻¹v
+1○⁻v
 ⍝⍝: 0.65	0.58	0.49
 
-3○⁻¹v
+3○⁻v
 ⍝⍝: 0.65	0.58	0.56
 
 v*2

@@ -282,7 +282,7 @@ pub(crate) enum Math {
     Power,
     Log,
     Circle,
-    /// The inverse of `Circle` for each code, which `k○⁻¹` calls. It has no glyph.
+    /// The inverse of `Circle` for each code, which `k○⁻` calls. It has no glyph.
     Arc,
     Pi,
     Root,

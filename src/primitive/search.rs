@@ -96,7 +96,7 @@ pub(super) fn duplicates_mask(right: &Value, span: &Span) -> Result<Value, Error
 /// The distinct major cells that occur more than once, in order of first appearance.
 pub(super) fn duplicates(right: &Value, span: &Span) -> Result<Value, Error> { replicate(&duplicates_mask(right, span)?, right, None, false, None) }
 
-/// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
+/// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
 pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
     if right.is_unit() { return Value::new(vec![2], vec![Value::integer(1), right.clone()]).described("invalid runs"); }
     let (first, axis) = classes(right, span)?;
@@ -115,7 +115,7 @@ pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
     Value::new(vec![3], vec![lengths, values, all]).described("invalid runs")
 }
 
-/// The cells that `runs` encodes as `right`: each run's first cell repeated by its length, then the keys of every position where `right` has a third item (`#⁻¹`).
+/// The cells that `runs` encodes as `right`: each run's first cell repeated by its length, then the keys of every position where `right` has a third item (`#⁻`).
 pub(super) fn unruns(right: &Value, span: &Span) -> Result<Value, Error> {
     if !matches!(right.shape(), [2] | [3]) { return Err(Error::new(Kind::Length, "run-length decoding needs lengths and values, and optionally keys")); }
     let mut items = right.elements();

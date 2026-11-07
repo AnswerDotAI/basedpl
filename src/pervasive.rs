@@ -239,6 +239,27 @@ fn applied(kernel: &Kernel, reads: &[Read<'_>], len: usize, settings: rustymath:
     kernel.map(reads, 0..len, settings, &mut out).map(|()| out)
 }
 
+/// Floor a logical float input directly to its narrowest integer width, chosen before writing from the floors of its two extrema.
+fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<Buffer, rustymath::error::Error> {
+    use rustymath::{convert::saturated, tolerant::Tolerant};
+    let mut scratch = Buffer::with_capacity(at, 0);
+    let view = read.part_view(0..len, at, !numeric.is_static(), &mut scratch)?;
+    let View::Floats(floats) = view else { unreachable!("floor input has its float computing dtype") };
+    rustymath::with_tolerance!(numeric.tolerance_of(at), |t| {
+        let width = with_floats!(floats, |xs| {
+            let (lo, hi) = (reduce::min(xs), reduce::max(xs));
+            if lo.is_nan() || hi.is_nan() || xs.is_empty() {
+                Width::I64
+            } else {
+                crate::array::ordinary_width(Width::narrowest(saturated::<i64, _>(t.floor(lo)), saturated::<i64, _>(t.floor(hi))))
+            }
+        });
+        rustymath::events::taken(rustymath::events::Route::VectorKernel, len);
+        rustymath::operation::report_maps([read.plan], 0..len);
+        Buffer::floored(view, DType::Integer(width), t)
+    })
+}
+
 /// A pervasive function applied to stored arguments on `agreement`'s frame, as `plan` plans it, through `p`'s formula (`resolve`) at the kind the plan computes in, with `computed`'s reruns. Each argument reads through its agreement mapping and converts to that kind as it reads. `None` where the arguments have no compact reads or no kind has a kernel. A selected kernel's failure returns its error after the wider-kind retries.
 pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Result<Value, crate::Error>> {
     let (p, numeric, len) = (plan.p, plan.numeric, agreement.len);
@@ -251,10 +272,12 @@ pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreeme
     };
     let at = plan.computes()?;
     let settings = numeric.settings_for(at);
-    let (out, dtype) =
-        match with_reads(&args, Missing::Default, |reads, types| computed(p, code, types, at, numeric, |kernel| applied(kernel, reads, len, settings)))? {
-            Ok(Some(result)) => result, Ok(None) => return None, Err(error) => return Some(Err(error.into()))
-        };
+    let (out, dtype) = match with_reads(&args, Missing::Default, |reads, types| {
+        let flooring = !numeric.wrapping() && integral(p, plan.dyadic, at, numeric)
+            && matches!(formula(p, types.len(), numeric.mathish_at(at), false, numeric.tolerance_of(at)), Some(Op::Floor(_)));
+        if flooring { floored(&reads[0], len, at, numeric).map(|out| Some((out, at))) }
+        else { computed(p, code, types, at, numeric, |kernel| applied(kernel, reads, len, settings)) }
+    })? { Ok(Some(result)) => result, Ok(None) => return None, Err(error) => return Some(Err(error.into())) };
     let out = whole_results(p, plan.dyadic, dtype, out, numeric);
     let known = [left, Some(right)].into_iter().flatten().all(|v| v.is_atom() || v.range() != rustymath::domain::Range::ANY);
     Some(

@@ -18,8 +18,8 @@ Where it can, `⊗` calls `g` once on all the pairs together, in a [batched call
 
 ## Inverse
 
-With either argument fixed, `X f⊗⁻¹ Y` gives the argument whose outer product with `X` is `Y`.
+With either argument fixed, `X f⊗⁻ Y` gives the argument whose outer product with `X` is `Y`.
 
 ```bpl
-1 2+⊗⁻¹1 2+⊗10 20   ⍝ 10 20
+1 2+⊗⁻1 2+⊗10 20   ⍝ 10 20
 ```

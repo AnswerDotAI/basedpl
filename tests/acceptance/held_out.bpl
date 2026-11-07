@@ -22,7 +22,7 @@ attend←{
   [q k v]←{heads x+.×⍵}¨[wq wk wv]
   s←causal(+⍤2) q+.×⍤2 ⍉⍤2⁝k ÷ √e
   w←*s-⌈/s
-  (heads⁻¹ w÷+/w +.×⍤2 v)+.×wo
+  (heads⁻ w÷+/w +.×⍤2 v)+.×wo
 }
 mlp←{[wu bu wd bd]←⍺ ⋄ bd(+⍤1)(0⌈bu(+⍤1)⍵+.×wu)+.×wd}
 block←{
@@ -39,7 +39,7 @@ blocki←{
   lnorm←{[g c]←⍺ ⋄ z←⍵-(+/⍠i⁝⍵)÷d ⋄ c.[i]+g.[i]×z÷√1E¯5+(+/⍠i⁝⊼z)÷d}
   x←⍵.[b t i]
   z←[ga ba]lnorm x
-  zu←(:[b t i]⍉⁻¹z).[b u i]
+  zu←(:[b t i]⍉⁻z).[b u i]
   q←z+.×⍠i⁝wq.[i j+e×h]
   kk←zu+.×⍠i⁝wk.[i j+e×h]
   vv←zu+.×⍠i⁝wv.[i j+e×h]
@@ -48,7 +48,7 @@ blocki←{
   o←(w÷+/⍠u⁝w)+.×⍠u⁝vv
   r←x++/⍠[h j]⁝o×wo.[j+e×h i]
   m←0⌈bu.[k]+([gm bm]lnorm r)+.×⍠i⁝wu.[i k]
-  :[b t i]⍉⁻¹r+bd.[i]+m+.×⍠k⁝wd.[k i]
+  :[b t i]⍉⁻r+bd.[i]+m+.×⍠k⁝wd.[k i]
 }
 tlossi←{[x y]←⍺ ⋄ o←⍵ blocki x ⋄ +/÷≢ ⊼,y-o}
 tstepi←{⍵ - 0.2× [tx ty]tlossi∂⍵}
@@ -73,8 +73,8 @@ convi←{
   [[n i j] [s t] f [p q] [u v] o]←•index[[≢⍵ 14 14] [3 3] F [7 7] [2 2] K]
   a←c.[f]++/⍠[s t]⁝⍵.[n i+s j+t]×k.[t+3×s f]
   r←(0<)⍚[0.01× ⊢]a
-  m←⌈/⍠[u v]⁝(:[n i j f]⍉⁻¹r).[n u+2×p v+2×q f]
-  :[n o]⍉⁻¹b.[o]++/⍠[p q f]⁝m×w.[f+F×q+7×p o]
+  m←⌈/⍠[u v]⁝(:[n i j f]⍉⁻r).[n u+2×p v+2×q f]
+  :[n o]⍉⁻b.[o]++/⍠[p q f]⁝m×w.[f+F×q+7×p o]
 }
 clossi←{[x y]←⍺ ⋄ z←⍵ convi x ⋄ -+/÷≢ +/y×lsm z}
 cstepi←{⍵ - 0.1× [cx cy]clossi∂⍵}

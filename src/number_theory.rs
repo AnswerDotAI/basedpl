@@ -94,7 +94,7 @@ pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value) -> Result<
     }
 }
 
-/// `⍭⁻¹`: the number of primes below each item, which is a prime's index.
+/// `⍭⁻`: the number of primes below each item, which is a prime's index.
 pub(crate) fn index(right: &Value) -> Result<Value, Error> {
     each_cell(None, right, |_, n, unbounded| {
         let Some(target) = n.to_u64() else { return if n < BigInt::zero() { Ok(integer(0, unbounded)) } else { Err(beyond()) }; };

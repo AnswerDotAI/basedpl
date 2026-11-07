@@ -11,7 +11,7 @@ pub fn encode(frames: &Raster<u8>, delays: Option<&[f64]>, format: Format) -> Re
     codec::encode(frames, delays, format)
 }
 
-/// The image file formats that `•image⁻¹` writes.
+/// The image file formats that `•image⁻` writes.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Format { Png, Jpeg }
 

@@ -18,8 +18,8 @@ Function. Keys: `Alt-<`. Hanzi: `限/退`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`≤⁻¹Y` increments `Y`.
+`≤⁻Y` increments `Y`.
 
 ```bpl
-≤⁻¹4   ⍝ 5
+≤⁻4   ⍝ 5
 ```

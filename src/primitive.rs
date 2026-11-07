@@ -90,9 +90,9 @@ impl Operation {
         }
     }
 }
-/// A mark after an item that binds as a monadic operator: a superscript power, with `⁻` for a negative one, `ᵀ`, `ᵘ`, or a number marker: `ₓ`, `ₕ`, `ₛ` or `ₚ`.
+/// A postfix monadic operator: inverse `⁻`, transpose `ᵀ`, function unit `ᵘ`, or a number marker such as `ₓ` or `ₚ`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Superscript { Power(i64), Transpose, Unit, Mark(crate::number::Mark) }
+pub(crate) enum Superscript { Inverse, Transpose, Unit, Mark(crate::number::Mark) }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OperatorKind {
     Each,
@@ -115,7 +115,7 @@ pub(crate) enum OperatorKind {
     Agenda,
     Stencil,
     Fold(FoldKind),
-    /// A superscript after an item: `²` or `⁻¹` repeats or inverts a function and raises an array to a power. `ᵀ` transposes an array, `ᵘ` makes a scalar that holds a function, and a number marker makes an array's numbers, or a function's results, exact integers or floats of a width (`Superscript::Mark`). It binds as a monadic operator does.
+    /// A postfix mark: `⁻` inverts a function, `ᵀ` transposes an array, `ᵘ` makes a scalar that holds a function, and a number marker makes an array's numbers, or a function's results, exact integers or floats of a width (`Superscript::Mark`). Numeric scripts bind the same way (`syntax::ScriptKind`).
     Super(Superscript),
 }
 impl FoldKind {
@@ -148,12 +148,12 @@ pub(crate) struct OperatorInfo { pub glyph: &'static str, pub names: [&'static s
 impl OperatorInfo { pub(crate) fn dyadic(&self) -> bool { self.right.is_some() } }
 
 impl OperatorKind {
-    const ALL: [Self; 23] = {
+    const ALL: [Self; 24] = {
         use OperatorKind::*;
         [
             Each, Bitwise, Commute, Before, Rank, Atop, Axis, Over, After, Product, Outer, Key, Power, Optimize, Valences, Under, Differentiate, Agenda,
             Stencil, Fold(FoldKind { scan: false, first: false }), Fold(FoldKind { scan: false, first: true }), Fold(FoldKind { scan: true, first: false }),
-            Fold(FoldKind { scan: true, first: true }),
+            Fold(FoldKind { scan: true, first: true }), Super(Superscript::Inverse),
         ]
     };
     pub(crate) fn info(self) -> OperatorInfo {
@@ -166,7 +166,8 @@ impl OperatorKind {
             After => ("↢", ["left-tail-arrow", "after", ""], Function, Some(Any)),
             Product => (".", ["dot", "determinant", "inner-product"], Function, Some(Function)),
             Outer => ("⊗", ["circle-times", "outer-product", ""], Function, None), Key => ("⌸", ["quad-equal", "key", ""], Function, None),
-            Power => ("⍣", ["star-diaeresis", "power", ""], Function, Some(Any)), Super(_) => ("", ["superscript", "", ""], Any, None),
+            Power => ("⍣", ["star-diaeresis", "power", ""], Function, Some(Any)),
+            Super(Superscript::Inverse) => ("⁻", ["superscript-minus", "inverse", ""], Function, None), Super(_) => ("", ["superscript", "", ""], Any, None),
             Optimize => ("⇄", ["right-left-arrows", "optimize", ""], Function, None),
             Valences => ("⊘", ["circle-slash", "valences", ""], Function, Some(Function)), Under => ("@", ["at", "under", ""], Function, Some(Any)),
             Differentiate => ("∂", ["partial", "derivative", ""], Function, None), Agenda => ("⍚", ["diamond-underbar", "agenda", ""], Any, Some(Array)),
@@ -189,7 +190,7 @@ pub(crate) enum Primitive {
     CatenateFirst, Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial, Exact(Exact), Real(Real), Special(Special)
 }
 
-/// A function with exact results under either kinds, which `ₓ` after a primitive reaches, as `Math::Arc` is the inverse that `○⁻¹` reaches. `⌊ₓ`, `⌈ₓ` and dyadic `÷ₓ` give integers, each through one kernel. Each shares the row of the primitive it modifies, as `Bracket` shares `⌷`'s.
+/// A function with exact results under either kinds, which `ₓ` after a primitive reaches, as `Math::Arc` is the inverse that `○⁻` reaches. `⌊ₓ`, `⌈ₓ` and dyadic `÷ₓ` give integers, each through one kernel. Each shares the row of the primitive it modifies, as `Bracket` shares `⌷`'s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Exact { Floor, Ceiling, Quotient }
 impl Exact {
@@ -220,7 +221,7 @@ impl Exact {
     }
 }
 
-/// A function with real results, which `ₐ` after a primitive reaches: monadic `√` and `⍟`, dyadic `*`, and `○` and `○⁻¹` by code, which give the real part where the result would leave the real domain (rustymath's `RealSqrt`, `RealLn`, `RealPow` and `RealCircle`). Each shares the row of the primitive it modifies, as `Exact` does.
+/// A function with real results, which `ₐ` after a primitive reaches: monadic `√` and `⍟`, dyadic `*`, and `○` and `○⁻` by code, which give the real part where the result would leave the real domain (rustymath's `RealSqrt`, `RealLn`, `RealPow` and `RealCircle`). Each shares the row of the primitive it modifies, as `Exact` does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Real { Sqrt, Ln, Pow, Circle, Arc }
 impl Real {
@@ -256,7 +257,7 @@ impl Primitive {
             _ => None,
         }
     }
-    /// The primitive that `x p⁻¹ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, `⍟` and `*` for each other, `⊥` for `⊤`, and `-` and `π` for themselves. `÷` isn't one: `0÷⁻¹y` has no inverse, where `0÷y` gives a value. The binder's `p⁻¹` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`), and `inverse` calls it for `(x↣p)⁻¹ y`.
+    /// The primitive that `x p⁻ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, `⍟` and `*` for each other, `⊥` for `⊤`, and `-` and `π` for themselves. `÷` isn't one: `0÷⁻y` has no inverse, where `0÷y` gives a value. The binder's `p⁻` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`), and `inverse` calls it for `(x↣p)⁻ y`.
     pub(crate) fn left_inverse(self) -> Option<Primitive> {
         use Math::*;
         match self {

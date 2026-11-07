@@ -68,11 +68,11 @@ attn←{
 attni←{
   [wqkv wo]←⍺
   [[b t d] u [r h j]]←•index[⍴⍵ (⍴⍵)₁ 1↓⍴wqkv]
-  [q k v]←:[r b t h j]⍉⁻¹⍵.[b t d]+.×⍠d⁝wqkv.[d r h j]
+  [q k v]←:[r b t h j]⍉⁻⍵.[b t d]+.×⍠d⁝wqkv.[d r h j]
   s←mask.[t u] + q.[b t h j]+.×⍠j⁝k.[b u h j] ÷ √≢j
   e←*s-⌈/⍠u⁝s
   o←(e÷+/⍠u⁝e)+.×⍠u⁝v.[b u h j]
-  :[b t d]⍉⁻¹+/⍠[h j]o×wo.[j+(≢j)×h d]
+  :[b t d]⍉⁻+/⍠[h j]o×wo.[j+(≢j)×h d]
 }
 a←[wqkv wo]attn x ⋄ ai←[wqkv wo]attni x
 1E¯12>⌈/,|a-ai                 ⍝ $t
@@ -83,10 +83,10 @@ g←{+/, ⊼[⍵.wqkv ⍵.wo]attn⁝x}∂ pa ⋄ gi←{+/, ⊼[⍵.wqkv ⍵.wo]a
 
 Line by line, in `attni`:
 
-- The projection is one contraction over `d`. [`⍉⁻¹`](glyphs/circle-backslash.qmd) puts `r` first by name. [`:`](glyphs/colon.qmd) removes the names. `[q k v]←` then takes the three parts along the first axis. Without names, each part can be read under new indices.
+- The projection is one contraction over `d`. [`⍉⁻`](glyphs/circle-backslash.qmd) puts `r` first by name. [`:`](glyphs/colon.qmd) removes the names. `[q k v]←` then takes the three parts along the first axis. Without names, each part can be read under new indices.
 - `k.[b u h j]` reads the keys with `u` for their token axis. The scores then pair each query token `t` with each key token `u`. `mask.[t u]` adds ¯1E9 wherever `u` comes after `t`.
 - `e÷+/⍠u⁝e` is the softmax over `u`. `o` sums the values over `u`, each weighted by its share.
-- `wo.[j+(≢j)×h d]` reads the row of `wo` for head `h` and feature `j`. BPL reads through positions computed from indices as a map. The fold over `[h j]` merges the heads. `:[b t d]⍉⁻¹` orders the result's axes and removes their names, to give `attn`'s plain shape.
+- `wo.[j+(≢j)×h d]` reads the row of `wo` for head `h` and feature `j`. BPL reads through positions computed from indices as a map. The fold over `[h j]` merges the heads. `:[b t d]⍉⁻` orders the result's axes and removes their names, to give `attn`'s plain shape.
 
 ## A Gaussian mixture
 

@@ -1,11 +1,11 @@
 ⍝⍝ setup
-sv←¿1048576⍴0
+side←1024 size 32 ⋄ sv←¿(side×side)⍴0
 n←≢sv
 sm←[n÷2;2]⍴sv
-sq←[1024 1024]⍴sv
-cimg←[256 256 16]⍴sv
+sq←[side side]⍴sv ⋄ window_rows←(side-2)² ⋄ half←side÷2
+conv_side←256 size 8 ⋄ cimg←[conv_side conv_side 16]⍴sv ⋄ conv_rows←(conv_side-2)²
 ck←¿[144 32]⍴0
-vq←1024↑sv
+vq←side↑sv
 kq←¿[9 1]⍴0
 s_4←[n÷4;4]⍴sv
 w_4←s_4+0
@@ -13,8 +13,9 @@ p_2←[n÷4;2]⍴sv
 ism←[n÷2;2]⍴⍳256ₓ
 bp_2←[n÷4;2]⍴0.5<sv
 f_2←32•float p_2
-images←["b":8 "h":224 "w":224 "c":3]⍴¿1204224⍴0
-split←{["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻¹["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉⍵}
+patches←8 size 2 ⋄ pixels←224 size 32
+images←["b":patches "h":pixels "w":pixels "c":3]⍴¿(patches×pixels²×3)⍴0
+split←{["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉⍵}
 rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
 ⍝⍝ structure
 ⍝ A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
@@ -113,7 +114,7 @@ ism,sm
 ⍝ A copy whose runs hold at least 128 items, rustymath's `reduce::RUN`, folds each run where it lies, with no copy. Half the columns of `sq` give runs of 512.
 ⍝ Expected: 0.5 copies: reads 8 bytes for each of half the items, and the call into the fold for each run costs about what reading its items costs.
 ⍝⍝⍝ route in place
-+/,[:;⍳512ₓ]⌷sq
++/,[:;⍳halfₓ]⌷sq
 ⍝⍝: 1	0.69	0.66
 
 ⍝ Expected: 0.5 copies.
@@ -187,22 +188,22 @@ ism,sm
 ⍝ Expected: `[64516 144]⍴3 3↕cimg +.× ck` 19 copies on macOS, 71 on Linux and 142 in wasm: a product of 595 million flops, 567 an item, at Accelerate's rank-k rate, at 8 in a copy's time for rustymath's own kernels and at 4 in wasm. Gathering the windows adds nothing: on 30 October 2026 the case cost 24.5 on macOS and 92 with rustymath's own kernels, against 24.8 and 92 for a product from the stored windows matrix. `{+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck` costs the same, because the function is linear in the kernel: `∂`'s program runs no primal, only one product, of the transposed windows with the broadcast seed. `{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg` 27 copies on macOS, 106 on Linux and 212 in wasm, because the function is linear in the image: its program runs one product, of 604 million flops, between the windows of the zero-padded cotangent and the kernel reversed. That product has its own shape, 65,536 rows of 288 items times 16 columns: from a stored windows matrix it cost 27 on macOS and 106 with rustymath's own kernels on 30 October 2026, where the forward product's rate gives 19 and 72. Linux and wasm scale 72 and 144 by that 106 against 72.
 ⍝ CI measured 70 to 74 on Linux in runs 56 and 59-61.
 ⍝⍝⍝ route mapped product
-[64516 144]⍴3 3↕cimg +.× ck
+[conv_rows 144]⍴3 3↕cimg +.× ck
 ⍝⍝: 38	86	130
 
 ⍝ 3.25 copies, for 9 multiply-adds per window (2.25), one read and one write. On macOS, 5.5 copies, because NEON's two lanes of f64 take twice the multiply-adds' time (4.5). `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 rustymath widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Strips of 8 for the 30 results that strips of 32 leave in each 1,022-wide row, with each result written rather than added to the zeroed output, brought it to 4.35 to 4.49 on 28 October 2026. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. In runs 56 to 62 it measured 3.38 to 3.63 on Linux, and 4.98 in run 62, whose host was busy, because its data passes the runner's 1 MB L2.
 ⍝ In runs 56 to 62 CI measured 8.61 to 9.69 in wasm, where it measured 5.85 on 22 October 2026. Its expected cost there is 5.5, as on macOS, since wasm's SIMD also has two lanes of f64.
 ⍝⍝⍝ route mapped product
-[1044484 9]⍴3 3↕sq +.× kq
+[window_rows 9]⍴3 3↕sq +.× kq
 ⍝⍝: 11	4.3	7.5
 
 ⍝ CI measured 80 to 87 on Linux in runs 56 and 59-61.
 ⍝⍝⍝ route mapped product
-{+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck
+{+/, [conv_rows 144]⍴3 3↕cimg +.× ⍵}∂ ck
 ⍝⍝: 38	100	140
 
 ⍝ On 30 October 2026 it cost 48.9 on macOS and 125 with rustymath's own kernels, against 27 and 106 for its product from a stored matrix, while its program built the 144 MiB windows matrix of the padded cotangent whole. CI measured 190 on Linux in run 61. Before run 61, whose speed test first asked for huge pages through the memory guard, it measured 443 to 470 there. In wasm it measured 204 to 276 in runs 56 to 62. Later on 30 October 2026, with the program's copy of those windows left pending and read through their map, it cost about 41.3 on macOS (6,173 to 5,218 ps an item). On 1 November 2026 the backward product's cotangent, a broadcast of 1, sums `ck`'s rows once and repeats the result instead of making a [64516 144] product (plan, gs13_'s entry): 7,246 → 5,914 ps an item.
-{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg
+{+/, [conv_rows 144]⍴3 3↕⍵ +.× ck}∂ cimg
 ⍝⍝: 54	190	210
 
 ⍝ A transpose of a million floats is a pending copy. A product reads it where it lies, as a transposed matrix. A fused call reads it in blocks of whole rows, as many as a cache line holds items.
@@ -221,7 +222,7 @@ ism,sm
 2×[1 2 0]⍉cimg
 ⍝⍝: 4.5	7.9	6.8
 
-⍝ `⍉⁻¹` splits and merges axes as einops does, and the result stays a view. `split` cuts 8 images of 224×224×3, 1,204,224 items, into 196 patches of 16×16×3, which reorders them. `rows` cuts each image's rows into 14 runs of 16 without reordering.
+⍝ `⍉⁻` splits and merges axes as einops does, and the result stays a view. `split` cuts 8 images of 224×224×3, 1,204,224 items, into 196 patches of 16×16×3, which reorders them. `rows` cuts each image's rows into 14 runs of 16 without reordering.
 ⍝ Expected: `+/,2×split⁝images` 0.9 copies: one fused pass over 1.15 times `n`, which reads each item once and writes nothing, about 0.6, and a block buffer that gathers the patches' runs of 48 items, about 0.3, at the 0.25 copies for each `n` items of `2×⌽sv+1`'s buffer; `+/,2×rows⁝images` 0.6 copies: the same pass, reading `images` in place. Wasm, twice the native cost, as `+/v`'s fold.
 ⍝ On 27 October 2026, with other work running, `+/,2×split(images)` measured 2.0 copies against 1.0 for `+/,2×images`, so its buffer cost about twice what `2×⌽sv+1`'s did in the same run.
 +/,2×split⁝images

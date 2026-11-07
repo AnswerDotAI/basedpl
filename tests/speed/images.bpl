@@ -1,5 +1,6 @@
 ⍝⍝ setup
-img←¿[4000 3000 3]⍴0
+height←4000 size 16 ⋄ width←3000 size 16
+img←¿[height width 3]⍴0
 flat←,img
 n←≢flat
 ⍝⍝ images
@@ -11,7 +12,7 @@ n←≢flat
 img×1-0.5×img
 ⍝⍝: 2.5	3.3	3.4
 
-0⌈1⌊img×0.5+(⍳4000)÷8000
+0⌈1⌊img×0.5+(⍳height)÷2×height
 ⍝⍝: 2.5	3.5	3.5
 
 ⍝ `×` joins the pending calls on its two sides into one program that runs block by block.
@@ -39,7 +40,7 @@ img-0.5 × img+0.5
 +/img
 ⍝⍝: 1.4	1.6	1.9
 
-+/[4500000 8]⍴flat
++/[n÷8;8]⍴flat
 ⍝⍝: 1.2	1.2	1.3
 
 ⍝ The comparison's Booleans count into a byte for each pixel.
@@ -53,9 +54,9 @@ img-0.5 × img+0.5
 +/flat×flat>0.5
 ⍝⍝: 1.4	1.8	2.3
 
-⍝ A square and a halving in one compiled program. `²` lowers to multiplications, and `⊽⁻¹`'s division by 2 lowers because zero divided by zero can't arise with a nonzero constant divisor. Either one left to rustymath's kernel splits the stage, which then runs uncompiled at about 2.6 times the cost (30 October 2026, 4M items).
+⍝ A square and a halving in one compiled program. `²` lowers to multiplications, and `⊽⁻`'s division by 2 lowers because zero divided by zero can't arise with a nonzero constant divisor. Either one left to rustymath's kernel splits the stage, which then runs uncompiled at about 2.6 times the cost (30 October 2026, 4M items).
 ⍝ Expected: 0.67 copies natively: one read of memory, about 0.5, and three compiled calls over each block, folded in the cache. In wasm, which compiles nothing, 1.3 copies, as for `+/flat×flat>0.5`.
-+/⊽⁻¹(flat-0.5)²
++/⊽⁻(flat-0.5)²
 ⍝⍝: 1.4	2.7	2.8
 
 ⍝ A select by a comparison that a program would run reads a sample of the comparison's items to choose between a select and a gather. A sparse mask gathers the few items it picks. A dense one runs as one fused select.

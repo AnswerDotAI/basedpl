@@ -100,7 +100,7 @@ factors ← { ⍵{  ⍝ Prime factors of ⍵.
 
 k_6174 ← {  ⍝ Kaprekar's operation.
   enco←4#10ₓ ⊤  ⍝ 4-digit encode.
-  deco←enco⁻¹  ⍝ and decode.
+  deco←enco⁻  ⍝ and decode.
   1ₓ=⍴∪enco⍵?"error";  ⍝ all digits the same: no go.
   ⍬{  ⍝ starting with null sequence.
     ⍵=↑⌽⍺?⍺;
@@ -377,7 +377,7 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
     angle←{  ⍝ phase angle.
       [x y]←⊂⍤¯1 ⍵  ⍝ x and y coordinates.
       [on off]←$t $f=⊂0=x  ⍝ points on/off y axis.
-      atan←3○⁻¹y÷x+on  ⍝ arctan y÷x (avoiding y÷0).
+      atan←3○⁻y÷x+on  ⍝ arctan y÷x (avoiding y÷0).
       qne←off×atan + on×π0.5×2-×y
       nsw←πx<0
       qse←π2× x>0 ∧ y<0
@@ -421,5 +421,5 @@ convolve ← {+⌿ -⍳⍴⍺ ⌽ ⍺×⊗⍵,0ₓ×1↓⍺}
 
 xpower ← {  ⍝ Fast multi-digit power using FFT.
   xt←{0ₓ,⍺ xtimes 0ₓ,⍵} ⋄ b←⌽⊤10ₓ⊥⍵  ⍝ boolean showing which powers needed
-  ⊃,/xt/b#{xt⍨⍺}\(⊂,10ₓ⊥⁻¹⍺)⍴⍨⍴b
+  ⊃,/xt/b#{xt⍨⍺}\(⊂,10ₓ⊥⁻⍺)⍴⍨⍴b
 }

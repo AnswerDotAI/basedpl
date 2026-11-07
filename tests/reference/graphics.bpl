@@ -3,23 +3,23 @@
 ⍝ xml-tree — Elements preserve case and escape text/attributes
 t←•element "text"
 attrs←["data-X":"a&""b" "x":¯2ₓ]
-•xml⁻¹ attrs t "x<y & y>z"
+•xml⁻ attrs t "x<y & y>z"
 ⍝ =>
 "<text data-X=""a&amp;&quot;b"" x=""-2"">x&lt;y &amp; y&gt;z</text>"
 
 ⍝ xml-prefix — Prefixed names pass through unchanged
 root←•element "x:root"
 leaf←•element "x:leaf"
-•xml⁻¹ ["xmlns:x":"urn:example"] root leaf "Hi"
+•xml⁻ ["xmlns:x":"urn:example"] root leaf "Hi"
 ⍝ =>
 "<x:root xmlns:x=""urn:example""><x:leaf>Hi</x:leaf></x:root>"
 
 ⍝ xml-numeric — Numeric attributes use XML rather than APL spelling
-path←•element "path" ⋄ •xml⁻¹ ["points":[¯2ₓ 1r2 1E3]] path ⍬
+path←•element "path" ⋄ •xml⁻ ["points":[¯2ₓ 1r2 1E3]] path ⍬
 "<path points=""-2 0.5 1000""/>"
 
 ⍝ xml-roundtrip — Writing what •xml read gives back the same text
-•xml⁻¹ •xml "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
+•xml⁻ •xml "<a href=""x"">hi</a>"   ⍝ "<a href=""x"">hi</a>"
 
 ⍝ html-raw — HTML display writes script text unescaped, closes only void elements itself, and keeps XML rules inside svg
 [script div br svg]←•element "script" "div" "br" "svg"
@@ -35,7 +35,7 @@ path←•element "path" ⋄ •xml⁻¹ ["points":[¯2ₓ 1r2 1E3]] path ⍬
 c←•element "circle"
 pic←•svg ["cx":50 "cy":50 "r":20] c ⍬
 pic.children.attrs.r←30
-("image/svg+xml"⊃•mime pic)≡•xml⁻¹ pic
+("image/svg+xml"⊃•mime pic)≡•xml⁻ pic
 ⍝ =>
 $t
 
@@ -55,12 +55,12 @@ im←•image 0.5×[0 1⋄1 0]
 im←•image 0.5×[0 1⋄1 0] ⋄ {+/,⍵×⍵}∂im   ⍝ [0 1⋄1 0]
 
 ⍝ image-png — PNG bytes decode to the picture they encode
-•image "png" •image⁻¹ 0.2×[0 1⋄2 3⋄4 5]
+•image "png" •image⁻ 0.2×[0 1⋄2 3⋄4 5]
 ⍝ =>
 0.2×[0 1⋄2 3⋄4 5]
 
 ⍝ image-jpeg — JPEG drops only alpha, so a grey picture stays grey
-⍴•image "jpeg" •image⁻¹ 2 2⍴0 0.5 1 0.25
+⍴•image "jpeg" •image⁻ 2 2⍴0 0.5 1 0.25
 ⍝ =>
 [2 2]ₓ
 
@@ -71,30 +71,30 @@ apng←{∨/"acTL"⍷•ucs "image/png"⊃•mime ⍵}
 ⍝ image-animation-inverse — An animated PNG decodes to its frames, and a single frame to a picture
 f←0.2×2 2 3 3⍴5ₓ|⍳36ₓ
 g←0.2×3 2 2 1⍴5ₓ|⍳12ₓ
-s←⍴•image •image⁻¹ 1 2 3 3⍴0.2
-(f≡•image •image⁻¹ f) (g≡•image •image⁻¹ g) (s≡[2 3 3])   ⍝ $t $t $t
+s←⍴•image •image⁻ 1 2 3 3⍴0.2
+(f≡•image •image⁻ f) (g≡•image •image⁻ g) (s≡[2 3 3])   ⍝ $t $t $t
 
-⍝ image-inverse-fps — With fps, •image⁻¹ encodes grey frames that have no channel axis
+⍝ image-inverse-fps — With fps, •image⁻ encodes grey frames that have no channel axis
 h←0.2×3 2 2⍴5ₓ|⍳12ₓ
-(3 2 2 1⍴h)≡•image ["fps":12]•image⁻¹ h   ⍝ $t
+(3 2 2 1⍴h)≡•image ["fps":12]•image⁻ h   ⍝ $t
 
 ⍝ image-delay — delay sets each frame's seconds, stored exactly as 1/n for a whole rate n, otherwise in milliseconds or seconds
 delays←{t←⍸"fcTL"⍷•ucs ⍵ ⋄ {256⊥2 2⍴⍵}⍤1 (⊂t+⊗24ₓ+⍳4ₓ)⌷⍵}
-delays ["delay":[1÷24 0.04 1.6 100]]•image⁻¹ 4 2 2⍴0.2
+delays ["delay":[1÷24 0.04 1.6 100]]•image⁻ 4 2 2⍴0.2
 ⍝ =>
 [1 24⋄1 25⋄1600 1000⋄100 1]
 
 ⍝ image-delay-time — delay makes the first axis time, and one delay applies to every frame
 h←0.2×3 2 2⍴5ₓ|⍳12ₓ
-(3 2 2 1⍴h)≡•image ["delay":0.1]•image⁻¹ h   ⍝ $t
+(3 2 2 1⍴h)≡•image ["delay":0.1]•image⁻ h   ⍝ $t
 
 ⍝ image-delay-length — delay needs one number, or one for each frame
-["delay":[0.1 0.2 0.3]]•image⁻¹ 2 2 2⍴0.2
+["delay":[0.1 0.2 0.3]]•image⁻ 2 2 2⍴0.2
 ⍝ =>
 ⍝ error: LENGTH ERROR
 
 ⍝ image-jpeg-animation — Only PNG holds an animation
-"jpeg" •image⁻¹ 2 3 4 3⍴0.5
+"jpeg" •image⁻ 2 3 4 3⍴0.5
 ⍝ =>
 ⍝ error: DOMAIN ERROR
 
@@ -118,7 +118,7 @@ b←"text/markdown" •mime "b"
 ≢•mime a,b   ⍝ 2ₓ
 
 ⍝ json-hooks — JSON export omits keyed entries that hold functions
-•json⁻¹ ["a":"x" "f":{⍵}]
+•json⁻ ["a":"x" "f":{⍵}]
 ⍝ =>
 "{""a"":""x""}"
 

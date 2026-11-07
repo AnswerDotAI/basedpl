@@ -16,9 +16,9 @@ use rustymath::{
     Arg, agreement::{Mapping, Period, Walked, expanded, expanded_items, in_place, tiled_cycle}, buffer::{Buffer, DType, Element, FloatWidth, View, Width},
     gather::Steps, layout::strides, operation::{Kernel, Settings}, parallel::{self, Slots}, reduce, tolerant::{Exactly, Tolerance}
 };
-use std::{borrow::Cow, ops::Range, sync::atomic::Ordering::Relaxed};
+use std::{borrow::Cow, ops::Range};
 #[cfg(not(web))]
-use {crate::jit, std::sync::{Arc, OnceLock}};
+use {crate::jit, std::sync::{Arc, OnceLock, atomic::Ordering::Relaxed}};
 
 /// Runs `$body` with `$x` bound to the items of `$e`, a `Got`, at their own type.
 macro_rules! typed {
@@ -901,11 +901,12 @@ impl Blocks {
     fn step_at<A: Item>(
         &self, step: &BlockStep, got: &[Got<'_>], bufs: &[Buffer], constants: &[Option<Got<'_>>; 3], scratch: &mut Scratch, n: usize, dest: Dest<'_, '_, '_>
     ) -> bool {
-        let [b0, b1, b2] = A::scratch(scratch).each_mut();
+        let (plans, buffers) = A::scratch(scratch);
+        let [b0, b1, b2] = buffers.each_mut();
         let read = |k: usize, buf| step.operands[k].map(|o| self.arg::<A>(o, constants[k], got, bufs, n, buf, step.tolerance));
         let (x, y, m) = (read(0, b0), read(1, b1).expect("every step reads its last operand"), read(2, b2));
         if let (Op::Map(plan), Some(kernel)) = (&step.op, &step.kernel) {
-            return mapped(kernel, x, y, n, plan.numeric.settings_for(plan.computes().expect("a step with a kernel has its computing kind")), dest);
+            return mapped(kernel, x, y, n, plan.numeric.settings_for(plan.computes().expect("a step with a kernel has its computing kind")), plans, dest);
         }
         match dest {
             Dest::Buffer(Buffer::Booleans(v)) => Slots::append(v, n, |s| wrote(&step.op, x, y, m, n, Out::Bools(s))),
@@ -936,23 +937,24 @@ fn wrote<A: Item>(op: &Op, x: Option<Arg<'_, A>>, y: Arg<'_, A>, m: Option<Arg<'
 }
 
 /// Runs `kernel` on its arguments' `n` items into `dest`: a buffer it appends them to, or the stage's last slots. The arguments are the last of `x` and `y` that the kernel takes, as a code-picked `○` takes `y` alone. Each reads its run in place, or its one item for every position. The kernel casts its results to `dest`'s type, so a comparison writes 1 and 0 where `dest` holds numbers. Gives false where the kernel fails.
-fn mapped<A: Item>(kernel: &Kernel, x: Option<Arg<'_, A>>, y: Arg<'_, A>, n: usize, settings: Settings, dest: Dest<'_, '_, '_>) -> bool {
-    use rustymath::agreement::{Binding, Missing, Read, ReadPlan};
-    let args: Vec<Arg<'_, A>> = x.into_iter().chain([y]).collect();
-    let args = &args[args.len().saturating_sub(kernel.arity())..];
-    let sources: Vec<Binding<'_>> = args.iter().map(|a| {
-        Binding::full(match a { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) })
-    }).collect();
-    let plans: Vec<ReadPlan> = args.iter().enumerate().map(|(s, a)| match a {
-        Arg::Many(_) => ReadPlan::copy(s, n, Mapping::Linear(1), n, Missing::Default), Arg::One(_) => ReadPlan::copy(s, 1, Mapping::Single, n, Missing::Default)
-    }).collect();
-    let reads: Vec<Read<'_>> = plans.iter().map(|plan| Read { sources: &sources, plan }).collect();
-    let mut out = Buffer::with_capacity(match &dest { Dest::Buffer(buffer) => buffer.dtype(), Dest::Last(last) => last.dtype() }, n);
-    if kernel.map(&reads, 0..n, settings, &mut out).is_err() { return false; }
-    match dest {
-        Dest::Buffer(buffer) if buffer.is_empty() => *buffer = out, Dest::Buffer(buffer) => { buffer.extend_from(out.view(), 0..n); }
-        Dest::Last(last) => last.copy(&out, n)
-    }
+fn mapped<A: Item>(
+    kernel: &Kernel, x: Option<Arg<'_, A>>, y: Arg<'_, A>, n: usize, settings: Settings, scratch: &mut MapScratch, mut dest: Dest<'_, '_, '_>) -> bool {
+    use rustymath::agreement::{Binding, Read};
+    if kernel.arity() > 1 + usize::from(x.is_some()) { return false; }
+    let args = [x.unwrap_or(y), y];
+    let binding = |k: usize| {
+        Binding::full(match &args[k] { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) })
+    };
+    let sources = [binding(0), binding(1)];
+    let (plans, output) = scratch.at(n);
+    let reads: [_; 2] = std::array::from_fn(|k| Read { sources: &sources, plan: &plans[k + 2 * usize::from(matches!(args[k], Arg::One(_)))] });
+    let reads = &reads[2 - kernel.arity()..];
+    if let Dest::Buffer(buffer) = &mut dest && buffer.is_empty() { return kernel.map(&reads, 0..n, settings, buffer).is_ok(); }
+    let dtype = match &dest { Dest::Buffer(buffer) => buffer.dtype(), Dest::Last(last) => last.dtype() };
+    let out = output.get_or_insert_with(|| Buffer::with_capacity(dtype, n));
+    if out.dtype() != dtype { *out = Buffer::with_capacity(dtype, n); }
+    if kernel.map(&reads, 0..n, settings, out).is_err() { return false; }
+    match dest { Dest::Buffer(buffer) => { buffer.extend_from(out.view(), 0..n); } Dest::Last(last) => last.copy(out, n) }
     true
 }
 

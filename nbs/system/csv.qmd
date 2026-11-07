@@ -18,7 +18,7 @@ T.zip                      ⍝ "02134" "10001"
 ["header":$f "types":["" 0ₓ]] •csv "a,12",(•ucs 10),"b,7"   ⍝ [["a" "b"] [12 7]ₓ]
 ```
 
-`•csv⁻¹ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN writes as an empty cell, and so does the exact value given as `fill`.
+`•csv⁻ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN writes as an empty cell, and so does the exact value given as `fill`.
 
 Both directions take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. Reading also takes `missing` and `types`, and writing takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](../data.ipynb#csv) describes the options.
 

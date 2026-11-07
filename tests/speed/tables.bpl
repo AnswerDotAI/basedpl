@@ -1,9 +1,9 @@
 ⍝⍝ setup
-n←1048576
-pid←10000¿1000000ₓ
-prods←["id":pid "cat":¿10000⍴20ₓ "cost":0.5+50×¿10000⍴0]
+n←1048576 size 512
+products←10000 size 64 ⋄ pid←products¿1000000ₓ
+prods←["id":pid "cat":¿products⍴20ₓ "cost":0.5+50×¿products⍴0]
 snames←("S",⍕)¨⍳50ₓ
-sales←["store":(•csv •csv⁻¹ ["store":[¿n⍴50ₓ]⌷snames]).store "product":[¿n⍴10000ₓ]⌷pid "qty":≥¿n⍴10ₓ "price":1+99×¿n⍴0]
+sales←["store":(•csv •csv⁻ ["store":[¿n⍴50ₓ]⌷snames]).store "product":[¿n⍴productsₓ]⌷pid "qty":≥¿n⍴10ₓ "price":1+99×¿n⍴0]
 ⍝ Empirical quantiles by sorting and selecting positions.
 qs←{
   q←<⍵

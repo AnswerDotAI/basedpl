@@ -13,9 +13,12 @@ fn single_threaded_defaults() {
     crate::settings::reset();
     rustymath::parallel::set_threads(1);
 }
+fn sized_setup(setup: &str, small: bool) -> String { let select = if small { "⊢" } else { "⊣" }; format!("size←{select}\n{setup}") }
 
-/// A fresh session which runs preferences before setup, on one thread, with its random generator seeded at 0. Every timing of a case then draws the same data, in each process and on each build.
-pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
+/// A fresh session which runs preferences before full-size setup, on one thread, with its random generator seeded at 0.
+pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> { configured(prefs, &sized_setup(setup, false)) }
+
+fn configured(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
     single_threaded_defaults();
     let session = Session::new();
     let result = session.eval(&format!("•prefs [\"seed\":0]\n{prefs}\n{setup}"));
@@ -36,9 +39,11 @@ fn runner(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<
 }
 
 /// Parse once, warm once, then take the fastest of five evaluations, forcing the result each time. Gives that time, the most bytes that the five evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first evaluation left.
-pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
+pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> { timed(session, code, interrupt, true) }
+
+fn timed(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool) -> Result<(f64, usize, usize), Evaluation> {
     let (mut run, mut failed) = (runner(session, code, interrupt)?, None);
-    run(&mut failed);
+    if warmup { run(&mut failed); }
     let start = rustymath::memory::held();
     let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run(&mut failed)));
     let left = rustymath::memory::held().saturating_sub(start);
@@ -48,10 +53,10 @@ pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Resul
 /// The browser build's budget column: a case's third budget, after its macOS and Linux budgets.
 pub const WASM_COLUMN: usize = 2;
 
-/// One measured record. `label` is single-line; `code` retains its original layout. `holds` are the columns that the case's `held` and `busy` lines hold. `footprint` is the case's footprint, where it passes one core's cache, with a copy of it measured beside the case.
+/// One measured record. `label` is single-line; `code` retains its original layout. `holds` are the columns that the case's `held` and `busy` lines hold. `footprint` is the case's footprint, where it passes one core's cache, with a copy of it measured beside the case. `obligations` are the full-size warm-up route checks that remain pending.
 pub struct Case {
     pub file: String, pub section: String, pub code: String, pub label: String, pub budgets: Vec<String>, pub holds: Vec<Held>, pub cost: f64, pub seconds: f64,
-    pub copy: Option<CopyTime>, pub footprint: Option<Footprint>
+    pub copy: Option<CopyTime>, pub footprint: Option<Footprint>, pub obligations: Vec<String>
 }
 impl Case {
     /// The budget that the case meets in `column`, with any hold, as `rustymath::timing::Budget::of` gives it.
@@ -69,7 +74,7 @@ pub fn rows(cases: &[Case], column: Option<usize>) -> JsonValue {
         json!({"file":c.file, "section":c.section, "code":c.code, "label":c.label, "line":c.line(column), "copy":c.copy_line(), "budgets":c.budgets,
     "budget":b.map(|b| b.value), "rule":b.map(|b| b.rule), "hold":b.and_then(|b| b.cause).map(Cause::name),
     "over":b.is_some_and(|b| b.over(c.cost)), "stale":b.is_some_and(|b| b.stale(c.cost)),
-    "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
+    "obligations":c.obligations, "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
     }).collect()
 }
 
@@ -83,23 +88,25 @@ fn label(file: &File, case: &JsonValue) -> String {
 }
 
 /// One setup owner and warmed session, replaced only when moving between sections.
-struct Group<'a> { session: Turn, setup: &'a str, prefs: HashMap<&'a str, String>, current: &'a str, n: usize }
+struct Group<'a> { session: Turn, setup: String, small: bool, prefs: HashMap<&'a str, String>, current: &'a str, n: usize }
 impl<'a> Group<'a> {
-    fn new(file: &'a File, start: &str, first: &'a str) -> Result<Self, String> {
+    fn new(file: &'a File, start: &str, first: &'a str, small: bool) -> Result<Self, String> {
         let prefs: HashMap<_, _> =
             file.cases.iter().map(|case| (case["section"].as_str().unwrap(), [start, case["prefs"].as_str().unwrap_or_default()].join("\n"))).collect();
-        let session = session(&prefs[first], &file.setup).map_err(|failed| failure(first, failed))?;
+        let setup = sized_setup(&file.setup, small);
+        let session = configured(&prefs[first], &setup).map_err(|failed| failure(first, failed))?;
         let n = items(&session).ok_or("each setup must define n, its number of items")?;
-        Ok(Self { session, setup: &file.setup, prefs, current: first, n })
+        Ok(Self { session, setup, small, prefs, current: first, n })
     }
     fn session(&mut self, name: &'a str) -> Result<&Session, String> {
         let header = self.prefs.get(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
         if self.current != name {
-            self.session = session(header, self.setup).map_err(|failed| failure(header, failed))?;
+            self.session = configured(header, &self.setup).map_err(|failed| failure(header, failed))?;
             self.current = name;
         }
         single_threaded_defaults();
         self.session.eval(header);
+        if self.small { crate::settings::set_small_sizes(true); }
         Ok(&self.session)
     }
 }
@@ -107,7 +114,7 @@ impl<'a> Group<'a> {
 fn failure(code: &str, failed: Evaluation) -> String { format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default()) }
 
 fn each_case<'a>(
-    files: &'a [File], only: Option<&[&str]>, start: &str, mut visit: impl FnMut(&mut Group<'a>, &'a File, &'a JsonValue) -> Result<(), String>
+    files: &'a [File], only: Option<&[&str]>, start: &str, small: bool, mut visit: impl FnMut(&mut Group<'a>, &'a File, &'a JsonValue) -> Result<(), String>
 ) -> Result<(), String> {
     for file in files {
         let wanted = |case: &&JsonValue| {
@@ -117,7 +124,7 @@ fn each_case<'a>(
         };
         let mut cases = file.cases.iter().filter(wanted).peekable();
         let Some(first) = cases.peek() else { continue; };
-        let mut group = Group::new(file, start, first["section"].as_str().unwrap())?;
+        let mut group = Group::new(file, start, first["section"].as_str().unwrap(), small)?;
         for case in cases { visit(&mut group, file, case)?; }
     }
     Ok(())
@@ -127,22 +134,24 @@ fn each_case<'a>(
 pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &InterruptHandle) -> Result<Vec<Case>, String> {
     let _lock = timing_lock()?;
     let mut result = Vec::new();
-    each_case(files, only, prefs, |group, file, case| {
+    each_case(files, only, prefs, false, |group, file, case| {
         let (section, code) = (case["section"].as_str().unwrap(), case["code"].as_str().unwrap());
         if reference::checked(case) {
             let mut checked = case.clone();
             checked["prefs"] = json!(group.prefs[section]);
-            reference::check_once(&checked, &file.setup, interrupt).map_err(|e| format!("{}: {}", label(file, case), e["message"]))?;
+            reference::check_once(&checked, &group.setup, interrupt).map_err(|e| format!("{}: {}", label(file, case), e["message"]))?;
         }
         let n = group.n;
         let copy = (section != "widths").then(|| copy_time::<f64>(n));
-        let mut timed = |name| time(group.session(name)?, code, interrupt).map_err(|failed| failure(code, failed));
-        let (total, held, left) = timed(section)?;
+        let session = group.session(section)?;
+        let obligations = route(session, case, interrupt)?.violations();
+        let (total, held, left) = timed(session, code, interrupt, false).map_err(|failed| failure(code, failed))?;
         if rustymath::memory::checks() && left > 0 {
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
         let (cost, footprint) = match copy {
-            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)), None => (total / timed("exact")?.0, None)
+            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)),
+            None => (total / time(group.session("exact")?, code, interrupt).map_err(|failed| failure(code, failed))?.0, None),
         };
         let mut holds = Vec::new();
         for held in case["held"].as_array().into_iter().flatten() {
@@ -150,7 +159,7 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
         }
         result.push(Case { file: file.name.clone(), section: section.into(), code: code.into(), label: label(file, case),
             budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), holds, cost, seconds: total / n as f64, copy,
-            footprint });
+            footprint, obligations });
         Ok(())
     })?;
     Ok(result)
@@ -238,11 +247,12 @@ pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Js
     Ok(response(evaluation))
 }
 
-/// Capture every timed case outside its timed loop, with its ordinary setup and size. A case whose capture fails, as one that runs past `reference::TIMEOUT` does, gives its label and message among the failures, and the cases after it are still captured.
+/// Capture every timed case at its fixture's small size under Sizes::SMALL. A case whose capture fails, as one that runs past `reference::TIMEOUT` does, gives its label and message among the failures, and the cases after it are still captured.
 pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<(Vec<Capture>, Vec<String>), String> {
     let (mut result, mut failed) = (Vec::new(), Vec::new());
-    each_case(files, only, "", |group, file, case| {
-        match route(group.session(case["section"].as_str().unwrap())?, case, interrupt) {
+    each_case(files, only, "", true, |group, file, case| {
+        let session = group.session(case["section"].as_str().unwrap())?;
+        match route(session, case, interrupt) {
             Ok(route) => result.push(Capture { file: file.name.clone(), label: label(file, case), ..route }),
             Err(message) => failed.push(format!("{}: {message}", label(file, case))),
         }
@@ -259,6 +269,7 @@ pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Resul
     let over = |c: &Case| c.budget(NATIVE_COLUMN).is_some_and(|b| b.over(c.cost));
     let interrupt = InterruptHandle::default();
     let mut first = costs(files, None, "", &interrupt)?;
+    for c in &first { for obligation in &c.obligations { print(&format!("{}: route obligation: {obligation}", c.label)); } }
     if all {
         let mut copies: Vec<String> = Vec::new();
         for copy in first.iter().filter_map(Case::copy_line) {

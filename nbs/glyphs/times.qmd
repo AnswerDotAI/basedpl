@@ -17,9 +17,9 @@ Function. Keys: `Alt-m`. Hanzi: `乘/号` (`乘/號`). Ranks: `0` monadic, `0 0`
 
 ## Inverse
 
-`×⁻¹Y` gives back `Y` when `Y` is a possible sign: `¯1`, `0`, `1` or a unit complex number. With either argument fixed, `×⁻¹` divides by the fixed argument, which must hold no zero.
+`×⁻Y` gives back `Y` when `Y` is a possible sign: `¯1`, `0`, `1` or a unit complex number. With either argument fixed, `×⁻` divides by the fixed argument, which must hold no zero.
 
 ```bpl
-×⁻¹¯1    ⍝ ¯1
-4×⁻¹12   ⍝ 3
+×⁻¯1    ⍝ ¯1
+4×⁻12   ⍝ 3
 ```

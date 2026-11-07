@@ -18,7 +18,16 @@ fn functions_cost_what_their_work_needs() {
     let checks = timing::checks_budgets();
     let all = !checks || std::env::var_os("BASEDPL_COSTS").is_some();
     let mut stderr = std::io::stderr();
-    let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
+    let mut files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
+    if let Ok(batch) = std::env::var("BASEDPL_SPEED_BATCH") {
+        let batch: serde_json::Value = serde_json::from_str(&batch).unwrap();
+        files.retain(|f| batch["file"] == f.name);
+        assert_eq!(files.len(), 1, "speed batch must name one fixture file");
+        let file = &mut files[0];
+        file.cases.retain(|c| c["budgets"].is_array() && batch["rows"].as_array().unwrap().contains(&serde_json::json!([file.name, c["section"], c["code"]])));
+        let rows = file.cases.iter().map(|c| serde_json::json!([file.name, c["section"], c["code"]])).collect();
+        assert_eq!(serde_json::Value::Array(rows), batch["rows"], "speed batch fixture identities differ");
+    }
     let over = timing::measured(&files, all, |line| writeln!(stderr, "{line}").unwrap()).unwrap();
     if checks { assert!(over.is_empty(), "{over:#?}"); }
 }

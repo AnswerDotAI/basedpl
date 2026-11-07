@@ -22,13 +22,13 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Span) -> Result<
     picture.with_renderer(renderer).described("invalid image")
 }
 
-/// `options •image⁻¹ Y` encodes the picture `Y` as bytes. The option `format` is `"png"`, the default, or `"jpeg"`. Plain text on the left gives the format alone. With the option `fps` or `delay`, or with four axes, `Y` is an animation, which becomes an animated PNG.
+/// `options •image⁻ Y` encodes the picture `Y` as bytes. The option `format` is `"png"`, the default, or `"jpeg"`. Plain text on the left gives the format alone. With the option `fps` or `delay`, or with four axes, `Y` is an animation, which becomes an animated PNG.
 pub(crate) fn encode(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
-    let options = data::Options::new("•image⁻¹", left, Some("format"), &["format", "fps", "delay"])?;
+    let options = data::Options::new("•image⁻", left, Some("format"), &["format", "fps", "delay"])?;
     let format = match options.text("format", Some("png"))?.to_lowercase().as_str() {
-        "png" => Format::Png, "jpeg" => Format::Jpeg, _ => return Err(Error::domain("•image⁻¹ encodes \"png\" or \"jpeg\""))
+        "png" => Format::Png, "jpeg" => Format::Jpeg, _ => return Err(Error::domain("•image⁻ encodes \"png\" or \"jpeg\""))
     };
-    let (frames, delays) = frames(right, timing(&options, "•image⁻¹")?)?;
+    let (frames, delays) = frames(right, timing(&options, "•image⁻")?)?;
     data::byte_vector(encoded(frames, delays.as_deref(), format)?).described("image exceeds array limits")
 }
 
@@ -55,7 +55,7 @@ fn render(delays: Option<&Value>, picture: &Value, _: &Span) -> Result<Value, Er
     display::mime(&kind, bytes).described("invalid image MIME bundle")
 }
 
-/// The picture in the encoded image `bytes`. An animated PNG with more than one frame gives its frames along a first axis, as a rank-4 array with a channel axis even for grey frames, so `•image⁻¹` encodes it back.
+/// The picture in the encoded image `bytes`. An animated PNG with more than one frame gives its frames along a first axis, as a rank-4 array with a channel axis even for grey frames, so `•image⁻` encodes it back.
 fn decoded(bytes: &[u8]) -> Result<Value, Error> {
     let Raster { count, height, width, channels, data } = codec::decode(bytes).map_err(|e| Error::domain(format!("invalid image: {e}")))?;
     let shape = match count { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
@@ -99,4 +99,3 @@ fn frames(picture: &Value, delays: Option<Vec<f64>>) -> Result<(Raster<u8>, Opti
     let data = values.iter().map(|v| (v.clamp(0., 1.) * 255.).round() as u8).collect();
     Ok((Raster { count, height, width, channels, data }, delays))
 }
-

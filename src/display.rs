@@ -28,7 +28,7 @@ pub(crate) struct Elide {
     pub prec: usize,
     pub width: usize,
     pub columns: usize,
-    /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
+    /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻` does.
     pub plain: Option<FloatWidth>,
     /// Whether numbers show their kind: `ₓ` after an exact integer, and the marker of a float width that isn't `plain`. `⍬⍕` and `''⍕` leave both out.
     pub marks: bool,

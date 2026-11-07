@@ -16,8 +16,8 @@ Function. Keys: `Alt-Minus 9`. Hanzi: `双/莫` (`雙/莫`). Ranks: `0` monadic,
 
 ## Inverse
 
-`⊽⁻¹Y` halves `Y`.
+`⊽⁻Y` halves `Y`.
 
 ```bpl
-⊽⁻¹8   ⍝ 4
+⊽⁻8   ⍝ 4
 ```

@@ -135,6 +135,8 @@ Outside brackets, parentheses and braces, `⋄` separates statements. A `;` outs
 
 A [superscript or subscript](scripts.ipynb) written straight after a [token](terms.qmd#term-token) applies to that token. After a subject, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
 
+Numeric superscripts are powers on arrays (`x²`, `x⁻¹`), but Rank on functions: `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. Bare `f⁻` is inverse, with no superscript digit immediately after the minus. `f⁻ ¹` applies that inverse at rank 1. Repeat a function with `f⍣2`, not `f²`.
+
 On an array, a subscript selects one position on the leading axis: `x₁` is `(1⌷x)`. Numeric subscripts separated by spaces form one coordinate: `x₁ ₂` is `x.[1 2]`. Touching digits form one position: `x₁₂` selects position 12. Parentheses keep sequential selections separate: `(x₁)₂` selects item 2 of item 1.
 
 On a function, numeric subscripts choose axes: `f₁ ₂` is `f⍠[1 2]`. Group a call to select from its result: `(f⁝x)₁`. In `f⁝x₁`, the subscript selects from `x` before the call.
@@ -143,9 +145,9 @@ On a function, numeric subscripts choose axes: `f₁ ₂` is `f⍠[1 2]`. Group 
 2 3²                 ⍝ 2 9
 2 3 ²                ⍝ 4 9
 x←2 ⋄ y←3 ⋄ x y ²    ⍝ 2 9
-+↢3 ⁻¹ 10            ⍝ 7
++↢3 ⁻ 10            ⍝ 7
 [2 3]²               ⍝ 4 9
-+\⁻¹ 1 3 6           ⍝ 1 2 3
++\⁻ 1 3 6           ⍝ 1 2 3
 v←10 20 30 ⋄ v₋₁     ⍝ 30
 2 3 ₁                ⍝ 3
 m←2 3⍴⍳6ₓ ⋄ +/₀m    ⍝ [3 5 7]ₓ

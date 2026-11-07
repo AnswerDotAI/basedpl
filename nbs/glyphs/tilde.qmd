@@ -24,10 +24,10 @@ Function. Hanzi: `非/无` (`非/無`). Ranks: `0` monadic, `∞ ∞` dyadic
 
 ## Inverse
 
-`~⁻¹Y` is `~Y`.
+`~⁻Y` is `~Y`.
 
 ```bpl
-~⁻¹1 0   ⍝ $f $t
+~⁻1 0   ⍝ $f $t
 ```
 
 ## Errors

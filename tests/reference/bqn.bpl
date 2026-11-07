@@ -43,7 +43,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 +/÷≢ @(×⍨) 2 3 4 5   ⍝ 3.6742346141747673
 
 ⍝ bqn:under:99 — An arithmetic progression up to a limit, through an inverted transformation
-⍳∘⌈@((4+3×⊢)⁻¹) 20   ⍝ 4 7 10 13 16 19
+⍳∘⌈@((4+3×⊢)⁻) 20   ⍝ 4 7 10 13 16 19
 
 ⍝ bqn:under:109 — Replace selected positions with the same positions of the left argument
 "abcd" ⊣@([[1 2]]⌷) "0123"   ⍝ "0bc3"
@@ -61,16 +61,16 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 ⍝⍝ Undo
 
 ⍝ bqn:undo:9 — Undo a rotation
-2 ⌽⁻¹ 2⌽"abcde"   ⍝ "abcde"
+2 ⌽⁻ 2⌽"abcde"   ⍝ "abcde"
 
 ⍝ bqn:undo:24 — The inverse of squaring returns the principal root
-×⍨⁻¹ ×⍨ ¯3   ⍝ 3
+×⍨⁻ ×⍨ ¯3   ⍝ 3
 
 ⍝ bqn:undo:36 — Undo multiplication by a bound left argument
-(3×)⁻¹ 12   ⍝ 4
+(3×)⁻ 12   ⍝ 4
 
 ⍝ bqn:undo:51 — Undo Left accepts arguments that already match
-3 ⊣⁻¹ 3   ⍝ 3
+3 ⊣⁻ 3   ⍝ 3
 
 ⍝⍝ Repeat
 

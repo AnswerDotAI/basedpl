@@ -5,7 +5,7 @@ use crate::{display, number::{Kinds, Numeric}};
 use rustymath::buffer::{FloatWidth, Width};
 use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}};
 
-/// The sizes that decide which calls wait and how a block stage splits its items. `set_sizes` sets them for the whole process, and a block stage reads them when it runs.
+/// The sizes that decide which calls wait and how block stages and batched maps split their items. `set_sizes` sets them for the whole process, and a block stage reads them when it runs.
 #[derive(Clone, Copy, PartialEq)]
 pub struct Sizes {
     /// The fewest result items of a call that dispatch defers. A call with a smaller result runs at once.
@@ -14,6 +14,8 @@ pub struct Sizes {
     pub block: usize,
     /// The shortest repeat of an input that splits a block into runs, each read in place.
     pub run: usize,
+    /// The most items a batch repeats in constants before running in chunks. Chunks of 2²¹ items beat runs over cells by 10% to 7 times for 256 to a million constant items per cell; 2²⁴ lost from 256K items per cell, and 2¹⁸ was no faster (20 October 2026).
+    pub batch: usize,
 }
 impl Sizes {
     /// The sizes that `reset` restores.
@@ -21,9 +23,9 @@ impl Sizes {
     /// - `min_items`, 2^16: smaller arrays stay in the cache between calls.
     /// - `block`, 2^12: a block's buffers fit in `fusion::BUFFERED` bytes where its inputs don't skip items. Each step's results for a block stay in the cache until the steps that read them have run.
     /// - `run`, 256: within a run, the input reads its one item in place. A shorter repeat copies into a buffer for each block. A cycle shorter than a block never splits it: a block stage repeats its period once, then reads each run from that buffer in place.
-    pub const DEFAULT: Self = Self { min_items: 1 << 16, block: 1 << 12, run: 256 };
+    pub const DEFAULT: Self = Self { min_items: 1 << 16, block: 1 << 12, run: 256, batch: 1 << 21 };
     /// Sizes under which every fusible call that gives items waits, and a block stage splits its items into blocks of 7 and reads repeats of 3 or more in place. The reference suite runs each case under them too, so that small arrays take the paths that large ones take.
-    pub const SMALL: Self = Self { min_items: 1, block: 7, run: 3 };
+    pub const SMALL: Self = Self { min_items: 1, block: 7, run: 3, batch: 4096 };
 }
 
 /// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, and whether each program is checked before it runs.
@@ -47,6 +49,7 @@ const UNSET_ITEMS: usize = usize::MAX;
 const UNSET_SIZES: Sizes = Sizes { min_items: UNSET_ITEMS, ..Sizes::DEFAULT };
 static BLOCK: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.block);
 static RUN: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.run);
+static BATCH_ITEMS: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.batch);
 static VERIFIES: AtomicBool = AtomicBool::new(VERIFY);
 /// When block stages compile their parts, as `Compiles` numbers its variants, or `UNSET` for the default (`compiles`).
 static COMPILES: AtomicU8 = AtomicU8::new(UNSET);
@@ -124,13 +127,14 @@ pub(crate) fn sizes() -> Sizes {
         UNSET_ITEMS => *FROM_ENV.get_or_init(|| std::env::var("BASEDPL_MIN_ITEMS").ok().and_then(|n| n.parse().ok()).unwrap_or(Sizes::DEFAULT.min_items)),
         n => n,
     };
-    Sizes { min_items, block: BLOCK.load(Relaxed), run: RUN.load(Relaxed) }
+    Sizes { min_items, block: BLOCK.load(Relaxed), run: RUN.load(Relaxed), batch: BATCH_ITEMS.load(Relaxed) }
 }
 /// Sets the sizes that decide which calls fusion defers and how a block stage splits its items, for the whole process. `reset` restores the defaults (`sizes`).
 pub fn set_sizes(sizes: Sizes) {
     MIN_ITEMS.store(sizes.min_items, Relaxed);
     BLOCK.store(sizes.block, Relaxed);
     RUN.store(sizes.run, Relaxed);
+    BATCH_ITEMS.store(sizes.batch, Relaxed);
 }
 /// `set_sizes` with `Sizes::SMALL`, or with the defaults that `reset` restores where `on` is false. The reference harness runs each case under the small sizes too.
 pub fn set_small_sizes(on: bool) { set_sizes(if on { Sizes::SMALL } else { UNSET_SIZES }) }

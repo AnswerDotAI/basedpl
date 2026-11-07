@@ -198,7 +198,7 @@ impl Session {
             crate::explain::explained(|| self.execute(None, right, span).and_then(|r| r.array(span)).and_then(|value| value.forced().map(|()| value)));
         events.report(result?, span)
     }
-    /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
+    /// `•literal text` reads a value from BPL source, as `•literal⁻` writes it, without running code. The text may hold literals and the functions that `•literal⁻` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
     pub(crate) fn system_literal(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let parsed = self.parse(Source::new("<•literal>", Self::source_text(right, span)?)).complete()?;
         let [statement] = parsed.statements.as_slice() else { return Err(Error::domain("•literal reads one value").at(span)) };
@@ -605,7 +605,7 @@ impl Session {
     pub(super) fn resolve(&self, node: &Node) -> Result<Bound, Error> {
         Ok(Bound::new(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
-            NodeKind::Subscript(index) => Binding::Operator(self::OperatorNode::Subscript(index.clone())),
+            NodeKind::Script(kind, indices) => Binding::Operator(self::OperatorNode::Script(*kind, indices.clone())),
             NodeKind::Function(builtin) => Binding::Function(builtin.function()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
             NodeKind::Name(name, last) => match last.then(|| self.bindings.take(*name)).flatten().or_else(|| self.bindings.lookup(*name)) {

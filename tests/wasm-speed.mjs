@@ -33,6 +33,7 @@ test('each BPL speed case takes no longer than its wasm budget on Syd1', async (
         assert.deepEqual(identities(all), batch.rows.map(row => JSON.stringify(row)).sort(), 'wasm batch omitted or duplicated a case');
         console.log(`Checked ${all.length} wasm timing rows from ${batch.file}`);
     }
+    for (const c of all) for (const obligation of c.obligations) console.log(`${c.label}: route obligation: ${obligation}`);
     if (process.env.BASEDPL_COSTS || !checks) {
         for (const copy of new Set(all.map(c => c.copy).filter(Boolean))) console.log(copy);
         for (const c of all) console.log(line(c));
