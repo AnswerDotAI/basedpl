@@ -638,7 +638,7 @@ impl Blocks {
 
     /// The fold's value, through its kernel's fold of the pieces that the stage hands over a block at a time (`Kernel::fold_pieces`): each block's items, or their total where a compiled part folds them. The kernel's formula picks the reduction, as the eager fold's does (`pervasive::fold`), so `-` and `÷` fold as alternating sums and products. A seed then combines with each total through `pervasive::map`, as the eager fold's does. A fold of every item gives its one total as an atom, as `folded` in `eval::operators` takes it. `None` where a step or the kernel fails. A failed seed combination returns its error.
     fn folded(&self, fold: &BlockFold, seed: Option<&Number>, run: &Run<'_>, outs: &[Option<Shared>]) -> Option<Result<Value, crate::Error>> {
-        use rustymath::{error::{Error, Kind as Failure}, operation::{Direction, Piece, Seed, Total}};
+        use rustymath::{error::{Error, Kind as Failure}, reduce::{Direction, Piece, Seed, Total}};
         let kernel = fold.kernel.as_ref()?;
         let mut out = Buffer::with_capacity(fold.dtype, 0);
         let pieces = |range: Range<usize>, give: &mut dyn FnMut(usize, Piece<'_>)| -> Result<(), Error> {
@@ -792,9 +792,10 @@ impl Blocks {
                 unsafe { held.set_len(at + n) };
             }
             (true, Last::Fold(_), None) => return false,
+            // SAFETY: the compiled kernel initializes every one of its `n` output items.
             (true, last, _) => with_item!(self.steps[self.steps.len() - 1].made(), A => match A::out(last) {
-                Out::Items(slots) => { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }); }
-                Out::Bools(slots) => { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }); }
+                Out::Items(slots) => { unsafe { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }) }; }
+                Out::Bools(slots) => { unsafe { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }) }; }
             }),
         }
         for &store in &lowered.stores {

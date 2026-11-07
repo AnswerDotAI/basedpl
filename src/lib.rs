@@ -23,7 +23,7 @@ mod image;
 pub mod inspection;
 #[cfg(not(web))]
 #[doc(hidden)]
-pub mod jit;
+pub use basedpl_jit as jit;
 pub mod js;
 mod json;
 pub mod keyed;

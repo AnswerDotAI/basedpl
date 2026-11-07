@@ -1,6 +1,6 @@
 //! Scans of stored values by the pervasive functions, and their inverses, through `p`'s formula: `Kernel::scan` and `Kernel::adjacent`.
 use super::*;
-use rustymath::{agreement::{Binding, Missing, ReadPlan}, operation::{Direction, Seed, Settings}};
+use rustymath::{agreement::{Binding, Missing, ReadPlan}, operation::Settings, reduce::{Direction, Seed}};
 
 /// The scan by `p` of stored values along `axis`, left to right, through `p`'s formula (`Kernel::scan`) at the kind that a scan by `p` computes in, with `map`'s reruns at wider kinds (`computed`). A seed of rank 0 starts every lane. A comparison's or residue's seed that stands for one integer beside the items (`Pervasive::narrowed`, `Pervasive::whole_float`) scans as that integer at its narrowest width: each step then computes at the items' integer kind. Where the scan with the seed as written gives floats (`Fold::result`), the results take that float kind. `None` where the formula fails or the seed's rank isn't 0: the general scan then gives the result or error.
 pub(crate) fn scan(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Lanes) -> Option<Value> {

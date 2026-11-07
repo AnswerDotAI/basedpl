@@ -125,7 +125,7 @@ pub(super) trait Item: Stored + Sync {
     fn read<'a>(got: Got<'a>, n: usize, buf: &'a mut Vec<Self>, t: Tolerance) -> Arg<'a, Self>;
     /// The number `n` as this type, where it converts.
     fn constant(n: &Number) -> Option<Self>;
-    /// The item as a compiled kernel's 8-byte slot holds it (`jit::Compiled::run`), as a scalar or a fold's total, which `rustymath::operation::Total` reads back: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
+    /// The item as a compiled kernel's 8-byte slot holds it (`jit::Compiled::run`), as a scalar or a fold's total, which `rustymath::reduce::Total` reads back: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
     #[cfg(not(web))]
     fn slot(self) -> u64;
     /// Writes `x` where `mask` isn't zero and `y` where it is into the next `n` slots of `out`, through rustymath's `Choose`, which has a kernel at every type.

@@ -44,7 +44,7 @@ module-name = "basedpl._core"
 macos-deployment-target = "15.0"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "py/Cargo.toml" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "image/Cargo.toml" }, { file = "jit/Cargo.toml" }, { file = "py/Cargo.toml" }]
 
 [tool.fastws]
 dev-profile = "release"
