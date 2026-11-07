@@ -1264,21 +1264,19 @@ def wasm_test(
     speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` and `BASEDPL_COSTS`, in place of `tests/wasm.mjs`? Its report then lists every case's cost, which `logged_costs` reads
     timeout:float=LIMIT # Seconds of work per selector batch, or a `Limit` to share (`worker.Limit`), counted while it holds the timing lock; None: no limit
 ):
-    "Run the browser correctness suite, or all speed selector batches, under Node against `wasm`. Explicit `BASEDPL_SPEED_BATCH` runs only that batch. Each batch gets `timeout` while holding the timing lock (exclusive for speed, shared for correctness); a supplied `Limit` instead shares its budget. Nonzero exits are collected before raising `ValueError` with the complete report; timeout and cancellation propagate immediately."
+    "Run browser correctness or every speed selector batch under Node, printing and flushing each completed report (no return value). Explicit `BASEDPL_SPEED_BATCH` selects one batch. Each batch gets `timeout` while holding the timing lock (exclusive for speed, shared for correctness); a supplied `Limit` shares its budget. Nonzero exits are collected before raising; timeout and cancellation propagate immediately. Completed reports survive a later failure or termination in the caller's log."
     test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
     batches = _speed_batches([dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))]) if speed and 'BASEDPL_SPEED_BATCH' not in os.environ else [None]
-    reports, failed = [], False
+    failed = False
     for batch in batches:
         env = _wasm_env(wasm) | (dict(BASEDPL_COSTS='1') if speed else {})
         if batch is not None: env['BASEDPL_SPEED_BATCH'] = json.dumps(batch)
         limit = Limit.of(timeout)
         with timing_lock(exclusive=speed), limit.running():
             p = bounded([_node(), *(['--no-liftoff'] if speed else []), '--test', str(test)], limit.left(), cwd=_ROOT, env=env)
-        reports.append(p.stdout + p.stderr)
+        print(p.stdout + p.stderr, end='', flush=True)
         failed |= p.returncode != 0
-    report = Report(''.join(reports))
-    if failed: raise ValueError(f'\n{report}')
-    return report
+    if failed: raise ValueError('WASM tests failed; see the completed batch reports above')
 
 class StackUse(list):
     "Each recursion shape's worker stack per level and below its first level, in KB, as `(shape, per_level, base)` rows."
@@ -1429,9 +1427,9 @@ def set_counts(
     return changes
 
 def _speed_batches(files, size=16):
-    "Partition budgeted cases by file and code, keeping repeated code in different sections together for browser selectors."
+    "Partition timed cases (`testkit::timing::timed`: a non-dash budget in any column) by file and code, keeping repeated code in different sections together for browser selectors."
     for f in files:
-        cases = [c for c in parse(f['text']) if c.budgets]
+        cases = [c for c in parse(f['text']) if any(b != '-' for b in c.budgets)]
         codes = list(dict.fromkeys(c.code for c in cases))
         for start in range(0, len(codes), size):
             selected = codes[start:start+size]
@@ -1820,10 +1818,11 @@ def dead_functions(
 _COMMANDS = 'check_file check_page reference_summary time_cases instructions profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest run_nbtest regenerate compare_costs bisect explain_diff wasm_test wasm_stack target_builds prerelease module_edges dead_functions'.split()
 
 def main():
-    "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."
+    "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, printing returned values unless the command produces its own output. `bpl-tests NAME -h` lists NAME's arguments."
     if len(sys.argv) < 2 or sys.argv[1] not in _COMMANDS: sys.exit(f'usage: bpl-tests NAME ARGUMENT..., where NAME is one of {", ".join(_COMMANDS)}')
     name = sys.argv.pop(1)
     sys.argv[0] = f'bpl-tests {name}' # The program name in argparse's usage line
     f = globals()[name]
     args, kwargs, _ = parse_cli(f)
-    print(repr(f(*args, **kwargs)))
+    result = f(*args, **kwargs)
+    if result is not None: print(repr(result))
