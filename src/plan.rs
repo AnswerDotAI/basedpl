@@ -424,7 +424,7 @@ pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: b
 pub(crate) fn check_map(plan: &Pervasive, left: Option<&Operand>, right: &Operand) -> Result<Desc, &'static str> {
     let inferred = map_plan(plan.p, left, right, plan.same, plan.numeric)?;
     let held = [left.is_some_and(|o| matches!(o, Operand::Held(_))), matches!(right, Operand::Held(_))];
-    let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k]).map(f64::to_bits));
+    let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k] && plan.constants[k].is_some()).map(f64::to_bits));
     let without_constants = |p: &Pervasive| Pervasive { constants: [None; 2], at: None, ..p.clone() };
     if without_constants(&inferred) != without_constants(plan) || constants(&inferred) != constants(plan) {
         return Err("a plan other than the one that its operands give");
@@ -438,8 +438,8 @@ pub(crate) fn at(p: Primitive, base: &Desc, items: &Desc, numeric: Numeric) -> R
     let item = |d: &Desc| Desc { atom: true, layout: Layout::default(), ..d.clone() };
     let combined = map(p, Some(&Operand::Traced(&item(base))), &Operand::Traced(&item(items)), false, numeric)?.desc.kind;
     let kind = Kind::join([base.kind, combined], Widening::Items);
-    if kind.dtype.is_none() { return Err("a write that leaves its target mixed"); }
-    Ok(Desc { kind, atom: false, layout: base.layout.clone(), range: Range::ANY })
+    let Some(dtype) = kind.dtype else { return Err("a write that leaves its target mixed"); };
+    Ok(Desc { kind, atom: false, layout: base.layout.clone(), range: Range::of_dtype(dtype) })
 }
 
 /// The plan of a fold or scan by `p`: `kind`, the settings that the items and any seed give together (`prepared`), and the kinds of each step's operands, the running result's first, as those settings compute them. A scan's first step takes the seed, so a scan computes in the kind that the seed's and the items' kinds join to. A fold applies its seed after it folds the items. Where 16-bit floats compute in 32 bits, `halve` says whether float results round back to 16 bits.
@@ -558,7 +558,7 @@ impl Product {
         let g = self.g.settled()?;
         let folds = self.folds();
         let result = self.g.halve.result(folded(self.f, g, g, folds)?);
-        Ok(Desc { kind: computed(result, folds, false), atom: layout.shape().is_empty(), layout, range: Range::ANY })
+        Ok(Desc { kind: computed(result, folds, false), atom: layout.shape().is_empty(), layout, range: Range::of_dtype(result) })
     }
     /// The description of `f.g⍤2` on the stacks of matrices that `left` and `right` describe: the frame that pairing their frames gives, as Rank pairs them (`Frames`), around the product of one matrix of each. Stacks with names or keys don't plan.
     pub(crate) fn stacked_desc(&self, left: &Desc, right: &Desc) -> Result<Desc, &'static str> {
@@ -600,7 +600,7 @@ pub(crate) fn item(source: &Desc) -> Result<Desc, &'static str> { Ok(Desc { atom
 pub(crate) fn picks(of: &Desc, axis: usize) -> Result<Desc, &'static str> {
     if axis >= of.shape().len() { return Err("an axis that the items lack"); }
     if !matches!(of.kind.dtype, Some(DType::Boolean | DType::Integer(_) | DType::Float(_))) { return Err("picks from items that aren't real numbers"); }
-    Ok(Desc { kind: Kind::stored(Some(DType::Boolean), None, false), ..copy(of, &of.layout)? })
+    Ok(Desc { kind: Kind::stored(Some(DType::Boolean), None, false), range: Range::of_dtype(DType::Boolean), ..copy(of, &of.layout)? })
 }
 
 /// A planned masked select: its result's description, and the map through which each case reads from the result's positions. The mask reads them in order. A weak atom case takes the result's type, which its executor converts it to.
@@ -618,7 +618,7 @@ pub(crate) fn select(mask: &Operand, yes: &Operand, no: &Operand) -> Result<Sele
     let kind = Kind::join(cases, Widening::Arrays);
     let dtype = kind.dtype.filter(|&d| d != DType::Character).ok_or("cases that aren't numbers")?;
     if cases.iter().any(|c| !c.weak && c.dtype != Some(dtype)) { return Err("cases of different kinds"); }
-    Ok(Select { desc: Desc { kind: Kind::stored(Some(dtype), kind.fixed, false), atom: false, layout, range: yes.range().join(no.range()) }, yes: yes_map,
+    Ok(Select { desc: Desc { kind: Kind::stored(Some(dtype), kind.fixed, false), atom: false, layout, range: Range::of_dtype(dtype).meet(yes.range().join(no.range())) }, yes: yes_map,
         no: no_map })
 }
 
@@ -629,7 +629,7 @@ pub(crate) fn convert(source: &Desc, to: DType) -> Result<Desc, &'static str> {
         (DType::Complex(_), _) => return Err("complex numbers that convert to integers"), (_, DType::Float(_)) => (to, None),
         (_, DType::Integer(width)) => (to, Some(width)), _ => return Err("a conversion to a type that no mark gives")
     };
-    Ok(Desc { kind: Kind::stored(Some(dtype), fixed, false), range: Range::ANY, ..source.clone() })
+    Ok(Desc { kind: Kind::stored(Some(dtype), fixed, false), range: Range::of_dtype(dtype), ..source.clone() })
 }
 
 /// The description of a fold step of `p` along `axis` over `items`, with `seed` where it has one, and the axis it folds along (`fold`, then `Fold::desc`): the one plan that recording, fusion and verification give a `Step::Fold`.

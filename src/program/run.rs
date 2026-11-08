@@ -116,7 +116,9 @@ impl Replay<'_> {
                     _ => None,
                 };
                 let value = |i: usize| self.values[i].as_ref().expect("a step's operands have their values");
-                checked(node, j, run(step, &self.program.nodes, &value, owned, &node.desc, span)?, span)?
+                let result = if !self.program.takes(j) && let Some(copy) = copy_read(step, &value, &node.desc, span) { copy }
+                    else { run(step, &self.program.nodes, &value, owned, &node.desc, span) };
+                checked(node, j, result?, span)?
             }
         };
         self.values[j] = Some(value);
@@ -134,7 +136,14 @@ impl Replay<'_> {
     }
 }
 
-/// The value of `step`, on `values`, laid out as `desc` describes. A step whose operands carry a running level's data goes through the call boundary, which that level takes (`transform::call`), as a tape's steps do when an outer `∂` or trace runs. A large copy stays pending (`fusion::copy`), which a product or a fold reads in place. A copy that `desc` describes as an atom gives its one item (`plan::item`). `owned` is an accumulation's base, where the replay gives up its value, so that the accumulation writes into it with no copy.
+/// An operand Copy is a logical read, not a demand for its expanded storage. Terminal program outputs use `run`, including when a pending copy is forced.
+pub(crate) fn copy_read<'a>(step: &Step, node: &dyn Fn(usize) -> &'a Value, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
+    let Step::Copy { of, map } = step else { return None; };
+    Some(crate::fusion::copied(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
+        .map(|copied| if desc.atom { copied.at(0) } else { copied }))
+}
+
+/// Executes `step` on its operands. A demanded Copy produces stored items; internal copies keep their logical read (`copy_read`). Carried operands go through their call boundary. `owned` gives an accumulation a base whose old value the replay no longer needs.
 pub(crate) fn run<'a>(
     step: &Step, nodes: &[Node], node: &dyn Fn(usize) -> &'a Value, owned: Option<Value>, desc: &Desc, span: &Span
 ) -> Result<Value, Error> {
@@ -176,7 +185,7 @@ pub(crate) fn run<'a>(
         }
         Step::Product { f, g, left, right, stacked } => {
             Operation::Product(*f, *g).call(Pairing::stacked(*stacked), Some(&value(left)), &value(right), span).inspect(|_| {
-                if rustymath::events::running() { crate::explain::fast(rustymath::events::Route::Contraction, step.glyph()); }
+                if crate::events::running() { crate::explain::fast(crate::events::Route::Contraction, step.glyph()); }
             })
         }
         Step::At { p, base, items, writes } => {

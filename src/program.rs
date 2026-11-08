@@ -162,6 +162,10 @@ impl Nodes {
     pub(crate) fn structured(&mut self, form: Form, params: Vec<Read>, inputs: Vec<Read>, fill: Option<Read>, desc: Desc, plan: ReadPlan) -> Read {
         if fill.is_none() && let Some((source, map)) = plan.positional(desc.shape())
             && let Ok(copied) = crate::plan::copy(&inputs[source].desc(self), &desc.layout) && copied.kind == desc.kind {
+            let input = inputs[source].desc(self);
+            if input.kind == desc.kind && input.atom == desc.atom && map.in_order(input.layout.count(), desc.shape()) {
+                return Read::new(inputs[source].of, desc.layout);
+            }
             return self.copied(inputs[source].clone(), map, desc);
         }
         self.stepped(desc, Step::Structural { inputs, form, params, fill, plan })
@@ -398,14 +402,15 @@ impl Program {
     pub(crate) fn at(nodes: Nodes, result: usize) -> Self { let result = Read::node(&nodes, result); Self::new(nodes, result) }
     /// Whether the caller takes node `j`'s value: the node that the result reads, or one of the outputs.
     pub(crate) fn takes(&self, j: usize) -> bool { j == self.result.of || self.outputs.contains(&j) }
-    /// The program as text, one line for each value: its number, what makes it, and its type and shape. `input` names input `k`.
+    /// The program as text, one line for each value: its number, what makes it, and its type and shape. `input` names input `k`. Only plain atoms print their literal; listing arrays or carriers never reads their items.
     pub(crate) fn listing(&self, input: impl Fn(usize) -> String) -> String {
         let at = |i: usize| format!("v{i}");
         let read = |r: &Read| at(r.of);
         self.nodes.iter().enumerate().map(|(i, node)| {
             let made = match &node.origin {
                 Origin::Input(k) => input(*k),
-                Origin::Held(v) => format!("held {}", v.source(crate::display::Elide::NONE)),
+                Origin::Held(v) if v.is_atom() && !v.carried() => format!("held {}", v.source(crate::display::Elide::NONE)),
+                Origin::Held(_) => "held".into(),
                 Origin::Step(step @ Step::Map { left, right, .. }) => {
                     format!("{} {}", step.glyph(), left.iter().chain([right]).map(read).collect::<Vec<_>>().join(" "))
                 }
@@ -549,7 +554,7 @@ impl<E, const MOST: usize> Recent<E, MOST> {
 impl<E, const MOST: usize> Default for Recent<E, MOST> { fn default() -> Self { Self(Vec::new()) } }
 
 /// The plans that `planned` made, each with the settings it was made under and its program with inputs in place of held arrays (`Program::keyed`).
-static PLANS: Mutex<Recent<(Numeric, Program, Arc<run::Plan>), PLANNED>> = Mutex::new(Recent(Vec::new()));
+static PLANS: Mutex<Recent<(Numeric, crate::settings::Sizes, Program, Arc<run::Plan>), PLANNED>> = Mutex::new(Recent(Vec::new()));
 
 /// The most plans that `PLANS` keeps.
 const PLANNED: usize = 32;
@@ -557,17 +562,17 @@ const PLANNED: usize = 32;
 /// Forgets every kept plan, as a new process has none.
 pub fn forget_plans() { PLANS.lock().unwrap_or_else(PoisonError::into_inner).0.clear() }
 
-/// The plan that runs `program` (`blocks::plan`), made once for each structure of program under each of the settings that planning reads (`Numeric`). The plan comes from the program with inputs in place of its held arrays, whose items a block stage reads as it runs. Programs that differ only in their arrays' items share a plan, as each force of one pending chain does. Programs whose held atoms differ get plans of their own, because a plan can depend on an atom's value, as `○`'s does on its left argument. A program with a table of positions (`Step::tabled`), which can hold as many positions as the data has items, is planned each time and never kept. Where the session checks programs (`settings::verifies`), each program that's planned is checked first as it is, because a step planned on a held array's values plans differently on the input that replaces it.
+/// The plan that runs `program` (`blocks::plan`), made once for each structure of program under each of the settings that planning reads (`Numeric` and `Sizes`). The plan comes from the program with inputs in place of its held arrays, whose items a block stage reads as it runs. Programs that differ only in their arrays' items share a plan, as each force of one pending chain does. Programs whose held atoms differ get plans of their own, because a plan can depend on an atom's value, as `○`'s does on its left argument. A program with a table of positions (`Step::tabled`), which can hold as many positions as the data has items, is planned each time and never kept. Where the session checks programs (`settings::verifies`), each program that's planned is checked first as it is, because a step planned on a held array's values plans differently on the input that replaces it.
 pub(crate) fn planned(program: &Program) -> Arc<run::Plan> {
     let tabled = program.nodes.iter().any(|n| matches!(&n.origin, Origin::Step(s) if s.tabled()));
-    let numeric = Numeric::current();
+    let (numeric, sizes) = (Numeric::current(), crate::settings::sizes());
     let plans = || PLANS.lock().unwrap_or_else(PoisonError::into_inner);
-    if !tabled && let Some((_, _, plan)) = plans().find(|(n, p, _)| *n == numeric && p.plans_as(program)) { return plan.clone(); }
+    if !tabled && let Some((_, _, _, plan)) = plans().find(|(n, s, p, _)| *n == numeric && *s == sizes && p.plans_as(program)) { return plan.clone(); }
     if crate::settings::verifies() { verify::check(program); }
     if tabled { return Arc::new(blocks::plan(program)); }
     // Planning runs without the lock, which a force on another thread may need meanwhile.
     let keyed = program.keyed();
     let plan = Arc::new(blocks::plan(&keyed));
-    plans().keep((numeric, keyed, plan.clone()));
+    plans().keep((numeric, sizes, keyed, plan.clone()));
     plan
 }

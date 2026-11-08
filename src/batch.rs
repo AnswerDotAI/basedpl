@@ -47,7 +47,7 @@ impl Batch {
     #[cold]
     #[inline(never)]
     pub(crate) fn storage(&self) -> &Storage {
-        crate::transform::Carrier::built(&self.items, rustymath::events::Route::BatchedItems, self.template().len(), |i| self.at(i))
+        crate::transform::Carrier::built(&self.items, crate::events::routes::BatchedItems, self.template().len(), |i| self.at(i))
     }
     /// This batch with each cell laid out by `layout`, as a view of the whole with no items copied. `layout` has as many items as a cell.
     pub(crate) fn view(&self, layout: Layout) -> Value {
@@ -190,7 +190,7 @@ pub(crate) fn from_cells(level: u64, frame: &Layout, cells: Vec<Value>) -> Optio
 /// `f` for each cell of batched run `level`, whose frame is `frame`, in cell order, with the cells' values joined into one batch (`from_cells`). Where the values don't stack, as values of different shapes or kinds don't, the run stops for a call with no rule for these arguments (`Cause::Rule`). `•explain` counts the cells as the `itemwise` route `batch cells`.
 pub(crate) fn each_cell(level: u64, frame: &Layout, f: impl FnMut(usize) -> Result<Value, Error>) -> Result<Value, Error> {
     let count = frame.count();
-    crate::explain::itemwise(rustymath::events::Route::BatchCells, count);
+    crate::explain::itemwise(crate::events::routes::BatchCells, count);
     let cells = (0..count).map(f).collect::<Result<Vec<_>, _>>()?;
     from_cells(level, frame, cells).ok_or_else(|| Stop::new(level, Cause::Rule).into())
 }
@@ -577,12 +577,7 @@ fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &E
         Ok(value)
     };
     let (level, called) = match entry {
-        Entry::Begin => {
-            let level = session().begin(crate::transform::Kind::batched(frame.clone()));
-            let called = call(level);
-            session().end();
-            (level, called)
-        }
+        Entry::Begin => session().with_level(crate::transform::Kind::batched(frame.clone()), |level| (level, call(level))),
         Entry::Widen { level, .. } => (*level, session().widened(frame, span, || call(*level))),
     };
     match called {
@@ -622,7 +617,7 @@ fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk
 
 /// Where the `batch` pref is on, the result of the map whose frame is `layout`, from one call of `operand` on batches of its cells. With `mixed`, the cells' results mix into one array, as Rank mixes them. Otherwise they are the result's items, as in Each. `None` means the map calls its operand once for each cell instead.
 ///
-/// The try's conditions: `tried` gives `None` for an empty frame or a frame of rank 0, and where the running levels allow no try (`tries`). Otherwise it calls `arguments` for the map's whole arguments. It gives `None` where `arguments` does, and for an argument with a frame that isn't compact (`side`). It gives `None`, after a `fallbacks` event of `•explain`, for a dfn operand whose earlier batched run stopped for a cause that it remembers for every call, without calling `arguments`, or for a cause that it remembers for these arguments (`signature`). Each refusal before the call, other than an empty frame, is a decline with its reason (`rustymath::events`).
+/// The try's conditions: `tried` gives `None` for an empty frame or a frame of rank 0, and where the running levels allow no try (`tries`). Otherwise it calls `arguments` for the map's whole arguments. It gives `None` where `arguments` does, and for an argument with a frame that isn't compact (`side`). It gives `None`, after a `fallbacks` event of `•explain`, for a dfn operand whose earlier batched run stopped for a cause that it remembers for every call, without calling `arguments`, or for a cause that it remembers for these arguments (`signature`). Each refusal before the call, other than an empty frame, is a decline with its reason (`crate::events`).
 ///
 /// The run: a map outside any batched run begins one (`Entry::Begin`). A map inside one widens it (`Entry::Widen`): the run's frame comes first in the widened frame, each of the run's batches lays over the widened frame, and each constant with a frame spreads over the run's frame (`side`).
 ///
@@ -635,7 +630,7 @@ pub(crate) fn tried(
     if frame.is_empty() || frame.contains(&0) { return None; }
     let cells = layout.count();
     let declined = |reason: &'static str| -> Option<Result<Value, Error>> {
-        rustymath::events::declined(rustymath::events::Route::Batching, reason, cells);
+        crate::events::declined(crate::events::routes::Batching, reason, cells);
         None
     };
     if !tries(cells) { return None; }
@@ -680,16 +675,16 @@ pub(crate) fn tried(
         Entry::Widen { .. } if !one_array => return fell_back("the result", cells),
         Entry::Widen { level, outer } => whole.relaid(outer.concat(layout).concat(&cell)).map(|whole| batch(level, whole, outer.shape().len())),
     };
-    if assembled.is_ok() { rustymath::events::taken(rustymath::events::Route::Batching, cells); }
+    if assembled.is_ok() { crate::events::taken(crate::events::routes::Batching, cells); }
     Some(assembled.described("invalid result"))
 }
 
-/// Whether a map of `cells` cells may try a batched call: the `batch` pref is on, and the running levels admit a batched run (`transform::Levels::admits_batch`), or let the map widen the running one (`transform::Levels::widens`). Where it may not, the refusal is a decline (`rustymath::events`). `tried` checks it first. A caller checks it before building arguments that only a try reads.
+/// Whether a map of `cells` cells may try a batched call: the `batch` pref is on, and the running levels admit a batched run (`transform::Levels::admits_batch`), or let the map widen the running one (`transform::Levels::widens`). Where it may not, the refusal is a decline (`crate::events`). `tried` checks it first. A caller checks it before building arguments that only a try reads.
 pub(crate) fn tries(cells: usize) -> bool {
     let reason = if !crate::settings::batch() { "the batch pref is off" }
     else if !session().admits_batch() && !session().widens() { "a label level, or a ∂ call inside a batched run" }
     else { return true; };
-    rustymath::events::declined(rustymath::events::Route::Batching, reason, cells);
+    crate::events::declined(crate::events::routes::Batching, reason, cells);
     false
 }
 

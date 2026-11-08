@@ -345,10 +345,13 @@ def reference_summary(
     kinds = defaultdict(list)
     for r in failing:
         if r['status'] == 'mismatch' and (k := _kind(r)) != 'other mismatch' and len(kinds[k]) < examples: kinds[k].append(r)
+    messages = Counter()
+    for r in failing:
+        messages.update({m['message'] for m in r.get('modes', ()) if m.get('message') and m['status'] not in ('pass', 'not applicable', 'unchecked')})
     return ReferenceSummary(
         cases=len(results), obligations=sum(counted['obliged']), modes=modes,
         passing=Counter(m['mode'] for r in failing for m in r.get('modes', ()) if m['status'] == 'pass'), statuses=statuses, kinds=dict(kinds),
-        messages=Counter(r.get('message') or '' for r in failing if r['status'] == 'error'), files=Counter(r.get('file') for r in failing),
+        messages=messages, files=Counter(r.get('file') for r in failing),
         lost=[r for r in results if any(m['status'] == _LOST for m in r.get('modes', ()))], compared=baseline is not None)
 
 _ROOT = Path(__file__).parents[2]
@@ -376,7 +379,7 @@ class ByBuild(list):
         w = 13 - len(self.unit)
         return '\n'.join([head, *(''.join(f'{r[1]:>{w},.0f}{self.unit}' for r in rs) + f' {rs[-1][1]/rs[0][1]-1:>+7.1%}  {_commented(rs[0][0])}' for rs in zip(*self))])
 
-def _section(section):
+def speed_setup(section):
     "The setup of a speed file and the preferences of one of its sections, from `file:section` such as `models.bpl:static`."
     name, _, part = section.partition(':')
     speed = _reference_file((_SPEED/name).read_text(), name)
@@ -387,7 +390,7 @@ def _section(section):
 def _section_setup(section, setup, prefs):
     "Setup and preferences, keeping preferences before source construction."
     if not section: return setup, prefs
-    file_setup, header = _section(section)
+    file_setup, header = speed_setup(section)
     return file_setup, '\n'.join([prefs, header])
 
 @delegates(environment)

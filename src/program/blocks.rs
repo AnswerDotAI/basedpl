@@ -84,7 +84,7 @@ pub fn compiled_runs() -> usize { 0 }
 #[cfg(not(web))]
 fn ran_compiled(items: usize) {
     COMPILED_RUNS.fetch_add(1, Relaxed);
-    rustymath::events::taken(rustymath::events::Route::Compiled, items);
+    crate::events::taken(crate::events::routes::Compiled, items);
 }
 
 /// An array that a stage reads: the program's node `of`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, the stage writes the node's cycle out once each time it runs (`gathered_once`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), the stage gathers the whole copy through `gather` instead, and `map` reads it in order. Both maps find their walk and cycle once and keep them for every run (`Walked`).
@@ -131,7 +131,7 @@ impl std::fmt::Debug for Blocks {
 
 /// One step of a block stage. `tolerance` applies to float-to-integer conversion. `desc` preserves the published atom, kind and layout independently of the temporary computing dtype (`made`).
 struct BlockStep {
-    j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, desc: Desc, kernel: Option<Kernel>
+    j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, desc: Desc, map: rustymath::operation::Map
 }
 
 impl BlockStep {
@@ -225,25 +225,30 @@ impl Blocks {
             let node = &program.nodes[j];
             let Origin::Step(step) = &node.origin else { return None };
             let shape = node.desc.shape();
-            let made = |op, operands, at, tolerance| BlockStep { j, op, operands, at, tolerance, booleans: node.desc.dtype() == DType::Boolean,
-                desc: node.desc.clone(), kernel: None };
+            let made = |op, operands, at, tolerance, map| BlockStep { j, op, operands, at, tolerance, booleans: node.desc.dtype() == DType::Boolean,
+                desc: node.desc.clone(), map };
             match step {
                 Step::Map { left, right, plan } => {
                     let at = computes(plan, node.desc.dtype())?;
                     let (x, y) = b.paired(program, members, left.as_ref(), right, shape)?;
-                    b.steps.push(BlockStep { kernel: Some(plan.kernel()?.clone()), ..made(Op::Map(plan.clone()), [x, Some(y), None], at, Tolerance::EXACT) });
+                    let map = rustymath::operation::Map::Kernel(plan.kernel()?.clone(), plan.numeric.settings_for(plan.computes()?));
+                    b.steps.push(made(Op::Map(plan.clone()), [x, Some(y), None], at, Tolerance::EXACT, map));
                 }
                 Step::Convert { of, numeric } => {
                     let y = b.operand(program, members, of, &Mapping::Linear(1), shape)?;
-                    let tolerance = numeric.tolerance_of(program.nodes[of.of].desc.dtype());
-                    b.steps.push(made(Op::Convert, [None, Some(y), None], node.desc.dtype(), tolerance));
+                    let input = program.nodes[of.of].desc.dtype();
+                    let tolerance = numeric.tolerance_of(input);
+                    let conversion = rustymath::convert::Conversion { input, output: node.desc.dtype(), kind: rustymath::convert::ConversionKind::Floor };
+                    let map = rustymath::operation::Map::Convert(conversion, Settings { tolerance }, false);
+                    b.steps.push(made(Op::Convert, [None, Some(y), None], node.desc.dtype(), tolerance, map));
                 }
                 Step::Select { mask, yes, no } => {
                     let read = |r: &Read| if program.nodes[r.of].desc.atom { Mapping::Single } else { Mapping::Linear(1) };
                     let [m, x, y] = [mask, yes, no].map(|r| b.operand(program, members, r, &read(r), shape));
                     let at = node.desc.dtype();
-                    b.steps.push(BlockStep { kernel: Some(Kernel::new(rustymath::Choose, rustymath::domain::Variant { dtype: at, checked: false, wrapping: true })),
-                        ..made(Op::Select, [Some(x?), Some(y?), Some(m?)], at, Tolerance::EXACT) });
+                    let map = rustymath::operation::Map::Kernel(
+                        Kernel::new(rustymath::Choose, rustymath::domain::Variant { dtype: at, checked: false, wrapping: true }), Settings { tolerance: Tolerance::EXACT });
+                    b.steps.push(made(Op::Select, [Some(x?), Some(y?), Some(m?)], at, Tolerance::EXACT, map));
                 }
                 Step::Copy { .. } => {}
                 &Step::Fold { p, axis, ref of, ref seed, .. } => match short_fold(program, j) {
@@ -323,7 +328,8 @@ impl Blocks {
                 p, Some(items.kind), items.kind, [None, constant], [rustymath::domain::Range::ANY; 2], crate::number::Numeric::current());
             let at = computes(&plan, node.desc.dtype())?;
             // As in a step of rustymath's `Folds`, each read is the left operand and the total the right. Beside a NaN, `Core::maximum` and `minimum` give the right operand, the total.
-            self.steps.push(BlockStep { j, kernel: Some(plan.kernel()?.clone()), op: Op::Map(plan), operands: [Some(x), Some(total), None], at,
+            let map = rustymath::operation::Map::Kernel(plan.kernel()?.clone(), plan.numeric.settings_for(plan.computes()?));
+            self.steps.push(BlockStep { j, map, op: Op::Map(plan), operands: [Some(x), Some(total), None], at,
                 tolerance: Tolerance::EXACT, booleans: node.desc.dtype() == DType::Boolean, desc: node.desc.clone() });
             total = Operand::Step(self.steps.len() - 1);
         }
@@ -385,7 +391,8 @@ impl Blocks {
             reads: self.inputs.iter().map(|x| reading(&x.map, block, sizes.run)).collect() }
     }
 
-    /// Runs the stage on its inputs' values in `values`, and puts the values it stores and folds there. `None`, with nothing changed, where an input isn't compact items of a type that a stage holds, an atom doesn't convert to the type of each step that reads it, or a step fails: the caller then runs the stage's nodes on their own. Constants that the program holds were converted when the stage was made, and the stage's split into blocks was found then under the sizes in force. The stage's compiled parts run where the compile setting asks for them (`compiles`). `•explain` records a run of two or more steps, its fold included, as one fused group, with its blocks, runs and copied items. A lone step that reads through a copy isn't a fused group. A failed seed combination returns its error without storing the stage's results.
+    /// Runs with borrowed inputs and private destination buffers, publishing stored and folded values after success. `None` discards the attempt for eager execution of the stage's nodes: an input lacks a supported compact type, a constant cannot convert, or a step fails after writing private results. A failed seed combination returns its error without publishing results.
+    /// Held constants and block partitions are prepared when the stage is built; changed sizes rebind its partition. Compiled parts run under `compiles`. `•explain` records two or more steps (fold included) as one fused group, with blocks, runs and copied items. A lone step reading through a copy is not a fused group.
     pub(crate) fn run(&self, values: &mut [Option<Value>]) -> Option<Result<(), crate::Error>> {
         let tally = Tally::new();
         let sizes = crate::settings::sizes();
@@ -441,7 +448,7 @@ impl Blocks {
             (main, rest)
         };
         if self.steps.len() + usize::from(self.fold.is_some()) >= 2 { crate::explain::fused(|| self.glyphs.clone(), self.n, &tally); }
-        if self.fold.is_some() && !self.steps.is_empty() { rustymath::events::taken(rustymath::events::Route::FusedFold, self.n); }
+        if self.fold.is_some() && !self.steps.is_empty() { crate::events::taken(crate::events::routes::FusedFold, self.n); }
         values[main.0] = Some(main.1);
         for (j, value) in rest { values[j] = Some(value); }
         Some(Ok(()))
@@ -455,16 +462,16 @@ impl Blocks {
     #[cfg(not(web))]
     fn compiles(&self, sizes: crate::settings::Sizes) -> bool {
         use crate::settings::Compiles;
-        use rustymath::events::{Route, declined};
+        use crate::events::declined;
         let first = self.kernels().next();
         let asks = sizes.run == self.laid.sizes.run && match crate::settings::compiles() {
             Compiles::Never => false, Compiles::Always => true,
             Compiles::Policy => compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen())
         };
-        if asks { for &reason in &self.declines { declined(Route::Compiled, reason, self.n); } }
+        if asks { for &reason in &self.declines { declined(crate::events::routes::Compiled, reason, self.n); } }
         if first.is_none() || !asks { return false; }
         if !self.kernels().all(|c| c.compiled(|| self.glyphs.clone()).is_some()) {
-            declined(Route::Compiled, "a kernel that doesn't compile", self.n);
+            declined(crate::events::routes::Compiled, "a kernel that doesn't compile", self.n);
             return false;
         }
         // The folding kernel compiles with the part that it serves.
@@ -890,43 +897,26 @@ impl Blocks {
         from: usize, n: usize, dest: MapOutput<'_, '_>
     ) -> bool {
         let mut bindings = [None; 3];
-        let mut plans = [run.direct; 3];
-        for (k, operand) in step.operands.iter().enumerate() {
-            let Some(operand) = operand else { continue };
-            let (source, plan) = match *operand {
-                Operand::Input(i) => (run.inputs[i], &run.plans[i]),
-                Operand::Step(s) => {
-                    let buffer = &bufs[self.slots[s].expect("an earlier step that is read has a buffer")];
-                    let Ok(binding) = Binding::window(buffer.view().slice(0..n), from, self.n) else { return false };
-                    (binding, run.direct)
-                }
-                Operand::Constant(_) | Operand::Identity(_) => {
-                    (Binding::full(constants[k].as_ref().expect("a run prepares its constants").view().expect("a prepared scalar has stored items")), run.single)
-                }
-            };
-            bindings[k] = Some(source);
-            plans[k] = plan;
-        }
         let mut reads = [rustymath::agreement::Read { sources: &[], plan: run.direct }; 3];
         let mut count = 0;
-        for (k, source) in bindings.iter().enumerate() {
-            if let Some(source) = source {
-                let source = match step.operands[k] { Some(Operand::Input(i)) => &run.inputs[i], _ => source };
-                reads[count] = rustymath::agreement::Read { sources: std::slice::from_ref(source), plan: plans[k] };
-                count += 1;
-            }
+        for ((binding, operand), constant) in bindings.iter_mut().zip(&step.operands).zip(constants) {
+            let Some(operand) = operand else { continue };
+            let (source, plan): (&Binding<'_>, &ReadPlan) = match *operand {
+                Operand::Input(i) => (&run.inputs[i], &run.plans[i]),
+                Operand::Step(s) => {
+                    let buffer = &bufs[self.slots[s].expect("an earlier step that is read has a buffer")];
+                    let Ok(source) = Binding::window(buffer.view().slice(0..n), from, self.n) else { return false };
+                    (binding.insert(source), run.direct)
+                }
+                Operand::Constant(_) | Operand::Identity(_) => {
+                    let value = constant.as_ref().expect("a run prepares its constants").view().expect("a prepared scalar has stored items");
+                    (binding.insert(Binding::full(value)), run.single)
+                }
+            };
+            reads[count] = rustymath::agreement::Read { sources: std::slice::from_ref(source), plan };
+            count += 1;
         }
-        if matches!(step.op, Op::Convert) {
-            let input = bindings[1].expect("a conversion reads its right operand").view.dtype();
-            return rustymath::convert::Conversion { input, output: step.at, kind: rustymath::convert::ConversionKind::Floor }
-                .map_in(reads[0], from..from + n, false, step.tolerance, scratch, dest).is_ok();
-        }
-        let kernel = step.kernel.as_ref().expect("maps and selects have an RM kernel");
-        let settings = match &step.op {
-            Op::Map(plan) => plan.numeric.settings_for(plan.computes().expect("a step with a kernel has a computing kind")),
-            Op::Select => Settings { tolerance: Tolerance::EXACT }, Op::Convert => unreachable!()
-        };
-        kernel.map_in(&reads[count - kernel.arity()..count], from..from + n, settings, scratch, dest).is_ok()
+        step.map.run(&reads[count - step.map.arity()..count], from..from + n, scratch, dest).is_ok()
     }
 }
 

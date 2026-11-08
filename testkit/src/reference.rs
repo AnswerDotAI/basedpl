@@ -293,9 +293,9 @@ pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Resu
 }
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
-/// The routes and kinds of event that rustymath's inventory requires some case to exercise (`events::Route`): each route with each kind, "taken", "declined" or "itemwise", that it reports.
+/// The routes and kinds of event that BPL and rustymath require some case to exercise (`events::Route`): each route with each kind, "taken", "declined" or "itemwise", that it reports.
 pub fn inventory() -> impl Iterator<Item = (&'static str, rustymath::events::Route)> {
-    rustymath::events::Route::ALL.iter().flat_map(|&route| {
+    basedpl::hooks::event_routes().flat_map(|route| {
         [("taken", route.reports_taken()), ("declined", route.reports_decline()), ("itemwise", route.reports_itemwise())].into_iter()
             .filter(|&(_, required)| required).map(move |(kind, _)| (kind, route))
     })

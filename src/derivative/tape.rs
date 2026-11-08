@@ -30,13 +30,10 @@ pub(crate) struct Linearized { argument: Value, parts: Vec<Value>, pub(crate) va
 
 /// `f` linearised at `right`, with `left` as its left argument. The tape level begins before the `∂` call's, so each seed is a tape value inside a dual.
 pub(crate) fn linearized(f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Linearized, Error> {
-    let level = session().begin(Kind::Tape);
-    let tag = session().begin(Kind::Derivative);
     let tracer = Arc::new(Tracer::default());
-    let run = linearize(f, left, right, tag, level, &tracer, span);
-    session().end();
-    session().end();
-    let (parts, value, result) = run?;
+    let (parts, value, result) = session().with_level(Kind::Tape, |level| {
+        session().with_level(Kind::Derivative, |tag| linearize(f, left, right, tag, level, &tracer, span))
+    })?;
     Ok(Linearized { argument: right.clone(), parts, value, tape: result.map(|read| tracer.program(read)) })
 }
 
@@ -153,12 +150,16 @@ fn glyph(op: &Op<'_>) -> String {
 /// The cotangent of each seed, from `u`, the cotangent of `tape`'s result: the tape run backwards, each step's transpose an ordinary call (`Back::step`). `None` for a seed that the result doesn't depend on.
 fn transpose(tape: &Program, u: Value, seeds: usize, span: &Span) -> Result<Vec<Option<Value>>, Error> {
     let nodes = &tape.nodes;
-    // A node that depends on no seed holds a coefficient or a position: a held value, or a copy of one that `trace::Arg::read` made, which runs once here.
+    // Seed-free steps build coefficients and positions. Copies keep their read geometry until a consumer needs stored items.
     let mut values = vec![None; nodes.len()];
     for (j, node) in nodes.iter().enumerate() {
         values[j] = match &node.origin {
             Origin::Input(_) => None, Origin::Held(v) => Some(v.clone()), Origin::Step(step) if step.reads().any(|i| values[i].is_none()) => None,
-            Origin::Step(step) => Some(run::run(step, nodes, &|i| values[i].as_ref().expect("a coefficient's operands have their values"), None, &node.desc, span)?)
+            Origin::Step(step) => {
+                let value = |i: usize| values[i].as_ref().expect("a coefficient's operands have their values");
+                Some(run::copy_read(step, &value, &node.desc, span)
+                    .unwrap_or_else(|| run::run(step, nodes, &value, None, &node.desc, span))?)
+            }
         };
     }
     let mut back = Back { nodes, values, cotangents: vec![None; nodes.len()], span };

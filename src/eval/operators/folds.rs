@@ -256,7 +256,7 @@ fn item_lanes(
     scan: bool, lanes: &Lanes, shape: Vec<usize>, seed: Option<&Value>, right: &Value, apply: impl FnMut(Value, Value) -> Result<Value, Error>, active: bool
 ) -> Result<Value, Error> {
     crate::program::trace::per_item(seed, right)?;
-    if !active { crate::explain::itemwise(rustymath::events::Route::ItemLanes, right.len()); }
+    if !active { crate::explain::itemwise(crate::events::routes::ItemLanes, right.len()); }
     let data = if scan { scan_items(lanes, seed.cloned(), |i| right.at(i), apply)? } else { fold_items(lanes, seed, |i| right.at(i), apply)? };
     let value = Value::new(shape, data).described(if scan { "invalid scan result" } else { "invalid fold result" })?;
     Ok(if active { crate::batch::joined(&value).unwrap_or(value) } else { value })
@@ -264,7 +264,7 @@ fn item_lanes(
 
 /// A fold or scan by `op` of plain numbers, with an optional `seed`: the general path for an arithmetic primitive when every item is a number.
 fn number_lanes(op: crate::number::Arithmetic, scan: bool, right: &Value, seed: Option<&Value>, axis: &Lanes, shape: Vec<usize>) -> Result<Value, Error> {
-    crate::explain::itemwise(rustymath::events::Route::ItemLanes, right.len());
+    crate::explain::itemwise(crate::events::routes::ItemLanes, right.len());
     let number = |e: Value| { let Value::Number(n) = e else { unreachable!() }; n };
     let (item, seed) = (|i| number(right.at(i)), seed.cloned().map(number));
     let (p, t) = (Primitive::Arithmetic(op), Numeric::current());

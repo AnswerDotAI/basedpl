@@ -127,17 +127,21 @@ impl Session {
     /// Whether a level whose kind wraps values is running (`transform::Levels::transforming`).
     #[inline]
     pub(crate) fn transforming(&self) -> bool { self.transforming.get() }
-    /// Starts a level of `kind` and returns its id, which is larger than every running level's. A `∂` call's id is its tag, and a record level's id is the level its records carry.
-    pub(crate) fn begin(&self, kind: crate::transform::Kind) -> u64 {
+    /// Runs within a transformation level, whose id exceeds every outer level's. The level exits on return, error or panic.
+    pub(crate) fn with_level<T>(&self, kind: crate::transform::Kind, run: impl FnOnce(u64) -> T) -> T {
+        struct End<'a>(&'a Session);
+        impl Drop for End<'_> { fn drop(&mut self) { self.0.end(); } }
         let frames = self.bindings.depth();
         let id = self.levels.borrow_mut().begin(kind, frames);
         self.transforming.set(true);
-        id
+        let _end = End(self);
+        run(id)
     }
-    /// Ends the innermost level, applying its kind's exit rule to each binding outside its frames that it wrote (`transform::Kind::exit`).
-    pub(crate) fn end(&self) {
+    /// Ends the innermost level and restores routing. Normal returns also strip its data from bindings it wrote; panic unwinding does no language work.
+    fn end(&self) {
         let level = self.levels.borrow_mut().end();
         self.transforming.set(self.levels.borrow().transforming());
+        if std::thread::panicking() { return; }
         let Some(exit) = level.kind.exit() else { return };
         for place in level.writes {
             let Some(Binding::Value(v)) = self.bindings.get(place) else { continue };

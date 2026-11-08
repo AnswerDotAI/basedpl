@@ -4,18 +4,12 @@ use super::*;
 
 /// Where a stage's last step writes each run: the slots of its stored value, of the value's type, or the fold, which gets each block with the block's position.
 pub(super) enum Last<'a, 'b> {
-    F32(&'a mut Slots<'b, f32>), F64(&'a mut Slots<'b, f64>), Bool(&'a mut Slots<'b, bool>), U8(&'a mut Slots<'b, u8>), I16(&'a mut Slots<'b, i16>),
-    I32(&'a mut Slots<'b, i32>), I64(&'a mut Slots<'b, i64>), Fold(&'a mut dyn FnMut(usize, Folded<'_>))
+    Output(MapOutput<'a, 'b>), Fold(&'a mut dyn FnMut(usize, Folded<'_>))
 }
 
 impl<'a, 'b> Last<'a, 'b> {
     pub(super) fn output(&mut self) -> rustymath::buffer::MapOutput<'_, 'b> {
-        use rustymath::buffer::MapOutput;
-        match self {
-            Last::F32(s) => MapOutput::F32(s), Last::F64(s) => MapOutput::F64(s), Last::Bool(s) => MapOutput::Bool(s), Last::U8(s) => MapOutput::U8(s),
-            Last::I16(s) => MapOutput::I16(s), Last::I32(s) => MapOutput::I32(s), Last::I64(s) => MapOutput::I64(s),
-            Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
-        }
+        match self { Last::Output(output) => output.reborrow(), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer") }
     }
 }
 
@@ -70,11 +64,11 @@ pub(super) trait Item: Stored + rustymath::buffer::OutputItem + Sync {
 macro_rules! items {
     (@slot float) => { #[cfg(not(web))] fn slot(self) -> u64 { jit::float_slot(f64::from(self)) } };
     (@slot int) => { #[cfg(not(web))] fn slot(self) -> u64 { jit::integer_slot(i64::from(self)) } };
-    ($($t:ty => $v:ident, $k:ident);+ $(;)?) => {$(
+    ($($t:ty => $k:ident);+ $(;)?) => {$(
         impl Item for $t {
-            fn last<'a, 'b>(slots: &'a mut Slots<'b, Self>) -> Last<'a, 'b> { Last::$v(slots) }
+            fn last<'a, 'b>(slots: &'a mut Slots<'b, Self>) -> Last<'a, 'b> { Last::Output(slots.into()) }
             items!(@slot $k);
         }
     )+};
 }
-items!(f32 => F32, float; f64 => F64, float; u8 => U8, int; i16 => I16, int; i32 => I32, int; i64 => I64, int; bool => Bool, int);
+items!(f32 => float; f64 => float; u8 => int; i16 => int; i32 => int; i64 => int; bool => int);

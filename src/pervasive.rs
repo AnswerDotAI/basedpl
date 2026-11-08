@@ -253,7 +253,7 @@ fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<B
                 crate::array::ordinary_width(Width::narrowest(saturated::<i64, _>(t.floor(lo)), saturated::<i64, _>(t.floor(hi))))
             }
         });
-        rustymath::events::taken(rustymath::events::Route::VectorKernel, len);
+        crate::events::taken(crate::events::Route::VectorKernel, len);
         rustymath::operation::report_maps([read.plan], 0..len);
         Buffer::floored(view, DType::Integer(width), t)
     })

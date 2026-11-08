@@ -407,7 +407,7 @@ impl Carrier {
     }
     /// The items of a dual or a batch for `storage`, built once into `cell` as `n` items from `at`. Building them records an `itemwise` row in `•explain` under `route`.
     pub(crate) fn built<'a>(
-        cell: &'a std::sync::OnceLock<crate::array::Storage>, route: rustymath::events::Route, n: usize, at: impl Fn(usize) -> Value
+        cell: &'a std::sync::OnceLock<crate::array::Storage>, route: crate::events::Route, n: usize, at: impl Fn(usize) -> Value
     ) -> &'a crate::array::Storage {
         cell.get_or_init(|| {
             crate::explain::itemwise(route, n);

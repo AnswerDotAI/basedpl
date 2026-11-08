@@ -125,7 +125,7 @@ impl Traced {
         if self.role == Role::Tape {
             panic!("a tape value has no items: code that reads a tangent missed a tape value, at\n{}", std::backtrace::Backtrace::force_capture());
         }
-        Carrier::built(&self.items, rustymath::events::Route::TracedItems, self.read.layout.count(), |_| self.outside(Shape::EMPTY))
+        Carrier::built(&self.items, crate::events::routes::TracedItems, self.read.layout.count(), |_| self.outside(Shape::EMPTY))
     }
     /// Whether code with no rule for traces has read the items (`storage`).
     pub(crate) fn items_built(&self) -> bool { self.items.get().is_some() }
@@ -500,22 +500,22 @@ pub(crate) fn build(
         };
         tracer.add(desc.clone(), Origin::Input(k))
     };
-    let level = session().begin(Kind::Trace(tracer.clone()));
-    let data: Vec<Value> =
-        data.iter().enumerate().map(|(k, v)| free(Free::Datum(k), v, level, &tracer).expect("a program takes each datum as an input")).collect();
-    let traced_leaves = |value: &Value, which: fn(usize) -> Input| {
-        let mut k = 0;
-        crate::transform::walk(value, &mut |leaf| {
-            let desc = Desc::of(leaf).expect("a key describes each leaf");
-            let read = Read::new(input(which(k), &desc), desc.layout.clone());
-            k += 1;
-            Ok(traced(level, Role::Trace, read, &desc, &tracer))
-        }).expect("an argument's leaves trace")
-    };
-    let x = left.map(|l| traced_leaves(l, Input::Left));
-    let y = traced_leaves(right, Input::Right);
-    let called = call(&data, x.as_ref(), &y);
-    session().end();
+    let (level, called) = session().with_level(Kind::Trace(tracer.clone()), |level| {
+        let data: Vec<Value> =
+            data.iter().enumerate().map(|(k, v)| free(Free::Datum(k), v, level, &tracer).expect("a program takes each datum as an input")).collect();
+        let traced_leaves = |value: &Value, which: fn(usize) -> Input| {
+            let mut k = 0;
+            crate::transform::walk(value, &mut |leaf| {
+                let desc = Desc::of(leaf).expect("a key describes each leaf");
+                let read = Read::new(input(which(k), &desc), desc.layout.clone());
+                k += 1;
+                Ok(traced(level, Role::Trace, read, &desc, &tracer))
+            }).expect("an argument's leaves trace")
+        };
+        let x = left.map(|l| traced_leaves(l, Input::Left));
+        let y = traced_leaves(right, Input::Right);
+        (level, call(&data, x.as_ref(), &y))
+    });
     // A trace that ends without a program still gives the free values that it read.
     let end = |how: Ended| (Err(how), std::mem::take(&mut tracer.builder().captured));
     let value = match called {
@@ -553,14 +553,14 @@ pub(crate) enum Input { Left(usize), Right(usize), Name(usize) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Purpose { Call, Derivative }
 
-/// What a program was built for: its purpose, arguments' descriptions, the numeric settings, and the environment of the closure it traced, which the free names it read are found through.
+/// What a program was built for: its purpose, arguments' descriptions, the numeric and execution-size settings, and the environment of the closure it traced, which the free names it read are found through.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Key { pub(crate) purpose: Purpose, pub(crate) left: Option<Descs>, pub(crate) right: Descs, pub(crate) numeric: Numeric, pub(crate) environment: Option<usize> }
+pub(crate) struct Key { pub(crate) purpose: Purpose, pub(crate) left: Option<Descs>, pub(crate) right: Descs, pub(crate) numeric: Numeric, sizes: crate::settings::Sizes, pub(crate) environment: Option<usize> }
 
 impl Key {
     /// Whether a call with signature `other` can run a program built for this one: the same settings and environment, and arguments that one program serves (`alike`).
     fn admits(&self, other: &Key, exact: bool) -> bool {
-        self.purpose == other.purpose && self.numeric == other.numeric && self.environment == other.environment && alike(&self.right, &other.right, exact) && match (&self.left, &other.left) {
+        self.purpose == other.purpose && self.numeric == other.numeric && self.sizes == other.sizes && self.environment == other.environment && alike(&self.right, &other.right, exact) && match (&self.left, &other.left) {
             (Some(a), Some(b)) => alike(a, b, exact), (None, None) => true, _ => false
         }
     }
@@ -780,13 +780,13 @@ pub(crate) fn programmed(
     traced: &dyn Fn(&[Value], Option<&Value>, &Value) -> Result<Value, Error>) -> Option<Result<Value, Error>> {
     let numeric = Numeric::current();
     let declined = |reason| {
-        rustymath::events::declined(rustymath::events::Route::Program, reason, right.len());
+        crate::events::declined(crate::events::routes::Program, reason, right.len());
         None
     };
     if session().transforming() { return declined("a call under another level"); }
     let described = |v: &Value| Descs::of(v, &mut Desc::of).ok_or("an argument that programs can't hold");
     let key = match (left.map(described).transpose(), described(right)) {
-        (Ok(left), Ok(right)) => Key { purpose, left, right, numeric, environment }, (Err(reason), _) | (_, Err(reason)) => return declined(reason)
+        (Ok(left), Ok(right)) => Key { purpose, left, right, numeric, sizes: crate::settings::sizes(), environment }, (Err(reason), _) | (_, Err(reason)) => return declined(reason)
     };
     let (outcome, names, event) = match programs.find(&key, data) {
         Lookup::Applies(outcome, names) => (outcome, Some(names), "replayed"),
@@ -795,7 +795,7 @@ pub(crate) fn programmed(
             programs.add(Entry { key, captured: Vec::new(), outcome: Outcome::Stopped { reason, any_key: false }, changes: CHANGES,
                 served: AtomicBool::new(false) });
             if purpose == Purpose::Call { return declined(reason); }
-            rustymath::events::stopped(reason, right.len(), || None);
+            crate::events::stopped(reason, right.len(), || None);
             return None;
         }
         Lookup::Trace(changes) => {
@@ -821,7 +821,7 @@ pub(crate) fn programmed(
     let recording = match outcome {
         Outcome::Built(recording) => recording, Outcome::Stopped { reason, .. } => {
             if purpose == Purpose::Call { return declined(reason); }
-            rustymath::events::stopped(reason, right.len(), || None); return None;
+            crate::events::stopped(reason, right.len(), || None); return None;
         }
     };
     let names = names?;
@@ -848,7 +848,7 @@ pub(crate) fn programmed(
         })
     })
         .and_then(|value| recording.renamed(value));
-    if result.is_ok() { rustymath::events::taken(rustymath::events::Route::Trace, right.len()); }
+    if result.is_ok() { crate::events::taken(crate::events::routes::Trace, right.len()); }
     crate::explain::program(event, program.nodes.iter().filter(|n| matches!(n.origin, Origin::Step(_))).count(), || recording.listing(&key));
     Some(result)
 }

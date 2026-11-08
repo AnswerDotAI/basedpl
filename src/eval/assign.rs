@@ -370,9 +370,7 @@ impl Session {
         let (binding, selection, values) = match self.direct_target(&mut nodes)? {
             Some((binding, selection)) => (binding, selection, right.clone()),
             None => {
-                let level = self.begin(crate::transform::Kind::Label);
-                let selected = self.selection_expression(&nodes, level);
-                self.end();
+                let (level, selected) = self.with_level(crate::transform::Kind::Label, |level| (level, self.selection_expression(&nodes, level)));
                 let (binding, mut labels, selected) = selected?;
                 let read = labels.read(&selected, level);
                 // The labelled value holds the array too, so dropping it lets the write change the array in place.
@@ -504,7 +502,7 @@ impl Session {
             latest.insert(path, i);
         }
         crate::explain::accumulated(selection.targets.len(), original.len(), "item by item");
-        crate::explain::itemwise(rustymath::events::Route::Accumulation, selection.targets.len());
+        crate::explain::itemwise(crate::events::routes::Accumulation, selection.targets.len());
         let values = match &selection.frame {
             ResultFrame::Direct => results.pop().unwrap_or(right),
             ResultFrame::Array(layout) if !results.is_empty() => {

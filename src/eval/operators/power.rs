@@ -253,7 +253,7 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
         let seed = seed.map(|s| crate::primitive::weakened_beside(s, crate::plan::Kind::value(right)).unwrap_or_else(|| s.clone()));
         if let Some(result) = crate::pervasive::inverse_scan(p, right, seed.as_ref(), &axis) { return Ok(result); }
     }
-    crate::explain::itemwise(rustymath::events::Route::InverseScan, right.len());
+    crate::explain::itemwise(crate::events::routes::InverseScan, right.len());
     let mut data: Vec<_> = right.elements().collect();
     for i in 0..axis.outer {
         for j in usize::from(seed.is_none())..axis.len {

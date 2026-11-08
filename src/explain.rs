@@ -1,8 +1,8 @@
-//! The events that `•explain` reports about a run, recorded as rustymath's producer events (`rustymath::events`), which BPL's `•explain` and rustymath's Python `explain` share, and rendered as `events::TABLES` lists them. Events are recorded only while a capture runs, as `•explain` and the route checks run one. Code on every thread records into the run's store, which `rustymath::events` holds for the whole process while the run lasts, because fusion runs its programs without a session. A process supports one capture at a time, apart from captures nested on one thread.
+//! BPL report rendering and cost counts. `events` owns its vocabulary; rustymath supplies the shared process-wide capture, including worker threads and captures nested on one thread.
 //!
 //! The module also counts the pending arrays alive in the process, which `•memory` reports.
 use crate::{Described, Error, Value, keyed};
-use rustymath::events::{self, Column, Event, EventKind, Field, Report, Route};
+use crate::events::{self, Column, Event, EventKind, Field, Report, Route, Detail};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::{AtomicUsize, Ordering}};
 
 /// The live pending arrays.
@@ -51,17 +51,17 @@ pub(crate) fn reporting() -> bool { crate::settings::reports_fusion() || events:
 
 /// Records a fused group of `items` items, whose calls have the glyphs `glyphs`, in the order they ran, with what `tally` counted while it ran.
 pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, tally: &Tally) {
-    events::taken(Route::Fusion, items);
+    events::taken(crate::events::routes::Fusion, items);
     let Some(c) = &tally.0 else { return };
     let count = |n: &AtomicUsize| n.load(Ordering::Relaxed);
-    events::emit(|_| Event::Fused { glyphs: glyphs(), items, blocks: count(&c.blocks), runs: count(&c.runs), copied: count(&c.copied) });
+    events::emit(|_| Detail::Fused { glyphs: glyphs(), items, blocks: count(&c.blocks), runs: count(&c.runs), copied: count(&c.copied) });
 }
 
 /// Records a pending array that a fused group read as an input, computed on its own first. `event` gives the glyphs of its call, its item count and the reason the group couldn't compute it as one of its calls.
 pub(crate) fn stored(event: impl FnOnce() -> (String, usize, &'static str)) {
     events::emit(|_| {
         let (glyphs, items, reason) = event();
-        Event::Stored { glyphs, items, reason, partway: false }
+        Detail::Stored { glyphs, items, reason, partway: false }
     });
 }
 
@@ -82,7 +82,7 @@ impl Tally {
 
 /// Records that `function`, at `line` and `column`, computed `items` items of pending arrays: its arguments, or only the items it read from them.
 pub(crate) fn forced(function: String, line: usize, column: usize, items: usize) {
-    events::emit(|_| Event::Forced { function, line, column, items, reason: "", site: None });
+    events::emit(|_| Detail::Forced { function, line, column, items, reason: "", site: None });
 }
 
 /// Counts `items` items that a pending array computed, on any thread.
@@ -102,30 +102,30 @@ pub(crate) fn uncounted<T>(f: impl FnOnce() -> T) -> T {
 /// Records that `function` computed the fast combination `route`.
 pub(crate) fn fast(route: Route, function: String) { events::taken(route, 0); fast_detail(route, function) }
 /// Adds function details for a route already counted by its numerical implementation.
-pub(crate) fn fast_detail(route: Route, function: String) { events::emit(|_| Event::Fast { rule: route.name(), function }) }
+pub(crate) fn fast_detail(route: Route, function: String) { events::emit(|_| Detail::Fast { rule: route.name(), function }) }
 
 /// Records an accumulation that added `items` items into a result of `size` items, each at a position that a table of offsets or ids gives, as scattering adds them. `path` names how it added them, as `pervasive::Route` names a scatter's paths, or `"rounds"`, `"one call"` or `"item by item"` for the general paths.
-pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { events::emit(|_| Event::Accumulation { items, size, path }) }
+pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { events::emit(|_| Detail::Accumulation { items, size, path }) }
 
 /// Records that a batched run's calls fell back to slower code, with `reason` and the number of `items` it concerns. The reason becomes text only while `•explain` records. A stop gives its cause (`transform::Stop`).
-pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { events::emit(|_| Event::Fallback { reason: reason.to_string(), items }) }
+pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { events::emit(|_| Detail::Fallback { reason: reason.to_string(), items }) }
 
 /// Records a dfn call that ran from a program: `"built"` where its trace built the program first, and `"replayed"` where it found one, with the program's `steps` and its `listing`, which is built only while `•explain` records.
 pub(crate) fn program(event: &'static str, steps: usize, listing: impl FnOnce() -> String) {
-    events::emit(|_| Event::Program { event, steps, listing: listing() });
+    events::emit(|_| Detail::Program { event, steps, listing: listing() });
 }
 
 /// Records the compile of a block stage's kernel, with the glyphs of the stage's calls that `glyphs` gives and the compile's `time`.
 #[cfg(not(web))]
 pub(crate) fn compiled(glyphs: impl FnOnce() -> String, time: std::time::Duration) {
-    events::emit(|_| Event::Compile { glyphs: glyphs(), microseconds: time.as_micros() as usize });
+    events::emit(|_| Detail::Compile { glyphs: glyphs(), microseconds: time.as_micros() as usize });
 }
 
 /// Records a write by the call at `span` that left a compact array of `items` items in mixed storage, with the array's kind before the write and the kind written, as `•storage` names them.
 pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static str, items: usize) {
     events::emit(|_| {
         let (line, column) = span.position();
-        Event::Mixed { code: span.text().into(), line, column, target, written, items }
+        Detail::Mixed { code: span.text().into(), line, column, target, written, items }
     });
 }
 
@@ -146,9 +146,9 @@ pub(crate) fn claim_itemwise(mark: usize, function: impl FnOnce() -> String, spa
 }
 
 /// An `itemwise` event for each route in `entries`, with its items summed in the order of each route's first entry, for the call at `span` whose code is `function`.
-fn claimed(entries: Vec<(Route, usize)>, function: String, span: &crate::Span) -> impl Iterator<Item = Event> {
+fn claimed(entries: Vec<(Route, usize)>, function: String, span: &crate::Span) -> impl Iterator<Item = Detail> {
     let (line, column) = span.position();
-    by_route(entries).into_iter().map(move |(route, items)| Event::Itemwise { function: function.clone(), line, column, route, items })
+    by_route(entries).into_iter().map(move |(route, items)| Detail::Itemwise { function: function.clone(), line, column, route, items })
 }
 
 /// `entries` with each route's items summed, in the order of each route's first entry.
@@ -163,21 +163,21 @@ fn by_route(entries: impl IntoIterator<Item = (Route, usize)>) -> Vec<(Route, us
 impl Events {
     /// `•explain`'s record: the expression's `value`, then a record for each of `events::TABLES`, holding its columns, with one row for each event. Counts that no call claimed count for the `•explain` call at `span`.
     pub fn report(mut self, value: Value, span: &crate::Span) -> Result<Value, Error> {
-        for event in claimed(std::mem::take(&mut self.unclaimed), span.text().into(), span) { self.report.record(event); }
+        for event in claimed(std::mem::take(&mut self.unclaimed), span.text().into(), span) { self.report.record(event.event()); }
         let record =
             |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).described("invalid explain record");
         let mut tables = vec![value];
-        for (table, &(_, columns)) in events::TABLES.iter().enumerate() {
+        for &table in events::TABLES {
             let rows: Vec<_> = self.report.records.iter().filter(|event| event.table() == table).map(Event::fields).collect();
             let n = rows.len();
-            let values = columns.iter().enumerate().map(|(c, &(_, column))| match column {
+            let values = table.1.iter().enumerate().map(|(c, &(_, column))| match column {
                 Column::Text => keyed::texts(&[n], rows.iter().map(|row| keyed::text(row[c].text())).collect()).described("invalid explain texts"),
                 Column::Count => Value::integers(vec![n], rows.iter().map(|row| row[c].count() as i64).collect()).described("invalid explain counts"),
                 Column::Truth => Value::booleans(vec![n], rows.iter().map(|row| row[c].truth()).collect()).described("invalid explain truth values"),
             }).collect::<Result<_, _>>()?;
-            tables.push(record(columns.iter().map(|&(name, _)| name).collect(), values)?);
+            tables.push(record(table.1.iter().map(|&(name, _)| name).collect(), values)?);
         }
-        record(std::iter::once("value").chain(events::TABLES.iter().map(|&(name, _)| name)).collect(), tables)
+        record(std::iter::once("value").chain(events::TABLES.iter().map(|table| table.0)).collect(), tables)
     }
 
     pub fn observed(&self) -> &Report { &self.report }
@@ -186,7 +186,7 @@ impl Events {
     pub fn slow(&self) -> Vec<(&'static str, String, String)> {
         let text = |event: &Event| {
             event.fields().iter().map(|f| match f {
-                Field::Text(t) => (*t).to_owned(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string()
+                Field::Text(t) => t.as_ref().to_owned(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string()
             }).collect::<Vec<_>>().join(" ")
         };
         let mut rows: Vec<_> = self.report.records.iter().filter_map(|event| Some((event.name(), event.slow_name()?.to_owned(), text(event)))).collect();

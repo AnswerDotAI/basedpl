@@ -126,7 +126,7 @@ ism,sm
 ⍝⍝: 1	1.1	0.99	instructions linux 1.929	allocated linux 0.464
 
 ⍝ A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly, finishing each block of a lane while it is in cache. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
-⍝ Expected: `+/3↕sv` and `⌈/3↕sv` 1 copy: one read and one write per window, sliding; `+/50↕sv` 1 copy: a running sum, with one addition and one subtraction per window; `⌈/50↕sv` 2 copies: van Herk-Gil-Werman, with two passes of running maxima and a combine; `+/+/3 3↕sq` 2 copies: two separable sliding passes.
+⍝ Expected: `+/3↕sv` and `⌈/3↕sv` 1 copy: one read and one write per window, sliding. Both `+/50↕sv` and `⌈/50↕sv` use van Herk-Gil-Werman: suffix and prefix folds plus a combine, with O(n) work and a length-n scratch buffer, not an add/subtract rolling sum. `+/+/3 3↕sq` 2 copies: two separable sliding passes.
 ⍝ On 25 October 2026 `+/3↕sv` measured 3.66 on macOS, for the reason `⌈/3↕sv`'s comment gives, and it measures 1.45 after the same change. CI then measured 0.85 on Linux and 1.26 in wasm, against 5.09 and 3.41 on 22 October 2026. All three budgets are twice its expected cost.
 ⍝⍝⍝ route sliding fold
 +/3↕sv
