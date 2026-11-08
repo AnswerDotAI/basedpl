@@ -224,11 +224,10 @@ fn computed<R>(
 /// Reads of `args` as rustymath kernels take them, with each value's kind: each value through its mapping onto `len` items, with `missing` for the positions a mapping reaches no item at. `None` where a value isn't compact.
 pub(crate) fn with_reads<R>(args: &[(&Value, &Mapping, usize)], missing: Missing, f: impl FnOnce(&[Read<'_>], &[DType]) -> R) -> Option<R> {
     use rustymath::agreement::{Binding, ReadPlan};
-    let views: Vec<View<'_>> = args.iter().map(|(value, ..)| value.view()).collect::<Option<_>>()?;
-    let types: Vec<DType> = views.iter().map(|v| v.dtype()).collect();
-    let sources: Vec<_> = views.iter().map(|&view| Binding::full(view)).collect();
-    let plans: Vec<_> = args.iter().zip(&views).enumerate()
-        .map(|(source, ((_, mapping, len), view))| ReadPlan::copy(source, view.len(), (*mapping).clone(), *len, missing.clone())).collect();
+    let sources: Vec<_> = args.iter().map(|(value, ..)| value.view().map(Binding::full)).collect::<Option<_>>()?;
+    let types: Vec<DType> = sources.iter().map(|binding| binding.view.dtype()).collect();
+    let plans: Vec<_> = args.iter().zip(&sources).enumerate()
+        .map(|(source, ((_, mapping, len), binding))| ReadPlan::copy(source, binding.items, (*mapping).clone(), *len, missing.clone())).collect();
     let reads: Vec<_> = plans.iter().map(|plan| Read { sources: &sources, plan }).collect();
     Some(f(&reads, &types))
 }
