@@ -911,6 +911,7 @@ impl Blocks {
         let mut count = 0;
         for (k, source) in bindings.iter().enumerate() {
             if let Some(source) = source {
+                let source = match step.operands[k] { Some(Operand::Input(i)) => &run.inputs[i], _ => source };
                 reads[count] = rustymath::agreement::Read { sources: std::slice::from_ref(source), plan: plans[k] };
                 count += 1;
             }
