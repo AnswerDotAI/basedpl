@@ -42,9 +42,14 @@ pub(super) unsafe fn write(buffer: &Buffer, at: usize, out: &Shared, start: usiz
     unsafe { std::ptr::copy_nonoverlapping(buffer.view().as_ptr().add(at * size), out.0.add(start * size), n * size) }
 }
 
-/// The array of `shape` that `buffer` holds, as fixed integers where `fixed` says.
-pub(super) fn built(buffer: Buffer, layout: &Layout, fixed: bool) -> Option<Value> {
-    Value::from_storage(layout.clone(), Storage::Compact(buffer).fixed(fixed)).ok()
+/// Publishes the buffer with its node's atom, kind and layout.
+pub(super) fn built(buffer: Buffer, desc: &Desc) -> Option<Value> {
+    let value = Value::from_storage(desc.layout.clone(), Storage::Compact(buffer).fixed(desc.kind.fixed.is_some())).ok()?;
+    Some(published(value, desc))
+}
+
+pub(super) fn published(value: Value, desc: &Desc) -> Value {
+    if desc.atom { Value::Number(value.as_number().expect("a described atom is numeric").marked(desc.kind.weak)) } else { value }
 }
 
 /// A stored step's room for the stage's items, which the stage's ranges write in parallel, each its own items.

@@ -579,14 +579,17 @@ pub(crate) struct Recording { program: Program, plan: Arc<run::Plan>, inputs: Ve
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Input { Left(usize), Right(usize), Name(usize) }
 
-/// What a program was built for: its arguments' descriptions, the numeric settings, and the environment of the closure it traced, which the free names it read are found through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Purpose { Call, Derivative }
+
+/// What a program was built for: its purpose, arguments' descriptions, the numeric settings, and the environment of the closure it traced, which the free names it read are found through.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Key { pub(crate) left: Option<Descs>, pub(crate) right: Descs, pub(crate) numeric: Numeric, pub(crate) environment: Option<usize> }
+pub(crate) struct Key { pub(crate) purpose: Purpose, pub(crate) left: Option<Descs>, pub(crate) right: Descs, pub(crate) numeric: Numeric, pub(crate) environment: Option<usize> }
 
 impl Key {
     /// Whether a call with signature `other` can run a program built for this one: the same settings and environment, and arguments that one program serves (`alike`).
     fn admits(&self, other: &Key, exact: bool) -> bool {
-        self.numeric == other.numeric && self.environment == other.environment && alike(&self.right, &other.right, exact) && match (&self.left, &other.left) {
+        self.purpose == other.purpose && self.numeric == other.numeric && self.environment == other.environment && alike(&self.right, &other.right, exact) && match (&self.left, &other.left) {
             (Some(a), Some(b)) => alike(a, b, exact), (None, None) => true, _ => false
         }
     }
@@ -735,7 +738,7 @@ impl Programs {
         let entries = self.entries();
         // The signature's newest entry, and the newest outcome that applies, with the free values that its trace read.
         let (mut newest, mut applies) = (None, None);
-        for entry in entries.iter().rev() {
+        for entry in entries.iter().rev().filter(|entry| entry.key.purpose == key.purpose) {
             let own = entry.key.admits(key, entry.exact());
             if own && newest.is_none() { newest = Some(entry); }
             if applies.is_none() && (own || matches!(entry.outcome, Outcome::Stopped { any_key: true, .. })) {
@@ -755,7 +758,7 @@ impl Programs {
     fn add(&self, entry: Entry) {
         let mut entries = self.entries();
         if entry.captured.is_empty() {
-            match entry.outcome { Outcome::Stopped { any_key: true, .. } => entries.clear(), _ => entries.retain(|e| e.key != entry.key) }
+            match entry.outcome { Outcome::Stopped { any_key: true, .. } => entries.retain(|e| e.key.purpose != entry.key.purpose), _ => entries.retain(|e| e.key != entry.key) }
         }
         if entries.len() == KEPT { entries.remove(0); }
         entries.push(entry);
@@ -786,23 +789,23 @@ impl Tacit {
 
 /// Runs `∂` of `f`, a function other than a dfn, from a program, as `call` does for a dfn. Programs are kept for each structure of function (`Tacit`). Each datum that `f`'s structure leaves out, an array that `f` binds as an argument or returns as a constant, becomes an input, as a free name that a dfn reads does.
 pub(crate) fn tacit(
-    f: &Function, left: Option<&Value>, right: &Value, span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>
+    f: &Function, purpose: Purpose, left: Option<&Value>, right: &Value, span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>
 ) -> Option<Result<Value, Error>> {
     let tacit = &session().tacit;
     // A call that this one's trace or replay makes finds the buffer taken, and makes its own.
     let mut data = std::mem::take(&mut *tacit.data.borrow_mut());
     let result = tacit.programs(f, &mut data, span).and_then(|programs| {
-        programmed(&programs, f.environment(), left, right, span, &data, &|values, x, y| traced(&f.with_data(&mut values.iter().cloned(), span)?, x, y))
+        programmed(&programs, purpose, f.environment(), left, right, span, &data, &|values, x, y| traced(&f.with_data(&mut values.iter().cloned(), span)?, x, y))
     });
     data.clear();
     *tacit.data.borrow_mut() = data;
     result
 }
 
-/// Runs `∂` of a function from one of its `programs`, building one first where none fits these arguments, settings and free values. `data` are the function's data that its programs take as inputs (`Function::with_data`), none for a dfn. `traced` runs the call on traced inputs in place of `data` and on the arguments it's given. `None` leaves the call to the interpreter.
+/// Runs a function or its `∂` from one of its `programs`, building one first where none fits these arguments, settings and free values. `data` are the function's data that its programs take as inputs (`Function::with_data`), none for a dfn. `traced` runs the call on traced inputs in place of `data` and on the arguments it's given. `None` leaves the call to the interpreter.
 #[inline(never)]
 pub(crate) fn programmed(
-    programs: &Programs, environment: Option<usize>, left: Option<&Value>, right: &Value, span: &Span, data: &[Value],
+    programs: &Programs, purpose: Purpose, environment: Option<usize>, left: Option<&Value>, right: &Value, span: &Span, data: &[Value],
     traced: &dyn Fn(&[Value], Option<&Value>, &Value) -> Result<Value, Error>) -> Option<Result<Value, Error>> {
     let numeric = Numeric::current();
     let declined = |reason| {
@@ -812,7 +815,7 @@ pub(crate) fn programmed(
     if session().transforming() { return declined("a call under another level"); }
     let described = |v: &Value| Descs::of(v, &mut Desc::of).ok_or("an argument that programs can't hold");
     let key = match (left.map(described).transpose(), described(right)) {
-        (Ok(left), Ok(right)) => Key { left, right, numeric, environment }, (Err(reason), _) | (_, Err(reason)) => return declined(reason)
+        (Ok(left), Ok(right)) => Key { purpose, left, right, numeric, environment }, (Err(reason), _) | (_, Err(reason)) => return declined(reason)
     };
     let (outcome, names, event) = match programs.find(&key, data) {
         Lookup::Applies(outcome, names) => (outcome, Some(names), "replayed"),
@@ -820,12 +823,16 @@ pub(crate) fn programmed(
             let reason = "a free value that changes on every call";
             programs.add(Entry { key, captured: Vec::new(), outcome: Outcome::Stopped { reason, any_key: false }, changes: CHANGES,
                 served: AtomicBool::new(false) });
+            if purpose == Purpose::Call { return declined(reason); }
             rustymath::events::stopped(reason, right.len(), || None);
             return None;
         }
         Lookup::Trace(changes) => {
             let (built, captured) = build(left, right, data, traced);
             let outcome = match built {
+                Ok(recording) if purpose == Purpose::Call && (!matches!(&recording.result, Descs::Leaf(_)) || !crate::fusion::records_dense(&recording.program)) => {
+                    Outcome::Stopped { reason: "a body outside dense elementwise reuse", any_key: false }
+                }
                 Ok(recording) => Outcome::Built(Arc::new(recording)),
                 Err(Ended::Stopped(stop, noted)) => {
                     Outcome::Stopped { reason: noted.unwrap_or(stop.cause().reason()), any_key: stop.cause().kept() == Kept::Always }
@@ -841,7 +848,10 @@ pub(crate) fn programmed(
         }
     };
     let recording = match outcome {
-        Outcome::Built(recording) => recording, Outcome::Stopped { reason, .. } => { rustymath::events::stopped(reason, right.len(), || None); return None; }
+        Outcome::Built(recording) => recording, Outcome::Stopped { reason, .. } => {
+            if purpose == Purpose::Call { return declined(reason); }
+            rustymath::events::stopped(reason, right.len(), || None); return None;
+        }
     };
     let names = names?;
     let program = &recording.program;
@@ -857,14 +867,15 @@ pub(crate) fn programmed(
     let inputs: Vec<&Value> = recording.inputs.iter().map(|input| match *input {
         Input::Left(k) => &x[k], Input::Right(k) => &y[k], Input::Name(i) => names[i].as_ref().expect("a free name that a program reads has a value")
     }).collect();
-    let result = run::values(program, &recording.plan, &inputs, span).map(|values| match &recording.result {
+    let deferred = if purpose == Purpose::Call && matches!(&recording.result, Descs::Leaf(_)) { crate::fusion::recorded(program, &inputs) } else { None };
+    let result = deferred.map(Ok).unwrap_or_else(|| run::values(program, &recording.plan, &inputs, span).map(|values| match &recording.result {
             Descs::Leaf(_) => run::read(program, &values, &program.result),
             // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.
             nested => {
                 let nodes = std::iter::once(program.result.of).chain(program.outputs.iter().copied());
                 nested.built(&mut nodes.zip(nested.leaves()).map(|(j, desc)| run::read(program, &values, &Read::new(j, desc.layout.clone()))))
             }
-        })
+        }))
         .and_then(|value| recording.renamed(value));
     if result.is_ok() { rustymath::events::taken(rustymath::events::Route::Trace, right.len()); }
     crate::explain::program(event, program.nodes.iter().filter(|n| matches!(n.origin, Origin::Step(_))).count(), || recording.listing(&key));

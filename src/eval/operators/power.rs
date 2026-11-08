@@ -30,9 +30,10 @@ pub(super) fn power(operands: &[Operand; 2], left: Option<&Value>, right: impl A
             }
             if n == 0 { return Ok(Bound::from(right.owned())); }
             // The first step takes the argument as the caller gave it, and each later step takes the state that the step before made.
-            let mut result = f.call_with(left, right, span)?;
-            for _ in 1..n { result = f.call_with(left, result.array(span)?, span)?; }
-            Ok(result)
+            if n == 1 { return f.call_with(left, right, span); }
+            let mut value = f.call_body(left, right, span)?.into_value(span)?;
+            for _ in 1..n - 1 { value = f.call_body(left, value, span)?.into_value(span)?; }
+            f.call_with(left, value, span)
         }
         // An array of counts gives one item for each count, holding the state after that many steps.
         Operand::Value(count) => {

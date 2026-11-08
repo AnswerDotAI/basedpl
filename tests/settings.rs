@@ -234,4 +234,15 @@ fn retained_programs_rebind_block_geometry() {
         equiv_in(&s, r#"e←•explain "f∂x" ⋄ e.value"#, "12+6×0.25×⍳17");
     }
     equiv_in(&s, "e.programs.event", r#"["replayed"]"#);
+    // Power warms ordinary calls first at length 2; derivatives warm first at length 4.
+    equiv_in(&s, "a←2 2 ⋄ f←{a×⍵+1} ⋄ f⍣2⁝1 2", "10 14");
+    equiv_in(&s, "f∂1 2", "[2 0⋄0 2]");
+    equiv_in(&s, "f⍣2⁝1 2", "10 14");
+    equiv_in(&s, "a←3 3 ⋄ f⍣2⁝1 2", "21 30");
+    equiv_in(&s, "f∂1 2", "[3 0⋄0 3]");
+    equiv_in(&s, "a←3 3 3 3 ⋄ f∂1 2 3 4", "[3 0 0 0⋄0 3 0 0⋄0 0 3 0⋄0 0 0 3]");
+    equiv_in(&s, "f⍣2⁝1 2 3 4", "21 30 39 48");
+    equiv_in(&s, "a←4 4 4 4 ⋄ [f∂1 2 3 4 ; f⍣2⁝1 2 3 4]", "[[4 0 0 0⋄0 4 0 0⋄0 0 4 0⋄0 0 0 4];36 52 68 84]");
+    equiv_in(&s, "h←{⊂2×⍵} ⋄ h⍣2⁝1 2", "⊂⊂4 8");
+    equiv_in(&s, "h⍣2⁝3 4", "⊂⊂12 16");
 }

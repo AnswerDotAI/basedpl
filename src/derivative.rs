@@ -341,7 +341,7 @@ pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, s
             None if leaf.template().is_exact() => converted(leaf, DType::Float(numeric.width_of([None])), span), None => Ok(leaf.clone())
         }
     })?;
-    if let Some(result) = f.programmed(left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
+    if let Some(result) = f.programmed(crate::program::trace::Purpose::Derivative, left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
     derived(f, left, right, span)
 }
 

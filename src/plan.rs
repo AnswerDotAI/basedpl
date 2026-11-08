@@ -271,6 +271,10 @@ impl Pervasive {
         if crate::pervasive::integral(self.p, self.dyadic, self.computes()?, self.numeric) { return Some(integers); }
         Some(match self.kernel()?.result_dtype() { DType::Integer(_) if self.numeric.wrapping() => integers, k => k })
     }
+    /// The settled result under its layout, atom and weak-number flags.
+    pub(crate) fn result_desc(&self, layout: Layout, atom: bool, weak: bool) -> Result<Desc, &'static str> {
+        Ok(Desc { kind: computed(self.settled()?, self.numeric, weak), atom, layout, range: self.result_range() })
+    }
     /// The operand that the call gives unchanged, as its kinds and constants show it, 0 for the left and 1 for the right: the operand that an order-only call picks by its order class (`picking`), monadic `+` on a real operand, `⌊` and `⌈` on integers, and a dyadic call whose constant leaves the other operand unchanged, as its kernel's formula says (`Kernel::kept`): `x+0`, `0+x`, `x-0`, `x×1`, `1×x`, `x÷1` and `x*1`. The result must have the operand's kind, so a float constant beside integers, which widens them, keeps nothing. Integers that don't wrap keep their kind through `+`, `⌊` and `⌈` whatever `result` says. A Boolean's floor is an integer. The exact `⌊` and `⌈` remove fixedness, as plain `vₓ` does. `x+0` gives ¯0 where `x` is ¯0, where the sum is 0: Jeremy accepted that difference on 30 October 2026. A constant of ¯0 counts as 0, so `x-¯0` keeps `x` too, with the same difference where `x` is ¯0. `pervasive::unchanged` adds the condition on shapes.
     pub(crate) fn kept(&self) -> Option<usize> {
         if let Some(k) = self.picking() { return k.selected_input(); }
@@ -369,8 +373,8 @@ impl Operand<'_> {
 /// A planned pervasive call: its result's description, and its plan.
 pub(crate) struct Mapped { pub(crate) desc: Desc, pub(crate) plan: Pervasive }
 
-/// The plan of pervasive primitive `p` on `left` and `right` under `numeric`, where `same` says whether both are one value (`Pervasive::same`), with its result's description, or the reason that a program can't hold the call.
-pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Mapped, &'static str> {
+/// The operand facts of a pervasive call, before settling its result.
+fn map_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Pervasive, &'static str> {
     if !p.scalar(left.is_some()) { return Err("a call that isn't pervasive"); }
     // A traced weak number beside integers of a fixed width (`Numeric::fixes`) converts to that width only if its value fits, which planning can't see.
     let fixed = |o: &Operand| match o {
@@ -386,11 +390,33 @@ pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: b
     let plan = Pervasive { same, ..pervasive(p, x, y, [left.and_then(Operand::constant), right.constant()], bounds, numeric) };
     // 16-bit floats compute at 32 bits and round back (`pervasive::map`), which programs don't model yet.
     if plan.halve != Halving::Off { return Err("a 16-bit float"); }
-    let dtype = plan.settled()?;
+    Ok(plan)
+}
+
+/// A pervasive call's output, with geometry from its operands and numeric facts from its plan.
+fn mapped_desc(plan: &Pervasive, left: Option<&Operand>, right: &Operand) -> Result<Desc, &'static str> {
     let agreement = Agreement::new(&left.map_or_else(Layout::default, Operand::layout), &right.layout()).map_err(|_| "shapes that don't agree")?;
     let atom = right.atom() && left.is_none_or(Operand::atom);
     let weak = atom && right.weak() && left.is_none_or(Operand::weak);
-    Ok(Mapped { desc: Desc { kind: computed(dtype, plan.numeric, weak), atom, layout: agreement.layout, range: plan.result_range() }, plan })
+    plan.result_desc(agreement.layout, atom, weak)
+}
+
+/// The plan of pervasive primitive `p` on `left` and `right` under `numeric`, where `same` says whether both are one value (`Pervasive::same`), with its result's description, or the reason that a program can't hold the call.
+pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Mapped, &'static str> {
+    let plan = map_plan(p, left, right, same, numeric)?;
+    Ok(Mapped { desc: mapped_desc(&plan, left, right)?, plan })
+}
+
+/// Checks a declared plan against its operands before settling its result. Constants compare by their bits, so that a NaN constant matches itself, only where a held operand still exposes them. Normalization can hide an observed scalar constant, as in `(⊂3)+4`; the declared plan owns that observation and its derived computing kind (`at`).
+pub(crate) fn check_map(plan: &Pervasive, left: Option<&Operand>, right: &Operand) -> Result<Desc, &'static str> {
+    let inferred = map_plan(plan.p, left, right, plan.same, plan.numeric)?;
+    let held = [left.is_some_and(|o| matches!(o, Operand::Held(_))), matches!(right, Operand::Held(_))];
+    let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k]).map(f64::to_bits));
+    let without_constants = |p: &Pervasive| Pervasive { constants: [None; 2], at: None, ..p.clone() };
+    if without_constants(&inferred) != without_constants(plan) || constants(&inferred) != constants(plan) {
+        return Err("a plan other than the one that its operands give");
+    }
+    mapped_desc(plan, left, right)
 }
 
 /// The description of what `p` gives where it combines items that `items` describes into the base that `base` describes, as `Pairing::At` pairs them (`pervasive::combine_at`): the base's layout, and `p`'s result on one item of each joined with the base's kind as `Widening::Items` joins items. An error for an atom base, where `p` doesn't plan on the two, or where the join would leave the base mixed, which programs can't hold.

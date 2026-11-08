@@ -1,7 +1,7 @@
 //! A check of each program's contracts before it runs, as milestone 2 in section 7 of `meta/graphreview.md` asks: every step reads values before its own, every read lays out as many items as its node holds, and every node's description is the one that planning its step on its operands gives (`plan`), as the trace and fusion plan them. The reference harness turns the check on for every case and page (`settings::verifies`).
 
 use super::{Node, Origin, Program, Read, Step};
-use crate::{number::Numeric, plan::{self, Desc, Operand, Pervasive}};
+use crate::{number::Numeric, plan::{self, Desc, Operand}};
 
 /// Panics with the program's listing where `program` breaks a contract (`broken`).
 pub(crate) fn check(program: &Program) {
@@ -40,11 +40,7 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
             let (x, y) = (left.as_ref().map(desc), desc(right));
             let x = left.as_ref().zip(x.as_ref()).map(|(read, d)| operand(nodes, read, d));
             let y = operand(nodes, right, &y);
-            let mapped = plan::map(plan.p, x.as_ref(), &y, plan.same, plan.numeric)?;
-            let held = [x.as_ref().is_some_and(|o| matches!(o, Operand::Held(_))), matches!(y, Operand::Held(_))];
-            // A scalar read through another layout can lose its constant in `operand`; the stored plan keeps that constant and its result bound.
-            if same(&mapped.plan, plan, held) { Ok(Desc { range: plan.result_range(), ..mapped.desc }) }
-            else { Err("a plan other than the one that its operands give") }
+            plan::check_map(plan, x.as_ref(), &y)
         }
         Step::Convert { of, .. } => plan::convert(&desc(of), node.desc.dtype()),
         Step::Copy { of, .. } if node.desc.atom => plan::item(&nodes[*of].desc),
@@ -68,10 +64,4 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
             Ok(plan::select(&operand(nodes, mask, &m), &operand(nodes, yes, &y), &operand(nodes, no, &n))?.desc)
         }
     }
-}
-
-/// Whether plan `a`, which planning gives, is plan `b`, the step's. Constants compare by their bits, so that a NaN constant matches itself, and only on the sides that `held` marks. A constant comes from a value, and the plan of an operand that isn't a held value read as it is can hold the constant of the value that the operand copies, as fusion's plan of `(⊂3)+4` does. The kind the plan computes at (`at`) comes from its constants, so it's left out with them.
-fn same(a: &Pervasive, b: &Pervasive, held: [bool; 2]) -> bool {
-    let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k]).map(f64::to_bits));
-    Pervasive { constants: [None; 2], at: None, ..a.clone() } == Pervasive { constants: [None; 2], at: None, ..b.clone() } && constants(a) == constants(b)
 }

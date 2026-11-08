@@ -2,8 +2,8 @@
 
 use super::{Node, Origin, Program, Read, Step, Writes};
 use crate::plan::Desc;
-use crate::{At, Described, Error, Span, Value, primitive::{Operation, Primitive}, transform::Pairing};
-use rustymath::structure::IndexPart;
+use crate::{At, Described, Error, Span, Value, agreement::Agreement, primitive::{Operation, Primitive}, transform::Pairing};
+use rustymath::{agreement::Mapping, structure::IndexPart};
 use std::borrow::Cow;
 
 /// How a replay runs a program: one node on its own, a conversion that it leaves pending for the products that read through it, or a block stage that computes several a block of items at a time, through compiled parts where it has them (`blocks`). `blocks::plan` chooses.
@@ -36,15 +36,58 @@ pub(crate) fn values(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     Ok(r.values)
 }
 
-/// The value of `program`'s result where its only step gives it and it has no outputs, computed by that step on the program's held values, as a plan of each node on its own computes it (`blocks::plan`), without making the plan. `None` for any other program.
+/// The result of one step on held values, without making a block plan. A normalized array Map can also read direct copies of held values: their saved maps feed one whole-array primitive call, without materializing its arguments. For these copy-bearing Maps, explicit stage-compilation requests stay with block planning. No side outputs or other computation enters this route.
 pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error>> {
     let j = program.result.of;
     let alone = program.outputs.is_empty() && matches!(program.nodes[j].origin, Origin::Step(_));
-    if !alone || !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))) { return None; }
+    if !alone { return None; }
+    if !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))) {
+        #[cfg(not(web))]
+        if crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
+        let node = &program.nodes[j];
+        let Origin::Step(Step::Map { left, right, plan }) = &node.origin else { return None };
+        let layout = &node.desc.layout;
+        if node.desc.atom || !layout.plain() || program.result.view(&program.nodes) { return None; }
+        if !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))
+            || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if matches!(program.nodes[*of].origin, Origin::Held(_)))) { return None; }
+        let argument = |r: &Read| {
+            let n = &program.nodes[r.of];
+            match &n.origin {
+                Origin::Held(v) if n.desc.atom && !r.view(&program.nodes) => Some((v, Mapping::Single)),
+                Origin::Held(v) if !n.desc.atom && r.layout == *layout => Some((v, Mapping::Linear(1))),
+                Origin::Step(Step::Copy { of, map }) if !n.desc.atom && r.layout == *layout => match &program.nodes[*of].origin {
+                    Origin::Held(v) => Some((v, map.clone())), _ => None,
+                },
+                _ => None,
+            }
+        };
+        let left = match left { Some(r) => Some(argument(r)?), None => None };
+        let (right, right_map) = argument(right)?;
+        let (left, left_map) = left.map_or((None, Mapping::Single), |(v, m)| (Some(v), m));
+        if crate::transform::carried(left, right) { return None; }
+        if crate::settings::verifies() { super::verify::check(program); }
+        let agreement = Agreement { layout: layout.clone(), len: layout.count(), left: left_map, right: right_map };
+        return Some(Primitive::planned(plan, left, right, span, false, agreement).at(span).and_then(|v| checked(node, j, v, span)));
+    }
     if crate::settings::verifies() { super::verify::check(program); }
     let values = program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => Some(v.clone()), _ => None }).collect();
     let mut r = Replay { program, values, inputs: &[] };
     Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result)))
+}
+
+/// Stores a completed step at its declared kind and checks the value against its description.
+fn checked(node: &Node, j: usize, value: Value, span: &Span) -> Result<Value, Error> {
+    let value = value.stored_at(node.desc.dtype());
+    if !node.desc.matches(&value) {
+        let Origin::Step(step) = &node.origin else { unreachable!("only a step's result is checked"); };
+        let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
+        let atom = |a: bool| if a { " atom" } else { "" };
+        return Err(Error::domain(format!(
+            "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype,
+            planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
+        )).at(span));
+    }
+    Ok(value)
 }
 
 impl Replay<'_> {
@@ -61,16 +104,7 @@ impl Replay<'_> {
                     }
                     _ => None,
                 };
-                let value = run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?.stored_at(node.desc.dtype());
-                if !node.desc.matches(&value) {
-                    let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
-                    let atom = |a: bool| if a { " atom" } else { "" };
-                    return Err(Error::domain(format!(
-                        "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype,
-                        planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
-                    )).at(span));
-                }
-                value
+                checked(node, j, run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?, span)?
             }
         };
         self.values[j] = Some(value);

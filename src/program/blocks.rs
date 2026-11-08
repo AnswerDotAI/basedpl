@@ -129,9 +129,9 @@ impl std::fmt::Debug for Blocks {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Blocks").field("nodes", &self.nodes).finish() }
 }
 
-/// One step of a block stage: program node `j`, what it computes, its operands, the type it computes at and reads its operands as, the tolerance of a float's floor where it converts floats to integers, whether it gives Booleans, whether its value holds fixed integers, and its node's layout, which its value takes with its keys and axis names.
+/// One step of a block stage. `tolerance` applies to float-to-integer conversion. `desc` preserves the published atom, kind and layout independently of the temporary computing dtype (`made`).
 struct BlockStep {
-    j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, fixed: bool, layout: Layout, kernel: Option<Kernel>
+    j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, desc: Desc, kernel: Option<Kernel>
 }
 
 impl BlockStep {
@@ -169,9 +169,9 @@ impl Op {
 #[derive(Clone, Copy, PartialEq)]
 enum Operand { Input(usize), Constant(usize), Identity(Reduce), Step(usize) }
 
-/// A fold by `p` of the last step's items, laid out as `dims`, `[outer, len, inner]`, along its middle axis, whose totals, laid out as `layout`, with its node's keys and axis names, and of type `dtype`, are program node `j`. `fixed` is whether those totals are fixed integers. `seed` is the atom node that each total takes as its last item, where the fold has a seed. `kernel` folds the lanes under `numeric`, at the last step's type.
+/// A fold by `p` over `[outer, len, inner]` lanes. `desc` describes its published totals, including atom versus rank-0 array. The kernel folds at the last step's computing type; `seed` is the node taken as each total's last item.
 struct BlockFold {
-    j: usize, p: Primitive, dims: [usize; 3], layout: Layout, dtype: DType, fixed: bool, seed: Option<usize>, numeric: Numeric, settings: Settings,
+    j: usize, p: Primitive, dims: [usize; 3], desc: Desc, seed: Option<usize>, numeric: Numeric, settings: Settings,
     kernel: Option<Kernel>
 }
 
@@ -226,7 +226,7 @@ impl Blocks {
             let Origin::Step(step) = &node.origin else { return None };
             let shape = node.desc.shape();
             let made = |op, operands, at, tolerance| BlockStep { j, op, operands, at, tolerance, booleans: node.desc.dtype() == DType::Boolean,
-                fixed: node.desc.kind.fixed.is_some(), layout: node.desc.layout.clone(), kernel: None };
+                desc: node.desc.clone(), kernel: None };
             match step {
                 Step::Map { left, right, plan } => {
                     let at = computes(plan, node.desc.dtype())?;
@@ -258,7 +258,7 @@ impl Blocks {
                         let dims = [crate::array::count(&shape[..axis]), shape[axis], crate::array::count(&shape[axis + 1..])];
                         let current = Numeric::current();
                         let numeric = Numeric { fixed: node.desc.kind.fixed.or(current.fixed), ..current };
-                        b.fold = Some(BlockFold { j, p, dims, layout: node.desc.layout.clone(), dtype: node.desc.dtype(), fixed: node.desc.kind.fixed.is_some(),
+                        b.fold = Some(BlockFold { j, p, dims, desc: node.desc.clone(),
                             seed: seed.as_ref().map(|s| s.of), numeric, settings: numeric.settings_for(program.nodes[of.of].desc.dtype()), kernel: None });
                     }
                 },
@@ -324,8 +324,7 @@ impl Blocks {
             let at = computes(&plan, node.desc.dtype())?;
             // As in a step of rustymath's `Folds`, each read is the left operand and the total the right. Beside a NaN, `Core::maximum` and `minimum` give the right operand, the total.
             self.steps.push(BlockStep { j, kernel: Some(plan.kernel()?.clone()), op: Op::Map(plan), operands: [Some(x), Some(total), None], at,
-                tolerance: Tolerance::EXACT, booleans: node.desc.dtype() == DType::Boolean, fixed: node.desc.kind.fixed.is_some(),
-                layout: node.desc.layout.clone() });
+                tolerance: Tolerance::EXACT, booleans: node.desc.dtype() == DType::Boolean, desc: node.desc.clone() });
             total = Operand::Step(self.steps.len() - 1);
         }
         Some(())
@@ -425,7 +424,7 @@ impl Blocks {
                 None => {
                     let step = &self.steps[self.steps.len() - 1];
                     let buffer = with_item!(step.made(), T => T::buffer(self.written::<T>(&run, &shared, T::last)?));
-                    (step.j, built(buffer, &step.layout, step.fixed)?)
+                    (step.j, built(buffer, &step.desc)?)
                 }
                 Some(fold) => {
                     let seed = match fold.seed { Some(s) => Some(values[s].as_ref()?.as_number()?), None => None };
@@ -436,7 +435,7 @@ impl Blocks {
             let rest: Vec<(usize, Value)> = outs.into_iter().zip(&self.extra).map(|(mut buffer, &s)| {
                     // SAFETY: the ranges cover `0..n`, and each wrote its items of every stored step (`range`).
                     unsafe { buffer.set_len(self.n) };
-                    Some((self.steps[s].j, built(buffer, &self.steps[s].layout, self.steps[s].fixed)?))
+                    Some((self.steps[s].j, built(buffer, &self.steps[s].desc)?))
                 })
                 .collect::<Option<_>>()?;
             (main, rest)
@@ -639,7 +638,7 @@ impl Blocks {
     fn folded(&self, fold: &BlockFold, seed: Option<&Number>, run: &Run<'_>, outs: &[Option<Shared>]) -> Option<Result<Value, crate::Error>> {
         use rustymath::{error::{Error, Kind as Failure}, reduce::{Direction, Piece, Seed, Total}};
         let kernel = fold.kernel.as_ref()?;
-        let mut out = Buffer::with_capacity(fold.dtype, 0);
+        let mut out = Buffer::with_capacity(fold.desc.dtype(), 0);
         let pieces = |range: Range<usize>, give: &mut dyn FnMut(usize, Piece<'_>)| -> Result<(), Error> {
             let ran = self.range(range, run, outs, &mut Last::Fold(&mut |start, block: Folded<'_>| {
                 give(start, match block { Folded::Held(held) => Piece::Items(held.view()), Folded::Total(items, bits) => Piece::Total(Total { items, bits }) })
@@ -647,12 +646,12 @@ impl Blocks {
             if ran { Ok(()) } else { Err(Error::new(Failure::Domain, "a block stage's step failed")) }
         };
         kernel.fold_pieces(fold.dims, Seed::Identity, Direction::Right, fold.settings, &pieces, &mut out).ok()?;
-        let value = built(out, &fold.layout, fold.fixed)?;
-        let value = if fold.layout.shape().is_empty() { value.at(0) } else { value };
+        let value = built(out, &fold.desc)?;
         let Some(seed) = seed else { return Some(Ok(value)) };
         let seed = Value::Number(seed.clone());
         let agreement = Agreement::new(value.layout(), seed.layout()).ok()?;
-        pervasive::map(&crate::plan::pervasive_on(fold.p, Some(&value), &seed, fold.numeric), Some(&value), &seed, &agreement)
+        let result = pervasive::map(&crate::plan::pervasive_on(fold.p, Some(&value), &seed, fold.numeric), Some(&value), &seed, &agreement)?;
+        Some(result.map(|value| published(value, &fold.desc)))
     }
 
     /// Run the stage block by block, splitting compiled runs at input repeats. Native steps bind RM reads; compiled parts prepare ABI spans. Stored steps copy to their outputs. The last step writes directly to its final output or the fold's buffer.
@@ -879,8 +878,9 @@ impl Blocks {
             if matches!(run.reads[k], Reading::Tabled) { return Some(source.view); }
             let read = rustymath::agreement::Read { sources: std::slice::from_ref(source), plan };
             let range = from..from + n;
-            if !with_item!(source.view.dtype(), A => read.in_place::<A>(&range)) { run.tally.copied(n); }
-            read.argument(range, false, copy).ok()
+            let (view, copied) = read.argument(range, false, copy).ok()?;
+            run.tally.copied(copied);
+            Some(view)
         }).collect()
     }
 

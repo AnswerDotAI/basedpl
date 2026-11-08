@@ -263,7 +263,7 @@ fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<B
 /// A pervasive function applied to stored arguments on `agreement`'s frame, as `plan` plans it, through `p`'s formula (`resolve`) at the kind the plan computes in, with `computed`'s reruns. Each argument reads through its agreement mapping and converts to that kind as it reads. `None` where the arguments have no compact reads or no kind has a kernel. A selected kernel's failure returns its error after the wider-kind retries.
 pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Result<Value, crate::Error>> {
     let (p, numeric, len) = (plan.p, plan.numeric, agreement.len);
-    let code = match left { Some(left) if p.info().dyad.code => Some(code_of(left)?), _ => None };
+    let code = match left { Some(_) if p.info().dyad.code => Some(plan.constants[0].and_then(circle_code)?), _ => None };
     // A comparison's constant that stands for an integer (`Pervasive::narrowed`) reads as that integer, stored at its narrowest width, so its kernel resolves at the plan's integer kind.
     let narrow = plan.narrowed().and_then(|(side, n)| Some((side, Value::integers(Vec::<usize>::new(), vec![n]).ok()?)));
     let (left, right) = match &narrow { Some((0, n)) => (Some(n), right), Some((_, n)) => (left, n), None => (left, right) };

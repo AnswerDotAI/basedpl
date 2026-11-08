@@ -156,16 +156,7 @@ fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {
 
 /// Whether a block stage folds items of `dtype` by `p` a block at a time (`reduction`): floats by `+`, `×`, `⌈` and `⌊`, integers by `⌈` and `⌊`, and by `+` where `result`'s integers wrap (`Numeric::wraps`), and Booleans by the reductions their truth tables name.
 fn folds(p: Primitive, dtype: DType, result: &Desc) -> bool {
-    let fold = reduction(p, dtype);
-    match dtype {
-        DType::Float(FloatWidth::F32 | FloatWidth::F64) => matches!(fold, Some(Reduce::Sum | Reduce::Product | Reduce::Max | Reduce::Min)),
-        DType::Integer(_) => {
-            matches!(fold, Some(Reduce::Max | Reduce::Min))
-                || Numeric::current().wraps(result.kind.dtype, result.kind.fixed) && matches!(fold, Some(Reduce::Sum))
-        }
-        DType::Boolean => matches!(fold, Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)),
-        _ => false,
-    }
+    reduction(p, dtype).is_some_and(|f| f.stage(dtype, Numeric::current().wraps(result.kind.dtype, result.kind.fixed)))
 }
 
 /// Whether a block stage folds items of `dtype` by `p` through rustymath's `Alternated`, a block at a time: floats by `-`, and by `÷` through `ScaledProduct`, whose running quotient keeps its exponent apart, so it stays in range however many blocks it takes. No compiled part folds this way, and `short_window` takes only the reductions of `folds`.
@@ -176,14 +167,7 @@ fn alternates(p: Primitive, dtype: DType) -> bool {
 
 /// Whether a stage's fold by `p` of items of `items` takes a seed of type `seed` into a result of type `result`, combining the seed with each total at the end (`Blocks::folded`): a fold of floats with a float seed, whose result keeps the items' width, of integers with an integer seed, by `⌈` or `⌊`, or by `+` into a result of the items' width, and a count of Booleans by `+` with an integer seed. A sum of integers into a wider integer folds after the stage, because a compiled part sums integers at the items' width.
 fn seeds(p: Primitive, items: DType, seed: DType, result: DType) -> bool {
-    match (items, seed, result) {
-        (DType::Float(a), DType::Float(_), DType::Float(b)) => a == b,
-        (DType::Integer(_), DType::Boolean | DType::Integer(_), DType::Integer(_)) => match reduction(p, items) {
-            Some(Reduce::Max | Reduce::Min) => true, Some(Reduce::Sum) => items == result, _ => false
-        },
-        (DType::Boolean, DType::Boolean | DType::Integer(_), DType::Integer(_)) => matches!(reduction(p, items), Some(Reduce::Sum)),
-        _ => false,
-    }
+    reduction(p, items).is_some_and(|f| f.seeds(items, seed, result))
 }
 
 /// The reduction by which a stage folds items of `dtype` by `p`: the fold of `p`'s kernel there (`Kernel::fold`), which for Booleans is the one their truth table names.

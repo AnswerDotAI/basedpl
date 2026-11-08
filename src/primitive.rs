@@ -819,7 +819,7 @@ fn int_count(n: usize) -> u64 {
 /// The depth of `right`: 0 for an atom, and for an array one more than its deepest element. An empty array counts its prototype. A carried array answers from its carrier's template, without reading its items.
 pub(crate) fn depth(right: &Value) -> usize {
     if right.is_atom() { return 0; }
-    if let Some(carrier) = right.carrier() { return depth(carrier.template()); }
+    if let Some(carrier) = right.carrier() { return depth(carrier.template()).max(1); }
     1 + match right.as_items() { Items::Values([]) => depth(&right.prototype()), Items::Values(items) => items.iter().map(depth).max().unwrap_or(0), _ => 0 }
 }
 

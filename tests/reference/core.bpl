@@ -1085,6 +1085,12 @@ m←¿[1024 1024]⍴0 ⋄ g←{+/⌽⍵}
 ⍝ — Square root extends into complex numbers
 √0 9 ¯4 3j4   ⍝ 0 3 0j2 2j1
 
+⍝ planned-scalar-domain — A saved plan retains a domain proved by its observed scalar-array operand
+√⊂4.0   ⍝ ⊂2
+
+⍝ planned-scalar-domain-broadcast — Broadcasting the scalar result retains its declared domain
+(√⊂4.0)+1 2   ⍝ 3 4
+
 ⍝ — Roots of exact rationals and big integers are approximate too
 √1r9 18446744073709551616ᵣ   ⍝ 0.3333333333333333 4294967296
 
