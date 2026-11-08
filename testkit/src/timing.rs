@@ -1,5 +1,5 @@
 //! BPL measurements share reference records and setups. Numerical timing, copy units, footprint copies and retries live in Rustymath.
-use crate::{reference::{self, File}, timing_lock};
+use crate::{DEFAULT_PREFS, reference::{self, File}, timing_lock};
 use basedpl::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, protocol::response};
 use rustymath::hashing::HashMap;
 use rustymath_timing::{Budget, COUNT_MARGIN, Cause, CopyTime, Count, Footprint, Held, MEASURES, NATIVE_COLUMN, copy_time, footprint};
@@ -29,7 +29,7 @@ pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> { configure
 fn configured(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
     single_threaded_defaults();
     let session = Session::new();
-    let result = session.eval(&format!("•prefs [\"seed\":0]\n{prefs}\n{setup}"));
+    let result = session.eval(&format!("{DEFAULT_PREFS}\n•prefs [\"seed\":0]\n{prefs}\n{setup}"));
     if result.error.is_some() { Err(result) } else { Ok(session) }
 }
 
@@ -121,7 +121,7 @@ impl<'a> Group<'a> {
             self.current = name;
         }
         single_threaded_defaults();
-        self.session.eval(header);
+        self.session.eval(&format!("{DEFAULT_PREFS}\n{header}"));
         if self.size == Size::Small { basedpl::settings::set_small_sizes(true); }
         Ok(&self.session)
     }

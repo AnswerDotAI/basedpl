@@ -69,8 +69,16 @@ speed_tests!(
     timed_models counts_models "models.bpl", timed_steps counts_steps "steps.bpl", timed_structure counts_structure "structure.bpl", timed_tables counts_tables "tables.bpl",
 );
 
+const MATHISH_COMPARISONS: &str = "comparisons_mathish.bpl";
+#[test]
+#[cfg_attr(debug_assertions, ignore = "debug assertions change the counts")]
+fn counts_comparisons_mathish() { counts(MATHISH_COMPARISONS) }
+
 #[test]
 fn every_speed_file_has_tests() {
     let names: Vec<_> = reference::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap().into_iter().map(|f| f.name).collect();
-    assert_eq!(names, FILES);
+    let mut registered = FILES.to_vec();
+    registered.push(MATHISH_COMPARISONS);
+    registered.sort_unstable();
+    assert_eq!(names, registered);
 }

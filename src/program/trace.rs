@@ -567,12 +567,13 @@ pub(crate) fn build(
     let (Some(result), Some(first)) = (result, reads.next()) else { return end(Ended::Fell(fell.unwrap_or("a value that programs can't hold"))) };
     let Builder { nodes, inputs, captured, named, .. } = std::mem::take(&mut *tracer.builder());
     let program = super::layout::ordered(Program { outputs: reads.map(|r| r.of).collect(), ..Program::new(nodes, first) }.live());
-    (Ok(Recording { program, inputs, result, named }), captured)
+    let plan = super::planned(&program);
+    (Ok(Recording { program, plan, inputs, result, named }), captured)
 }
 
-/// A recorded call's program, input sources, result description and generated names. The `Entry` keeps the concrete argument layouts, settings and captured values that it was built for.
+/// A recorded call's program and execution plan, input sources, result description and generated names. The `Entry` keeps the concrete argument layouts, settings and captured values that it was built for.
 #[derive(Debug)]
-pub(crate) struct Recording { program: Program, inputs: Vec<Input>, result: Descs, named: Vec<Arc<str>> }
+pub(crate) struct Recording { program: Program, plan: Arc<run::Plan>, inputs: Vec<Input>, result: Descs, named: Vec<Arc<str>> }
 
 /// Where an input comes from at a call: a leaf of the left or right argument, by its place in `transform::walk`'s order, or the value of the free name that `Recording::captured` lists at that index.
 #[derive(Clone, Copy, Debug)]
@@ -856,7 +857,7 @@ pub(crate) fn programmed(
     let inputs: Vec<&Value> = recording.inputs.iter().map(|input| match *input {
         Input::Left(k) => &x[k], Input::Right(k) => &y[k], Input::Name(i) => names[i].as_ref().expect("a free name that a program reads has a value")
     }).collect();
-    let result = run::values(program, &crate::program::planned(program), &inputs, span).map(|values| match &recording.result {
+    let result = run::values(program, &recording.plan, &inputs, span).map(|values| match &recording.result {
             Descs::Leaf(_) => run::read(program, &values, &program.result),
             // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.
             nested => {

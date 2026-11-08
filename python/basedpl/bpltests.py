@@ -379,7 +379,7 @@ class ByBuild(list):
 def _section(section):
     "The setup of a speed file and the preferences of one of its sections, from `file:section` such as `models.bpl:static`."
     name, _, part = section.partition(':')
-    speed = _reference_file((_SPEED/name).read_text())
+    speed = _reference_file((_SPEED/name).read_text(), name)
     header = next((c.get('prefs', '') for c in speed['cases'] if c['section'] == part), None)
     if header is None: raise ValueError(f'tests/speed/{name} has no section {part!r}')
     return speed['setup'], header

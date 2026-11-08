@@ -1,4 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
+use crate::DEFAULT_PREFS;
 use basedpl::{EvalOptions, InterruptHandle, Session, Value, hooks::Numeric, settings::Compiles};
 use serde_json::{Value as JsonValue, json};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
@@ -132,10 +133,10 @@ fn runs(case: &JsonValue) -> Vec<Run> {
 fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
     basedpl::settings::reset();
     basedpl::settings::set_verifies(true);
-    if let Some(prefs) = prefs
-        && let Some(error) = Session::current().eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
-            return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
-        }
+    let prefs = format!("{DEFAULT_PREFS}\n{}", prefs.unwrap_or_default());
+    if let Some(error) = Session::current().eval_apart(&prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
+        return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
+    }
     if let Some(Run { batch, fused, compiles, .. }) = run {
         basedpl::settings::set_batch(batch);
         basedpl::settings::set_small_sizes(fused);
@@ -461,6 +462,7 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         offset += line.len() + 1;
     }
     let prefs = lines.first().filter(|line| line.starts_with("•prefs")).copied().unwrap_or_default();
+    let mathish = if name.ends_with("_mathish.bpl") { r#"•prefs ["mathish":$t]"# } else { "" };
     let (mut i, mut title, mut local) = (usize::from(!prefs.is_empty()), "", "");
     let mut file = File { name: name.into(), setup: String::new(), cases: Vec::new() };
     let mut ids = rustymath::hashing::HashSet::default();
@@ -490,7 +492,7 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         let options = suffix.and_then(|(text, s)| Some((text, s.strip_suffix(']')?)))
             .filter(|(_, s)| s.starts_with("rtol=") || s.starts_with("atol=") || FLAGS.iter().any(|f| s.starts_with(f)));
         let mut case = json!({"id":id, "line":start + 1, "section":title, "comment":options.map_or(comment, |(text, _)| text)});
-        let prefs = [prefs, local].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
+        let prefs = [mathish, prefs, local].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
         if !prefs.is_empty() { case["prefs"] = json!(prefs); }
         if let Some((_, options)) = options {
             for option in options.split_whitespace() {

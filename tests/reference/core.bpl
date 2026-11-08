@@ -4267,9 +4267,6 @@ $t $f $t
 ⍭¯1
 ⍝ error: DOMAIN ERROR
 
-⍝ — A prime index accepts a float within comparison tolerance of an integer
-⍭1.000000000000001   ⍝ 3ₓ
-
 ⍝ —
 1⍭2.5
 ⍝ error: DOMAIN ERROR
@@ -4327,7 +4324,11 @@ $t $f $t
 ([¯3 ¯2⋄2 1]↕4 5⍴⍳20ₓ)≡⊢⌺[3 2⋄2 1] 4 5⍴⍳20ₓ   ⍝ $t
 
 ⍝ window-fold-slides — A fold along a vector's or matrix's windows slides over the source, directly for narrow windows and by van Herk-Gil-Werman for wide ones, and matches folding each window alone, NaN included
-v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130 130]⍴0 ⋄ j←¿3000⍴100ₓ ⋄ b←0=¿3000⍴3ₓ ⋄ ∧/[(+/50↕v)≡({+/⍵}⍤1)50↕v;(⌈/50↕w)≡({⌈/⍵}⍤1)50↕w;(⌊/3↕w)≡({⌊/⍵}⍤1)3↕w;(+/+/3 3↕m)≡({+/,⍵}⍤2)3 3↕m;(+/50↕j)≡({+/⍵}⍤1)50↕j;(∨/50↕b)≡({∨/⍵}⍤1)50↕b;(⌈⌿3↕w)≡({⌈/⍵}⍤1)⍉3↕w;↑["sliding fold"]∊(•explain "+/50↕v").routes.route]   ⍝ $t
+•prefs ["seed":0] ⋄ v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130 130]⍴0 ⋄ j←¿3000⍴100ₓ ⋄ b←0=¿3000⍴3ₓ
+[+/50↕v ; ⌈/50↕w ; ⌊/3↕w ; +/+/3 3↕m ; +/50↕j ; ∨/50↕b ; ⌈⌿3↕w ; ↑["sliding fold"]∊(•explain "+/50↕v").routes.route]
+⍝ =>
+•prefs ["seed":0] ⋄ v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130 130]⍴0 ⋄ j←¿3000⍴100ₓ ⋄ b←0=¿3000⍴3ₓ
+[({+/⍵}⍤1)50↕v ; ({⌈/⍵}⍤1)50↕w ; ({⌊/⍵}⍤1)3↕w ; ({+/,⍵}⍤2)3 3↕m ; ({+/⍵}⍤1)50↕j ; ({∨/⍵}⍤1)50↕b ; ({⌈/⍵}⍤1)⍉3↕w ; $t]
 
 ⍝ window-axis-fold-slides — A fold along two axes of windows whose positions each hold several items, as pooling over channels has them, folds both axes in one pass over the source, for windows that tile or slide, under Rank too, and matches folding one axis at a time
 a←¿[256 256 4]⍴0 ⋄ j←(¿[130 130 2]⍴100)ₓ ⋄ r←¿[16 64 64 4]⍴0 ⋄ ∧/[((⌈/₂ ₃)[[2 2]⋄[2 2]]↕a)≡(⌈/₂)(⌈/₂)[[2 2]⋄[2 2]]↕a;((+/₂ ₃)3 3↕j)≡(+/₂)(+/₂)3 3↕j;({⌈/₂ ₃ [[2 2]⋄[2 2]]↕⍵}⍤3 r)≡{⌈/₂⌈/₂ [[2 2]⋄[2 2]]↕⍵}⍤3 r;↑["sliding fold"]∊(•explain "(⌈/⍠2 3)[[2 2]⋄[2 2]]↕a").routes.route]   ⍝ $t
@@ -4348,7 +4349,11 @@ x←⍳5ₓ ⋄ [["size":3 "edge":"clamp"]↕x;["size":3 "edge":"reflect" "step"
 x←⍳5ₓ ⋄ ∧/[(["size":[3]]↕x)≡3↕x;(["size":¯3]↕x)≡¯3↕x;(["size":3 "edge":"fill"]↕x)≡¯3↕x;(["size":[3 2] "step":[1 2]]↕4 5⍴⍳20ₓ)≡[3 2⋄1 2]↕4 5⍴⍳20ₓ]   ⍝ $t
 
 ⍝ window-padded-fold-slides — Folds of wrapped, clamped and filled windows slide over the padded source, a chosen fill included, and a product of them reads the windows in blocks
-v←¿3000⍴0 ⋄ k←¿3 4⍴0 ⋄ wr←["size":50 "edge":"wrap"] ⋄ cl←["size":3 "edge":"clamp"] ⋄ fl←["size":¯51 "fill":2] ⋄ ∧/[(+/wr↕v)≡({+/⍵}⍤1)wr↕v;(⌈/cl↕v)≡({⌈/⍵}⍤1)cl↕v;(+/fl↕v)≡({+/⍵}⍤1)fl↕v;↑["sliding fold"]∊(•explain "+/wr↕v").routes.route;↑["sliding fold"]∊(•explain "+/fl↕v").routes.route;(([3000 3]⍴cl↕v)+.×k)≡(1×[3000 3]⍴cl↕v)+.×k]   ⍝ $t
+•prefs ["seed":0] ⋄ v←¿3000⍴0 ⋄ k←¿3 4⍴0 ⋄ wr←["size":50 "edge":"wrap"] ⋄ cl←["size":3 "edge":"clamp"] ⋄ fl←["size":¯51 "fill":2]
+[+/wr↕v ; ⌈/cl↕v ; +/fl↕v ; ↑["sliding fold"]∊(•explain "+/wr↕v").routes.route ; ↑["sliding fold"]∊(•explain "+/fl↕v").routes.route ; ([3000 3]⍴cl↕v)+.×k]
+⍝ =>
+•prefs ["seed":0] ⋄ v←¿3000⍴0 ⋄ k←¿3 4⍴0 ⋄ wr←["size":50 "edge":"wrap"] ⋄ cl←["size":3 "edge":"clamp"] ⋄ fl←["size":¯51 "fill":2]
+[({+/⍵}⍤1)wr↕v ; ({⌈/⍵}⍤1)cl↕v ; ({+/⍵}⍤1)fl↕v ; $t ; $t ; (1×[3000 3]⍴cl↕v)+.×k]
 
 ⍝ —
 ["size":3 "pad":1]↕⍳3ₓ
@@ -4644,7 +4649,7 @@ x←¯1j0.1 1j¯1
 +⍨⁻3ᵣ   ⍝ 3r2
 
 ⍝ — Inverse sine selects a branch which maps back to the input
-0.5=1↣○1↣○⁻0.5   ⍝ $t
+1↣○1↣○⁻0.5   ⍝ 0.5
 
 ⍝ — Inverse sine within the real domain has no imaginary component
 ⊢/∨1↣○⁻0.5   ⍝ 0
@@ -4992,12 +4997,6 @@ x←[[1 2 6]ₓ÷[1 2 3]ₓ;⍳3ₓ;1ₓ+[2 3]ₓ;10ₓ-[2 3]ₓ;[2 3]ₓ×4ₓ;
 
 ⍝ — Truth values are Booleans, whatever the arguments
 x←["ab"∊"b";~0 1;0 1⊼1 1;0 1⊽0 0] ⋄ [x {(•storage ⍵).kind}¨x]   ⍝ [[[$f $t] [$t $f] [$t $f] [$t $f]];4⍴⊂"bool"]
-
-⍝ logical-numeric-truth — a float stands for a Boolean within tolerance only under Mathish
-n←1-1e¯15 ⋄ on←[~[0 n];(1+1e¯15)⊼n;0⊽n]
-•prefs ["mathish":$f] ⋄ off←{"DOMAIN"::1 ⋄ ~n ⋄ 0}0 ⋄ •prefs ["mathish":$t] ⋄ [on;off]
-⍝ =>
-[[[$t $f] $f $f] 1]
 
 ⍝ — Structural functions keep machine storage. A rational prototype stays unbounded
 x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3ₓ;1 0 1#⁻[1 2]ₓ;+\⍳3ₓ;-¨⍳3ₓ;[1 2]ₓ∪[2 3]ₓ;[1 2]ₓ∩[2]ₓ;
@@ -5551,10 +5550,12 @@ x   ⍝ 10 20 9
 ⍋[1 (1+8E¯15) 1]   ⍝ [0 2 1]ₓ
 
 ⍝ — Fast combinations give what their parts give in turn: partial grades and sorts, ranks, and counts and folds under Key
+•prefs ["seed":0]
 v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ d←⍳¯1000 ⋄ z←v ⋄ z.[[3 500 999]]←$n ⋄ z.[[7 9]]←-0
-[((10↑)∘⍋ k)≡({10↑⍋⍵} k); ((¯10↑)∘⍒ k)≡({¯10↑⍒⍵} k); ((10↑)∘< d)≡({10↑<⍵} d); (¯10↑> d)≡({¯10↑>⍵} d); ((5↑)∘⍋ z)≡({5↑⍋⍵} z); ((¯5↑)∘⍋ z)≡({¯5↑⍋⍵} z); ((10↑)∘⍋ v)≡({10↑⍋⍵} v); (¯10↑< v)≡({¯10↑<⍵} v); (↑> v)≡({↑>⍵} v); ((3⌷)∘⍒ v)≡({3⌷⍒⍵} v); (⍋⍋ v)≡({⍋⍵}⍋v); (⍋⍒ v)≡({⍋⍵}⍒v); ((≢⊢)⌸ k)≡({≢⍵}⌸ k); (k (+/⊢)⌸ v)≡(k {+/⍵}⌸ v); (k (⌈⌿⊢)⌸ v)≡(k {⌈⌿⍵}⌸ v); (k (⌊/⊢)⌸ b)≡(k {⌊/⍵}⌸ b); (k (+/⊢)⌸ k)≡(k {+/⍵}⌸ k)]
+[((10↑)∘⍋ k)≡({10↑⍋⍵} k); ((¯10↑)∘⍒ k)≡({¯10↑⍒⍵} k); ((10↑)∘< d)≡({10↑<⍵} d); (¯10↑> d)≡({¯10↑>⍵} d); ((5↑)∘⍋ z)≡({5↑⍋⍵} z); ((¯5↑)∘⍋ z)≡({¯5↑⍋⍵} z); ((10↑)∘⍋ v)≡({10↑⍋⍵} v); (¯10↑< v)≡({¯10↑<⍵} v); (↑> v)≡({↑>⍵} v); ((3⌷)∘⍒ v)≡({3⌷⍒⍵} v); (⍋⍋ v)≡({⍋⍵}⍋v); (⍋⍒ v)≡({⍋⍵}⍒v); ((≢⊢)⌸ k)≡({≢⍵}⌸ k); k (+/⊢)⌸ v; (k (⌈⌿⊢)⌸ v)≡(k {⌈⌿⍵}⌸ v); (k (⌊/⊢)⌸ b)≡(k {⌊/⍵}⌸ b); (k (+/⊢)⌸ k)≡(k {+/⍵}⌸ k)]
 ⍝ =>
-$t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
+•prefs ["seed":0] ⋄ v←¿1000⍴0 ⋄ k←¿1000⍴7
+[$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;k {+/⍵}⌸ v;$t;$t;$t]
 
 ⍝ selected-prefix-route — A prefix of a grade runs as a partial grade, which selects its items without grading the rest
 ⍝⍝⍝ route partial grade
@@ -5699,9 +5700,6 @@ v←⍳1000ₓ ⋄ +/v+v   ⍝ 999000ₓ
 
 ⍝ —
 +/[1 2 3]ₓ   ⍝ 6ₓ
-
-⍝ — Mathish division gives zero for zero divided by zero in arrays
-0 1÷0 2   ⍝ 0 0.5
 
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 {(•storage ⍵).kind}¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
@@ -5851,8 +5849,13 @@ y←¿64 8 4⍴0 ⋄ z←¿8 4 64⍴0 ⋄ [h g]←•index 8 4 ⋄ f←•explai
 [["+.×"] 0⍴⊂"" $t $t $t ["+.×"] $t]
 
 ⍝ fusion:contraction-gradient — `∂` through a contraction in index notation, along one axis or several, gives the gradient of the same product written tacitly. A cotangent that holds one value, as `+/,` gives, factors out of the gradient's fold, and no contraction declines
+•prefs ["seed":0]
 x←¿32 16⍴0 ⋄ w←¿16 24⍴0 ⋄ [r k c]←•index 32 16 24 ⋄ y←¿32 4 4⍴0 ⋄ z←4 4 24⍴w ⋄ [h g]←•index 4 4 ⋄ e←•explain "{+/,+/⍠k⍵.[r k]×w.[k c]}∂x"
-[e.value≡{+/,⍵+.×w}∂x ; ({+/,+/⍠[h g]⍵.[r h g]×z.[h g c]}∂y)≡{+/,(32 16⍴⍵)+.×w}∂y ; ∨/e.declined.route≡¨⊂"contraction"]   ⍝ $t $t $f
+[e.value ; {+/,+/⍠[h g]⍵.[r h g]×z.[h g c]}∂y ; ∨/e.declined.route≡¨⊂"contraction"]
+⍝ =>
+•prefs ["seed":0]
+x←¿32 16⍴0 ⋄ w←¿16 24⍴0 ⋄ y←¿32 4 4⍴0
+[{+/,⍵+.×w}∂x ; {+/,(32 16⍴⍵)+.×w}∂y ; $f]
 
 ⍝ program-storage-order — A program stores a map in the order of a value that it reads in another order. In `b.[c]++/⍠k⍵.[r k]×w.[k c]`, named agreement puts `c` first, while the product holds `[r c]`. The sum and each map after it then store as `[r c]`, and a fold along `c` folds that order. Both gradients match the same models written tacitly, within the last bits that a fold's order can change.
 x←0.1×8 4⍴⍳32 ⋄ w←0.01×4 6⍴⍳24 ⋄ b←0.1×⍳6 ⋄ v←0.1×⍳6 ⋄ [r k c]←•index 8 4 6 ⋄ close←{(⌈/,|⍺-⍵)≤1e¯12×⌈/,|⍵}
@@ -5927,14 +5930,17 @@ v←⍳262144ₓ ⋄ s←1+v ⋄ [5↑1+v;3⊃2×v+1;5↑s]   ⍝ [1 2 3 4 5;8;1
 x←[4 256 256]⍴0.5 ⋄ e←•explain "(-⍤2) x+1" ⋄ [0ₓ=≢e.forced.function;e.value≡-x+1]   ⍝ $t $t
 
 ⍝ — `+.×` on a pending copy of windows, and its gradients, give what they give on a stored copy, and the copy stays pending
+•prefs ["seed":0]
 conv←{
   img←¿64 64 16⍴0 ⋄ k←¿144 8⍴0
-  w←[3844 144]⍴3 3↕img ⋄ wf←[3844 144]⍴(3 3↕img)+0
-  same←((w+.×k)≡wf+.×k)∧({+/,w+.×⍵}∂k)≡{+/,wf+.×⍵}∂k
-  image←({+/,([3844 144]⍴3 3↕⍵)+.×k}∂img)≡0.5×{+/,(2×[3844 144]⍴3 3↕⍵)+.×k}∂img
-  [same image (•storage w).pending]
+  w←[3844 144]⍴3 3↕img
+  [w+.×k ; {+/,w+.×⍵}∂k ; {+/,([3844 144]⍴3 3↕⍵)+.×k}∂img ; (•storage w).pending]
 }
-conv 0   ⍝ 3⍴$t
+conv 0
+⍝ =>
+•prefs ["seed":0]
+img←¿64 64 16⍴0 ⋄ k←¿144 8⍴0 ⋄ wf←[3844 144]⍴(3 3↕img)+0
+[wf+.×k ; {+/,wf+.×⍵}∂k ; 0.5×{+/,(2×[3844 144]⍴3 3↕⍵)+.×k}∂img ; $t]
 
 ⍝ fusion:reshaped-transpose-product — A product reads a reshaped pending transpose in its new matrix dimensions
 x←[2 65536]⍴⍳131072ₓ
@@ -6465,9 +6471,6 @@ u←•UcS ⋄ u ["A⍳"⋄"λ😀"]   ⍝ [65 9075⋄955 128512]ₓ
 ⍝ —
 'a'×2
 ⍝ error: DOMAIN ERROR
-
-⍝ — A character offset accepts a float within comparison tolerance of an integer
-'a'+1.000000000000001   ⍝ 'b'
 
 ⍝ —
 'a'+∞
@@ -7044,12 +7047,6 @@ x←["b":2 "h":3 "w":4]⍴⍳24ₓ
 ⍝ — Complex floor uses Gaussian-integer cells, not independent component floors
 ⌊1.5j0.5   ⍝ 1j1
 
-⍝ — Complex gcd uses Gaussian-integer arithmetic and tolerant comparison
-0.2=3.8j7.6∨5.2j6.8   ⍝ $t
-
-⍝ — Scale and ceil to expose the complex lcm despite floating-point roundoff
-⌈1000×3.8j7.6∧5.2j6.8   ⍝ ¯159600j326800
-
 ⍝ —
 |3 ¯3 3j4   ⍝ 3 3 5
 
@@ -7065,9 +7062,6 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ
 ⍝ =>
 [[2 1 0 1 1]ₓ [¯1 ¯2 0 ¯2 ¯2]ₓ [1 3 0 0 3]ₓ [0 0 0 0 0]ₓ]
 
-⍝ — Floor applies comparison tolerance near integers, including across a storage-width boundary
-[⌊1.000000000000001 ¯1.000000000000001;⌊255.9999999999999 0]   ⍝ [[1 ¯1]ₓ [256 0]ₓ]
-
 ⍝ — Ceiling of a float is an exact integer
 ⌈¯2.3 0.1 3   ⍝ [¯2 1 3]ₓ
 
@@ -7079,12 +7073,6 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ
 
 ⍝ — Signum of a float is an exact integer
 ×¯2.5 0 ∞   ⍝ [¯1 0 1]ₓ
-
-⍝ — An integer argument accepts a float within comparison tolerance of an integer
-(0.1×3 × 10)⌷10 20 30 40   ⍝ 40
-
-⍝ — A count accepts a float within comparison tolerance of an integer
-⍳(0.1×3)×10   ⍝ 0 1 2
 
 ⍝ — A count still rejects a fraction outside tolerance
 ⍳2.5
@@ -7134,32 +7122,10 @@ x←[¯7 7 0 ¯9223372036854775808 9223372036854775807]ₓ
 ⍝ — Euler's identity holds within tolerance
 *π0j1   ⍝ ¯1
 
-⍝ — The gcd of two reals recovers their rational ratio, in either order [rtol=1e-14 atol=0]
-x←[1 1ₓ ¯1 0 0 1 1E¯200 1E200 1E¯200]
-y←[103993÷33102 π1 ¯103993÷33102 ¯0.75 0 1.000000000000005 3E¯200 3E200 1E200]
-[x∨y y∨x]
-⍝ =>
-2⍴⊂[÷33102 ÷1725033 ÷33102 0.75 0 1 1E¯200 1E200 1E¯200]
-
-⍝ — Reals outside comparison tolerance of a rational ratio have a tiny gcd
-1E¯12>1∨1.00000000000005   ⍝ $t
-
 ⍝ — The gcd of NaN and any real is NaN
 [$n∨3.5 3.5∨$n $n∨$n 0∨$n $n∧2.5]   ⍝ $n $n $n $n $n
 
 ⍝⍝ Search depth and random
-
-⍝ — Index-of compares each candidate directly; tolerance is not transitive
-x←1
-y←1+8E¯15
-z←1+16E¯15
-[x y]⍳z   ⍝ 1ₓ
-
-⍝ — Unique-mask puts a chain of tolerant matches in one class
-≠[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $f
-
-⍝ — A row is a copy of the first earlier distinct row that it matches, so rows don't chain
-≠[1 2⋄1+8E¯15 2⋄1+16E¯15 2]   ⍝ $t $f $t
 
 ⍝ — Monadic `∩` keeps each distinct major cell that occurs more than once, in order of first appearance
 ∩"mississippi"   ⍝ "isp"
@@ -7206,23 +7172,11 @@ z←1+16E¯15
 ⍝ — Positions count along the whole axis, also in a group much smaller than the axis
 1⊃⍷(300⍴0),1 1   ⍝ [300 301]ₓ
 
-⍝ — A large index-of takes the first position within tolerance, not the nearest value
-(300⍴5 , [1+16E¯15 1])⍳1+8E¯15   ⍝ 300ₓ
-
-⍝ — A large index-of finds nothing outside tolerance
-(300⍴5 , 1)⍳1+2E¯14   ⍝ 301ₓ
-
 ⍝ — A large search never matches a character with its code point
 (97ₓ+⍳8ₓ)⍳36⍴"abcdefgh"   ⍝ 36⍴8ₓ
 
-⍝ — Large membership compares exact integers with floats within tolerance
-[1+8E¯15 1+2E¯14]∊⍳300ₓ   ⍝ $t $f
-
 ⍝ — A large index-of of exact values applies no tolerance
 (⍳300ₓ)⍳1000000000000001r1000000000000000   ⍝ 300ₓ
-
-⍝ — Without uses tolerance when approximate values participate
-1 2~[1+8E¯15]   ⍝ [2]
 
 ⍝ — Without does not apply tolerance to all-exact values
 [1 2]ₓ~[1000000000000001r1000000000000000]   ⍝ [1 2]ₓ
@@ -7257,29 +7211,8 @@ z←1+16E¯15
 ⍝ — Union retains duplicates within either argument
 1 1∪2 2   ⍝ 1 1 2 2
 
-⍝ — Membership uses tolerance when approximate values participate
-1 2∊[1+8E¯15]   ⍝ $t $f
-
 ⍝ — A vector pattern does not fit a unit search target
 (,1)⍷1   ⍝ $f
-
-⍝ native-search-shapes — Compact and mixed patterns share shape traversal; fractional needles keep tolerant matching
-p←[1 [2 3]] ⋄ v←[1 [2 3] 0 1 [2 3]]
-[p⍷v [1 2]⍷[1 2 1⋄1 2 3] [1 2 3]ₓ⍳[2 2.000000000000001]]
-⍝ =>
-[$t $f $f $t $f;[$t $f $f⋄$t $f $f];[1 1]ₓ]
-
-⍝ native-find-widths — Compact float patterns use the wider operand's tolerance and match NaNs
-[(32•float[1])⍷[1+8E¯15] (32•float[1])⍷32•float[1+8E¯7] [$n]⍷[$n 0]]
-⍝ =>
-[[$t] [$f] [$t $f]]
-
-⍝ exact-key-search — A search gives the same positions whether every cell is an exact key or one float cell sends them all through `Value::matches`, and for strings held as items or as a matrix's rows
-h←["ab";"cd";"";7ₓ;'x';[3 4]ₓ;"abc";1ₓ] ⋄ ns←32⍴["cd";"zz";"";7ₓ;'x';[3 4]ₓ;"ab";'y';"abc";$t]
-s←["ab";"cd";"ef";"gh";"ij";"kl";"mn";"op"] ⋄ t←32⍴s,⊂"zz"
-[(ns∊h)≡ns∊h,⊂0.5 ; (≠h,ns)≡¯1↓≠h,ns,⊂0.5 ; (h⍳ns)≡8⌊(h,⊂0.5)⍳ns ; (s⍳t)≡(⊃s)⍳⊃t ; 10↑h⍳ns ; h⍳1 1+1E¯15]
-⍝ =>
-[$t;$t;$t;$t;[1 8 2 3 4 5 0 8 6 7]ₓ;[7 7]ₓ]
 
 ⍝ shared-classes — Items that share a few strings, as a selection makes them, class as the same strings held as arrays of their own do, for `=`, `∪`, `≠` and Key, beyond the items read before a search of arrays of their own gives up
 s←{"S",⍕⍵}¨⍳7ₓ ⋄ k←[2000⍴[3 1 4 1 5 6 2 0]ₓ]⌷s ⋄ d←{⍵,""}¨k ⋄ ∧/[(=k)≡=d ; (∪k)≡∪d ; (≠k)≡≠d ; (k{≢⍵}⌸⍳≢k)≡d{≢⍵}⌸⍳≢d ; (∪k)≡[[3 1 4 5 6 2 0]]⌷s]   ⍝ $t
@@ -7548,9 +7481,6 @@ m←[4 3]⍴2ₓ 5ₓ 2ₓ 7ₓ 1ₓ 5ₓ 3ₓ 3ₓ 9ₓ 5ₓ 5ₓ 0ₓ ⋄ {⍵
 ⍝ — Membership of the same needles in each cell's own haystack
 m←[4 3]⍴2ₓ 5ₓ 2ₓ 7ₓ 1ₓ 5ₓ 3ₓ 3ₓ 9ₓ 5ₓ 5ₓ 0ₓ ⋄ {(5ₓ 3ₓ 8ₓ)∊⍵}⍤1 m   ⍝ [$t $f $f⋄$t $f $f⋄$f $t $f⋄$t $f $f]
 
-⍝ — Interval index in each cell's own boundaries, and index of within the tolerance
-[({⍵⍸2.5}⍤1)[2 3]⍴1 2 3 0 5 10 ; ({⍵⍳0.3}⍤1)[2 3]⍴0.1 0.2 0.30000000000000004 0.3 0.1 0.2]   ⍝ [[2 1]ₓ ; [2 0]ₓ]
-
 ⍝ — A search against each cell's own haystack makes no fallback [batched]
 m←[4 3]⍴2ₓ 5ₓ 2ₓ 7ₓ 1ₓ 5ₓ 3ₓ 3ₓ 9ₓ 5ₓ 5ₓ 0ₓ ⋄ (•explain "{⍵⍳5ₓ}⍤1 m").fallbacks.reason   ⍝ 0⍴⊂""
 
@@ -7594,10 +7524,6 @@ f←{"DOMAIN"::¯1 ⋄ ⍵○0.5} ⋄ r←f¨1 2 13
 ⍝ — Windows with one specification for every cell, and a cell's shape, run on the batch's whole: a batch's cells share one shape [batched]
 m←4 6⍴⍳24 ⋄ t←2 3 4⍴⍳24
 [({["size":3;"edge":"wrap"]↕⍵}⍤1 m)≡4 6 3⍴["size":1 3;"edge":"wrap"]↕m ; ({(×/⍴⍵)⍴⍵}⍤2 t)≡2 12⍴t ; (•explain "{3↕⍵}⍤1 m").fallbacks.reason,(•explain "{(×/⍴⍵)⍴⍵}⍤2 t").fallbacks.reason]   ⍝ [$t $t 0⍴⊂""]
-
-⍝ — `≡` compares a batch's exact-integer or Boolean cells with a float constant on the batch's whole, within the tolerance [batched]
-m←3 2⍴⍳6ₓ ⋄ b←2 2⍴$t $f $f $t ⋄ c←2 3.0000000000000004
-[{⍵≡c}⍤1 m ; {⍵≡1 0.0}⍤1 b ; (•explain "{⍵≡c}⍤1 m").fallbacks.reason]   ⍝ [[$f $t $f] [$t $f] 0⍴⊂""]
 
 ⍝ — A record built in a batched run holds a batch for each entry, so Rank and Each whose results are records batch [batched]
 v←⍳4
@@ -8001,8 +7927,9 @@ w←[1 2⋄3 4] ⋄ x←1 2⍴10 20 ⋄ [w {a←⍺ ⋄ {+/a×⍵}∂⍵}¹ ¹ x
 ⍝ — A loss mapped over the rows of `X` has the gradient of the same loss written with `+.×`
 X←[3 2]⍴0.1×⍳6ₓ
 loss←{th←⍵ ⋄ +/{⊼1○+/th×⍵}⍤1X}
-lossw←{+/⊼1○X+.×⍵}
-(loss∂ 0.5 ¯0.25)≡lossw∂ 0.5 ¯0.25   ⍝ $t
+loss∂ 0.5 ¯0.25
+⍝ =>
+X←[3 2]⍴0.1×⍳6ₓ ⋄ {+/⊼1○X+.×⍵}∂ 0.5 ¯0.25
 
 ⍝ — Per-example gradients under Rank match the closed form
 X←[3 2]⍴0.1×⍳6ₓ
@@ -8173,9 +8100,6 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 ⍝ —
 2↣×⍣0⁝3   ⍝ 3
 
-⍝ — Tolerant Key puts a chain of matches in one group
-{≢⍵}⌸[1 1+8E¯15 1+16E¯15]   ⍝ [3]ₓ
-
 ⍝ — A vector's keys reach the operand as its items, as Each passes them
 "ab" "cd" "ab"{⍺≡"ab"}⌸1 2 3   ⍝ $t $f
 
@@ -8313,7 +8237,7 @@ f←{⍵×+⍵}
 1e200×[(∨4○0.4j1e¯200)₁ (∨0○1e¯200j0.4)₁ (∨(4○⁻)1e¯200j0.4)₀]   ⍝ 0.3713906763541037 ¯0.3713906763541037 0.3713906763541037
 
 ⍝ — Reals whose results are complex for some items give what each item gives alone
-[⍟¯1 2.5;2√¯4 9.5;1○⁻2 0.5]≡[(⍟¯1),⍟2.5 (2√¯4),2√9.5 (1○⁻2),1○⁻0.5]   ⍝ $t
+[⍟¯1 2.5;2√¯4 9.5;1○⁻2 0.5]   ⍝ [(⍟¯1),⍟2.5 (2√¯4),2√9.5 (1○⁻2),1○⁻0.5]
 
 ⍝ — Complex storage holds infinities as reals, and an infinity equals only itself
 [1j2 2 ∞ ∞=5 2 5 ∞;1j2 ∞=∞ 1j2]   ⍝ [[$f $t $f $t];[$f $f]]
@@ -8377,13 +8301,6 @@ f←{⍵×+⍵}
 ⍝ —
 2≥1j2
 ⍝ error: DOMAIN ERROR
-
-⍝ — Complex equality compares the magnitude of the difference within tolerance, in either order
-x←1j1 1j1 1ₓ 1 0 1.7E308j1.7E308 1.7E308j1.7E308
-y←1j1.000000000000012 1j1.00000000000002 1j5E¯15 1j5E¯14 0j1E¯100 1.7E308j1.7E308 ¯1.7E308j¯1.7E308
-[x=y y=x x≠y y≠x]
-⍝ =>
-[[$t $f $t $f $f $t $f] [$t $f $t $f $f $t $f] [$f $t $f $t $t $f $t] [$f $t $f $t $t $f $t]]
 
 ⍝ — Output before a complex error still shows
 ⎕←1j2 ⋄ 1j2<0
@@ -8555,9 +8472,6 @@ add←{⍺+⍵}
 ⍝ — Steps of 1 stop before passing an end that isn't whole
 0.5↦3   ⍝ 0.5 1.5 2.5
 
-⍝ — The number of steps is whole within tolerance
-0↦0.3÷0.1   ⍝ 0 1 2 3
-
 ⍝ — Each item is the start plus an exact count, so an exact start gives exact items
 (•storage 1ₓ↦5).kind   ⍝ "integer"
 
@@ -8585,26 +8499,8 @@ add←{⍺+⍵}
 
 ⍝⍝ Exact and tolerant comparisons
 
-⍝ — Approximate equality uses relative tolerance 1E¯14. https://docs.dyalog.com/20.0/language-reference-guide/system-functions/ct/
-0.3=[0.3 0.1+0.2 0.4]   ⍝ $t $t $f
-
 ⍝ —
 1 2≤2 1   ⍝ $t $f
-
-⍝ — Tolerant equality is not transitive: x=y and y=z need not imply x=z
-[1=1+8E¯15 (1+8E¯15)=1+16E¯15 1=1+16E¯15]   ⍝ $t $t $f
-
-⍝ — Comparisons apply tolerance only when an approximate number takes part
-x←[0.3 0.1+0.2 ¯0.3 1 1 1E8 1E8 0 1E¯100 1E308 1r3 1r3 9007199254740993ₓ 1ₓ 1 1r3]
-y←[0.1+0.2 0.3 ¯0.1-0.2 1+5E¯15 1+5E¯14 1E8+5E¯7 1E8+5E¯5 1E¯100 0 ¯1E308 2r6 1r2 9007199254740992ₓ 1000000000000001r1000000000000000 1000000000000001r1000000000000000 1÷3]
-[x=y⋄x≠y⋄x<y⋄x≤y⋄x>y⋄x≥y]
-⍝ =>
-[$t $t $t $t $f $t $f $f $f $f $t $f $f $f $t $t
- $f $f $f $f $t $f $t $t $t $t $f $t $t $t $f $f
- $f $f $f $f $t $f $t $t $f $f $f $t $f $t $f $f
- $t $t $t $t $t $t $t $t $f $f $t $t $f $t $t $t
- $f $f $f $f $f $f $f $f $t $t $f $f $t $f $f $f
- $t $t $t $t $f $t $f $f $t $t $t $f $t $f $t $t]
 
 ⍝ — An empty exact comparison has an exact fill
 ↑1ₓ=0#1ₓ   ⍝ $f
@@ -8623,9 +8519,6 @@ j←[¯3 ¯1 0 1 3 1000 ¯1000]ₓ
 ⍝ — Booleans compare with a whole float as the integers 0 and 1
 [$t $f]=1   ⍝ $t $f
 
-⍝ — Tolerance makes the whole float 2E14 equal the integers beside it, as a float comparison does
-(200000000000000+⍳3ₓ)=200000000000000   ⍝ $t $t $t
-
 ⍝ — With Mathish mode off, a float reads 9007199254740993 as 9007199254740992, so the comparison still finds them equal
 •prefs ["mathish":$f] ⋄ (9007199254740992+⍳3ₓ)=9007199254740992   ⍝ $t $t $f
 
@@ -8642,9 +8535,6 @@ j←[¯3 ¯1 0 1 3 1000 ¯1000]ₓ
 •prefs ["mathish":$f] ⋄ [3|1e20 1e21 7 ; ¯7|1e300 ¯1e300 7]
 ⍝ =>
 [1 1 1 ; ¯6 ¯1 0]
-
-⍝ — Under Mathish mode, a residue is 0 where the divisor times the floor of the quotient equals the item within tolerance, as 0.1 times 3 and 10 do here
-0.1|0.3 1   ⍝ 0 0
 
 ⍝ — A residue scan of integers from a whole float seed gives floats, the scan from the integer it stands for
 7|\[3 10 4 ¯5]ₓ   ⍝ 3 1 0 ¯5
@@ -8978,9 +8868,6 @@ widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1 s
 
 ⍝ — Principal Lambert W has limit infinity
 ×↢*⍨⁻∞   ⍝ ∞
-
-⍝ — Mathish division leaves other indeterminate arithmetic unchanged
-[0÷0 ∞-∞ 0×∞ ∞×0ₓ ∞÷∞]   ⍝ [0 $n $n $n $n]
 
 ⍝ — Complex numbers can have infinite parts. A number with no imaginary part is real
 [∞+1j2 1j∞ ∞j0]   ⍝ ∞j2 1j∞ ∞
@@ -9390,19 +9277,6 @@ f←↑-ᵘ ⋄ 2 f 3   ⍝ ¯1.0
 10.0
 
 ⍝ —
-0÷0   ⍝ 0
-
-⍝ — Exact numbers that `÷ₐ` divides as 64-bit floats take Mathish's zero for 0÷0. Integer floor division gives 0 whether Mathish is on or off
-[0ₓ÷ₐ0ₓ ; 0ₓ÷0ₓ]
-[0 0ₓ]
-
-⍝ — Mathish division follows the array and fused routes
-(0÷⍳8)+0   ⍝ 8⍴0
-
-⍝ —
-0÷¯0   ⍝ 0
-
-⍝ —
 ¯0   ⍝ 0.0
 
 ⍝ — Comments alone produce no result
@@ -9632,10 +9506,6 @@ c←"[¯7 7 ¯1 0]ₓ₂÷ₓ[2 ¯2 3 ¯5]ₓ₂" "[¯7 7 ¯1 0]ₓ₄÷ₓ[2 ¯
 ⍝ subscript-width — After a function, ₕ, ₛ or ₚ makes its results floats of that width. After an array, as after an expression in parentheses, it converts the array, as •float does
 x←1.5 ⋄ {(•storage ⍎⍵).kind}¨"(-)ₛ 3" "xₛ" "(x+1)ₕ" "(2ₓ)ₚ"
 "float32" "float32" "float16" "float64"
-
-⍝ subscript-fixed — After a function, ₓ₁, ₓ₂, ₓ₄ or ₓ₈ converts its results to fixed integers of that width. A float takes its floor and then clamps to the type's range: NaN gives 0, and an infinity gives the nearer end of the range. Under Mathish mode the floor is tolerant: 2.9999999999999996 gives 3, where it gives 2 with Mathish mode off. An integer wraps to the width, and a Boolean gives 0 or 1
-v←0.5 1.5 ¯0.1 2.9999999999999996 ¯3.5 300.5 $n ∞ ¯∞ ⋄ a←[⊢ₓ₁ v ; ⊢ₓ₂ v ; ⊢ₓ₁ [255 256 ¯1 ¯257]ₓ ; ⊢ₓ₂ 0≠[1 0 1]ₓ] ⋄ •prefs ["mathish":$f] ⋄ a,⊂(⊢ₓ₂ v)
-[[0 1 0 3 0 255 0 255 0]ₓ₁ ; [0 1 ¯1 3 ¯4 300 0 32767 ¯32768]ₓ₂ ; [255 0 255 255]ₓ₁ ; [1 0 1]ₓ₂ ; [0 1 ¯1 2 ¯4 300 0 32767 ¯32768]ₓ₂]
 
 ⍝ subscript-join-names — Between two items, ⱼ, ₑ and ᵣ join them as one term: xⱼy is x+y×0ⱼ1, xₑy is x×10*y and xᵣy is the exact quotient of xₓ by yₓ, also under static kinds
 x←3 ⋄ y←2 ⋄ •prefs ["kinds":"static"] ⋄ s←xᵣy ⋄ •prefs ["kinds":"dynamic"] ⋄ [xⱼy xₑy xᵣy s]   ⍝ [3ⱼ2 300 3ᵣ2 3ᵣ2]

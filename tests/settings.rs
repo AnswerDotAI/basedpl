@@ -6,9 +6,10 @@ use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 8] = [
+    let checks: [fn(); 9] = [
         mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results, hanzi_spellings_and_language,
         leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header, retained_selection_parameters_survive_data_reads,
+        retained_programs_rebind_block_geometry,
     ];
     for check in checks {
         basedpl::settings::reset();
@@ -223,4 +224,14 @@ fn retained_selection_parameters_survive_data_reads() {
         }
         check(r#""q"⌷["b":4 "a":5]"#, "0");
     }
+}
+
+fn retained_programs_rebind_block_geometry() {
+    let s = Session::new();
+    assert!(s.eval(r#"•prefs ["kinds":"static" "mathish":$f] ⋄ v←1 2 3 ⋄ x←0.25×⍳17 ⋄ f←{+/,⊼⍵+⊗v}"#).error.is_none());
+    for block in [7, 64, 5] {
+        basedpl::settings::set_sizes(basedpl::settings::Sizes { block, min_items: 1, ..basedpl::settings::Sizes::DEFAULT });
+        equiv_in(&s, r#"e←•explain "f∂x" ⋄ e.value"#, "12+6×0.25×⍳17");
+    }
+    equiv_in(&s, "e.programs.event", r#"["replayed"]"#);
 }
