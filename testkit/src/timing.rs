@@ -46,23 +46,27 @@ fn runner(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<
     })
 }
 
-/// Parse once, warm once, then take the fastest of the evaluations that `rustymath_timing::fastest` makes, forcing the result each time. Gives that time, the most bytes that those evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first of them left.
-pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
+/// Parse once, time the first fully forced evaluation, then take the fastest warm evaluation. Gives the warm time, peak bytes held during warm runs, bytes left held, and first-evaluation time. Parsing and setup are outside both timings.
+pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize, f64), Evaluation> {
     timed_runs(session, code, interrupt, true)
 }
 
 /// The least time that a case's timed evaluations take together: 5 ms. A case that runs in microseconds then gives the fastest of hundreds of evaluations, which varies less between test runs than the fastest of `rustymath_timing::RUNS`.
 const LEAST: std::time::Duration = std::time::Duration::from_millis(5);
 
-fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool) -> Result<(f64, usize, usize), Evaluation> {
+fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool) -> Result<(f64, usize, usize, f64), Evaluation> {
     let (mut run, mut failed) = (runner(session, code, interrupt)?, None);
-    if warmup { run(&mut failed); }
+    let cold_seconds = if warmup {
+        let first = rustymath::parallel::Instant::now();
+        run(&mut failed);
+        first.elapsed().as_secs_f64()
+    } else { 0.0 };
     let mut start = 0;
     let (seconds, held) = rustymath::memory::peak_held(|| {
         rustymath_timing::fastest(LEAST, |k| { run(&mut failed); if k == 0 { start = rustymath::memory::held(); } })
     });
     let left = rustymath::memory::held().saturating_sub(start);
-    failed.map_or(Ok((seconds, held, left)), Err)
+    failed.map_or(Ok((seconds, held, left, cold_seconds)), Err)
 }
 
 /// The browser build's budget column: a case's third budget, after its macOS and Linux budgets.
@@ -177,7 +181,7 @@ pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, footprint
         let copy = (section != "widths").then(|| copy_time::<f64>(n));
         let session = group.session(section)?;
         let obligations = route(session, case, interrupt)?.violations();
-        let (total, held, left) = timed_runs(session, code, interrupt, false).map_err(|failed| failure(code, failed))?;
+        let (total, held, left, _) = timed_runs(session, code, interrupt, false).map_err(|failed| failure(code, failed))?;
         if rustymath::memory::checks() && left > 0 {
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
@@ -408,7 +412,7 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         match time(&session, code, interrupt) {
-            Ok((seconds, ..)) => costs.push(json!({"code":code, "seconds":seconds, "copies":seconds / n as f64 / copy.seconds})),
+            Ok((seconds, _, _, cold_seconds)) => costs.push(json!({"code":code, "seconds":seconds, "cold_seconds":cold_seconds, "copies":seconds / n as f64 / copy.seconds})),
             Err(failed) => return Ok(response(failed)),
         }
     }
