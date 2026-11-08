@@ -204,12 +204,12 @@ Bare numbers are floats of the default width: 64 bits under dynamic kinds and 32
 
 Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes.
 
-`ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
+`ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻` marks every float. Its text therefore reads back the same at any default.
 
 ```bpl
 ⊢.kind¨•storage¨[1.5ₕ 1.5ₛ [1.5 2.5]ₚ ⍬ₛ]       ⍝ "float16" "float32" "float64" "float32"
 [1.5 2.5]ₛ                          ⍝ [1.5 2.5]ₛ
-•literal⁻¹ 0.5                     ⍝ "0.5ₚ"
+•literal⁻ 0.5                     ⍝ "0.5ₚ"
 ```
 
 An operation on floats computes at their width. An exact operand rounds to the width that the operation computes at. Floats of two widths compute at the wider, except that a [weak number](#weak-and-strong-numbers) takes the width of the floats beside it. Writes, catenation and arrays built from items follow the same rule: `v,2.5`, `v₀←2.5` and `[v₀ 2.5]` keep a 32-bit `v`'s width. No operation widens floats on its own.
@@ -381,21 +381,21 @@ Results computed apart join the same way: the cells of a map, such as Each, Rank
 x←(1.5j2 2j3)ₛ ⋄ [xₐ;(•storage xₐ).kind]   ⍝ [[1.5 2]ₛ "float32"]
 ```
 
-`√`, `⍟`, `*`, `○` and `○⁻¹` keep their own real-part rule under `ₐ`, as below. After any other pervasive function, `fₐ` converts the arguments to real floats of the width that their float promotion gives, weak literals included, before it calls `f`. `!ₐ25ₓ` is about `1.55ₑ25`, computed in floats rather than in overflowing integers. A complex argument gives its real part first, so `1j2×ₐ1j2` is `1`, and a comparison gives Booleans. After a function that isn't pervasive, `fₐ` converts its results: `≢ₐ` gives the count as a float. Float32 arguments give float32 results, even where `f` itself gives float64 or complex numbers. The width follows from the arguments' kinds and the preferences, never from values. `÷ₐ` selects float division before computing, rather than converting an integer quotient. Outside the real domain a result is the real part of the principal value. `√ₐ¯4` is 0, the real part of `0j2`. With a negative base, `¯8*ₐ÷3` is 1, the real part of the principal root 1+i√3, not `¯2`. The real part of arcsin of 2 is π÷2:
+`√`, `⍟`, `*`, `○` and `○⁻` keep their own real-part rule under `ₐ`, as below. After any other pervasive function, `fₐ` converts the arguments to real floats of the width that their float promotion gives, weak literals included, before it calls `f`. `!ₐ25ₓ` is about `1.55ₑ25`, computed in floats rather than in overflowing integers. A complex argument gives its real part first, so `1j2×ₐ1j2` is `1`, and a comparison gives Booleans. After a function that isn't pervasive, `fₐ` converts its results: `≢ₐ` gives the count as a float. Float32 arguments give float32 results, even where `f` itself gives float64 or complex numbers. The width follows from the arguments' kinds and the preferences, never from values. `÷ₐ` selects float division before computing, rather than converting an integer quotient. Outside the real domain a result is the real part of the principal value. `√ₐ¯4` is 0, the real part of `0j2`. With a negative base, `¯8*ₐ÷3` is 1, the real part of the principal root 1+i√3, not `¯2`. The real part of arcsin of 2 is π÷2:
 
 ```bpl
 √ₐ¯4 9                            ⍝ 0 3
 ⍟ₐ¯1                              ⍝ 0
 ¯8*ₐ÷3                            ⍝ 1
-1○⁻¹ₐ 2                           ⍝ 1.570796327
+1○⁻ₐ 2                           ⍝ 1.570796327
 x←(4 9)ₛ ⋄ (•storage √ₐx).kind     ⍝ "float32"
 ```
 
-`√ₐ`, `⍟ₐ` and `*ₐ` each run as one kernel, and so do `○ₐ` and `○⁻¹ₐ` with a constant code. Because their result's kind never depends on values, they fuse and trace under dynamic kinds as they do under static kinds. Under [`∂`](glyphs/partial.qmd), their slopes are the real part's: `√ₐ` has slope 0 at and below 0, `⍟ₐ` has slope 1÷x, and arcsin's real part has slope 0 beyond ¯1 and 1. Other marked pervasive functions convert their arguments before `f` runs, and a marked function that isn't pervasive converts the results that `f` gives. Under static kinds, a NaN that `f` gives outside its domain stays NaN:
+`√ₐ`, `⍟ₐ` and `*ₐ` each run as one kernel, and so do `○ₐ` and `○⁻ₐ` with a constant code. Because their result's kind never depends on values, they fuse and trace under dynamic kinds as they do under static kinds. Under [`∂`](glyphs/partial.qmd), their slopes are the real part's: `√ₐ` has slope 0 at and below 0, `⍟ₐ` has slope 1÷x, and arcsin's real part has slope 0 beyond ¯1 and 1. Other marked pervasive functions convert their arguments before `f` runs, and a marked function that isn't pervasive converts the results that `f` gives. Under static kinds, a NaN that `f` gives outside its domain stays NaN:
 
 ```bpl
 {+/√ₐ⍵}∂¯1 4                      ⍝ 0 0.25
-{+/1○⁻¹ₐ⍵}∂¯2 0.5                 ⍝ 0 1.154700538
+{+/1○⁻ₐ⍵}∂¯2 0.5                 ⍝ 0 1.154700538
 ```
 ## Booleans
 

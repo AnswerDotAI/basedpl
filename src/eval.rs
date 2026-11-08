@@ -2,7 +2,7 @@ use crate::cancel::check;
 use crate::{
     At, Described, Error, ErrorKind, Output, Parsed, Source, Span, Value, display::Elide, number::Numeric,
     primitive::{Builtin, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Superscript}, symbols::Notation,
-    syntax::{Definition, DefinitionKind, Node, NodeKind}
+    syntax::{Definition, DefinitionKind, Node, NodeKind, ScriptKind}
 };
 use rustymath::error::Kind;
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -182,7 +182,7 @@ enum FunctionNode {
     Inverse(Function),
     Defined(Closure),
     Derived(Closure, Operand, Option<Operand>),
-    /// A function with the hand-written inverse or derivative that `f⁻¹←g` or `f∂←g` attaches. Calling it calls the function.
+    /// A function with the hand-written inverse or derivative that `f⁻←g` or `f∂←g` attaches. Calling it calls the function.
     Ruled(Function, Rules),
     Modified(OperatorKind, Operand),
     Composed(OperatorKind, [Operand; 2]),
@@ -191,7 +191,7 @@ enum FunctionNode {
     Array(Value),
 }
 
-/// The hand-written rules that selective assignment attaches to a function: `f⁻¹←g` sets the inverse and `f∂←g` the derivative.
+/// The hand-written rules that selective assignment attaches to a function: `f⁻←g` sets the inverse and `f∂←g` the derivative.
 #[derive(Clone, Debug, Default)]
 struct Rules { inverse: Option<Function>, derivative: Option<Function> }
 impl Rules {
@@ -245,7 +245,7 @@ impl FunctionNode {
             Self::System(f) => system_name(f.name, el.notation) + &f.argument().map_or(String::new(), |a| crate::array::quoted(&a)),
             Self::Ruled(f, _) => f.node().label(el), Self::LateBound(_, span) => span.source.text.clone(),
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(), Self::Fold(_, h) => el.notation.glyph(h.glyph()).into(),
-            Self::Inverse(_) => "⁻¹".into(), Self::Modified(OperatorKind::Super(Superscript::Mark(mark)), _) => mark.marker().into(),
+            Self::Inverse(_) => "⁻".into(), Self::Modified(OperatorKind::Super(Superscript::Mark(mark)), _) => mark.marker().into(),
             Self::Array(a) => a.source(el), Self::Modified(op, _) | Self::Composed(op, _) => el.notation.glyph(op.glyph()).into(),
             Self::Fork(_) => "fork".into()
         }
@@ -253,7 +253,7 @@ impl FunctionNode {
 }
 
 impl Builtin {
-    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, the `Exact` functions that `ₓ` after a primitive calls, and the functions that `•special` makes. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions. A fast combination's function (`Special`) has no entry, and becomes a function of its own on each read.
+    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, the `Exact` functions that `ₓ` after a primitive calls, and the functions that `•special` makes. `Arc`, the form that `○⁻` calls, and `ᵇ`'s tables never become functions. A fast combination's function (`Special`) has no entry, and becomes a function of its own on each read.
     pub(crate) fn function(self) -> Function {
         static TABLE: std::sync::LazyLock<HashMap<Builtin, Function>> = std::sync::LazyLock::new(|| {
             let primitives = Primitive::all().chain([Primitive::Bracket]).chain(crate::primitive::Exact::ALL.map(Primitive::Exact))
@@ -270,7 +270,7 @@ impl Function {
     fn node(&self) -> &FunctionNode { &self.node.kind }
     /// The primitive this function is, where it is one.
     pub(crate) fn as_primitive(&self) -> Option<Primitive> { match self.node() { FunctionNode::Primitive(p) => Some(*p), _ => None } }
-    /// The primitive this function is when called with two arguments: its own primitive, a dfn's admitted primitive (`Definition::admitted`), a marked primitive's own function (`Primitive::marked`), as `*ₐ` is `Real::Pow`, `p⁻¹`'s primitive where it has one (`Primitive::left_inverse`), as `○⁻¹` is `Math::Arc`, or for `gᵇ`, `Primitive::Bitwise` of `g`'s truth table, where `g`'s Boolean kernel gives one (`pervasive::truth_table`). A dyadic call of `gᵇ`, and folds and scans, which call their operand with two arguments, use it to run `gᵇ` through the kernels. A monadic `gᵇ` reads `g`'s monadic form, which this table doesn't describe.
+    /// The primitive this function is when called with two arguments: its own primitive, a dfn's admitted primitive (`Definition::admitted`), a marked primitive's own function (`Primitive::marked`), as `*ₐ` is `Real::Pow`, `p⁻`'s primitive where it has one (`Primitive::left_inverse`), as `○⁻` is `Math::Arc`, or for `gᵇ`, `Primitive::Bitwise` of `g`'s truth table, where `g`'s Boolean kernel gives one (`pervasive::truth_table`). A dyadic call of `gᵇ`, and folds and scans, which call their operand with two arguments, use it to run `gᵇ` through the kernels. A monadic `gᵇ` reads `g`'s monadic form, which this table doesn't describe.
     pub(crate) fn dyadic_primitive(&self) -> Option<Primitive> {
         match self.node() {
             FunctionNode::Primitive(p) => Some(*p),
@@ -334,7 +334,7 @@ impl Function {
             FunctionNode::Composed(OperatorKind::Before, [Operand::Value(_), Operand::Function(f)]) => f.transposes(), _ => false
         }
     }
-    /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec requires. An inverse drops items only where its function does, except inverse transpose, which never drops any. The inverse of a catenate, BPL's one other inverse that drops items, checks the items it drops. Dfns, system functions, functions with an inverse that `f⁻¹←g` attaches, and constants count as keeping every item.
+    /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec requires. An inverse drops items only where its function does, except inverse transpose, which never drops any. The inverse of a catenate, BPL's one other inverse that drops items, checks the items it drops. Dfns, system functions, functions with an inverse that `f⁻←g` attaches, and constants count as keeping every item.
     fn discards(&self, dyadic: bool) -> bool {
         use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
         if let Some((parts, _)) = self.called_parts(dyadic) { return parts.iter().any(|&(f, v)| f.discards(v)); }
@@ -365,7 +365,7 @@ impl Function {
             FunctionNode::LateBound(_, span) => span.source.text.clone(),
             FunctionNode::Defined(c) => c.text().into(),
             FunctionNode::Fold(f, h) => format!("{}{}", f.left_text(el, budget), el.notation.glyph(h.glyph())),
-            FunctionNode::Inverse(f) => f.superscripted("⁻¹", el, budget),
+            FunctionNode::Inverse(f) => f.superscripted("⁻", el, budget),
             FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => f.superscripted(mark.marker(), el, budget),
             FunctionNode::Modified(op, a) => format!("{}{}", a.left_text(el, budget), el.notation.glyph(op.glyph())),
             FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(el, budget), el.notation.glyph(op.glyph()), b.right_text(el, budget)),
@@ -466,13 +466,9 @@ impl Function {
                 if info.dyadic() || !accepts(info.left, &a) { return Err(Error::domain("operator needs a function operand").at(span)); }
                 match (op, a) {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
-                    (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
-                    (Super(Superscript::Power(n)), Operand::Function(f)) => {
-                        FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(Value::integer(n))])
-                    }
+                    (Super(Superscript::Inverse), Operand::Function(f)) => return f.inverse(span),
                     (op @ Super(Superscript::Mark(_)), a @ Operand::Function(_)) => FunctionNode::Modified(op, a),
-                    (Super(_), _) => return Err(Error::domain("ᵀ transposes an array, not a function").at(span)),
-                    (op, a) => FunctionNode::Modified(op, a),
+                    (Super(_), _) => return Err(Error::domain("ᵀ transposes an array, not a function").at(span)), (op, a) => FunctionNode::Modified(op, a)
                 }
             }
             // An array has no meaning as an inner product's right operand. After a function, as after an array, text reads a field of the result and other arrays select from it.
@@ -620,7 +616,7 @@ impl Function {
     /// The function's result on these arguments, as an array.
     #[inline(always)]
     pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> { self.call(left, right, span)?.array(span) }
-    /// This function with `g` attached as its inverse, as `f⁻¹←g` attaches it. A derivative already attached stays.
+    /// This function with `g` attached as its inverse, as `f⁻←g` attaches it. A derivative already attached stays.
     pub fn with_inverse(&self, g: Function) -> Self { self.attached(|rules| rules.inverse = Some(g)) }
     /// This function with `g` attached as its derivative, as `f∂←g` attaches it. An inverse already attached stays.
     pub fn with_derivative(&self, g: Function) -> Self { self.attached(|rules| rules.derivative = Some(g)) }
@@ -793,7 +789,6 @@ impl Function {
         let operator = glyph.and_then(OperatorKind::from_glyph);
         let node = match (kind, operands.as_slice(), operator) {
             ("fn", [a], ..) => return fun(a), ("fork", [a, b, c], ..) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
-            ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
             (_, [f], _) if let Some(mark) = crate::number::Mark::of(kind) => FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), f.clone()),
             (_, [f], Some(op)) if !op.info().dyadic() => FunctionNode::Modified(op, f.clone()),
             (_, [a, b], Some(op)) if op.info().right.is_some() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
@@ -837,12 +832,12 @@ impl OperandRef<'_> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Subscript(Value), Bound(Arc<OperatorNode>, Operand) }
+pub(crate) enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Script(ScriptKind, Value), Bound(Arc<OperatorNode>, Operand) }
 impl OperatorNode {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         Ok(match (self, other) {
             (Self::Defined(x), Self::Defined(y)) => x == y, (Self::Primitive(x), Self::Primitive(y)) => x == y,
-            (Self::Subscript(x), Self::Subscript(y)) => values(x, y, true)?,
+            (Self::Script(k, x), Self::Script(l, y)) => k == l && values(x, y, true)?,
             (Self::Bound(n, a), Self::Bound(m, b)) => n.equal_by(m, values)? && a.equal_by(b, values)?, _ => false
         })
     }
@@ -890,15 +885,14 @@ fn constant_operand(kind: OperandKind, a: Operand, span: &Span) -> Result<Operan
 impl OperatorNode {
     fn text(&self, el: Elide) -> String {
         match self {
-            Self::Defined(c) => c.text().into(), Self::Primitive(op) => el.notation.glyph(op.glyph()).into(),
-            Self::Subscript(index) => format!("{}({})", el.notation.glyph(OperatorKind::Axis.glyph()), Operand::Value(index.clone()).text(el, &mut 1000)),
+            Self::Defined(c) => c.text().into(), Self::Primitive(op) => el.notation.glyph(op.glyph()).into(), Self::Script(kind, indices) => kind.text(indices),
             Self::Bound(op, right) => format!("{}({})", op.text(el), right.text(el, &mut 1000))
         }
     }
     fn is_dyadic(&self) -> bool {
         match self {
             Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator, Self::Primitive(op) => op.info().dyadic(),
-            Self::Subscript(_) | Self::Bound(..) => false
+            Self::Script(..) | Self::Bound(..) => false
         }
     }
 
@@ -906,10 +900,10 @@ impl OperatorNode {
         let node = match self {
             Self::Defined(c) => FunctionNode::Derived(c, operand, None),
             Self::Primitive(op) => FunctionNode::Modified(op, operand),
-            Self::Subscript(index) => FunctionNode::Composed(OperatorKind::Axis, [operand, Operand::Value(index)]),
+            Self::Script(kind, indices) => FunctionNode::Composed(kind.operator(), [operand, Operand::Value(indices)]),
             Self::Bound(op, right) => match Arc::unwrap_or_clone(op) {
                 Self::Defined(c) => FunctionNode::Derived(c, operand, Some(right)), Self::Primitive(op) => FunctionNode::Composed(op, [operand, right]),
-                Self::Subscript(_) | Self::Bound(..) => unreachable!()
+                Self::Script(..) | Self::Bound(..) => unreachable!()
             },
         };
         Function::new(node, span).map(Binding::Function)
@@ -917,7 +911,7 @@ impl OperatorNode {
     /// The innermost frame the operator depends on: its dfn's, or that of an operand bound to it.
     fn environment(&self) -> Option<usize> {
         match self {
-            Self::Defined(c) => c.environment, Self::Primitive(_) | Self::Subscript(_) => None,
+            Self::Defined(c) => c.environment, Self::Primitive(_) | Self::Script(..) => None,
             Self::Bound(op, right) => op.environment().max(OperandRef::from(right).environment())
         }
     }
@@ -1053,7 +1047,7 @@ pub struct Evaluation {
 }
 impl Evaluation {
     pub fn output_text(&self) -> Vec<&str> { self.output.iter().map(Output::text).collect() }
-    pub(crate) fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
+    pub fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
 }
 
 pub struct Session {

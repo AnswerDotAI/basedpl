@@ -8,7 +8,7 @@ The [keyboard map](keyboard.qmd) shows the Option and Option-Shift bindings, wit
 
 Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-< and `≥` is Alt->, each with Shift held. Where the column shows a second key, press it with or without Alt held. For example, `Alt-o c` means Alt-o, then `c`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
 
-Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, `u` for `ᵘ`, or `b` for `ᵇ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-Minus then `7`.
+Superscripts start with Alt-6. Type Alt-6, `-`, then Space for bare inverse `⁻`; Alt-6 then `-1` gives signed `⁻¹`. The second key is a digit, `-` then a digit, `t` for `ᵀ`, `u` for `ᵘ`, or `b` for `ᵇ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-Minus then `7`.
 
 The names in these tables are the ones you type. In the REPL, a backtick and any of them, then Tab, enters the glyph, as [named entry](repl.qmd#named-entry) describes. Python exports the function names, with `_` in place of `-` and a trailing `_` on Python keywords, as in `index_of` and `and_`. It spells operators as properties with their names, as in `f.reduce`.
 
@@ -25,13 +25,13 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `\|` [stile](glyphs/stile.qmd) | | magnitude | residue | |
 | `*` [star](glyphs/star.qmd) | | exponential | exponent | |
 | `⍟` [circle-star](glyphs/circle-star.qmd) | Alt-o 8 | natural-log | logarithm | |
-| `○` [circle](glyphs/circle.qmd) | Alt-o | cis | circular | Pi-times is `π`. Codes 0 to 8, inverted by `k○⁻¹` |
+| `○` [circle](glyphs/circle.qmd) | Alt-o | cis | circular | Pi-times is `π`. Codes 0 to 8, inverted by `k○⁻` |
 | `π` [pi](glyphs/pi.qmd) | Alt-p | pi-times | pi-ratio | |
 | `√` [radical](glyphs/radical.qmd) | Alt-3 | sqrt | root | As BQN's `√` |
 | `!` [exclamation](glyphs/exclamation.qmd) | | factorial | binomial | |
 | `⍭` [stile-tilde](glyphs/stile-tilde.qmd) | Alt-Backslash | prime | prime-mode | Like J's `p:`, with different codes |
 | `⨸` [circle-divide](glyphs/circle-divide.qmd) | Alt-o u | factors | factor-spec | As J's `q:` |
-| `⌻` [quad-jot](glyphs/quad-jot.qmd) | Alt-q t | roots | polyval | As J's `p.`, but coefficients come from `⌻⁻¹` |
+| `⌻` [quad-jot](glyphs/quad-jot.qmd) | Alt-q t | roots | polyval | As J's `p.`, but coefficients come from `⌻⁻` |
 | `¿` [inverted-question](glyphs/inverted-question.qmd) | Alt-/ | roll | deal | Dyalog's `?` |
 | `∨` [vee](glyphs/vee.qmd) | Alt-9 | real-imag | or | Monad as J's `+.` |
 | `∧` [wedge](glyphs/wedge.qmd) | Alt-0 | polar | and | Monad as J's `*.` |
@@ -69,7 +69,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `⍷` [epsilon-underbar](glyphs/epsilon-underbar.qmd) | Alt-Minus e | groups | find | Monad as Dyalog's `{⊂⍵}⌸` |
 | `⍋` [delta-stile](glyphs/delta-stile.qmd) | Alt-Backslash 7 | grade-up | grade-up-by | |
 | `⍒` [del-stile](glyphs/del-stile.qmd) | Alt-Backslash g | grade-down | grade-down-by | |
-| `#` [hash](glyphs/hash.qmd) | | runs | replicate | Dyad as Dyalog's `⌿`; monad run-length encodes, and `#⁻¹` decodes |
+| `#` [hash](glyphs/hash.qmd) | | runs | replicate | Dyad as Dyalog's `⌿`; monad run-length encodes, and `#⁻` decodes |
 | `⊤` [down-tack](glyphs/down-tack.qmd) | Alt-n | binary-encode | encode | Digits on last axis, as J |
 | `⊥` [up-tack](glyphs/up-tack.qmd) | Alt-b | binary-decode | decode | Digits on last axis, as J |
 | `⌹` [domino](glyphs/domino.qmd) | Alt-q u | matrix-inverse | matrix-divide | |
@@ -90,6 +90,7 @@ A monadic operator takes one operand, on its left, as in `+/`. Monad and Dyad na
 | `⍀` [backslash-bar](glyphs/backslash-bar.qmd) | Alt-Minus Backslash | scan-first | | `f⍀`, along the first axis. Seed as `\`. Accumulates LTR as BQN |
 | `¨` [diaeresis](glyphs/diaeresis.qmd) | Alt-1 | each | | `f¨` |
 | `ᵇ` [superscript-b](glyphs/superscript-b.qmd) | Alt-6 b | bitwise | | `fᵇ` applies a Boolean function to integer bits |
+| `⁻` [superscript-minus](glyphs/superscript-minus.qmd) | Alt-_ | inverse | | `f⁻` undoes `f`. A superscript digit immediately after the minus instead makes a negative Rank |
 | `⍨` [tilde-diaeresis](glyphs/tilde-diaeresis.qmd) | Alt-1 Backtick | self | commute | `f⍨`. `a⍨` is a constant function |
 | `⊗` [circle-times](glyphs/circle-times.qmd) | Alt-o m | outer-product | | `g⊗`, as BQN's `⌜` |
 | `⌸` [quad-equal](glyphs/quad-equal.qmd) | Alt-q = | key | | `f⌸` |
@@ -139,7 +140,7 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | | Real infinity |
 | `$t` `$f` `$n` [constants](system/constants.qmd) | | | True, false and NaN |
 | `$e` [caught error](system/constants.qmd) | | | The error a guard's handler caught |
-| `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | | Postfix on the token before it, or after a space on the run before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
+| `²` `⁻` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | | `x²` is `x*2`; on a function, `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. Bare `f⁻` is inverse; `mᵀ` is `⍉m`; `fᵘ` is a scalar holding `f` |
 | `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | | Array positions: `v₁` is `1⌷v`, `v₋₁` is the last major cell, `m₁ ₂` is `m.[1 2]`, and `v₁←5` assigns to that cell. Function axes: `+/₀` is `+/⍠0`, and `+/₁ ₂` is `+/⍠[1 2]` |
 
 [Numbers](numbers.qmd) covers numeric notation, such as `ₓ`, `r`, `j` and `e`.
@@ -160,4 +161,4 @@ System names start with `•`. [System functions](system-functions.qmd) lists th
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.
 - [Dfns](dfns.ipynb): BPL has dfns, with no tradfns and no colon control structures such as `:If`.
-- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use numeric subscripts or [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x⋄y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻¹`.
+- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use numeric subscripts or [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x⋄y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻`.

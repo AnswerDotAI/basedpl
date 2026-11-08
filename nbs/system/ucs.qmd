@@ -9,4 +9,4 @@
 "UTF-8"•ucs 195 169 ⍝ "é"
 ```
 
-`•ucs⁻¹` is `•ucs`, with the same `E` if there is one.
+`•ucs⁻` is `•ucs`, with the same `E` if there is one.

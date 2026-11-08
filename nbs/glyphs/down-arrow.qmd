@@ -32,8 +32,8 @@ See [Mix / Take](up-arrow.qmd).
 
 ## Inverse
 
-`↓⁻¹Y` mixes the items of `Y` into one array.
+`↓⁻Y` mixes the items of `Y` into one array.
 
 ```bpl
-↓⁻¹[1 2;3 4]   ⍝ [1 2⋄3 4]
+↓⁻[1 2;3 4]   ⍝ [1 2⋄3 4]
 ```

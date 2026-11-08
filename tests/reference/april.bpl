@@ -126,7 +126,7 @@
 [0j1×1 +1 ⊢1 ⊣/∨1 |1 ⊢/∨1]   ⍝ 0j1 1 1 1 1 0
 
 ⍝ april:505 —
-⌊1000×(⊣/,⊢/)∨(6 5 4 3 2○⁻¹⊗v)⍪(⍳9ₓ)○⊗v←0 ¯2 2 ¯2j2 2j3.5
+⌊1000×(⊣/,⊢/)∨(6 5 4 3 2○⁻⊗v)⍪(⍳9ₓ)○⊗v←0 ¯2 2 ¯2j2 2j3.5
 [0 1316 1316 1734 2095 1570 3141 0 2325 1064⋄0 ¯1444 1443 ¯1735 2079 0 0 0 754 1038⋄0 ¯1733 1732 ¯1880 1940 1000 0 0 2128 3607⋄0 ¯1108 1107 ¯1312 1442 0 0 0 238 215⋄1570 3141 0 2325 1064 0 ¯1317 ¯1317 ¯1735 ¯2096⋄1000 0 0 2128 3607 0 1732 ¯1733 1879 ¯1941⋄0 ¯910 909 ¯3421 15069 0 0 0 ¯1510 ¯6885⋄1000 ¯417 ¯417 ¯1566 ¯6897 0 0 0 3297 ¯15043⋄0 2185 ¯2186 28 ¯2 0 0 0 1023 1001⋄1000 2236 2236 2128 2063 0 0 0 ¯1880 3392⋄0 ¯3627 3626 1509 ¯3397 0 0 0 3420 ¯1320⋄1000 3762 3762 ¯1566 ¯3524 0 0 0 ¯3298 ¯1273⋄0 ¯965 964 ¯1024 972 0 0 0 ¯29 23⋄0 0 0 1879 3392 1000 2236 2236 2128 ¯2064]ₓ
 
 ⍝ april:524 —
@@ -1443,40 +1443,40 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 +⌿1 2 2⍴'a'   ⍝ ["aa"⋄"aa"]
 
 ⍝ april:1305 —
-1 0 1 #⁻¹₀ (3+2 3⍴⍳6ₓ)   ⍝ [3 4 5⋄0 0 0⋄6 7 8]
+1 0 1 #⁻₀ (3+2 3⍴⍳6ₓ)   ⍝ [3 4 5⋄0 0 0⋄6 7 8]
 
 ⍝ april:1313 —
-0#⁻¹⍬   ⍝ 1⍴0
+0#⁻⍬   ⍝ 1⍴0
 
 ⍝ april:1314 —
-0#⁻¹""   ⍝ " "
+0#⁻""   ⍝ " "
 
 ⍝ april:1315 —
-0#⁻¹0⍴⊂3 3⍴⍳5ₓ   ⍝ (1⍴⊂[0 0 0⋄0 0 0⋄0 0 0])ₓ
+0#⁻0⍴⊂3 3⍴⍳5ₓ   ⍝ (1⍴⊂[0 0 0⋄0 0 0⋄0 0 0])ₓ
 
 ⍝ april:1316 —
-0#⁻¹0⍴⊂"abc"   ⍝ 1⍴⊂"   "
+0#⁻0⍴⊂"abc"   ⍝ 1⍴⊂"   "
 
 ⍝ april:1317 —
-0 0#⁻¹⍬   ⍝ 0 0
+0 0#⁻⍬   ⍝ 0 0
 
 ⍝ april:1318 —
-0 0#⁻¹""   ⍝ "  "
+0 0#⁻""   ⍝ "  "
 
 ⍝ april:1319 —
-0 0#⁻¹0⍴⊂⍳3ₓ   ⍝ [0 0 0;0 0 0]ₓ
+0 0#⁻0⍴⊂⍳3ₓ   ⍝ [0 0 0;0 0 0]ₓ
 
 ⍝ april:1320 —
-0 0#⁻¹0⍴⊂"abc"   ⍝ "   " "   "
+0 0#⁻0⍴⊂"abc"   ⍝ "   " "   "
 
 ⍝ april:1321 —
-⍴0 0 0#⁻¹₋₁(0 0⍴0)   ⍝ [0 3]ₓ
+⍴0 0 0#⁻₋₁(0 0⍴0)   ⍝ [0 3]ₓ
 
 ⍝ april:1322 —
-0 0 0 0 #⁻¹₋₁ (3 0⍴0)   ⍝ [0 0 0 0⋄0 0 0 0⋄0 0 0 0]
+0 0 0 0 #⁻₋₁ (3 0⍴0)   ⍝ [0 0 0 0⋄0 0 0 0⋄0 0 0 0]
 
 ⍝ april:1331 —
-1 0 1#⁻¹3+2 3⍴⍳6ₓ   ⍝ [3 4 5⋄0 0 0⋄6 7 8]
+1 0 1#⁻3+2 3⍴⍳6ₓ   ⍝ [3 4 5⋄0 0 0⋄6 7 8]
 
 ⍝ april:1337 —
 ⍋8 3 4 9 1 5 2   ⍝ [4 6 1 2 5 0 3]ₓ
@@ -2180,7 +2180,7 @@ fn←{⍺+2×⍵} ⋄ 15 25 35 (fn⍤1) 2 2 3⍴⍳8ₓ
 [[15 27 39⋄21 33 45]⋄[27 39 35⋄17 29 41]]
 
 ⍝ april:1730 —
-,⍤¯1 [2 3 4]⍴⍳24ₓ
+,⁻¹ [2 3 4]⍴⍳24ₓ
 [0 1 2 3 4 5 6 7 8 9 10 11⋄12 13 14 15 16 17 18 19 20 21 22 23]ₓ
 
 ⍝ april:1731 —
@@ -2188,7 +2188,7 @@ fn←{⍺+2×⍵} ⋄ 15 25 35 (fn⍤1) 2 2 3⍴⍳8ₓ
 [[0 4 8⋄1 5 0⋄2 6 1⋄3 7 2]⋄[3 7 2⋄4 8 3⋄5 0 4⋄6 1 5]]ₓ
 
 ⍝ april:1732 —
-10 20 30{⍺,⊂⍵}⍤¯1 [3 4]⍴⍳12ₓ
+10 20 30{⍺,⊂⍵}⁻¹ [3 4]⍴⍳12ₓ
 [10ₚ [0 1 2 3]ₓ⋄20ₚ [4 5 6 7]ₓ⋄30ₚ [8 9 10 11]ₓ]
 
 ⍝ april:1733 —
@@ -3119,127 +3119,127 @@ $a,$d   ⍝ "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 ["0 1 2" "3 4 5" "6 7 8" "0 1 2" "3 4 5" "6 7 8"]
 
 ⍝ april:2256 — Inverse addition
-(3+⁻¹8),(3↣+⁻¹8),(+↢3)⁻¹8   ⍝ 5 5 5
+(3+⁻8),(3↣+⁻8),(+↢3)⁻8   ⍝ 5 5 5
 
 ⍝ april:2257 — Inverse subtraction
-(3-⁻¹8),(3↣-⁻¹8),(-↢3)⁻¹8   ⍝ ¯5 ¯5 11
+(3-⁻8),(3↣-⁻8),(-↢3)⁻8   ⍝ ¯5 ¯5 11
 
 ⍝ april:2258 — Inverse multiplication
-(3×⁻¹8),(3↣×⁻¹8),(×↢3)⁻¹8
+(3×⁻8),(3↣×⁻8),(×↢3)⁻8
 2.6666666666666665 2.6666666666666665 2.6666666666666665
 
 ⍝ april:2259 — Inverse division
-(3÷⁻¹8),(3↣÷⁻¹8),(÷↢3)⁻¹8   ⍝ 0.375 0.375 24
+(3÷⁻8),(3↣÷⁻8),(÷↢3)⁻8   ⍝ 0.375 0.375 24
 
 ⍝ april:2260 — Inverse exponents; April power alias ⋆ written with standard APL *
-⌊100×.0000001+(3*⁻¹8),(3↣*⁻¹8),(*↢3)⁻¹8   ⍝ [189 189 200]ₓ
+⌊100×.0000001+(3*⁻8),(3↣*⁻8),(*↢3)⁻8   ⍝ [189 189 200]ₓ
 
 ⍝ april:2261 — Inverse logarithms
-⌊100×.0000001+(3⍟⁻¹8),(3↣⍟⁻¹8),(⍟↢3)⁻¹8   ⍝ [656100 656100 114]ₓ
+⌊100×.0000001+(3⍟⁻8),(3↣⍟⁻8),(⍟↢3)⁻8   ⍝ [656100 656100 114]ₓ
 
 ⍝ april:2262 — Inverse monadic scalar functions; April power alias ⋆ written with standard APL *
-⌊1000×(+⁻¹5),(-⁻¹5),(÷⁻¹5),(*⁻¹5),⍟⁻¹5
+⌊1000×(+⁻5),(-⁻5),(÷⁻5),(*⁻5),⍟⁻5
 [5000 ¯5000 200 1609 148413]ₓ
 
 ⍝ april:2265 — Inverse indexing
-⍳⁻¹0 1 2 3 4   ⍝ [5]ₓ
+⍳⁻0 1 2 3 4   ⍝ [5]ₓ
 
 ⍝ april:2266 — Inverse where
-(⍸⁻¹) 3 4 8   ⍝ [0 0 0 1 1 0 0 0 1]ₓ
+(⍸⁻) 3 4 8   ⍝ [0 0 0 1 1 0 0 0 1]ₓ
 
 ⍝ april:2267 — Inverse where, right tack-separated
-⍸⁻¹3 4 8   ⍝ [0 0 0 1 1 0 0 0 1]ₓ
+⍸⁻3 4 8   ⍝ [0 0 0 1 1 0 0 0 1]ₓ
 
 ⍝ april:2268 — Another inverse where
-(⍸⁻¹) [0 1;1 2]   ⍝ [0 1 0⋄0 0 1]ₓ
+(⍸⁻) [0 1;1 2]   ⍝ [0 1 0⋄0 0 1]ₓ
 
 ⍝ april:2269 — Inverse mix
 ⊃⍣¯2 [2 3 4]⍴⍳9ₓ
 [[[0 1 2 3] [4 5 6 7] [8 0 1 2]] [[3 4 5 6] [7 8 0 1] [2 3 4 5]]]ₓ
 
 ⍝ april:2271 — Inverse split
-↓⁻¹[1 2 3;4 5 6;7 8 9]   ⍝ [1 2 3⋄4 5 6⋄7 8 9]
+↓⁻[1 2 3;4 5 6;7 8 9]   ⍝ [1 2 3⋄4 5 6⋄7 8 9]
 
 ⍝ april:2272 — Inverse nest
-⊆⁻¹⍳5ₓ   ⍝ (0 1 2 3 4)ₓ
+⊆⁻⍳5ₓ   ⍝ (0 1 2 3 4)ₓ
 
 ⍝ april:2273 — Inverse disclose
-↑⁻¹⍳5ₓ   ⍝ (⊂0 1 2 3 4)ₓ
+↑⁻⍳5ₓ   ⍝ (⊂0 1 2 3 4)ₓ
 
 ⍝ april:2274 — Inverse reversal
-⌽⁻¹⍳5ₓ   ⍝ (4 3 2 1 0)ₓ
+⌽⁻⍳5ₓ   ⍝ (4 3 2 1 0)ₓ
 
 ⍝ april:2275 — Inverse rotation
-2⌽⁻¹⍳5ₓ ⍪ 1⊖⁻¹3 5⍴⍳9ₓ
+2⌽⁻⍳5ₓ ⍪ 1⊖⁻3 5⍴⍳9ₓ
 ([3 4 0 1 2⋄1 2 3 4 5⋄0 1 2 3 4⋄5 6 7 8 0])ₓ
 
 ⍝ april:2276 — Inverse encode
-1760 3 12⊤⁻¹2 0 10   ⍝ 82
+1760 3 12⊤⁻2 0 10   ⍝ 82
 
 ⍝ april:2277 — Inverse decode
-1760 3 12⊥⁻¹82   ⍝ 2 0 10
+1760 3 12⊥⁻82   ⍝ 2 0 10
 
 ⍝ april:2278 — Inverse composed decode extending left argument
-(2↣⊥)⁻¹5   ⍝ 1 0 1
+(2↣⊥)⁻5   ⍝ 1 0 1
 
 ⍝ april:2279 — Inverse composed decode extending left argument
-2⊥⁻¹0   ⍝ ⍬
+2⊥⁻0   ⍝ ⍬
 
 ⍝ april:2280 — Inverse composed decode extending left argument with array as right argument. Expectation from J, with the digits on the last axis
-(6↣⊥)⁻¹10 5 8 3   ⍝ [1 4⋄0 5⋄1 2⋄0 3]
+(6↣⊥)⁻10 5 8 3   ⍝ [1 4⋄0 5⋄1 2⋄0 3]
 
 ⍝ april:2282 — Inversion of nested compound functions
-3+↢(2↣-)⍣1(5) , 3+↢(2↣-)⁻¹5   ⍝ 0 0
+3+↢(2↣-)⍣1(5) , 3+↢(2↣-)⁻5   ⍝ 0 0
 
 ⍝ april:2283 — Celsius-Fahrenheit conversion
 ⌊(32↣+)∘(×↢1.8)⍣1(100)   ⍝ 212ₓ
 
 ⍝ april:2284 — Inversion of Celsius-Fahrenheit conversion
-⌊(32↣+)∘(×↢1.8)⁻¹212   ⍝ 100ₓ
+⌊(32↣+)∘(×↢1.8)⁻212   ⍝ 100ₓ
 
 ⍝ april:2285 — Inverse composed function
-3+↢÷↢-⍣1(5) , 3+↢÷↢-⁻¹5   ⍝ 2.8 ¯0.5
+3+↢÷↢-⍣1(5) , 3+↢÷↢-⁻5   ⍝ 2.8 ¯0.5
 
 ⍝ april:2286 — Inversion of scanning addition
-+\⁻¹+\⍳5ₓ   ⍝ [0 1 2 3 4]ₓ
++\⁻+\⍳5ₓ   ⍝ [0 1 2 3 4]ₓ
 
 ⍝ april:2287 — Inversion of composed addition applied over each; basedpl left scan
-+↢5¨⁻¹-\⍳5ₓ   ⍝ ¯5 ¯6 ¯8 ¯11 ¯15
++↢5¨⁻-\⍳5ₓ   ⍝ ¯5 ¯6 ¯8 ¯11 ¯15
 
 ⍝ april:2288 — Inversion of composed division applied over each
-÷↢5¨⁻¹+\⍳5ₓ   ⍝ 0 5 15 30 50
+÷↢5¨⁻+\⍳5ₓ   ⍝ 0 5 15 30 50
 
 ⍝ april:2289 — Double inversion of addition
-3(+⁻¹)⁻¹5   ⍝ 8
+3(+⁻)⁻5   ⍝ 8
 
 ⍝ april:2290 — Commutative inversion of addition
-+⍨⁻¹64   ⍝ 32
++⍨⁻64   ⍝ 32
 
 ⍝ april:2291 — Commutative inversion of multiplication
-×⍨⁻¹64   ⍝ 8
+×⍨⁻64   ⍝ 8
 
 ⍝ april:2292 — Commutative inversion of max and min
-⌈⍨⁻¹64 , ⌊⍨⁻¹64   ⍝ 64 64
+⌈⍨⁻64 , ⌊⍨⁻64   ⍝ 64 64
 
 ⍝ april:2293 — Inversion of commuted outer product
-(×⊗↢4 5 6)⁻¹ (1 2 3 ×⊗ 4 5 6)   ⍝ 1 2 3
+(×⊗↢4 5 6)⁻ (1 2 3 ×⊗ 4 5 6)   ⍝ 1 2 3
 
 ⍝ april:2294 — Inversion of commuted outer product, other side
-1 2 3↣(×⊗)⁻¹ 1 2 3 ×⊗ 4 5 6   ⍝ 4 5 6
+1 2 3↣(×⊗)⁻ 1 2 3 ×⊗ 4 5 6   ⍝ 4 5 6
 
 ⍝ april:2295 — More complex outer product inversion
-(×⊗↢4 5 6)⁻¹ (×⊗↢4 5 6) 1 2 3↣(+⊗) 10 20 30
+(×⊗↢4 5 6)⁻ (×⊗↢4 5 6) 1 2 3↣(+⊗) 10 20 30
 [11 21 31⋄12 22 32⋄13 23 33]
 
 ⍝ april:2297 — Power set
-{#↢⍵¨↓⌽2ₓ⊥⁻¹⍳2ₓ*≢⍵} "ab"   ⍝ "" "a" "b" "ab"
+{#↢⍵¨↓⌽2ₓ⊥⁻⍳2ₓ*≢⍵} "ab"   ⍝ "" "a" "b" "ab"
 
 ⍝ april:2298 — Longer power set
-{#↢⍵¨↓⌽2ₓ⊥⁻¹⍳2ₓ*≢⍵} "abc"
+{#↢⍵¨↓⌽2ₓ⊥⁻⍳2ₓ*≢⍵} "abc"
 "" "a" "b" "ab" "c" "ac" "bc" "abc"
 
 ⍝ april:2300 — Inversion of variable-referenced function
-vr←3↣× ⋄ vr⁻¹24   ⍝ 8
+vr←3↣× ⋄ vr⁻24   ⍝ 8
 
 ⍝ april:2352 — Single integer; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
 ⍕5   ⍝ "5"
@@ -3410,10 +3410,10 @@ gg←⍪12 "abc" 900 ⋄ ⍕gg,(⍪1 2 3),gg
 ["  10000  [0 1     10000 "⋄"          2 3]ₓ         "⋄" [0 1     10000  [0 1   "⋄"  2 3]ₓ           2 3]ₓ "]
 
 ⍝ april:2626 — Nested vector of vectors; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
-⍕↓² [2 2]⍴⍳4ₓ   ⍝ "  [0 1]ₓ  [2 3]ₓ  "
+⍕↓⍣2 [2 2]⍴⍳4ₓ   ⍝ "  [0 1]ₓ  [2 3]ₓ  "
 
 ⍝ april:2628 — Double-nested vector of vectors; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
-⍕↓³ [2 2]⍴⍳4ₓ   ⍝ "   [0 1]ₓ  [2 3]ₓ   "
+⍕↓⍣3 [2 2]⍴⍳4ₓ   ⍝ "   [0 1]ₓ  [2 3]ₓ   "
 
 ⍝ april:2630 — Stacked floats with negative value under 1; Monadic Format independently checked in Dyalog and through the Rust reference worker; Test monadic Format rather than April implicit display; capture shape and characters independently in Dyalog; Original April output is retained as provenance
 ⍕⍪¯0.75 1.25   ⍝ ["¯0.75"⋄" 1.25"]
@@ -3643,7 +3643,7 @@ fuzzy↢months¨ "dcmbr" "marching" "febury"
 
 ⍝ april/libraries/dfns/array/demo.lisp:104 — Upstream tape zipper and boxed display setup; glyph-only formatting helper; original expected text
 [Rgt: Tape: dsp:]←•load "lib/array.bpl"
-↓ 0 dsp Rgt⁵ (2 Tape 2#¨12↑$a)
+↓ 0 dsp Rgt⍣5 (2 Tape 2#¨12↑$a)
 ⍝ =>
 "────────────────│FF│GG│────────────────" "─────────────│EE       HH│─────────────" "──────────│DD             II│──────────" "───────│CC                   JJ│───────" "────│BB                         KK│────" "∘│AA                               LL│∘"
 
@@ -3928,7 +3928,7 @@ $t
 
 ⍝ april/libraries/dfns/array/demo.lisp:178 —
 [in:]←•load "lib/array.bpl"
-0 in (1 1⍴⊂)⁴ 0
+0 in (1 1⍴⊂)⍣4⁝0
 ⍝ =>
 [[[0 0] [0 0] [0 0] [0 0]]]ₓ
 
@@ -5596,7 +5596,7 @@ $t
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:318 — Upstream FFT-based digit arithmetic; Mix replaces the laminate axis; original expected result; Square the accumulator in basedpl left scan
 [xpower:]←•load "lib/numeric.bpl"
-(10⊤⁻¹) 16 xpower 4   ⍝ 65536
+(10⊤⁻) 16 xpower 4   ⍝ 65536
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:319 — Upstream FFT-based digit arithmetic; Mix replaces the laminate axis; original expected result; Square the accumulator in basedpl left scan
 [xpower:]←•load "lib/numeric.bpl"
@@ -5686,7 +5686,7 @@ enlist ,↢⊂/⍳5ₓ   ⍝ [0 1 2 3 4]ₓ
 ⌊1000×ArcTan0.5   ⍝ 463ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:35 —
-⌊1000×3○⁻¹0.5
+⌊1000×3○⁻0.5
 ⍝ =>
 463ₓ
 
@@ -6201,13 +6201,13 @@ tabText←"whistles        far     and wee"
 
 ⍝ april/libraries/dfns/string/demo.lisp:234 — 0-origin wrap/xtabs offsets; original April expectation retained
 [wrap:]←•load "lib/string.bpl"
-⍕ 10 wrap 10 1 10#1 0 1#⁻¹"AB"
+⍕ 10 wrap 10 1 10#1 0 1#⁻"AB"
 ⍝ =>
 •ucs 65 65 65 65 65 65 65 65 65 65 10 66 66 66 66 66 66 66 66 66 66
 
 ⍝ april/libraries/dfns/string/demo.lisp:236 — 0-origin wrap/xtabs offsets; original April expectation retained
 [wrap:]←•load "lib/string.bpl"
-⍕ 10 wrap 10 5 5#1 0 1#⁻¹"AB"
+⍕ 10 wrap 10 5 5#1 0 1#⁻"AB"
 ⍝ =>
 •ucs 65 65 65 65 65 65 65 65 65 65 10 32 32 32 32 66 66 66 66 66
 
@@ -6216,7 +6216,7 @@ tabText←"whistles        far     and wee"
 [wrap:]←•load "lib/string.bpl"
 tabText←"whistles        far     and wee" 
 n←1↓,⍉⊃[⍬ ↦26ₓ]
-⍕" ·"subs 20 wrap (1⌈n)#(n>0)#⁻¹$a
+⍕" ·"subs 20 wrap (1⌈n)#(n>0)#⁻$a
 ⍝ =>
 •ucs 65 183 66 66 183 67 67 67 183 68 68 68 68 183 69 69 69 69 69 10 70 70 70 70 70 70 183 71 71 71 71 71 71 71 10 72 72 72 72 72 72 72 72 183 73 73 73 73 73 73 73 73 73 10 74 74 74 74 74 74 74 74 74 74 10 75 75 75 75 75 75 75 75 75 75 75 10 76 76 76 76 76 76 76 76 76 76 76 76 10 77 77 77 77 77 77 77 77 77 77 77 77 77 10 78 78 78 78 78 78 78 78 78 78 78 78 78 78 10 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 10 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 10 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 81 10 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 10 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 83 10 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 84 10 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 85 10 85 10 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 86 10 86 86 10 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 87 10 87 87 87 10 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 88 10 88 88 88 88 10 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 89 10 89 89 89 89 89 10 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 10 90 90 90 90 90 90
 
@@ -6264,7 +6264,7 @@ show←" ·"↣subs
 
 ⍝ april/libraries/dfns/string/demo.lisp:303 — Fixed CT=1E¯14 port; original April expectation retained
 [vtrim:]←•load "lib/string.bpl"
-(•ucs 10)=vtrim 0 1 0 1 1 0 0 1 0 0#⁻¹•ucs 10
+(•ucs 10)=vtrim 0 1 0 1 1 0 0 1 0 0#⁻•ucs 10
 ⍝ =>
 $t $t $t $t
 
@@ -7191,22 +7191,22 @@ d←{10¿⍵}¨10⍴1000 ⋄ ∧/d≡¨⊂d₀   ⍝ $f
 ⍝ april:1302 — With one item, expand is replicate: `N\Y` is `N#Y`
 1 ¯2 3 ¯4 5#'.'   ⍝ ".  ...    ....."
 
-⍝ april:1303 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+⍝ april:1303 — Expand written with `#⁻`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻Y`. Positions count from 0, so `⍳n` became `1+⍳n`
 N←1 ¯2 2 0 1
 Y←3+2 3⍴↦6ₓ
-(1⌈|N)#₋₁(N>0)#⁻¹₋₁Y
+(1⌈|N)#₋₁(N>0)#⁻₋₁Y
 ⍝ =>
 [4 0 0 5 5 0 6⋄7 0 0 8 8 0 9]
 
-⍝ april:1304 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
-N←1 ¯2 2 0 1 ⋄ (1⌈|N)#(N>0)#⁻¹1+⍳3ₓ   ⍝ [1 0 0 2 2 0 3]
+⍝ april:1304 — Expand written with `#⁻`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←1 ¯2 2 0 1 ⋄ (1⌈|N)#(N>0)#⁻1+⍳3ₓ   ⍝ [1 0 0 2 2 0 3]
 
-⍝ april:1306 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
-N←1 ¯2 3 4 ⋄ (1⌈|N)#(N>0)#⁻¹3 5⍴↦9ₓ
+⍝ april:1306 — Expand written with `#⁻`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←1 ¯2 3 4 ⋄ (1⌈|N)#(N>0)#⁻3 5⍴↦9ₓ
 [1 2 3 4 5⋄0 0 0 0 0⋄0 0 0 0 0⋄6 7 8 9 1⋄6 7 8 9 1⋄6 7 8 9 1⋄2 3 4 5 6⋄2 3 4 5 6⋄2 3 4 5 6⋄2 3 4 5 6]ₓ
 
-⍝ april:1310 — Expand written with `#⁻¹`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻¹Y`. Positions count from 0, so `⍳n` became `1+⍳n`
-N←¯3 ⋄ (1⌈|N)#(N>0)#⁻¹0⍴⊂2 2⍴[(⊂3 3⍴↦6ₓ) 9 8 7]
+⍝ april:1310 — Expand written with `#⁻`. Dyalog's `N\Y` with counts other than 0 and 1 is `(1⌈|N)#(N>0)#⁻Y`. Positions count from 0, so `⍳n` became `1+⍳n`
+N←¯3 ⋄ (1⌈|N)#(N>0)#⁻0⍴⊂2 2⍴[(⊂3 3⍴↦6ₓ) 9 8 7]
 [[⊂[0 0 0⋄0 0 0⋄0 0 0]ₓ 0ₚ⋄0ₚ 0ₚ] [⊂[0 0 0⋄0 0 0⋄0 0 0]ₓ 0ₚ⋄0ₚ 0ₚ] [⊂[0 0 0⋄0 0 0⋄0 0 0]ₓ 0ₚ⋄0ₚ 0ₚ]]
 
 ⍝ april:1328 — Expand with only positive counts is replicate: `N\Y` is `N#Y`

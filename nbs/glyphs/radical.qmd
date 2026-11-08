@@ -19,12 +19,12 @@ Function. Keys: `Alt-3`. Hanzi: `根`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`√⁻¹Y` squares `Y`. `X√⁻¹Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻¹Y` is `Y⍟X`.
+`√⁻Y` squares `Y`. `X√⁻Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻Y` is `Y⍟X`.
 
 ```bpl
-√⁻¹3       ⍝ 9
-3√⁻¹2      ⍝ 8
-(√↢8)⁻¹2   ⍝ 3
+√⁻3       ⍝ 9
+3√⁻2      ⍝ 8
+(√↢8)⁻2   ⍝ 3
 ```
 
 ## Errors

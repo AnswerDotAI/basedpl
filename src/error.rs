@@ -159,7 +159,7 @@ pub(crate) enum Cause {
     Observed = 2,
     /// A call with no rule for batches of its arguments: a primitive with an axis or with no rule for cells, a rule that declines these arguments, a kernel's read of a cell's number (`Value::computed`), or `∂` with respect to cells that are arrays.
     Rule = 3,
-    /// A call that would repeat constants over so many cells that it holds far more items than its arguments (`batch::CHUNK`). The run goes on in chunks of cells where the stop gives them (`Stop::chunk`).
+    /// A call that would repeat constants over so many cells that it holds far more items than its arguments (`settings::Sizes::batch`). The run goes on in chunks of cells where the stop gives them (`Stop::chunk`).
     Memory = 4,
     /// A guard or a call on prototypes that would catch an error (`Effect::Catches`).
     Caught = 5,
@@ -206,7 +206,7 @@ pub(crate) const STOPPED: &str = "a batched run can't do this for all its cells 
 
 impl Span {
     /// The whole of `source`.
-    pub(crate) fn whole(source: Arc<Source>) -> Self { Self { range: 0..source.text.len(), source } }
+    pub fn whole(source: Arc<Source>) -> Self { Self { range: 0..source.text.len(), source } }
     /// The source text the span covers.
     pub(crate) fn text(&self) -> &str { &self.source.text[self.range.clone()] }
     /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths, and every path in code not read from a file, are relative to the working directory.

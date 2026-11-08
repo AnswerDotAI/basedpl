@@ -346,7 +346,7 @@ pub(crate) fn newest_carrier<'a>(values: impl IntoIterator<Item = &'a Value>) ->
 }
 /// Asks the running levels before code that acts: code that reads or writes files, the network, the clock or the terminal, or that makes something new on each call, such as a random UUID. A batched run stops before it (`Effect::Acts`), because the code would act once for all its cells.
 pub(crate) fn acts() -> Result<(), Error> { Ok(session().effect(Effect::Acts)?) }
-/// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻¹` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
+/// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
 pub(crate) fn formats(left: Option<&Value>, right: &Value) -> Result<(), Error> { if carried(left, right) { acts()?; } Ok(()) }
 
 /// The message of the UNSUPPORTED error that a value `∂` carries gives where it reaches code that reads numbers directly (`number::Failure::Carried`).

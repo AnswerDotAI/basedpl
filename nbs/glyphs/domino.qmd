@@ -33,10 +33,10 @@ Rational arguments (`ᵣ`) give rational results, through row reduction. Integer
 
 ## Inverse
 
-`⌹⁻¹Y` is `⌹Y`.
+`⌹⁻Y` is `⌹Y`.
 
 ```bpl
-⌹⁻¹[1 0⋄0 2]ₓ   ⍝ [1 0⋄0 0.5]
+⌹⁻[1 0⋄0 2]ₓ   ⍝ [1 0⋄0 0.5]
 ```
 
 ## Errors

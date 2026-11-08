@@ -5,7 +5,7 @@ use ::image::{AnimationDecoder, ExtendedColorType, ImageDecoder, ImageEncoder, I
 use std::io::Cursor;
 
 /// The pixels of a PNG or JPEG file, widened to 16 bits.
-pub(super) fn decode(bytes: &[u8]) -> Result<Raster<u16>, String> {
+pub fn decode(bytes: &[u8]) -> Result<Raster<u16>, String> {
     let text = |e: ImageError| e.to_string();
     if let Ok(png) = PngDecoder::new(Cursor::new(bytes)) { if png.is_apng().map_err(text)? { return animation(png); } }
     let image = ::image::load_from_memory(bytes).map_err(text)?;

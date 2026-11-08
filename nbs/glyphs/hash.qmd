@@ -2,7 +2,7 @@
 
 Function. Hanzi: `复` (`複`). Ranks: `∞` monadic, `1 ∞` dyadic
 
-`#Y` gives the runs of adjacent matching major cells of `Y`: the length of each run, as exact integers, and the cell that repeats. It matches cells as [`∪`](down-shoe.qmd) does. `#/` rebuilds `Y`, because `N#Y` repeats each cell by its count. `#⁻¹` decodes too, so [Under](at.qmd) can change the runs. Here it doubles each length:
+`#Y` gives the runs of adjacent matching major cells of `Y`: the length of each run, as exact integers, and the cell that repeats. It matches cells as [`∪`](down-shoe.qmd) does. `#/` rebuilds `Y`, because `N#Y` repeats each cell by its count. `#⁻` decodes too, so [Under](at.qmd) can change the runs. Here it doubles each length:
 
 ```bpl
 #"aaabcc"               ⍝ [[3 1 2]ₓ "abc"]
@@ -10,7 +10,7 @@ Function. Hanzi: `复` (`複`). Ranks: `∞` monadic, `1 ∞` dyadic
 ⊽@(0⊃)@# "aab"          ⍝ "aaaabb"
 ```
 
-A unit gives the rank-0 length 1 and the unit itself. When `Y`'s leading axis has keys, a third item holds the key of every position, and `#⁻¹` attaches them again. `#/` doesn't use that item.
+A unit gives the rank-0 length 1 and the unit itself. When `Y`'s leading axis has keys, a third item holds the key of every position, and `#⁻` attaches them again. `#/` doesn't use that item.
 
 ```bpl
 #["x":1 "y":1 "z":2]    ⍝ (2ₓ 1ₓ⋄1 2⋄"x" "y" "z")
@@ -41,20 +41,20 @@ A negative count replaces its cell with that many fills. [`⍠`](quad-colon.qmd#
 
 ## Expand
 
-With `N` fixed, [`⁻¹`](../scripts.ipynb#superscripts) inverts `N#`. The inverse gives one cell for each count. A positive count gives the first of its copies, and a zero or negative count gives a fill. With a Boolean mask, the inverse expands `Y`. The result has the next cell of `Y` wherever the mask has 1, and a fill wherever it has 0.
+With `N` fixed, [`⁻`](../scripts.ipynb#superscripts) inverts `N#`. The inverse gives one cell for each count. A positive count gives the first of its copies, and a zero or negative count gives a fill. With a Boolean mask, the inverse expands `Y`. The result has the next cell of `Y` wherever the mask has 1, and a fill wherever it has 0.
 
 ```bpl
-1 0 1#⁻¹10 20           ⍝ 10 0 20
-1 0 1#⁻¹₋₁[1 2⋄3 4]       ⍝ [1 0 2⋄3 0 4]
-2 1#⁻¹10 10 20          ⍝ 10 20
-1 ¯2 1#⁻¹10 0 0 30      ⍝ 10 0 30
+1 0 1#⁻10 20           ⍝ 10 0 20
+1 0 1#⁻₋₁[1 2⋄3 4]       ⍝ [1 0 2⋄3 0 4]
+2 1#⁻10 10 20          ⍝ 10 20
+1 ¯2 1#⁻10 0 0 30      ⍝ 10 0 30
 ```
 
 The counts must use every cell once, unless `Y` has one cell. A single count undoes a replicate by that count.
 
 ```bpl
-1 0 1#⁻¹5               ⍝ 5 0 5
-2#⁻¹1 1 2 2             ⍝ 1 2
+1 0 1#⁻5               ⍝ 5 0 5
+2#⁻1 1 2 2             ⍝ 1 2
 ```
 
 [Under](at.qmd) and [selective assignment](left-arrow.qmd) both keep the cells that `N` drops.
@@ -66,7 +66,7 @@ x←1 2 3
 x                       ⍝ 0 2 0
 ```
 
-APL difference: `#` replaces `/`, `⌿`, `\` and `⍀`. Dyalog's expand with counts other than 0 and 1, `N\Y`, is `1⌈|N # N>0 #⁻¹ Y`.
+APL difference: `#` replaces `/`, `⌿`, `\` and `⍀`. Dyalog's expand with counts other than 0 and 1, `N\Y`, is `1⌈|N # N>0 #⁻ Y`.
 
 ## Errors
 

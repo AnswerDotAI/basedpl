@@ -250,6 +250,7 @@ def dead_key_table(layout):
         return f'<code>{text}</code>'
     def followups(name, prefix=''):
         keys = layout['states'][name]['keys']
+        if prefix: yield prefix + 'Space', layout['states'][name]['terminator']
         digits = all(isinstance(keys.get(str(i)), str) for i in range(10))
         if digits: yield prefix + '0–9', keys['0'] + '–' + keys['9']
         for key, value in keys.items():

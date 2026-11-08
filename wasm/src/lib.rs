@@ -44,21 +44,21 @@ pub fn configure(base: String, panic: Function) {
 #[wasm_bindgen]
 pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
 
-/// Names this machine's CPU for the timing code, which can't read it in a browser, as `rustymath::timing::name_cpu` describes.
+/// Names this machine's CPU for the timing code, which can't read it in a browser, as `rustymath_timing::name_cpu` describes.
 #[wasm_bindgen]
-pub fn name_cpu(name: &str) { basedpl::timing::name_cpu(name) }
+pub fn name_cpu(name: &str) { basedpl_testkit::timing::name_cpu(name) }
 
-/// The pauses before each retry of a timing that fails, in seconds: `rustymath::timing::RETRY_PAUSES`.
+/// The pauses before each retry of a timing that fails, in seconds: `rustymath_timing::RETRY_PAUSES`.
 #[wasm_bindgen]
-pub fn retry_pauses() -> Vec<f64> { basedpl::timing::RETRY_PAUSES.to_vec() }
+pub fn retry_pauses() -> Vec<f64> { basedpl_testkit::timing::RETRY_PAUSES.to_vec() }
 
-/// Keeps the calling thread busy for 0.1 s after a retry's pause: `rustymath::timing::warm`.
+/// Keeps the calling thread busy for 0.1 s after a retry's pause: `rustymath_timing::warm`.
 #[wasm_bindgen]
-pub fn warm() { rustymath::timing::warm() }
+pub fn warm() { rustymath_timing::warm() }
 
-/// Whether the speed test fails on a case still over its wasm budget, as `rustymath::timing::checks_budgets` decides from the CPU that `name_cpu` named.
+/// Whether the speed test fails on a case still over its wasm budget, as `rustymath_timing::checks_budgets` decides from the CPU that `name_cpu` named.
 #[wasm_bindgen]
-pub fn checks_budgets() -> bool { basedpl::timing::checks_budgets() }
+pub fn checks_budgets() -> bool { basedpl_testkit::timing::checks_budgets() }
 
 /// Time named BPL source files, supplied as `[{name, text}]`. Results retain full code and single-line log labels.
 #[wasm_bindgen]
@@ -66,9 +66,11 @@ pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) 
     let only: Option<Vec<&str>> = cases.as_ref().map(|c| c.iter().map(String::as_str).collect());
     let fail = |e: String| JsValue::from(js_sys::Error::new(&e));
     let files = serde_json::from_str(&js_sys::JSON::stringify(&files)?.as_string().unwrap()).map_err(|e| fail(e.to_string()))?;
-    let files = basedpl::reference::sources(&files).map_err(fail)?;
-    let cases = basedpl::timing::costs(&files, only.as_deref(), prefs.as_deref().unwrap_or_default(), &Default::default()).map_err(fail)?;
-    Ok(js_sys::JSON::parse(&basedpl::timing::rows(&cases, Some(basedpl::timing::WASM_COLUMN)).to_string())?)
+    let files = basedpl_testkit::reference::sources(&files).map_err(fail)?;
+    let cases = basedpl_testkit::timing::costs(
+        &files, only.as_deref().map(basedpl_testkit::timing::Selection::Codes), prefs.as_deref().unwrap_or_default(), false, &Default::default())
+    .map_err(fail)?;
+    Ok(js_sys::JSON::parse(&basedpl_testkit::timing::rows(&cases, Some(basedpl_testkit::timing::WASM_COLUMN)).to_string())?)
 }
 
 #[wasm_bindgen]

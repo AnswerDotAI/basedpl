@@ -208,7 +208,7 @@ pub(crate) fn algorithm(left: Option<&Value>, default: &str) -> Result<String, E
     left.map_or(Ok(default.into()), |name| text(name).map(|s| s.to_lowercase()))
 }
 
-/// `•deflate` decompresses bytes in the format `"gzip"`, `"zlib"` or `"deflate"`, gzip by default. `•deflate⁻¹` compresses bytes or text. Both give bytes.
+/// `•deflate` decompresses bytes in the format `"gzip"`, `"zlib"` or `"deflate"`, gzip by default. `•deflate⁻` compresses bytes or text. Both give bytes.
 fn flate(left: Option<&Value>, right: &Value, compress: bool) -> Result<Value, Error> {
     use flate2::{Compression, read};
     let (data, level) = (payload(right)?, Compression::default());

@@ -6,13 +6,14 @@ use super::{
     tree::Recording,
 };
 use crate::{
-    At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript}, syntax::{ListForm, Node, NodeKind}
+    At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript},
+    syntax::{ListForm, Node, NodeKind, ScriptKind}
 };
 use std::{borrow::Cow, sync::Arc};
 
 impl Session {
     fn has_members(nodes: &[Node]) -> bool {
-        nodes.iter().any(|n| matches!(n.kind, NodeKind::Subscript(_) | NodeKind::Joiner(_))) || nodes.windows(2).any(|w| {
+        nodes.iter().any(|n| matches!(n.kind, NodeKind::Script(ScriptKind::Sub, _) | NodeKind::Joiner(_))) || nodes.windows(2).any(|w| {
             matches!(w[0].kind, NodeKind::Operator(OperatorKind::Product))
                 && matches!(w[1].kind, NodeKind::Name(_, _) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. })
         })
@@ -31,7 +32,7 @@ impl Session {
                 out.last_mut().unwrap().kind = kind;
                 Cow::Owned(out)
             }
-            NodeKind::Subscript(index) => {
+            NodeKind::Script(ScriptKind::Sub, index) => {
                 let index = Node { kind: NodeKind::Literal(index.clone()), span: last.span.clone() };
                 let Ok((start, _)) = self.trailing_operand(&members, members.len() - 1, &mut None) else { return members };
                 let mut out = members.into_owned();
@@ -56,8 +57,9 @@ impl Session {
         // Whether the last node in `out` is the right operand of a `.` after a function.
         let (mut i, mut on_function) = (0, false);
         while i < nodes.len() {
-            if (matches!(nodes[i].kind, NodeKind::Subscript(_)) && on_function
-                || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Product)) && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Subscript(_))))
+            if (matches!(nodes[i].kind, NodeKind::Script(ScriptKind::Sub, _)) && on_function
+                || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Product))
+                    && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Script(ScriptKind::Sub, _))))
                 && let Ok((start, _)) = self.trailing_operand(&out, out.len(), log) {
                     let inner = out.split_off(start);
                     let span = crate::syntax::cover(&inner);
@@ -113,7 +115,7 @@ impl Session {
             while i + 1 < out.len() {
                 let NodeKind::Joiner(joiner) = out[i].kind else { i += 1; continue; };
                 let mut start = i - 1;
-                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_)) | NodeKind::Subscript(_))
+                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_)) | NodeKind::Script(..))
                     && touching(&out[start - 1], &out[start]) { start -= 1; }
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
@@ -355,8 +357,21 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
     let operand = Operand::from_value(operand);
     let Binding::Operator(operator) = operator else { unreachable!("a derive's right item is an operator") };
     let function = |p| self::Function::primitive(p);
-    if let (self::OperatorNode::Subscript(index), Operand::Value(a)) = (&operator, &operand) {
-        return Ok(Derived::Call(function(Primitive::Index), Some(index.clone()), a.clone()));
+    if let (self::OperatorNode::Script(kind, indices), Operand::Value(a)) = (&operator, &operand) {
+        if *kind == ScriptKind::Sub { return Ok(Derived::Call(function(Primitive::Index), Some(indices.clone()), a.clone())); }
+        let powers = indices.as_items().integers().described("invalid superscript powers").at(span)?;
+        let power = function(Primitive::Math(crate::number::Math::Power));
+        if powers.len() == 1 { return Ok(Derived::Call(power, Some(a.clone()), Value::weak_integer(powers[0]))); }
+        // On data, spaced superscripts retain successive powers; on functions they are Rank's one operand.
+        let mut chain = None;
+        for &n in powers.iter() {
+            let next =
+                Function::new(FunctionNode::Composed(OperatorKind::After, [Operand::Function(power.clone()), Operand::Value(Value::weak_integer(n))]), span)?;
+            chain = Some(match chain {
+                None => next, Some(f) => Function::new(FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(next), Operand::Function(f)]), span)?
+            });
+        }
+        return Ok(Derived::Call(chain.expect("a numeric script has at least one integer"), None, a.clone()));
     }
     if let self::OperatorNode::Primitive(OperatorKind::Super(s)) = &operator {
         match (*s, operand) {
@@ -365,9 +380,6 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
                 return Ok(Derived::Term(Binding::Value(crate::Value::Function(f).enclose().described("invalid scalar").at(span)?)));
             }
             (Superscript::Unit, _) => return Err(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
-            (Superscript::Power(n), Operand::Value(a)) => {
-                return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::weak_integer(n)));
-            }
             (Superscript::Transpose, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Transpose), None, a)),
             (Superscript::Mark(mark), Operand::Value(a)) => return Ok(Derived::Term(Binding::Value(super::operators::converted_by(&a, mark, span)?))),
             (_, operand) => return Ok(Derived::Term(operator.derive(operand, span)?)),
@@ -568,11 +580,11 @@ impl Binder {
             Rule::Wait(_) => true,
             // Postfix operators bind an array before its neighbours use it as an argument or operand.
             _ if matches!(
-                &left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))
+                &left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Script(..)))
             ) =>
             { true }
             _ if top.role == Category::Value && matches!(
-                &below.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))
+                &below.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Script(..)))
             ) =>
             { false }
             old => match Rule::get(left.category.before(Some(top.role)), top.role) {

@@ -89,7 +89,7 @@ fn text(tree: &Value, mode: Markup) -> Result<Value, Error> {
     Ok(keyed::text(&output))
 }
 
-/// `•xml text` reads XML into the elements that `•xml⁻¹` writes, with the same meaning. Comments, processing instructions and text that is only whitespace are dropped.
+/// `•xml text` reads XML into the elements that `•xml⁻` writes, with the same meaning. Comments, processing instructions and text that is only whitespace are dropped.
 pub(crate) fn parse(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let text = crate::data::text(right)?;
     let document = roxmltree::Document::parse(&text).map_err(|e| Error::domain(format!("XML {e}")))?;

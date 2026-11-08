@@ -3,7 +3,7 @@ use super::*;
 
 /// A reduction of `right` along `axis`, from the right as the general fold does, through `p`'s formula (`Kernel::fold_read`) from the kind the fold computes in, with `map`'s reruns at wider kinds (`computed`), as an integer `-/[0 1]ₓ` reruns past `u8`. The formula's own fold combines items in any order where `p` allows it, and an unseeded `-` or `÷` folds as an alternating sum or product. A pending copy reads its source through its map, with its prototype at each fill position, so rustymath folds it by sliding windows or through the map (`reduce::fold_route`) without building the copy, unless `reduce::fold_route` chooses stored lanes for a held copy (`FoldRoute::Lanes`): that copy is built once, for its later reads. A seed combines with the total through `map`, for functions that `seed_last` allows. `None` where no kind gives the result, as for an empty lane of a function with no identity: the general fold then gives the result or error. A failed seed combination returns its error.
 pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value>) -> Option<Result<Value, crate::Error>> {
-    use rustymath::{operation::{Direction, Seed}, reduce::{FoldRoute, fold_route}};
+    use rustymath::reduce::{Direction, FoldRoute, Seed, fold_route};
     if seed.is_some() && !seed_last(p, right) { return None; }
     let plan = plan::fold(p, FoldKind::REDUCE, seed.map(Kind::value), Kind::value(right), Numeric::current());
     let numeric = plan.numeric;

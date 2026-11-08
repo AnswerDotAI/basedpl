@@ -1,9 +1,9 @@
-//! Paths and the filesystem, named after Rust's `std::path` and `std::fs`. `•path` reads a path into its parts and `•path⁻¹` joins them. `•metadata` and `•readdir` give tables of entries, and `•copy`, `•rename`, `•remove` and `•mkdir` change the filesystem.
+//! Paths and the filesystem, named after Rust's `std::path` and `std::fs`. `•path` reads a path into its parts and `•path⁻` joins them. `•metadata` and `•readdir` give tables of entries, and `•copy`, `•rename`, `•remove` and `•mkdir` change the filesystem.
 use crate::cancel::check;
 use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed};
 use std::{fs, path::Path};
 
-/// The parts of a path that `•path` gives. `•path⁻¹` joins `parent`, `stem` and `extension`. `name` follows from the last two, and `•path⁻¹` ignores it.
+/// The parts of a path that `•path` gives. `•path⁻` joins `parent`, `stem` and `extension`. `name` follows from the last two, and `•path⁻` ignores it.
 const PARTS: [&str; 4] = ["parent", "stem", "extension", "name"];
 
 /// The text of an `OsStr` part, or `""` without one.
@@ -25,9 +25,9 @@ pub(crate) fn path(left: Option<&Value>, right: &Value, span: &Span) -> Result<V
     keyed::table(&PARTS, &shape, rows.collect::<Result<_, _>>()?, vec![keyed::text(""); PARTS.len()]).described("invalid path record")
 }
 
-/// `•path⁻¹ R`: the path that the record `R` gives, or one for each of its positions, joined from `parent`, `stem` and `extension`.
+/// `•path⁻ R`: the path that the record `R` gives, or one for each of its positions, joined from `parent`, `stem` and `extension`.
 pub(crate) fn join(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
-    let (shape, fields) = keyed::fields(right).described("•path⁻¹ needs a record of path parts that agree")?;
+    let (shape, fields) = keyed::fields(right).described("•path⁻ needs a record of path parts that agree")?;
     let parts = keyed::slots(fields, &PARTS, 3).map_err(|name| Error::domain(format!("unknown path part: {name}")))?;
     let part = |i: usize, p: usize| -> Result<String, Error> { parts[i].as_ref().map_or(Ok(String::new()), |items| text(&items[p])) };
     let paths = (0..crate::array::count(&shape)).map(|p| {

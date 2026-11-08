@@ -37,8 +37,8 @@ A keyed `S` names the axes of the result. An unkeyed `S` gives no names. When `S
 
 ## Inverse
 
-`S⍴⁻¹Y` ravels `Y`, which must have shape `S`.
+`S⍴⁻Y` ravels `Y`, which must have shape `S`.
 
 ```bpl
-2 3⍴⁻¹2 3⍴⍳6ₓ   ⍝ [0 1 2 3 4 5]ₓ
+2 3⍴⁻2 3⍴⍳6ₓ   ⍝ [0 1 2 3 4 5]ₓ
 ```

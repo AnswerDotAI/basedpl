@@ -458,7 +458,7 @@ impl PyFunction {
         Function::build(kind, operands).map(|inner| Self { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
     }
     fn __repr__(&self) -> String { self.inner.bpl() }
-    /// This function with `g` attached as its inverse, as BPL's `f⁻¹←g` attaches it.
+    /// This function with `g` attached as its inverse, as BPL's `f⁻←g` attaches it.
     fn with_inverse(&self, g: PyRef<'_, PyFunction>) -> Self { Self { inner: self.inner.with_inverse(g.inner.clone()) } }
     /// This function with `g` attached as its derivative, as BPL's `f∂←g` attaches it.
     fn with_derivative(&self, g: PyRef<'_, PyFunction>) -> Self { Self { inner: self.inner.with_derivative(g.inner.clone()) } }
@@ -682,13 +682,13 @@ fn output(py: Python<'_>, events: &[basedpl::Output]) -> PyResult<Py<PyAny>> { p
 #[pyfunction]
 fn _captured_literal(value: &str) -> PyResult<String> {
     let value = serde_json::from_str(value).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    basedpl::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
+    basedpl_testkit::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
 }
 
 /// Shared setup and records, including native budget-footer byte spans.
 #[pyfunction]
 fn _reference_file(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
-    let file = basedpl::reference::file("", text).map_err(PyValueError::new_err)?;
+    let file = basedpl_testkit::reference::file("", text).map_err(PyValueError::new_err)?;
     python(py, &serde_json::json!({"setup":file.setup, "cases":file.cases}))
 }
 
@@ -699,7 +699,7 @@ fn _reference_accounting(py: Python<'_>, results: &str) -> PyResult<Py<PyAny>> {
     let each = |f: fn(&serde_json::Value) -> bool| results.iter().map(f).collect::<Vec<_>>();
     python(
         py,
-        &serde_json::json!({"modes":basedpl::reference::accounting(&results), "fails":each(basedpl::reference::fails), "obliged":each(basedpl::reference::obliged)}),
+        &serde_json::json!({"modes":basedpl_testkit::reference::accounting(&results), "fails":each(basedpl_testkit::reference::fails), "obliged":each(basedpl_testkit::reference::obliged)}),
     )
 }
 
@@ -707,19 +707,24 @@ fn _reference_accounting(py: Python<'_>, results: &str) -> PyResult<Py<PyAny>> {
 #[pyfunction]
 fn _reference_crashed(py: Python<'_>, case: &str, message: &str) -> PyResult<Py<PyAny>> {
     let case: serde_json::Value = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    python(py, &basedpl::reference::reply(vec![basedpl::reference::crashed(&case, message)]))
+    python(py, &basedpl_testkit::reference::reply(vec![basedpl_testkit::reference::crashed(&case, message)]))
 }
 
-/// A case's budget for `cost` in `section`, as a footer or budget line writes it, by the rule that `rustymath::timing::budget` holds.
+/// A case's budget for `cost` in `section`, as a footer or budget line writes it, by the rule that `rustymath_timing::budget` holds.
 #[pyfunction]
 #[pyo3(signature = (section, cost, estimate=false))]
-fn _budget(section: &str, cost: f64, estimate: bool) -> String { rustymath::timing::budget(section, cost, estimate).to_string() }
+fn _budget(section: &str, cost: f64, estimate: bool) -> String { rustymath_timing::budget(section, cost, estimate).to_string() }
 
-/// Each case of a budget file, such as rustymath's `tests/speed.txt`, as `(section, code, budgets, span)`, where `span` holds the byte offsets of its line, as `rustymath::timing::cases` reads it.
+/// Each case of a budget file, such as rustymath's `tests/speed.txt`, as `(section, code, budgets, counts, span)`, where `counts` holds each count as `(measure, column, count)` and `span` holds the byte offsets of its line, as `rustymath_timing::cases` reads it.
 #[pyfunction]
-fn _budget_lines(text: &str) -> PyResult<Vec<(String, String, Vec<String>, (usize, usize))>> {
-    let cases = rustymath::timing::cases(text).map_err(PyValueError::new_err)?;
-    Ok(cases.into_iter().map(|c| (c.section.into(), c.code.into(), c.budgets.into_iter().map(Into::into).collect(), c.span)).collect())
+#[allow(clippy::type_complexity)]
+fn _budget_lines(text: &str) -> PyResult<Vec<(String, String, Vec<String>, Vec<(String, String, f64)>, (usize, usize))>> {
+    use rustymath_timing::{COLUMNS, MEASURES};
+    let cases = rustymath_timing::cases(text).map_err(PyValueError::new_err)?;
+    Ok(cases.into_iter().map(|c| {
+        let counts = c.counts.iter().map(|n| (MEASURES[n.measure].into(), COLUMNS[n.column].into(), n.value)).collect();
+        (c.section.into(), c.code.into(), c.budgets.into_iter().map(Into::into).collect(), counts, c.span)
+    }).collect())
 }
 
 /// The character offset of each byte offset in `text` that starts a character or ends the text. Python indexes strings by character.
@@ -770,8 +775,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("_superscripts", basedpl::superscripts())?;
     m.add("_subscripts", basedpl::subscripts())?;
     m.add("_number_marks", basedpl::number_marks())?;
-    m.add("_retry_pauses", rustymath::timing::RETRY_PAUSES.to_vec())?;
-    m.add("_budget_columns", rustymath::timing::COLUMNS.to_vec())?;
+    m.add("_retry_pauses", rustymath_timing::RETRY_PAUSES.to_vec())?;
+    m.add("_budget_columns", rustymath_timing::COLUMNS.to_vec())?;
     m.add_function(wrap_pyfunction!(_budget, m)?)?;
     m.add_function(wrap_pyfunction!(_budget_lines, m)?)?;
     Ok(())

@@ -75,9 +75,9 @@ impl<'de> serde::de::Visitor<'de> for ReadVisitor {
     }
 }
 
-/// `•json⁻¹`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
+/// `•json⁻`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
 pub(crate) fn serialize(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
-    let opts = Options::new("•json⁻¹", left, None, &["fill"])?;
+    let opts = Options::new("•json⁻", left, None, &["fill"])?;
     let fill = opts.fill()?;
     Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill))?.to_string()))
 }

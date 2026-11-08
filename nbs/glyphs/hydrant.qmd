@@ -27,10 +27,10 @@ T←["a":1] ⋄ T⍎"a←5 ⋄ a+1"      ⍝ 6
 
 ## Inverse
 
-`⍎⁻¹Y` writes `Y` as BPL source that `⍎` reads back, as `•literal⁻¹` does.
+`⍎⁻Y` writes `Y` as BPL source that `⍎` reads back, as `•literal⁻` does.
 
 ```bpl
-⍎⁻¹1 2.5   ⍝ "[1 2.5]ₚ"
+⍎⁻1 2.5   ⍝ "[1 2.5]ₚ"
 ```
 
 ## Errors

@@ -351,6 +351,21 @@ fn observed_counts_refill_shapes() {
 }
 
 #[test]
+fn derivative_replay_tracks_input_layouts() {
+    let s = Session::new();
+    assert!(s.eval("f←{+/(w×w)×⍵} ⋄ g←{(+/w×w)×+/⍵}").error.is_none());
+    for (n, sum) in [(5, 30), (7, 91), (3, 5), (5, 30)] {
+        equiv_in(&s, &format!("w←⍳{n} ⋄ f∂2"), &sum.to_string());
+        equiv_in(&s, "g∂1 2", &format!("{sum} {sum}"));
+        equiv_in(&s, &format!("g∂⍳{n}"), &format!("{n}⍴{sum}"));
+    }
+    equiv_in(&s, "rows←2 ⋄ h←{+/, [rows 2]⍴⍵} ⋄ h∂1 2 3 4", "1 1 1 1");
+    equiv_in(&s, r#"(•explain "h∂1 2 3 4").programs.event"#, r#"["replayed"]"#);
+    equiv_in(&s, "rows←3 ⋄ h∂1 2 3 4", "2 2 1 1");
+    equiv_in(&s, r#"0<≢(•explain "{+/, [⍵₀ 2]⍴⍵}∂2 3 4 5").stopped"#, "$t");
+}
+
+#[test]
 fn primitive_bodies_share_fold_facts() {
     for (body, monad) in [("{⍺+⍵}", Some("+3")), ("{x←⍺ ⋄ x+⍵}", None)] {
         let s = Session::new();
@@ -494,7 +509,7 @@ fn lexical_frames_are_reclaimed() {
         ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.), ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ];
-    let skipped = basedpl::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code))).unwrap();
+    let skipped = basedpl_testkit::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code))).unwrap();
     for (_, (code, expected)) in cases.into_iter().enumerate().filter(|(index, _)| !skipped.iter().any(|(i, _)| i == index)) {
         check_in(&s, code, float(expected));
     }
@@ -528,4 +543,35 @@ fn diagnostic_width_and_call_context() {
     assert!(result.error.is_none() && result.value.is_none());
     s.eval("f←+");
     assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn numeric_scripts_share_rank_index_and_power() {
+    let s = Session::new();
+    assert!(s.eval("a←2 3⍴⍳6").error.is_none());
+    for (code, explicit) in [
+        ("+/¹a", "+/⍤1 a"), ("10 20+⁰ ¹a", "10 20(+⍤[0 1])a"), ("↑¹ ⁰ ¹a", "↑⍤[1 0 1]a"), ("⌽⁻¹a", "⌽⍤¯1 a"),
+        ("⍴¹²a", "⍴⍤12 a"), ("⌽⁻ ¹a", "(⌽⁻)⍤1 a"), ("f←+/ ⋄ f¹a", "+/⍤1 a"), ("a₀ ₁", "a.[0 1]"), ("+/₀a", "+/⍠0 a"),
+        ("2 3² ³", "8 729"), ("v←2 3 ⋄ v² ³", "64 729"), ("v←2 4 ⋄ v⁻¹", "0.5 0.25"), ("s←² ⋄ 2 s 99", "4 99"),
+    ] {
+        let actual = evaluated(&s, code).unwrap();
+        let wanted = run(&format!("a←2 3⍴⍳6 ⋄ {explicit}")).unwrap_or_else(|e| panic!("{explicit}: {e}")).unwrap();
+        assert!(actual.same(&wanted), "{code}: {actual:?} != {wanted:?}");
+    }
+    fails_in(&s, "LENGTH", &["+⁰ ¹ ² ³a"]);
+    // The displayed inverse reparses; its minus cannot attach to the bound number.
+    let output = s.eval("(+↢3)⁻");
+    assert!(output.error.is_none());
+    assert_eq!(output.output_text(), ["(+↢3)⁻"]);
+    equiv_in(&s, "((+↢3)⁻)8", "5");
+    equiv_in(&s, "f←{⍵+3} ⋄ f⁻←{⍵-3} ⋄ f⁻8", "5");
+    for (script, input, expected) in [("²", "2", "4 99"), ("⁻¹", "2", "0.5 99"), ("₁", "10 20", "20 99")] {
+        assert!(s.eval(&format!("op←{script}")).error.is_none());
+        let shown = s.name_source("op").unwrap();
+        equiv_in(&s, &format!("op←{shown} ⋄ {input} op 99"), expected);
+    }
+    let tree = basedpl::syntax_tree("2 3²");
+    let strand = &tree.children[0].children[0];
+    assert_eq!(strand.kind, "Strand");
+    assert_eq!(strand.children.iter().map(|n| &"2 3²"[n.range.clone()]).collect::<Vec<_>>(), ["2", "3²"]);
 }

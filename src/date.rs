@@ -1,4 +1,4 @@
-//! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record, or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
+//! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻` writes a moment as a record, or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
 use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed, primitive::real};
 use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
 use rustymath::buffer::FloatWidth;
@@ -18,7 +18,7 @@ fn moment(x: f64) -> Option<DateTime<Utc>> {
     DateTime::from_timestamp(whole as i64, ((x - whole) * 1e9).round().min(999_999_999.0) as u32)
 }
 
-/// The fields of a record that `•date⁻¹` writes, named after chrono's accessors. `•date` reads the first seven. The last three follow from them, and `•date` ignores them.
+/// The fields of a record that `•date⁻` writes, named after chrono's accessors. `•date` reads the first seven. The last three follow from them, and `•date` ignores them.
 const FIELDS: [&str; 10] = ["year", "month", "day", "hour", "minute", "second", "nanosecond", "weekday", "ordinal", "iso_week"];
 
 /// The time zone that text and fields are in: a fixed offset east of UTC, or the system's local zone, which can change with the date.
@@ -96,23 +96,23 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
     Value::shaped(&shape, seconds.into_iter().map(second).collect(), second(0.0)).described("invalid date")
 }
 
-/// `•date⁻¹`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.
+/// `•date⁻`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.
 const WRITE_OPTIONS: &[&str] = if cfg!(web) { &["pattern", "zone"] } else { &["pattern", "zone", "locale"] };
 
-/// `•date⁻¹ T`: a record of the fields of each moment in `T`. With a pattern, the text of each moment. The `zone` option gives the time zone, and the `locale` option the language of names in the text.
+/// `•date⁻ T`: a record of the fields of each moment in `T`. With a pattern, the text of each moment. The `zone` option gives the time zone, and the `locale` option the language of names in the text.
 pub(crate) fn write(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
-    let opts = Options::new("•date⁻¹", left, Some("pattern"), WRITE_OPTIONS)?;
+    let opts = Options::new("•date⁻", left, Some("pattern"), WRITE_OPTIONS)?;
     let zone = Zone::new(&opts)?;
     #[cfg(not(web))]
     let locale = match opts.values.get("locale") {
-        Some(l) => Some(chrono::Locale::try_from(text(l)?.as_str()).map_err(|_| Error::domain("unknown •date⁻¹ locale"))?), None => None
+        Some(l) => Some(chrono::Locale::try_from(text(l)?.as_str()).map_err(|_| Error::domain("unknown •date⁻ locale"))?), None => None
     };
     let moments = right.elements().map(|e| real(&e).and_then(|x| moment(x).map(|t| zone.at(t)).ok_or_else(|| Error::domain("invalid date"))));
     let moments = moments.collect::<Result<Vec<_>, _>>()?;
     let shape = right.shape();
     let Some(pattern) = opts.values.get("pattern").map(|p| text(p)).transpose()? else {
         #[cfg(not(web))]
-        if locale.is_some() { return Err(Error::domain("a •date⁻¹ locale needs a pattern")); }
+        if locale.is_some() { return Err(Error::domain("a •date⁻ locale needs a pattern")); }
         let rows = moments.iter().map(|t| {
             let fields = [t.year(), t.month() as i32, t.day() as i32, t.hour() as i32, t.minute() as i32, t.second() as i32, t.nanosecond() as i32];
             let derived = [t.weekday().number_from_monday(), t.ordinal(), t.iso_week().week()].map(|n| n as i32);
@@ -126,7 +126,7 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, _: &Span) -> Result<Val
         let written = match locale { Some(locale) => write!(s, "{}", t.format_localized(&pattern, locale)), None => write!(s, "{}", t.format(&pattern)) };
         #[cfg(web)]
         let written = write!(s, "{}", t.format(&pattern));
-        written.map(|()| keyed::text(&s)).map_err(|_| Error::domain("invalid •date⁻¹ pattern"))
+        written.map(|()| keyed::text(&s)).map_err(|_| Error::domain("invalid •date⁻ pattern"))
     });
     keyed::texts(shape, texts.collect::<Result<_, _>>()?).described("invalid date text")
 }

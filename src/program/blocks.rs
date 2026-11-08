@@ -16,9 +16,9 @@ use rustymath::{
     Arg, agreement::{Mapping, Period, Walked, expanded, expanded_items, in_place, tiled_cycle}, buffer::{Buffer, DType, Element, FloatWidth, View, Width},
     gather::Steps, layout::strides, operation::{Kernel, Settings}, parallel::{self, Slots}, reduce, tolerant::{Exactly, Tolerance}
 };
-use std::{borrow::Cow, ops::Range, sync::atomic::Ordering::Relaxed};
+use std::{borrow::Cow, ops::Range};
 #[cfg(not(web))]
-use {crate::jit, std::sync::{Arc, OnceLock}};
+use {crate::jit, std::sync::{Arc, OnceLock, atomic::Ordering::Relaxed}};
 
 /// Runs `$body` with `$x` bound to the items of `$e`, a `Got`, at their own type.
 macro_rules! typed {
@@ -90,7 +90,7 @@ static COMPILED_RUNS: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomic
 
 /// How many compiled kernel calls have run so far.
 #[cfg(not(web))]
-pub(crate) fn compiled_runs() -> usize { COMPILED_RUNS.load(Relaxed) }
+pub fn compiled_runs() -> usize { COMPILED_RUNS.load(Relaxed) }
 /// How many compiled kernel calls have run so far. The browser build compiles nothing.
 #[cfg(web)]
 pub fn compiled_runs() -> usize { 0 }
@@ -638,7 +638,7 @@ impl Blocks {
 
     /// The fold's value, through its kernel's fold of the pieces that the stage hands over a block at a time (`Kernel::fold_pieces`): each block's items, or their total where a compiled part folds them. The kernel's formula picks the reduction, as the eager fold's does (`pervasive::fold`), so `-` and `÷` fold as alternating sums and products. A seed then combines with each total through `pervasive::map`, as the eager fold's does. A fold of every item gives its one total as an atom, as `folded` in `eval::operators` takes it. `None` where a step or the kernel fails. A failed seed combination returns its error.
     fn folded(&self, fold: &BlockFold, seed: Option<&Number>, run: &Run<'_>, outs: &[Option<Shared>]) -> Option<Result<Value, crate::Error>> {
-        use rustymath::{error::{Error, Kind as Failure}, operation::{Direction, Piece, Seed, Total}};
+        use rustymath::{error::{Error, Kind as Failure}, reduce::{Direction, Piece, Seed, Total}};
         let kernel = fold.kernel.as_ref()?;
         let mut out = Buffer::with_capacity(fold.dtype, 0);
         let pieces = |range: Range<usize>, give: &mut dyn FnMut(usize, Piece<'_>)| -> Result<(), Error> {
@@ -792,9 +792,10 @@ impl Blocks {
                 unsafe { held.set_len(at + n) };
             }
             (true, Last::Fold(_), None) => return false,
+            // SAFETY: the compiled kernel initializes every one of its `n` output items.
             (true, last, _) => with_item!(self.steps[self.steps.len() - 1].made(), A => match A::out(last) {
-                Out::Items(slots) => { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }); }
-                Out::Bools(slots) => { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }); }
+                Out::Items(slots) => { unsafe { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }) }; }
+                Out::Bools(slots) => { unsafe { slots.fill(n, |s| { call(s.as_mut_ptr().cast()); true }) }; }
             }),
         }
         for &store in &lowered.stores {
@@ -900,7 +901,8 @@ impl Blocks {
     fn step_at<A: Item>(
         &self, step: &BlockStep, got: &[Got<'_>], bufs: &[Buffer], constants: &[Option<Got<'_>>; 3], scratch: &mut Scratch, n: usize, dest: Dest<'_, '_, '_>
     ) -> bool {
-        let [b0, b1, b2] = A::scratch(scratch).each_mut();
+        let buffers = A::scratch(scratch);
+        let [b0, b1, b2] = buffers.each_mut();
         let read = |k: usize, buf| step.operands[k].map(|o| self.arg::<A>(o, constants[k], got, bufs, n, buf, step.tolerance));
         let (x, y, m) = (read(0, b0), read(1, b1).expect("every step reads its last operand"), read(2, b2));
         if let (Op::Map(plan), Some(kernel)) = (&step.op, &step.kernel) {
@@ -936,23 +938,13 @@ fn wrote<A: Item>(op: &Op, x: Option<Arg<'_, A>>, y: Arg<'_, A>, m: Option<Arg<'
 
 /// Runs `kernel` on its arguments' `n` items into `dest`: a buffer it appends them to, or the stage's last slots. The arguments are the last of `x` and `y` that the kernel takes, as a code-picked `○` takes `y` alone. Each reads its run in place, or its one item for every position. The kernel casts its results to `dest`'s type, so a comparison writes 1 and 0 where `dest` holds numbers. Gives false where the kernel fails.
 fn mapped<A: Item>(kernel: &Kernel, x: Option<Arg<'_, A>>, y: Arg<'_, A>, n: usize, settings: Settings, dest: Dest<'_, '_, '_>) -> bool {
-    use rustymath::agreement::{Binding, Missing, Read, ReadPlan};
-    let args: Vec<Arg<'_, A>> = x.into_iter().chain([y]).collect();
-    let args = &args[args.len().saturating_sub(kernel.arity())..];
-    let sources: Vec<Binding<'_>> = args.iter().map(|a| {
-        Binding::full(match a { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) })
-    }).collect();
-    let plans: Vec<ReadPlan> = args.iter().enumerate().map(|(s, a)| match a {
-        Arg::Many(_) => ReadPlan::copy(s, n, Mapping::Linear(1), n, Missing::Default), Arg::One(_) => ReadPlan::copy(s, 1, Mapping::Single, n, Missing::Default)
-    }).collect();
-    let reads: Vec<Read<'_>> = plans.iter().map(|plan| Read { sources: &sources, plan }).collect();
-    let mut out = Buffer::with_capacity(match &dest { Dest::Buffer(buffer) => buffer.dtype(), Dest::Last(last) => last.dtype() }, n);
-    if kernel.map(&reads, 0..n, settings, &mut out).is_err() { return false; }
-    match dest {
-        Dest::Buffer(buffer) if buffer.is_empty() => *buffer = out, Dest::Buffer(buffer) => { buffer.extend_from(out.view(), 0..n); }
-        Dest::Last(last) => last.copy(&out, n)
-    }
-    true
+    use rustymath::operation::MapOutput;
+    if kernel.arity() > 1 + usize::from(x.is_some()) { return false; }
+    let args = [x.unwrap_or(y), y];
+    let view = |k: usize| match &args[k] { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) };
+    let inputs = [view(0), view(1)];
+    let output = match dest { Dest::Buffer(buffer) => MapOutput::Buffer(buffer), Dest::Last(last) => last.output() };
+    kernel.map_ready(&inputs[2 - kernel.arity()..], n, settings, output).is_ok()
 }
 
 /// The buffer that each step writes for a run, by liveness, the type of each buffer, and the number of buffers that the steps would take if every buffer had one type, which sizes the blocks. A step's buffer holds a later step's items, of the same type, once every step that reads it has run. The last step writes straight into its value, or into the block that the fold reads, and has none. A line of steps therefore takes two buffers.

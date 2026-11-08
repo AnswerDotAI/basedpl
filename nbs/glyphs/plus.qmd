@@ -23,8 +23,8 @@ Character offsets are whole numbers of Unicode code points.
 
 ## Inverse
 
-`+⁻¹Y` is `+Y`. With either argument fixed, `+⁻¹` subtracts the fixed argument.
+`+⁻Y` is `+Y`. With either argument fixed, `+⁻` subtracts the fixed argument.
 
 ```bpl
-3+⁻¹10   ⍝ 7
+3+⁻10   ⍝ 7
 ```

@@ -35,10 +35,10 @@ In a train, `⊢` stands for the right argument and `⊣` for the left. A fork w
 2 (⊢-⊣) 5                    ⍝ 3
 ```
 
-Where a formula uses its argument more than once, each `⊢` makes the reader track the argument again. A function that removes the repeats reads better. Newton's step towards √2 adds half of `x` to the reciprocal of `x`. `⊽⁻¹`, the inverse of double, halves:
+Where a formula uses its argument more than once, each `⊢` makes the reader track the argument again. A function that removes the repeats reads better. Newton's step towards √2 adds half of `x` to the reciprocal of `x`. `⊽⁻`, the inverse of double, halves:
 
 ```bpl
-n←⊽⁻¹+÷ ⋄ n 1.5              ⍝ 1.416666667
+n←⊽⁻+÷ ⋄ n 1.5              ⍝ 1.416666667
 ```
 
 `0.5×⊢+2÷⊢` gives the same results, but its two `⊢`s hide the formula. Where no clear tacit form exists, a dfn names the argument, as in `{0.5×⍵+2÷⍵}`.
@@ -89,19 +89,19 @@ x←3 ⋄ x²                     ⍝ 9
 
 ## Inverse
 
-`f⁻¹` is the inverse of `f`, as [Superscripts](scripts.ipynb#on-a-function) describes. BPL infers the inverses of most compositions. `fahrenheit⁻¹` converts back to Celsius:
+`f⁻` is the inverse of `f`, as [Superscripts](scripts.ipynb#on-a-function) describes. BPL infers the inverses of most compositions. `fahrenheit⁻` converts back to Celsius:
 
 ```bpl
-fahrenheit←32+1.8× ⋄ fahrenheit⁻¹ 212   ⍝ 100
+fahrenheit←32+1.8× ⋄ fahrenheit⁻ 212   ⍝ 100
 ```
 
 A superscript straight after a number applies to the number. To invert a function that ends in a number, put the function in parentheses:
 
 ```bpl
-(+↢3)⁻¹ 10                   ⍝ 7
+(+↢3)⁻ 10                   ⍝ 7
 ```
 
-Without the parentheses, `+↢3⁻¹ 10` reads `3⁻¹` as a third. The third strands with `10` into the bound operand. No argument remains. The result is the function `+↢[0.3333333333 10]`.
+Without the parentheses, `+↢3⁻` tries to invert the number `3`, which is a `DOMAIN` error. A space also groups the bound function: `+↢3 ⁻ 10` gives `7`. The signed superscript `3⁻¹` still means one third; `f⁻¹` on a function now means rank ¯1.
 
 ## Under
 
@@ -143,7 +143,7 @@ Each pair gives the same result.
 | Reads worse | Reads better |
 |---|---|
 | `{(+/⍵)÷≢⍵}` | `+/÷≢` |
-| `0.5×⊢+2÷⊢` | `⊽⁻¹+÷` |
+| `0.5×⊢+2÷⊢` | `⊽⁻+÷` |
 | `{⍵÷+/⍵}` | `⊢÷+/` |
 | `{⍵×10}@[1 3]` | `(10×)@[1 3]` |
 | `{+/⍵}⍠0` | `+/₀` |

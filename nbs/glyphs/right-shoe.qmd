@@ -39,10 +39,10 @@ With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Ax
 
 ## Inverse
 
-`⊃⁻¹Y` splits `Y` into vectors along its last axis.
+`⊃⁻Y` splits `Y` into vectors along its last axis.
 
 ```bpl
-⊃⁻¹[1 2⋄3 4]   ⍝ [1 2;3 4]
+⊃⁻[1 2⋄3 4]   ⍝ [1 2;3 4]
 ```
 
 ## Errors

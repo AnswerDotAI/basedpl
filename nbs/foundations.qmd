@@ -27,7 +27,7 @@ Lazy arrays preserve the calculation that produces them across function calls. A
 
 ## Known kinds and fast forms
 
-Fast calculation uses static kinds or explicit approximate forms whose result kinds follow from the arguments without reading array items. `√ₐ`, `*ₐ` and `⍟ₐ` have this contract, as do `○ₐ` and `○⁻¹ₐ` with a constant code. The [approximate forms](numbers.qmd#approximate) select real float results at the arguments' promoted width. Outside the real domain they return the real part of the principal value.
+Fast calculation uses static kinds or explicit approximate forms whose result kinds follow from the arguments without reading array items. `√ₐ`, `*ₐ` and `⍟ₐ` have this contract, as do `○ₐ` and `○⁻ₐ` with a constant code. The [approximate forms](numbers.qmd#approximate) select real float results at the arguments' promoted width. Outside the real domain they return the real part of the principal value.
 
 Known-complex arithmetic retains its declared complex kind without scanning the result's imaginary parts. [Numbers](numbers.qmd#float-widths) describes real-valued functions and the explicit real-part conversion.
 

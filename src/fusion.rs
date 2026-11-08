@@ -278,7 +278,6 @@ pub(crate) fn chosen(mask: &Value, yes: &Value, no: &Value, span: &Span) -> Resu
         let arms = Primitive::CatenateFirst.call(
             Some(&crate::primitive::reshape_to(&[1, n], &no, span)?), &crate::primitive::reshape_to(&[1, n], &yes, span)?, span)?;
         let rows = crate::primitive::reshape_to(&[n], &mask, span)?;
-        crate::program::trace::exact("a select's item positions");
         let items = Value::integers(vec![n], (0..n as i64).collect()).described("invalid positions")?;
         let chosen = crate::primitive::select(
             &arms, &[rustymath::structure::IndexPart::Axis(rows), rustymath::structure::IndexPart::Axis(items)], None, true, None, span)?;

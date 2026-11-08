@@ -16,7 +16,7 @@ fn unclaimed() -> MutexGuard<'static, Vec<(Route, usize)>> { UNCLAIMED.lock().un
 
 /// The events of one `•explain`, with the item-by-item counts that no call inside it claimed.
 #[derive(Clone, Default)]
-pub(crate) struct Events { report: Report, unclaimed: Vec<(Route, usize)> }
+pub struct Events { report: Report, unclaimed: Vec<(Route, usize)> }
 
 /// The sink of one `•explain` run, behind a lock because code on every thread records into it.
 struct Store(Mutex<Report>);
@@ -24,7 +24,7 @@ impl Store { fn lock(&self) -> MutexGuard<'_, Report> { self.0.lock().unwrap_or_
 impl events::Sink for Store { fn record(&self, event: Event) { self.lock().record(event) } }
 
 /// Runs `run` as `•explain` runs its text, recording events inside any `•explain` that encloses it. Gives what `run` gives and the events it recorded, which an enclosing `•explain` gets too, because they happened during its run. `•explain` and the speed check both run through it.
-pub(crate) fn explained<T>(run: impl FnOnce() -> T) -> (T, Events) {
+pub fn explained<T>(run: impl FnOnce() -> T) -> (T, Events) {
     let sink = Arc::new(Store(Mutex::default()));
     let mark = unclaimed().len();
     let capture = events::Run::start(sink.clone());
@@ -162,7 +162,7 @@ fn by_route(entries: impl IntoIterator<Item = (Route, usize)>) -> Vec<(Route, us
 
 impl Events {
     /// `•explain`'s record: the expression's `value`, then a record for each of `events::TABLES`, holding its columns, with one row for each event. Counts that no call claimed count for the `•explain` call at `span`.
-    pub(crate) fn report(mut self, value: Value, span: &crate::Span) -> Result<Value, Error> {
+    pub fn report(mut self, value: Value, span: &crate::Span) -> Result<Value, Error> {
         for event in claimed(std::mem::take(&mut self.unclaimed), span.text().into(), span) { self.report.record(event); }
         let record =
             |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).described("invalid explain record");
@@ -180,10 +180,10 @@ impl Events {
         record(std::iter::once("value").chain(events::TABLES.iter().map(|&(name, _)| name)).collect(), tables)
     }
 
-    pub(crate) fn observed(&self) -> &Report { &self.report }
+    pub fn observed(&self) -> &Report { &self.report }
 
     /// The events that mark a slow path (`Event::slow_name`), each as its table's name, the text that names the event and all its fields, with the routes that no call claimed as `itemwise` events. Each decline follows, named by its route and reason, as in `"fusion: an exact argument"`. The route check expects none for a case beyond the events its `⍝⍝⍝ allows` and `⍝⍝⍝ gap` lines name, and a stopped trace needs a `gap` line. A case needn't name a decline, because each one explains another event, but a line that names one must still find it.
-    pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
+    pub fn slow(&self) -> Vec<(&'static str, String, String)> {
         let text = |event: &Event| {
             event.fields().iter().map(|f| match f {
                 Field::Text(t) => (*t).to_owned(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string()

@@ -1,0 +1,20 @@
+[package]
+name = "basedpl-jit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+rustymath.workspace = true
+# Cranelift compiles a typed program's loops while BPL runs. The browser build has no JIT.
+cranelift-codegen = { version = "0.137", default-features = false, features = ["std", "host-arch"] }
+cranelift-frontend = "0.137"
+cranelift-jit = "0.137"
+cranelift-module = "0.137"
+cranelift-native = "0.137"

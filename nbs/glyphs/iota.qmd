@@ -74,9 +74,9 @@ m⍳[30 40⋄10 20]  ⍝ [1 0]ₓ
 
 ## Inverse
 
-`⍳⁻¹Y` gives the argument that generates `Y`: the count for a vector of positions, otherwise the shape. `X⍳⁻¹Y` gives the items of `X` at the positions `Y`. A position that wasn't found is a `DOMAIN` error.
+`⍳⁻Y` gives the argument that generates `Y`: the count for a vector of positions, otherwise the shape. `X⍳⁻Y` gives the items of `X` at the positions `Y`. A position that wasn't found is a `DOMAIN` error.
 
 ```bpl
-⍳⁻¹⍳5         ⍝ [5]ₓ
-"abc"⍳⁻¹2 0   ⍝ "ca"
+⍳⁻⍳5         ⍝ [5]ₓ
+"abc"⍳⁻2 0   ⍝ "ca"
 ```

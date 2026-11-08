@@ -202,9 +202,9 @@ pub(crate) enum Step {
     Map { left: Option<Read>, right: Read, plan: crate::plan::Pervasive },
     /// A value's numbers converted to the node's type, as `Value::converted` converts them, under the settings `numeric`, whose tolerance floors floats that convert to integers.
     Convert { of: Read, numeric: Numeric },
-    /// A value's items read through `map`, as a structural glyph copies them (`fusion::copied`). Only a fused chain holds one (`Step::holds_lengths`).
+    /// A value's items read through `map`, as a structural glyph copies them (`fusion::copied`). Only a fused chain holds one.
     Copy { of: usize, map: Mapping },
-    /// A structural primitive's call on `inputs`, with parameters `params` and an explicit `fill`, which plans its read on the inputs' layouts when it runs (`structural::plan`) and reads through `fusion::copy`. A recording holds this in place of `Copy`, so that it replays at new lengths.
+    /// A structural primitive's call on `inputs`, with parameters `params` and an explicit `fill`, which plans its read on the inputs' layouts when it runs (`structural::plan`) and reads through `fusion::copy`. A recording holds the structural call rather than its resolved copy.
     Structural { inputs: Vec<Read>, form: Form, params: Vec<Read>, fill: Option<Read> },
     /// The items of `of` that `by`'s parts select, as `.[]` or `⌷` reads them, planned at replay on the parts' values (`primitive::parts_plan`), where a part's positions are a value that the program computes, such as an argument's.
     Gather { of: Read, by: Selector },
@@ -252,7 +252,7 @@ impl Read {
     pub(crate) fn node(nodes: &[Node], of: usize) -> Self { Self::new(of, nodes[of].desc.layout.clone()) }
     /// What this read gives of `nodes`: its node's description, under the read's layout.
     pub(crate) fn desc(&self, nodes: &[Node]) -> Desc { Desc { layout: self.layout.clone(), ..nodes[self.of].desc.clone() } }
-    /// Whether this read is a view: a layout other than its node's own, which a replay relays its node's value to. A recording that holds one keys exact lengths (`trace::build`).
+    /// Whether this read is a view: a layout other than its node's own, which a replay relays its node's value to.
     pub(crate) fn view(&self, nodes: &[Node]) -> bool { self.layout != nodes[self.of].desc.layout }
 }
 
@@ -308,8 +308,6 @@ impl Step {
     }
     /// Whether this step holds a table of positions, as a copy or an accumulation does where a selection by data made its positions (`Mapping::tabled`). `planned` keeps no plan for a program with such a step.
     pub(crate) fn tabled(&self) -> bool { matches!(self, Step::Copy { map, .. } | Step::At { writes: Writes::Map(map), .. } if map.tabled()) }
-    /// Whether this step holds lengths that fix it to one size: a copy or an accumulation through a raw map. A recording that holds one replays only at the lengths it was built for (`trace::build`).
-    pub(crate) fn holds_lengths(&self) -> bool { matches!(self, Step::Copy { .. } | Step::At { writes: Writes::Map(_), .. }) }
     /// The glyph that `•explain` lists for this step: the function's for a map or an accumulation, the fold's, the product's with `⍤2` on stacks, `⍚` for a select, the query's for a shape step, and none for a conversion, a copy, a structural call, a gather, an overlap add or picks.
     pub(crate) fn glyph(&self) -> String {
         match *self {
@@ -486,7 +484,7 @@ static PLANS: Mutex<Recent<(Numeric, Program, Arc<run::Plan>), PLANNED>> = Mutex
 const PLANNED: usize = 32;
 
 /// Forgets every kept plan, as a new process has none.
-pub(crate) fn forget_plans() { PLANS.lock().unwrap_or_else(PoisonError::into_inner).0.clear() }
+pub fn forget_plans() { PLANS.lock().unwrap_or_else(PoisonError::into_inner).0.clear() }
 
 /// The plan that runs `program` (`blocks::plan`), made once for each structure of program under each of the settings that planning reads (`Numeric`). The plan comes from the program with inputs in place of its held arrays, whose items a block stage reads as it runs. Programs that differ only in their arrays' items share a plan, as each force of one pending chain does. Programs whose held atoms differ get plans of their own, because a plan can depend on an atom's value, as `○`'s does on its left argument. A program with a table of positions (`Step::tabled`), which can hold as many positions as the data has items, is planned each time and never kept. Where the session checks programs (`settings::verifies`), each program that's planned is checked first as it is, because a step planned on a held array's values plans differently on the input that replaces it.
 pub(crate) fn planned(program: &Program) -> Arc<run::Plan> {

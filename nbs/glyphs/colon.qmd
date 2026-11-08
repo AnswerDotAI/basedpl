@@ -40,13 +40,13 @@ M←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[1 2 3⋄4 5 6]
 
 ## Inverse
 
-`K:⁻¹Y` removes the labels that `K:` attaches: the keys `K`, which `Y` must have exactly, and the names of the axes that a keyed `K` labels. Names and keys that `K:` doesn't attach stay. Where a single key makes `K:Y` a record of one entry, `K:⁻¹` gives back that entry's value.
+`K:⁻Y` removes the labels that `K:` attaches: the keys `K`, which `Y` must have exactly, and the names of the axes that a keyed `K` labels. Names and keys that `K:` doesn't attach stay. Where a single key makes `K:Y` a record of one entry, `K:⁻` gives back that entry's value.
 
 ```bpl
-"a" "b":⁻¹["a":1 "b":2]   ⍝ 1 2
-"a":⁻¹["a":5]             ⍝ 5
+"a" "b":⁻["a":1 "b":2]   ⍝ 1 2
+"a":⁻["a":5]             ⍝ 5
 axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
-⍴axes:⁻¹axes:[1 2 3⋄4 5 6]   ⍝ [2 3]ₓ
+⍴axes:⁻axes:[1 2 3⋄4 5 6]   ⍝ [2 3]ₓ
 L←"a" "b" ⋄ Y←["r":2]⍴1 2
-⍴L:⁻¹L:Y                     ⍝ ["r":2]ₓ
+⍴L:⁻L:Y                     ⍝ ["r":2]ₓ
 ```

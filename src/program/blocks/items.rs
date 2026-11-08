@@ -8,22 +8,13 @@ pub(super) enum Last<'a, 'b> {
     I32(&'a mut Slots<'b, i32>), I64(&'a mut Slots<'b, i64>), Fold(&'a mut dyn FnMut(usize, Folded<'_>))
 }
 
-impl Last<'_, '_> {
-    /// The type of the stage's last slots, which a step's results are cast to before they're written there.
-    pub(super) fn dtype(&self) -> DType {
+impl<'a, 'b> Last<'a, 'b> {
+    pub(super) fn output(&mut self) -> rustymath::operation::MapOutput<'_, 'b> {
+        use rustymath::operation::MapOutput;
         match self {
-            Last::F32(_) => DType::Float(FloatWidth::F32), Last::F64(_) => DType::Float(FloatWidth::F64), Last::Bool(_) => DType::Boolean,
-            Last::U8(_) => DType::Integer(Width::U8), Last::I16(_) => DType::Integer(Width::I16), Last::I32(_) => DType::Integer(Width::I32),
-            Last::I64(_) => DType::Integer(Width::I64), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
-        }
-    }
-    /// Writes the first `n` items of `out`, which have the slots' type, into the next `n` slots.
-    pub(super) fn copy(&mut self, out: &Buffer, n: usize) {
-        let view = out.view();
-        match self {
-            Last::F32(s) => s.copy(&f32::held(view)[..n]), Last::F64(s) => s.copy(&f64::held(view)[..n]), Last::Bool(s) => s.copy(&bool::held(view)[..n]),
-            Last::U8(s) => s.copy(&u8::held(view)[..n]), Last::I16(s) => s.copy(&i16::held(view)[..n]), Last::I32(s) => s.copy(&i32::held(view)[..n]),
-            Last::I64(s) => s.copy(&i64::held(view)[..n]), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
+            Last::F32(s) => MapOutput::F32(s), Last::F64(s) => MapOutput::F64(s), Last::Bool(s) => MapOutput::Bool(s), Last::U8(s) => MapOutput::U8(s),
+            Last::I16(s) => MapOutput::I16(s), Last::I32(s) => MapOutput::I32(s), Last::I64(s) => MapOutput::I64(s),
+            Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
         }
     }
 }
@@ -73,6 +64,7 @@ impl<'a> Got<'a> {
     /// The first `n` items of `buffer`.
     pub(super) fn of(buffer: &'a Buffer, n: usize) -> Self { with_item!(buffer.dtype(), A => A::got(Arg::Many(&A::held(buffer.view())[..n]))) }
     /// The items' type.
+    #[cfg(not(web))]
     pub(super) fn dtype(&self) -> DType {
         match self {
             Got::F32(_) => DType::Float(FloatWidth::F32), Got::F64(_) => DType::Float(FloatWidth::F64), Got::Bool(_) => DType::Boolean,
@@ -115,7 +107,7 @@ pub(super) trait Item: Stored + Sync {
     fn items(buffer: &mut Buffer) -> &mut Vec<Self> { Self::vec_mut(buffer).expect("a buffer holds its step's type") }
     /// `arg` as a run's items.
     fn got(arg: Arg<'_, Self>) -> Got<'_>;
-    /// The buffers into which a step of this type converts its operands.
+    /// The buffers into which this type converts its operands.
     fn scratch(s: &mut Scratch) -> &mut [Vec<Self>; 3];
     /// `slots`, the slots of a stage's value of this type, as where its last step writes.
     fn last<'a, 'b>(slots: &'a mut Slots<'b, Self>) -> Last<'a, 'b>;
@@ -125,7 +117,7 @@ pub(super) trait Item: Stored + Sync {
     fn read<'a>(got: Got<'a>, n: usize, buf: &'a mut Vec<Self>, t: Tolerance) -> Arg<'a, Self>;
     /// The number `n` as this type, where it converts.
     fn constant(n: &Number) -> Option<Self>;
-    /// The item as a compiled kernel's 8-byte slot holds it (`jit::Compiled::run`), as a scalar or a fold's total, which `rustymath::operation::Total` reads back: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
+    /// The item as a compiled kernel's 8-byte slot holds it (`jit::Compiled::run`), as a scalar or a fold's total, which `rustymath::reduce::Total` reads back: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
     #[cfg(not(web))]
     fn slot(self) -> u64;
     /// Writes `x` where `mask` isn't zero and `y` where it is into the next `n` slots of `out`, through rustymath's `Choose`, which has a kernel at every type.

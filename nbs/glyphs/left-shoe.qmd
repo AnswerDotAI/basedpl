@@ -36,9 +36,9 @@ See also [`⊆`](left-shoe-underbar.qmd).
 
 ## Inverse
 
-`⊂⁻¹Y` is `↑Y`. `X⊂⁻¹Y` joins the parts `Y`. Partitioning the result by `X` must give `Y` again, so `X` can't drop leading items.
+`⊂⁻Y` is `↑Y`. `X⊂⁻Y` joins the parts `Y`. Partitioning the result by `X` must give `Y` again, so `X` can't drop leading items.
 
 ```bpl
-⊂⁻¹⊂1 2             ⍝ 1 2
-1 0 1⊂⁻¹(1 2⋄3)   ⍝ 1 2 3
+⊂⁻⊂1 2             ⍝ 1 2
+1 0 1⊂⁻(1 2⋄3)   ⍝ 1 2 3
 ```

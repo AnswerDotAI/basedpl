@@ -5,7 +5,7 @@
 - `sample shape` draws random values from the session's generator, as [`¿`](../glyphs/inverted-question.qmd) does. `g sample shape` draws them from a generator made by `•rand`.
 - `density x` gives the probability density, or the probability mass for a discrete distribution.
 - `cdf x` gives P(X ≤ x).
-- `quantile p` inverts the CDF. `cdf⁻¹` is `quantile`. `quantile⁻¹` is `cdf`.
+- `quantile p` inverts the CDF. `cdf⁻` is `quantile`. `quantile⁻` is `cdf`.
 
 ```bpl
 d←•distribution "normal"

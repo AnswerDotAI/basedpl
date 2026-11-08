@@ -1,5 +1,5 @@
 // Times the cases in `speed/*.bpl` in the browser module, built by `cargo wasm`, against their wasm budgets, as `tests/speed.rs` times
-// them against their native budgets. Both call the same timing code, `basedpl::timing::costs`, through the module's `costs`. Run it
+// them against their native budgets. Both call the same timing code, `basedpl_testkit::timing::costs`, through the module's `costs`. Run it
 // as `node --no-liftoff --test tests/wasm-speed.mjs`. V8 first compiles wasm with Liftoff, which doesn't optimise, and recompiles a
 // function with TurboFan only once it runs often. The test calls each kernel only a few times. Without the flag, it would time
 // Liftoff's code. A case over its budget is timed again after the rest, after each pause in `RETRY_PAUSES` and a `warm`, and fails only if it's
@@ -9,13 +9,13 @@
 // The test fails on a wasm budget only on Syd1's CPU, as `checks_budgets` decides. On any
 // other CPU, it prints every cost, then each case still over its budget after the retries, marked `over`, and fails on none.
 // Each case whose gap's hold has outlived the gap is printed too, marked `stale`. The rows that `costs` gives carry each case's
-// wasm budget with any hold, and whether its cost is over it or its hold is stale, as `rustymath::timing::Budget` decides.
+// wasm budget with any hold, and whether its cost is over it or its hold is stale, as `rustymath_timing::Budget` decides.
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { checks_budgets, costs, retry_pauses, warm } from './wasm-pkg.mjs';
 
-// The pauses before each retry, in seconds, from `rustymath::timing::RETRY_PAUSES`.
+// The pauses before each retry, in seconds, from `rustymath_timing::RETRY_PAUSES`.
 const RETRY_PAUSES = retry_pauses();
 const checks = checks_budgets();
 
@@ -33,6 +33,7 @@ test('each BPL speed case takes no longer than its wasm budget on Syd1', async (
         assert.deepEqual(identities(all), batch.rows.map(row => JSON.stringify(row)).sort(), 'wasm batch omitted or duplicated a case');
         console.log(`Checked ${all.length} wasm timing rows from ${batch.file}`);
     }
+    for (const c of all) for (const obligation of c.obligations) console.log(`${c.label}: route obligation: ${obligation}`);
     if (process.env.BASEDPL_COSTS || !checks) {
         for (const copy of new Set(all.map(c => c.copy).filter(Boolean))) console.log(copy);
         for (const c of all) console.log(line(c));

@@ -2,9 +2,9 @@
 
 `•json text` reads JSON5, which includes all JSON. JSON5 adds comments, trailing commas, single-quoted strings, unquoted keys, hexadecimal numbers, `Infinity` and `NaN`. Objects become keyed vectors. Arrays become vectors. Strings become character vectors. An integer outside the 64-bit range reads as its nearest float: `9223372036854775808` reads as `9.223372037ₑ18`. `true` and `false` become `$t` and `$f`.
 
-`•json⁻¹ Y` writes JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions are left out. NaN writes as `null`.
+`•json⁻ Y` writes JSON text. Keyed axes become objects. Unkeyed axes become arrays. Character vectors become strings. Keyed entries that hold functions are left out. NaN writes as `null`.
 
-`["fill":v] •json text` reads `null` as `v`. The fill takes its array's type wherever it keeps its value in that type: `["fill":0] •json "[1,null,3]"` gives `[1 0 3]ₓ`, and `["fill":0] •json "[true,null]"` gives `$t $f`. A fill that doesn't keep its value, such as the default NaN beside integers, makes the array floats. `["fill":v] •json⁻¹ Y` writes `v` as `null`. [JSON](../data.ipynb#json) covers the conversions.
+`["fill":v] •json text` reads `null` as `v`. The fill takes its array's type wherever it keeps its value in that type: `["fill":0] •json "[1,null,3]"` gives `[1 0 3]ₓ`, and `["fill":0] •json "[true,null]"` gives `$t $f`. A fill that doesn't keep its value, such as the default NaN beside integers, makes the array floats. `["fill":v] •json⁻ Y` writes `v` as `null`. [JSON](../data.ipynb#json) covers the conversions.
 
 Under static kinds, an array of integers reads at the `int` width, and a value that doesn't fit is a `DOMAIN` error. `["types":R] •json text` gives the arrays that fields hold a type: `R` maps a field's name to a number of that type, as `•csv`'s `types` option does, and every array that a field of that name holds takes it:
 

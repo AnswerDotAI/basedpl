@@ -215,7 +215,7 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
     agreement.layout.assemble(&results[..agreement.len], &results[0]).described("polynomial result exceeds array limits")
 }
 
-/// `⌻⁻¹Y`: the coefficients of each polynomial in `Y`, given by its multiplier and roots or by its terms.
+/// `⌻⁻Y`: the coefficients of each polynomial in `Y`, given by its multiplier and roots or by its terms.
 pub(crate) fn coefficients(right: &Value) -> Result<Value, Error> { each(right, |p| vector(p.coefficients()?)) }
 
 /// Each cell as a polynomial, or the prototype's when there are no cells.

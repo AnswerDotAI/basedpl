@@ -2,6 +2,8 @@
 
 Dyadic operator. Keys: `Alt-1 t`. Hanzi: `秩`
 
+Numeric [superscripts](../scripts.ipynb#on-a-function) are the short form: `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁰ ¹ ²` is `f⍤[0 1 2]`. Adjacent digits make one rank (`f¹²` means rank 12); spaces separate ranks. `f⁻¹` is rank ¯1, whereas bare `f⁻` is [inverse](superscript-minus.qmd) and `f⁻ ¹` applies that inverse at rank 1. Keep `⍤` for named, computed or infinite ranks. A numeric argument needs no separator after superscripts: `-⁰5`.
+
 `f⍤R` applies `f` to the [cells](../terms.qmd#term-cell) of rank `R`. With two arguments, `f⍤R` pairs cells using leading agreement of the [frames](../terms.qmd#term-frame). The [separator `⁝`](tricolon.qmd) keeps a numeric argument apart from the rank, as in `-⍤0⁝5`. A vector argument goes in touching brackets, as in `-⍤0[2 3]`. In `-⍤0 5`, `0 5` is the rank. Three rules give the result:
 
 1. Inside a frame, the 0-cell at a position holding an atom is that atom. The 0-cell at a position holding an array is a scalar holding the array.
@@ -10,7 +12,7 @@ Dyadic operator. Keys: `Alt-1 t`. Hanzi: `秩`
 
 ```bpl
 m←2 3⍴⍳6ₓ
-+/⍤1 m             ⍝ [3 12]ₓ
++/¹ m             ⍝ [3 12]ₓ
 ```
 
 | `R` | Monad rank | Dyad left/right ranks |
@@ -65,10 +67,10 @@ Rank calls any other function, a dfn included, once on all the cells together wh
 
 ## Inverse
 
-`(f⍤k)⁻¹` is `f⁻¹⍤k`.
+`(f⍤k)⁻` is `f⁻⍤k`.
 
 ```bpl
-(⌽⍤1)⁻¹[1 2⋄3 4]   ⍝ [2 1⋄4 3]
+(⌽⍤1)⁻[1 2⋄3 4]   ⍝ [2 1⋄4 3]
 ```
 
 ## Errors

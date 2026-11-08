@@ -257,7 +257,7 @@ X ← {  ⍝ Exact cover: Knuth's Algorithm X.
       r←∨/c#₋₁⍺  ⍝ rows covered by selected cols.
       s←⍶(~c)#₋₁(~r)#⍺
       s≡$f?⍺ ∇ f<⍵;  ⍝ failure: try a different row.
-      f ∨ ~r #⁻¹ s  ⍝ success: row f included.
+      f ∨ ~r #⁻ s  ⍝ success: row f included.
     } ,f  ⍝ ⍵ is vector of marked rows.
   }⍵⍪d  ⍝ exact cover.
   z≡$f?$f;  ⍝ failure: $f
@@ -281,7 +281,7 @@ sudokuX ← {[n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
   r←∊(⍵≠0ₓ)>(⊂≥⍳n)=¨⍵  ⍝ already placed rows.
   m←~r # ⍺  ⍝ reduced matrix.
   f←X m  ⍝ exact cover.
-  z←~r #⁻¹ f  ⍝ merge of placements.
+  z←~r #⁻ f  ⍝ merge of placements.
   [n n]⍴ z # ⍴z ⍴ ≥⍳n  ⍝ solution matrix.
 }
 

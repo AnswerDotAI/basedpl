@@ -210,7 +210,7 @@ pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, Err
     value.clone().with_keys(keys)?.with_axis_names(names)
 }
 
-/// `keys:⁻¹value`: `value` without the labels that `keys:` attaches. Those are the position keys of the leading axes that `keys` labels, and those axes' names where `keys` is keyed. Other names and keys stay. Where `keys:` makes a record of one entry, the result is that entry's value.
+/// `keys:⁻value`: `value` without the labels that `keys:` attaches. Those are the position keys of the leading axes that `keys` labels, and those axes' names where `keys` is keyed. Other names and keys stay. Where `keys:` makes a record of one entry, the result is that entry's value.
 pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, ErrorKind> {
     let (lists, axis_names) = labels(keys)?;
     if entry(&lists, axis_names).is_some() { return value.elements().next().ok_or(Kind::Length.into()); }

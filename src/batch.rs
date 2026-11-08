@@ -354,18 +354,16 @@ fn whole_call(operation: Operation, x: Option<Arg<'_>>, y: Arg<'_>, matrices: bo
     Some(result(level, whole, batch.frame, atoms, refusal(level, operation)))
 }
 
-/// The cells of each chunk that a call on `x` and `y` can run on, where on all the frame's `cells` cells it would hold too many items, or `None`. It holds too many where its constants with axes, taken once for each cell, would pass both 4 times the items that its arguments hold, and `CHUNK` items. Broadcasting and spreading repeat such constants (`eval::whole_cells`), and so does a result the size of a constant in each cell, where a run over cells holds one cell's share at a time. A batch counts the items it holds logically, so windows and an outer product's laid arguments count in full. A chunk is the most cells, a power of two, whose share of the constants is at most `CHUNK` items, and at least one cell.
+/// The cells of each chunk that a call on `x` and `y` can run on, where on all the frame's `cells` cells it would hold too many items, or `None`. It holds too many where its constants with axes, taken once for each cell, would pass both 4 times the items that its arguments hold, and `Sizes::batch` items. Broadcasting and spreading repeat such constants (`eval::whole_cells`), and so does a result the size of a constant in each cell, where a run over cells holds one cell's share at a time. A batch counts the items it holds logically, so windows and an outer product's laid arguments count in full. A chunk is the most cells, a power of two, whose share of the constants is at most `Sizes::batch` items, and at least one cell.
 fn oversized(x: Option<Arg<'_>>, y: Arg<'_>, cells: usize) -> Option<usize> {
     let (mut held, mut repeated) = (0usize, 0usize);
     for a in [x, Some(y)].into_iter().flatten() {
         held = held.saturating_add(a.all().len());
         if let Arg::Constant(c) = a { if !c.shape().is_empty() { repeated = repeated.saturating_add(c.len().saturating_mul(cells)); } }
     }
-    too_many(repeated, held, CHUNK).then(|| 1 << (CHUNK / (repeated / cells)).max(1).ilog2())
+    let chunk = crate::settings::sizes().batch;
+    too_many(repeated, held, chunk).then(|| 1 << (chunk / (repeated / cells)).max(1).ilog2())
 }
-
-/// The most items that a batched call repeats in constants, before it runs in chunks of cells instead, and the most that each chunk repeats (`oversized`). Measured on 20 October 2026 for maps with 256 to a million items of constants per cell: chunks of 2²¹ items beat the run over cells at every size, by 10% to 7 times, while chunks of 2²⁴ items lost from 256K items per cell on, and chunks of 2¹⁸ items were no faster.
-pub(crate) const CHUNK: usize = 1 << 21;
 
 /// Whether a batched call that repeats `repeated` items of constants holds too many against the `held` items of its arguments: more than both 4 times `held` and `floor` items.
 pub(crate) fn too_many(repeated: usize, held: usize, floor: usize) -> bool { repeated > held.saturating_mul(4).max(floor) }

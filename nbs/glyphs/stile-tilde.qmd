@@ -4,12 +4,12 @@ Function. Keys: `Alt-Backslash`. Hanzi: `素`. Ranks: `0` monadic, `0 0` dyadic
 
 `⍭N`: the prime with `N` primes before it. `⍭0` is 2. Whole inputs. Results take the argument's domain: `ᵣ` arguments give `ᵣ` results, and a machine-integer result past 64 bits gives the largest 64-bit integer. An `N` past the machine range counts as the largest one. The primality test `1⍭` gives Booleans.
 
-`⍭⁻¹N`: the number of primes below `N`, which is the index of a prime `N`.
+`⍭⁻N`: the number of primes below `N`, which is the index of a prime `N`.
 
 ```bpl
 ⍭⍳8ₓ               ⍝ [2 3 5 7 11 13 17 19]ₓ
-⍭⁻¹⍭⍳4ₓ            ⍝ [0 1 2 3]ₓ
-⍭⁻¹1 2 3 4 5 6     ⍝ [0 0 1 2 2 3]ₓ
+⍭⁻⍭⍳4ₓ            ⍝ [0 1 2 3]ₓ
+⍭⁻1 2 3 4 5 6     ⍝ [0 0 1 2 2 3]ₓ
 ```
 
 `K⍭N` selects an operation by the code `K`. The operations are like J's `p:`, with different codes. [Factor](circle-divide.qmd) gives factors and factor tables.

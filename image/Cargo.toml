@@ -1,0 +1,19 @@
+[package]
+name = "basedpl-image"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+test = false
+doctest = false
+
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+# Macs decode and encode images through ImageIO instead.
+image = { version = ">=0.25.6, <1", default-features = false, features = ["png", "jpeg"] }
+png = ">=0.18.1, <1"
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+flate2.workspace = true

@@ -2,32 +2,36 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file, SpeedCosts, _wasm_batches
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, set_counts, check_file, SpeedCosts, _speed_batches
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_cost_records_keep_values_without_optional_reports():
+def test_cost_records_keep_values_and_route_reports():
     row = dict(section='copies', label='v', cost=1.234567, seconds=1.234567e-9)
-    costs = SpeedCosts.from_records([row, dict(row, budget=2)])
+    violation = 'required route fusion was not taken'
+    costs = SpeedCosts.from_records([row, dict(row, label='v+w', budget=2, obligations=[violation])])
     assert costs[0][:4] == ('copies', 'v', 1.234567, None) and costs[0][4] == pytest.approx(1.234567)
     assert costs[1][3] == 2 and costs.holds == {} and costs.footprints == {}
+    assert costs.obligations == {('copies', 'v+w'): [violation]}
+    assert f'route obligation [copies] v+w: {violation}' in repr(costs)
 
 
 
-def test_wasm_batches_keep_files_sections_and_all_rows():
+def test_speed_batches_keep_files_sections_and_all_rows():
     text = '⍝⍝ copies\n-v\n⍝⍝: 1\n\n⍝⍝ static\n-v\n⍝⍝: 2\n\n⌽v\n⍝⍝: 3\n\n⍝ —\n1+1   ⍝ 2\n'
+    text += '\n+/v\n⍝⍝: - - -\tinstructions macos 10 linux 10\n'
     files = [dict(name=name, text=text) for name in ('one.bpl', 'two.bpl')]
-    batches = list(_wasm_batches(files, size=1))
+    batches = list(_speed_batches(files, size=1))
     assert [b['file'] for b in batches] == ['one.bpl', 'one.bpl', 'two.bpl', 'two.bpl']
     for b in batches:
         assert b['codes'] == (['-v'] if len(b['rows']) == 2 else ['⌽v'])
         assert b['rows'] == [[b['file'], section, b['codes'][0]] for section in
             (['copies', 'static'] if len(b['rows']) == 2 else ['static'])]
     files = [dict(name=p.name, text=p.read_text()) for p in sorted((ROOT/'tests/speed').glob('*.bpl'))]
-    batches = list(_wasm_batches(files))
-    expected = sorted((f['name'], c.section, c.code) for f in files for c in parse(f['text']) if c.budgets)
+    batches = list(_speed_batches(files))
+    expected = sorted((f['name'], c.section, c.code) for f in files for c in parse(f['text']) if any(b != '-' for b in c.budgets))
     assert sorted(tuple(r) for b in batches for r in b['rows']) == expected
     assert all(len(b['codes']) <= 16 and len(b['codes']) == len(set(b['codes'])) for b in batches)
 
@@ -115,6 +119,21 @@ def test_set_budgets(tmp_path):
     with pytest.raises(ValueError): set_budgets({'neg': 1}, path=rm, builds='wasm')
 
 
+def test_set_counts(tmp_path):
+    path = tmp_path/'speed.bpl'
+    path.write_text('⍝⍝ setup\nn←4\n⍝⍝ copies\n-v\n⍝⍝: 2.8\t2.8\t3.4\tinstructions macos 1.5\n\n⍝⍝ steps\nfib 6ₓ\n⍝⍝: -\t-\t-\n')
+    changes = set_counts('copies -v: instructions 2.125, allocated 8.000\nsteps fib 6ₓ: instructions 115000.5, allocated 0.000\n', path=path, platform='linux')
+    assert len(changes) == 4
+    assert '-v\n⍝⍝: 2.8\t2.8\t3.4\tinstructions macos 1.5 linux 2.125\tallocated linux 8\n' in path.read_text()
+    assert 'fib 6ₓ\n⍝⍝: -\t-\t-\tinstructions linux 115000.5\tallocated linux 0\n' in path.read_text()
+    set_budgets({'-v': 1.37}, path=path, sections='copies')
+    assert '-v\n⍝⍝: 2.8\t2.8\t2.8\tinstructions macos 1.5 linux 2.125\tallocated linux 8\n' in path.read_text()
+    rm = tmp_path/'rustymath.txt'
+    rm.write_text('[float64]\nneg\t1\t1\n')
+    set_counts('float64 neg: 1.10, budget 2.4, 0.200 ns, instructions 3.500, allocated 0.000\n', path=rm, platform='linux')
+    assert rm.read_text() == '[float64]\nneg\t1\t1\tinstructions linux 3.5\tallocated linux 0\n'
+
+
 def test_checker_counts_runs_by_mode(tmp_path):
     path = tmp_path/'checked.bpl'
     path.write_text(r'''⍝⍝ cases
@@ -130,8 +149,11 @@ def test_checker_counts_runs_by_mode(tmp_path):
     # The second call checks only that it agrees with the first, so a wrong expectation passes it.
     assert wrong['id'] == 'wrong' and statuses.pop("on a dfn's second call") == 'pass', wrong
     assert set(statuses.values()) <= {'mismatch', 'not applicable'}, wrong
-    assert report['accounting']['with the batch pref off'] == {'planned': 2, 'checked': 2, 'failed': 1, 'not applicable': 0}, report['accounting']
+    accounting = report['accounting']
+    assert accounting['with the batch pref on'] == {'planned': 2, 'checked': 2, 'failed': 1, 'not applicable': 0}, accounting
+    # Neither case reads the batch pref, so the run with it off would repeat the run with it on.
+    assert accounting['with the batch pref off'] == {'planned': 0, 'checked': 0, 'failed': 0, 'not applicable': 2}, accounting
     with pytest.raises(ValueError, match='match no case'): check_file(path, ids=['absent'])
     selected = check_file(path, ids='right', timeout=10)
-    assert not selected['failures'] and selected['accounting']['with the batch pref off'] == {'planned': 1, 'checked': 1, 'failed': 0, 'not applicable': 0}
+    assert not selected['failures'] and selected['accounting']['with the batch pref on'] == {'planned': 1, 'checked': 1, 'failed': 0, 'not applicable': 0}
 

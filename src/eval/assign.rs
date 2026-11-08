@@ -41,7 +41,7 @@ impl Session {
         match &node.kind {
             NodeKind::Function(_) | NodeKind::System(_) => Function,
             NodeKind::Operator(op) => Category::of_operator(&self::OperatorNode::Primitive(*op)),
-            NodeKind::Subscript(_) => Operator,
+            NodeKind::Script(..) => Operator,
             NodeKind::Name(name, _) => self.path_category(*name, &[], log),
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
@@ -82,8 +82,7 @@ impl Session {
             // `ᵘ` always gives an array, and the other superscripts give one on an array.
             category = match superscript {
                 Some(Superscript::Unit) => Value,
-                _ if matches!(operand_category, Value) && (superscript.is_some() || matches!(nodes[end - 1].kind, NodeKind::Subscript(_))) => Value,
-                _ => Function,
+                _ if matches!(operand_category, Value) && (superscript.is_some() || matches!(nodes[end - 1].kind, NodeKind::Script(..))) => Value, _ => Function
             };
         }
         if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner, log)) {
@@ -205,14 +204,14 @@ impl Session {
         }
     }
 
-    /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative: `f∂` for the derivative, or `f⁻¹` for the inverse.
+    /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative: `f∂` for the derivative, or `f⁻` for the inverse.
     fn rule_target(&self, nodes: &[Node]) -> Option<(Name, bool)> {
         let [Node { kind: NodeKind::Name(name, _), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
-        let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Power(-1)) => false, _ => return None };
+        let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Inverse) => false, _ => return None };
         matches!(self.bindings.category(*name), Some(Category::Function)).then_some((*name, derivative))
     }
 
-    /// `f⁻¹←g` or `f∂←g`: the nearest binding of `f` gets `g` attached as its inverse or derivative.
+    /// `f⁻←g` or `f∂←g`: the nearest binding of `f` gets `g` attached as its inverse or derivative.
     fn attach_rule(&self, name: Name, derivative: bool, value: &Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(Error::new(ErrorKind::Syntax, "arguments and operands cannot be assigned here").at(span)); }
         let Binding::Function(g) = value else { return Err(Error::domain("an inverse or derivative must be a function").at(span)) };

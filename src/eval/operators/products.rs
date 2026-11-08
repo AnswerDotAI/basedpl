@@ -89,12 +89,12 @@ fn by_triples(f: &Function, g: &Function, left: &Value, right: &Value, c: &Contr
     })
 }
 
-/// `left f.g right` through `product`, which takes rows of `left` laid out as rows by contraction by 1 and `right` laid out as 1 by contraction by columns, and gives their products folded along the contraction. The rows go in chunks whose products hold at most `batch::CHUNK` items, or one row where a row's products hold more, and the chunks' results join along the rows. `None` where `product` gives `None` for a chunk.
+/// `left f.g right` through `product`, which takes rows of `left` laid out as rows by contraction by 1 and `right` laid out as 1 by contraction by columns, and gives their products folded along the contraction. The rows go in chunks whose products hold at most `Sizes::batch` items, or one row where a row's products hold more, and the chunks' results join along the rows. `None` where `product` gives `None` for a chunk.
 fn by_rows(
     c: &Contraction, left: &Value, right: &Value, mut product: impl FnMut(Value, Value) -> Option<Result<Value, Error>>) -> Option<Result<Value, Error>> {
     use {crate::array::Layout, rustymath::gather::Steps};
     let Contraction { rows, n, cols, .. } = *c;
-    let per = (crate::batch::CHUNK / n.saturating_mul(cols).max(1)).max(1);
+    let per = (crate::settings::sizes().batch / n.saturating_mul(cols).max(1)).max(1);
     let y = right.relaid(Layout::from(vec![1, n, cols])).ok()?;
     // One chunk lays out `left` as it is. Chunks take their rows from `left`'s items in order.
     let flat = if per < rows { Some(left.relaid(Layout::from(vec![rows * n])).ok()?) } else { None };

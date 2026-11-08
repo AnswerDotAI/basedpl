@@ -7,6 +7,19 @@ use crate::{
 use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
 use std::{iter::Peekable, str::CharIndices, sync::{Arc, atomic::{AtomicU64, Ordering::Relaxed}}};
 
+/// The two numeric postfix scripts share digit strands and binding, then use Index/Axis or Power/Rank.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScriptKind { Sub, Super }
+impl ScriptKind {
+    pub(crate) fn operator(self) -> OperatorKind { match self { Self::Sub => OperatorKind::Axis, Self::Super => OperatorKind::Rank } }
+    pub(crate) fn text(self, indices: &Value) -> String {
+        let (digits, minus) = match self { Self::Sub => (SUBSCRIPT_DIGITS, '₋'), Self::Super => (SUPERSCRIPT_DIGITS, '⁻') };
+        indices.as_items().integers().expect("parsed numeric scripts contain integers").iter().map(|n| {
+            n.to_string().chars().map(|c| if c == '-' { minus } else { digits.chars().nth(c.to_digit(10).unwrap() as usize).unwrap() }).collect::<String>()
+        }).collect::<Vec<_>>().join(" ")
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
     Literal(Value),
@@ -22,8 +35,8 @@ pub(crate) enum NodeKind {
     Group(Vec<Node>),
     /// A run of nodes with no spaces between them, evaluated before its neighbours.
     Run(Vec<Node>),
-    /// Numeric subscripts select from an array or set a function's axes, after dot access.
-    Subscript(Value),
+    /// Numeric scripts: subscripts select arrays or set function axes; superscripts raise arrays to powers or set function ranks.
+    Script(ScriptKind, Value),
     /// `ⱼ`, `ₑ` or `ᵣ` between two items, as in `xⱼy`, which binding joins into one term once dot access and subscripts are bound.
     Joiner(Joiner),
     /// `T.(expr)`, which dot access builds: the second node evaluated with the keys of the first as names.
@@ -165,7 +178,7 @@ fn mark_last(nodes: &mut [Node], name: Name) -> Result<bool, ()> {
     };
     let Some(i) = nodes.iter().position(reads) else { return Ok(false) };
     let joins = |kind: &NodeKind| matches!(kind, NodeKind::Joiner(_) | NodeKind::Operator(OperatorKind::Product));
-    let end = (i + 1..nodes.len()).find(|&j| !matches!(nodes[j].kind, NodeKind::Subscript(_)) && !joins(&nodes[j].kind) && !joins(&nodes[j - 1].kind))
+    let end = (i + 1..nodes.len()).find(|&j| !matches!(nodes[j].kind, NodeKind::Script(..)) && !joins(&nodes[j].kind) && !joins(&nodes[j - 1].kind))
         .unwrap_or(nodes.len());
     if nodes[i + 1..end].iter().any(reads) { return Err(()); }
     match &mut nodes[i].kind {
@@ -212,9 +225,7 @@ pub enum ParseStatus { Complete(Parsed), Incomplete(Error), Invalid(Error) }
 
 impl ParseStatus {
     /// The program, or the error for input that is incomplete or invalid.
-    pub(crate) fn complete(self) -> Result<Parsed, Error> {
-        match self { Self::Complete(parsed) => Ok(parsed), Self::Incomplete(e) | Self::Invalid(e) => Err(e) }
-    }
+    pub fn complete(self) -> Result<Parsed, Error> { match self { Self::Complete(parsed) => Ok(parsed), Self::Incomplete(e) | Self::Invalid(e) => Err(e) } }
 }
 
 #[derive(Debug)]
@@ -224,8 +235,8 @@ enum TokenKind {
     Literal(Value),
     Function(Primitive),
     Operator(OperatorKind),
-    /// A subscript integer, such as `₁` or `₋₁`, which selects a major cell of the item just before it.
-    Subscript(i64),
+    /// One subscript or superscript integer; spaces strand integers of the same script.
+    Script(ScriptKind, i64),
     /// `ⱼ`, `ₑ` or `ᵣ` after an item other than a literal number.
     Joiner(Joiner),
     Open,
@@ -380,8 +391,8 @@ pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fil
 fn literal_token(kind: &TokenKind) -> bool {
     matches!(
         kind, TokenKind::Literal(_) | TokenKind::Open | TokenKind::Close(_) | TokenKind::BracketOpen | TokenKind::BracketClose(_) | TokenKind::Semicolon
-            | TokenKind::Separator | TokenKind::Function(Primitive::Keys)
-            | TokenKind::Operator(OperatorKind::Super(Superscript::Power(_) | Superscript::Transpose))
+            | TokenKind::Separator | TokenKind::Function(Primitive::Keys) | TokenKind::Script(ScriptKind::Super, _)
+            | TokenKind::Operator(OperatorKind::Super(Superscript::Transpose))
     )
 }
 
@@ -746,12 +757,14 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             'ⱼ' => TokenKind::Joiner(Joiner::Imaginary),
             'ₑ' => TokenKind::Joiner(Joiner::Exponent),
             'ᵣ' => TokenKind::Joiner(Joiner::Denominator),
-            c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
-                let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?;
-                TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
+            '⁻' if chars.peek().is_none_or(|&(_, c)| script_digit(SUPERSCRIPT_DIGITS, c).is_none()) => {
+                TokenKind::Operator(OperatorKind::Super(Superscript::Inverse))
             }
-            c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => TokenKind::Subscript(
-                script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?),
+            c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => TokenKind::Script(
+                ScriptKind::Super,
+                script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?),
+            c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => TokenKind::Script(
+                ScriptKind::Sub, script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?),
             c if c.is_whitespace() || c == '⁝' => return Ok(None),
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                 (Some(op), _) => TokenKind::Operator(op), (_, Some(f)) => TokenKind::Function(f),
@@ -775,8 +788,9 @@ fn class(kind: &TokenKind, text: &str, canonical: fn(char) -> char) -> Option<&'
     }
     match kind {
         TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
-        TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"), TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
-        TokenKind::Joiner(_) => Some("literal"), TokenKind::Name(_) => Some("name"), TokenKind::System(_) => Some("function"), _ => None
+        TokenKind::Operator(OperatorKind::Super(_)) | TokenKind::Script(ScriptKind::Super, _) => Some("monadic-operator"),
+        TokenKind::Script(ScriptKind::Sub, _) | TokenKind::ErrorGuard => Some("syntax"), TokenKind::Joiner(_) => Some("literal"),
+        TokenKind::Name(_) => Some("name"), TokenKind::System(_) => Some("function"), _ => None
     }
 }
 
@@ -811,10 +825,26 @@ enum Piece { Node(Node), Diamond, Semicolon(Span), Predicate(Span) }
 struct Parser<'a> { tokens: &'a [Token], pos: usize }
 impl Parser<'_> {
     fn pieces(&mut self, open: Option<&Token>) -> Result<Vec<Piece>, ParseFailure> {
-        let mut pieces = Vec::new();
+        let mut pieces: Vec<Piece> = Vec::new();
         while let Some(token) = self.tokens.get(self.pos) {
             self.pos += 1;
             let mut span = token.span.clone();
+            // Fold the attached power before script strands: `2 3² ³` is `[2 9]³`, not `[2 729]`.
+            if let Some(Piece::Node(last)) = pieces.last_mut() && last.span.source.text[last.span.range.end..span.range.start].chars().all(|c| c == '⁝')
+                && let NodeKind::Literal(Value::Number(n)) = &last.kind {
+                    let raised = match token.kind {
+                        TokenKind::Script(ScriptKind::Super, k) => {
+                            Some(Primitive::Math(Math::Power).number(Some(n), &Number::from_integer(k).marked(true), Numeric::current()))
+                        }
+                        TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)) => Some(Ok(n.clone())),
+                        _ => None,
+                    };
+                    if let Some(raised) = raised {
+                        last.span.range.end = span.range.end;
+                        last.kind = NodeKind::Literal(Value::Number(raised.at(&last.span)?));
+                        continue;
+                    }
+                }
             let kind = match &token.kind {
                 TokenKind::Separator => { pieces.push(Piece::Diamond); continue; }
                 TokenKind::Semicolon => { pieces.push(Piece::Semicolon(span)); continue; }
@@ -852,19 +882,19 @@ impl Parser<'_> {
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(Builtin::Primitive(*f)),
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
-                TokenKind::Subscript(index) => {
+                TokenKind::Script(script, index) => {
                     let first = Value::Number(Number::from_integer(*index));
                     let mut indices = Vec::new();
-                    while let Some(Token { kind: TokenKind::Subscript(index), span: next }) = self.tokens.get(self.pos) {
+                    while let Some(Token { kind: TokenKind::Script(next_script, index), span: next }) = self.tokens.get(self.pos) {
                         let gap = &span.source.text[span.range.end..next.range.start];
-                        if gap.is_empty() || !gap.chars().all(char::is_whitespace) { break; }
+                        if next_script != script || gap.is_empty() || !gap.chars().all(char::is_whitespace) { break; }
                         if indices.is_empty() { indices.push(first.clone()); }
                         indices.push(Value::Number(Number::from_integer(*index)));
                         span.range.end = next.range.end;
                         self.pos += 1;
                     }
-                    NodeKind::Subscript(if indices.is_empty() { first }
-                    else { Value::new([indices.len()], indices).described("invalid subscript list").at(&span)? })
+                    NodeKind::Script(
+                        *script, if indices.is_empty() { first } else { Value::new([indices.len()], indices).described("invalid script list").at(&span)? })
                 }
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
                 TokenKind::Name(name) => NodeKind::Name(Name::new(name), false),
@@ -1036,7 +1066,7 @@ fn expression(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
 
 /// Fails unless each subscript follows a node in its list. That node is the item the subscript touches, or after a space the run before it.
 fn subscripts_follow_items(nodes: &[Node]) -> Result<(), ParseFailure> {
-    if let Some(n @ Node { kind: NodeKind::Subscript(_), .. }) = nodes.first() {
+    if let Some(n @ Node { kind: NodeKind::Script(ScriptKind::Sub, _), .. }) = nodes.first() {
         return Err(invalid(&n.span, "a subscript selects from the item just before it, or after a space from the run before it"));
     }
     for n in nodes { if let NodeKind::Run(inner) = &n.kind { subscripts_follow_items(inner)? } }
@@ -1046,23 +1076,8 @@ fn subscripts_follow_items(nodes: &[Node]) -> Result<(), ParseFailure> {
 /// Literals separated by spaces form a strand, which becomes one vector literal. A literal that touches the one before it starts a new strand: in `⍣3'b'`, `3` is the operand and `'b'` the argument.
 fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     let (mut out, mut strand) = (Vec::with_capacity(nodes.len()), Vec::new());
-    let mut nodes = nodes.into_iter().peekable();
-    while let Some(mut node) = nodes.next() {
+    for node in nodes {
         if matches!(node.kind, NodeKind::Literal(_)) {
-            // A superscript binds to the one number before it, before literals strand, so `2 3²` is `2 9`.
-            while let Some(next @ Node { kind: NodeKind::Operator(OperatorKind::Super(power)), span }) = nodes.peek() {
-                let (power, end) = (*power, span.range.end);
-                if !touching(&node, next) { break; }
-                let NodeKind::Literal(Value::Number(n)) = &node.kind else { break };
-                let raised = match power {
-                    Superscript::Power(k) => Primitive::Math(Math::Power).number(Some(n), &Number::from_integer(k).marked(true), Numeric::current()),
-                    Superscript::Transpose => Ok(n.clone()), Superscript::Unit | Superscript::Mark(_) => break
-                };
-                node.span.range.end = end;
-                let raised = raised.at(&node.span)?;
-                node.kind = NodeKind::Literal(Value::Number(raised));
-                nodes.next();
-            }
             if strand.last().is_some_and(|last| touching(last, &node)) { close_strand(&mut strand, &mut out)?; }
             strand.push(node);
             continue;
@@ -1099,7 +1114,8 @@ fn runs(nodes: Vec<Node>) -> Vec<Node> {
 /// Whether `node` is written as a function: a primitive, an operator, a dfn, or parentheses round such nodes.
 fn written_function(node: &Node) -> bool {
     match &node.kind {
-        NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Dfn(_) => true, NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
+        NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Script(ScriptKind::Super, _) | NodeKind::Dfn(_) => true,
+        NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
     }
 }
 
@@ -1257,7 +1273,7 @@ fn syntax_node(node: &Node) -> SyntaxNode {
     SyntaxNode::new(node.kind.name(), node.span.range.clone(), children)
 }
 
-/// The `Strand` node of a literal that joins several items, with a `Literal` child for each item, or `None` for any other node. The parser keeps no item spans, so this lexes the literal's own text. A superscript there belongs to the item before it, as `strands` folds it in.
+/// The `Strand` node of a literal that joins several items, with a `Literal` child for each item, or `None` for any other node. The parser keeps no item spans, so this lexes the literal's own text. A superscript there belongs to the item before it, as `Parser::pieces` folds it in.
 fn strand_node(node: &Node) -> Option<SyntaxNode> {
     let (NodeKind::Literal(_), Span { source, range }) = (&node.kind, &node.span) else { return None };
     let mut items: Vec<SyntaxNode> = Vec::new();
@@ -1265,7 +1281,7 @@ fn strand_node(node: &Node) -> Option<SyntaxNode> {
         let item = range.start + token.span.range.start..range.start + token.span.range.end;
         match token.kind {
             TokenKind::Literal(_) => items.push(SyntaxNode::new("Literal", item, Vec::new())),
-            TokenKind::Operator(OperatorKind::Super(_)) => items.last_mut()?.range.end = item.end, _ => return None
+            TokenKind::Script(ScriptKind::Super, _) | TokenKind::Operator(OperatorKind::Super(_)) => items.last_mut()?.range.end = item.end, _ => return None
         }
     }
     (items.len() > 1).then(|| SyntaxNode::new("Strand", range.clone(), items))
@@ -1284,8 +1300,8 @@ impl NodeKind {
         match self {
             Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(..) => "Name",
             Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
-            Self::Run(_) => "Run", Self::Subscript(_) => "Subscript", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral",
-            Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner"
+            Self::Run(_) => "Run", Self::Script(..) => "Script", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral", Self::Dfn(_) => "Dfn",
+            Self::Joiner(_) => "Joiner"
         }
     }
     /// The primitive that a glyph's node holds, or `None` for any other node.

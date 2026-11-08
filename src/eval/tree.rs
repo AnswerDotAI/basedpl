@@ -191,9 +191,7 @@ impl Recorder {
     pub(super) fn leaf(&mut self, node: &Node, cursor: usize, entity: &Entity, session: &Session) {
         let Term::Binding(binding) = &entity.term else { unreachable!("a leaf's entity holds its value") };
         let leaf = match (&node.kind, binding) {
-            (NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Subscript(_), _) => {
-                Leaf::Constant(Term::Binding(binding.clone()))
-            }
+            (NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Script(..), _) => Leaf::Constant(Term::Binding(binding.clone())),
             (NodeKind::Name(name, last), _) => Leaf::Resolve(entity.category(), Some(session.bindings.address(*name)), *last),
             _ => Leaf::Resolve(entity.category(), None, false),
         };

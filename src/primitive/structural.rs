@@ -48,7 +48,7 @@ pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<
 pub(crate) enum Form {
     /// The primitive `p` along `axis`, as `call_axis` resolves it, or its inverse where `inverse`. `fill` where the call reads an explicit fill.
     Call { p: Primitive, axis: Option<usize>, inverse: bool, fill: bool },
-    /// `⍉`, or `⍉⁻¹` where `inverse`, by the axis groups that the call resolved when it was made (`transposed`). Without groups, the specification is the call's one parameter, as one that a carrier holds is, or there's none, and `⍉` reverses the axes.
+    /// `⍉`, or `⍉⁻` where `inverse`, by the axis groups that the call resolved when it was made (`transposed`). Without groups, the specification is the call's one parameter, as one that a carrier holds is, or there's none, and `⍉` reverses the axes.
     Transpose { inverse: bool, groups: Option<std::sync::Arc<[TransposeGroup]>> },
     /// Windows over the leading axes, padded by `edge` where it's given, and otherwise by fill on an axis whose size is below 0. `fill` where padding reads an explicit fill.
     Windows { edge: Option<Edge>, fill: bool },
@@ -137,7 +137,7 @@ fn core_plan(form: &Form, params: &[Value], inputs: &[&Layout]) -> Result<(CoreL
             planned(structure::transpose(&regrouped, &axes)?)
         }
         Form::Transpose { inverse: true, ref groups } => {
-            let groups = groups_of(groups, params, right, true)?.expect("⍉⁻¹ has a specification");
+            let groups = groups_of(groups, params, right, true)?.expect("⍉⁻ has a specification");
             let (order, shape, sources, names) = merged_axes(&groups, right)?;
             let moved = structure::transpose(right, &rustymath::search::inverse_permutation(order.into_iter()))?;
             // The merge moves no items, so the merged layout reads the transposed items.
@@ -379,7 +379,7 @@ fn catenated(left: &CoreLayout, right: &CoreLayout, axis: Option<usize>, first: 
     Ok((layout, ReadPlan::joined(outer, [part(0, ln, &left, lsteps), part(1, rn, &right, rsteps)])?))
 }
 
-/// One source-axis route in `⍉`, or a group of source axes to merge in `⍉⁻¹`. Keys declare names on the unsplit and split sides.
+/// One source-axis route in `⍉`, or a group of source axes to merge in `⍉⁻`. Keys declare names on the unsplit and split sides.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TransposeGroup {
     axes: Vec<usize>, sizes: Option<Vec<Option<usize>>>, name: Option<std::sync::Arc<str>>, factor_names: Vec<Option<std::sync::Arc<str>>>
@@ -390,12 +390,12 @@ fn holds_name(value: &Value) -> bool { crate::keyed::name(value).is_some() || !v
 
 fn transpose_groups(spec: &Value, right: &CoreLayout, inverse: bool) -> Result<Vec<TransposeGroup>, Error> {
     if spec.shape().len() > 1 { return Err(Error::new(Kind::Rank, "transpose axes must be a unit or vector")); }
-    // `⍉` takes destinations, where a named vector gives its numbers. In `⍉⁻¹`, a named vector names its axis, as a string does.
+    // `⍉` takes destinations, where a named vector gives its numbers. In `⍉⁻`, a named vector names its axis, as a string does.
     let named = |v: &Value| if inverse { super::named_axis(v) } else { crate::keyed::name(v) };
     let items = if named(spec).is_some() { vec![spec.clone()] } else { spec.elements().collect() };
     items.into_iter().enumerate().map(|(i, item)| {
         if !inverse && holds_name(&item) {
-            return Err(Error::domain("⍉ takes numeric destinations. Names select axes in ⍉⁻¹, and a named ⍉⁻¹ has no inverse"));
+            return Err(Error::domain("⍉ takes numeric destinations. Names select axes in ⍉⁻, and a named ⍉⁻ has no inverse"));
         }
         let paired = item.shape().len() == 1 && item.elements().all(|p| p.shape() == [2] && named(&p).is_none());
         let (selectors, sizes, factor_names) = if paired {
@@ -475,7 +475,7 @@ fn split_axes(groups: &[TransposeGroup], right: &CoreLayout) -> Result<(CoreLayo
     Ok((regrouped, destinations))
 }
 
-/// What `⍉⁻¹`'s `groups` do to `right`: the order that brings each group's axes together, then the shape, sources and names that merge each group into one axis.
+/// What `⍉⁻`'s `groups` do to `right`: the order that brings each group's axes together, then the shape, sources and names that merge each group into one axis.
 type Merge = (Vec<usize>, Vec<usize>, Vec<Vec<usize>>, Vec<Option<std::sync::Arc<str>>>);
 fn merged_axes(groups: &[TransposeGroup], right: &CoreLayout) -> Result<Merge, Error> {
     let mut order = Vec::new();
@@ -509,7 +509,7 @@ pub(super) fn transpose(spec: Option<&Value>, right: &Value) -> Result<Value, Er
 
 pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Error> { transposed(Some(spec), right, true) }
 
-/// `⍉` of `right` by `spec`, or `⍉⁻¹` where `inverse`. A plain specification resolves to its axis groups here (`transpose_groups`), so that a recording holds the groups in its recipe: a program can't hold the names, strings and nested groups of the specification itself. A specification that a carrier holds stays the call's parameter, which each run resolves (`core_plan`).
+/// `⍉` of `right` by `spec`, or `⍉⁻` where `inverse`. A plain specification resolves to its axis groups here (`transpose_groups`), so that a recording holds the groups in its recipe: a program can't hold the names, strings and nested groups of the specification itself. A specification that a carrier holds stays the call's parameter, which each run resolves (`core_plan`).
 fn transposed(spec: Option<&Value>, right: &Value, inverse: bool) -> Result<Value, Error> {
     let plain = spec.filter(|s| !s.carried());
     let groups = plain.map(|s| transpose_groups(s, right.layout(), inverse)).transpose()?.map(std::sync::Arc::from);

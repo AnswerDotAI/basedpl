@@ -88,7 +88,7 @@ impl Cf {
 impl Drop for Cf { fn drop(&mut self) { unsafe { CFRelease(self.get()) } } }
 
 /// The pixels of an image file in any format that ImageIO reads, widened to 16 bits. An animation's frames come composited. An animated PNG's frames keep the channels that the file's header gives.
-pub(super) fn decode(bytes: &[u8]) -> Result<Raster<u16>, String> {
+pub fn decode(bytes: &[u8]) -> Result<Raster<u16>, String> {
     let source = Cf::new(unsafe { CGImageSourceCreateWithData(cf_data(bytes).get(), null()) }).ok_or("unreadable data")?;
     let count = unsafe { CGImageSourceGetCount(source.get()) };
     let frame = |i| {

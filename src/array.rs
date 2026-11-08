@@ -98,6 +98,7 @@ impl Layout {
     pub(crate) fn zeros(&self, zero: &Value) -> Value { if self.shape().is_empty() { zero.clone() } else { self.filled(zero) } }
     /// The layout that cells share when assembled by trailing-axis agreement. Shorter cells pad with fill; keys survive only along unpadded axes, and keys and names must agree.
     pub(crate) fn assembled<'a>(cells: impl Iterator<Item = &'a Self> + Clone) -> Result<Self, ErrorKind> {
+        if let Some(first) = cells.clone().next() && cells.clone().all(|cell| cell == first) { return Ok(first.clone().with_renderer(None)); }
         let rank = cells.clone().map(|c| c.shape().len()).max().unwrap_or(0);
         let mut shape = vec![0; rank];
         for cell in cells.clone() {
@@ -772,7 +773,7 @@ impl Value {
         }
     }
     /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or the value is such an atom.
-    pub(crate) fn float_width(&self) -> Option<FloatWidth> { float_width_of(self.dtype()?) }
+    pub fn float_width(&self) -> Option<FloatWidth> { float_width_of(self.dtype()?) }
     /// The numbers of this value as floats of `width`, each rounded once, with the arrays nested in it converted too. Complex numbers take parts of `width`, and 32-bit parts for 16 bits. Floats already of `width`, pending ones included, stay as they are, with no copy. Characters and functions are DOMAIN.
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, ErrorKind> {
         if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| Kind::Domain.into()); }
@@ -820,7 +821,7 @@ impl Value {
     /// The dtype of the items a reader sees: the `dtype` of `template`, so that a dual answers for its primal and a batch for its cells. `dtype` gives `None` for an array that carries a level's data, so that kernels never read its storage as compact.
     pub(crate) fn template_dtype(&self) -> Option<DType> { self.template().dtype() }
     /// The name of the storage that holds the items under the settings `numeric`, as `•storage` gives it: rustymath's name for a compact dtype, except for integers. Under dynamic kinds, which choose an integer's width from its value, integers of any width are `"integer"`. Under static kinds an integer names the width it computes at, because the width is part of its kind there. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
-    pub(crate) fn storage_kind(&self, numeric: Numeric) -> &'static str {
+    pub fn storage_kind(&self, numeric: Numeric) -> &'static str {
         let held = self.template();
         match (&held, held.dtype()) {
             (_, Some(dtype)) if held.fixed_width().is_some() => dtype.name(),
@@ -963,7 +964,7 @@ impl Value {
         let layout = value.layout().clone().with_renderer(Some(renderer));
         value.with_layout(layout)
     }
-    pub(crate) fn layout(&self) -> &Layout { static ATOM: Layout = Layout::EMPTY; match self { Self::Array(a) => &a.layout, _ => &ATOM } }
+    pub fn layout(&self) -> &Layout { static ATOM: Layout = Layout::EMPTY; match self { Self::Array(a) => &a.layout, _ => &ATOM } }
     /// The array's shape, axis keys and names, shared with numerical array frontends.
     pub fn core_layout(&self) -> &rustymath::layout::Layout { self.layout() }
     /// Keeps the items and renderer under `layout`; the item count must stay unchanged.
@@ -1002,7 +1003,7 @@ impl Value {
 
     pub fn as_number(&self) -> Option<Number> { if !self.is_unit() { return None; } match self.at(0) { Value::Number(n) => Some(n), _ => None } }
     /// The one number of this unit as an `f64`. `None` for any other value, a complex number, or an exact number outside the float range.
-    pub(crate) fn as_real(&self) -> Option<f64> { self.as_number()?.to_float().ok() }
+    pub fn as_real(&self) -> Option<f64> { self.as_number()?.to_float().ok() }
 
     /// The one item of this singleton as a Boolean, as an observer reads it: LENGTH for any other count of items, and DOMAIN for an item that isn't 0 or 1.
     pub(crate) fn boolean(&self) -> Result<bool, ErrorKind> {
@@ -1020,7 +1021,10 @@ impl Value {
     pub(crate) fn mix(&self, widening: Widening, chosen: Option<&Value>) -> Result<Self, ErrorKind> {
         if self.is_atom() { return self.relaid(Layout::from(Vec::<usize>::new())); }
         if self.is_simple() { return Ok(self.clone()); }
-        let cells: Vec<_> = self.elements().collect();
+        let cells = if self.holds_values() {
+            let Items::Values(items) = self.as_items() else { unreachable!("nested arrays hold values") };
+            Cow::Borrowed(items)
+        } else { Cow::Owned(self.elements().collect::<Vec<_>>()) };
         Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening, chosen, None)
     }
     /// `cells` assembled by trailing-axis agreement into an array whose frame is `frame`, as `Layout::assemble` and `mix` assemble them. The cells' layout is `cell_layout` where the caller knows it, and otherwise the layout that the cells agree on (`Layout::assembled`).

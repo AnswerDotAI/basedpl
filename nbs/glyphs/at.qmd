@@ -60,7 +60,7 @@ Selecting Under follows the same [write rules as selective assignment](left-arro
 
 ## Other functions
 
-For any other `g`, `f@g Y` is `g⁻¹(f(g Y))`, and `X f@g Y` is `g⁻¹((g X)f(g Y))`. The inverse can't restore items that `g` drops, so Under uses it only for a `g` that keeps every item.
+For any other `g`, `f@g Y` is `g⁻(f(g Y))`, and `X f@g Y` is `g⁻((g X)f(g Y))`. The inverse can't restore items that `g` drops, so Under uses it only for a `g` that keeps every item.
 
 ```bpl
 3+@ 2× 4                   ⍝ 7
@@ -96,10 +96,10 @@ See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).
 
 ## Inverse
 
-`(f@g)⁻¹` is `f⁻¹@g`.
+`(f@g)⁻` is `f⁻@g`.
 
 ```bpl
-(⊽@⌽)⁻¹2 4 6   ⍝ 1 2 3
+(⊽@⌽)⁻2 4 6   ⍝ 1 2 3
 ```
 
 ## Errors

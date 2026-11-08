@@ -1,0 +1,39 @@
+# `cargo nextest run` runs each test in its own process and every binary at once. The threads of one process take turns at its one session (`src/eval.rs`), so separate processes are what run tests in parallel.
+[profile.default]
+# A test running past 5 s is reported as slow. One still running at 30 s is stopped and fails.
+slow-timeout = { period = "5s", terminate-after = 6 }
+fail-fast = false
+
+[test-groups]
+timed = { max-threads = 1 }
+
+# The reference runner starts one child process per core. It starts first and runs with nothing beside it, so no timing runs beside it.
+[[profile.default.overrides]]
+filter = 'binary(reference)'
+threads-required = 'num-cpus'
+priority = 100
+
+# Memory-bound timings run with nothing beside them.
+[[profile.default.overrides]]
+filter = 'binary(speed) and test(=timed_images)'
+threads-required = 'num-cpus'
+test-group = 'timed'
+priority = -100
+
+# Other timings run one at a time, beside light correctness tests, after every other test has started.
+[[profile.default.overrides]]
+filter = 'binary(speed) and test(/^timed_/)'
+test-group = 'timed'
+priority = -100
+
+# Optional selection excluding timings, used by focused cross-repo diagnostics. It gives reference one slot because this selection contains no timing tests.
+[profile.untimed]
+default-filter = 'not (binary(speed) and test(/^timed_/))'
+
+[[profile.untimed.overrides]]
+filter = 'binary(reference)'
+threads-required = 1
+
+# Optional timing-only selection. An explicit cross-repo ('untimed', 'timed', 'speed') run uses this after correctness and before rustymath timings. Plain run_tests uses default and includes everything.
+[profile.timed]
+default-filter = 'binary(speed) and test(/^timed_/)'

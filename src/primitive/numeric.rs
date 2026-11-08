@@ -48,7 +48,7 @@ pub(super) fn complex_parts(right: &Value, polar: bool) -> Result<Value, Error> 
     layout.collect(data, prototype).described("invalid decomposition")
 }
 
-/// The numbers whose parts `complex_parts` gives, the two parts on the last axis: magnitude and angle with `polar`, else real and imaginary parts (monadic `∧⁻¹` and `∨⁻¹`).
+/// The numbers whose parts `complex_parts` gives, the two parts on the last axis: magnitude and angle with `polar`, else real and imaginary parts (monadic `∧⁻` and `∨⁻`).
 pub(super) fn from_parts(right: &Value, polar: bool, span: &Span) -> Result<Value, Error> {
     use Primitive::{Index, Transpose};
     // Reversing the axes brings the parts' axis to the front.
@@ -430,10 +430,10 @@ fn ordered<'a, T: Clone>(b: Option<Cow<'a, [T]>>, positions: Option<&Mapping>, m
     b.map(|b| match positions { Some(p) => Cow::Owned((0..m).flat_map(|i| b[p.index(i) * k..][..k].to_vec()).collect()), None => b })
 }
 
-/// `kind •decompose⁻¹ factors` multiplies a record of factors from `•decompose` back into its matrix, taking `kind` as `•decompose` does. `"lu"`'s factors give back the matrix with its rows in their original order. Eigenvectors that aren't independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error. The factors multiply in the [`Domain`] of their items, or in floats of the default width where these are all exact. The result takes the widest float width among the factors.
+/// `kind •decompose⁻ factors` multiplies a record of factors from `•decompose` back into its matrix, taking `kind` as `•decompose` does. `"lu"`'s factors give back the matrix with its rows in their original order. Eigenvectors that aren't independent, such as a defective matrix's, can't determine the matrix. They raise a `DOMAIN` error. The factors multiply in the [`Domain`] of their items, or in floats of the default width where these are all exact. The result takes the widest float width among the factors.
 pub(crate) fn recompose(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let Decomposition { kind, vectors, .. } = Decomposition::new(left)?;
-    if !vectors { return Err(Error::domain("•decompose⁻¹ needs the vectors")); }
+    if !vectors { return Err(Error::domain("•decompose⁻ needs the vectors")); }
     let names: &[(&str, usize)] = match kind.as_str() {
         "svd" => &[("u", 2), ("s", 1), ("v", 2)], "qr" => &[("q", 2), ("r", 2)], "cholesky" => &[("l", 2)], "eigen" => &[("values", 1), ("vectors", 2)],
         "lu" => &[("l", 2), ("u", 2), ("p", 1)], _ => unreachable!("`Decomposition::new` checks the kind")

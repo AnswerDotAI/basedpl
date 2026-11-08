@@ -28,7 +28,7 @@ pub(crate) struct Elide {
     pub prec: usize,
     pub width: usize,
     pub columns: usize,
-    /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
+    /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻` does.
     pub plain: Option<FloatWidth>,
     /// Whether numbers show their kind: `ₓ` after an exact integer, and the marker of a float width that isn't `plain`. `⍬⍕` and `''⍕` leave both out.
     pub marks: bool,
@@ -139,7 +139,7 @@ pub(crate) fn rows(shape: &[usize], edges: Option<usize>, last: Option<usize>) -
 
 /// The display settings, which `•prefs` reads and changes.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub elide: Elide }
+pub struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub(crate) elide: Elide }
 
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
@@ -163,7 +163,7 @@ impl Settings {
     }
     pub(crate) fn diagram(&self, a: &Value) -> String { array(a, Elide { display: true, ..self.elide }).text() }
     /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them and with its float width plain.
-    pub(crate) fn explicit(&self, a: &Value, inside: bool) -> String {
+    pub fn explicit(&self, a: &Value, inside: bool) -> String {
         Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside)
     }
     /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.

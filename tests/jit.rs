@@ -56,7 +56,7 @@ fn folds_match_rustymath() {
                     unsafe { kernel.run(n, block, &[x.as_ptr().cast()], &[0.5, 1e-4, 1.0].map(f64::to_bits), &[out.as_mut_ptr().cast()], &mut totals) };
                     assert!(out.iter().zip(&halves).all(|(a, b)| a.to_bits() == b.to_bits()), "halves of {n} items");
                     for (k, h) in halves.chunks(block).enumerate() {
-                        let got = |j: usize| f64::from(rustymath::operation::Total { items: h.len(), bits: totals[4 * k + j] }.value::<$f>().unwrap());
+                        let got = |j: usize| f64::from(rustymath::reduce::Total { items: h.len(), bits: totals[4 * k + j] }.value::<$f>().unwrap());
                         let nan = h.iter().any(|v| v.is_nan());
                         let (most, least) =
                             h.iter().filter(|v| !v.is_nan()).fold((f64::NEG_INFINITY, f64::INFINITY), |(a, b), &v| (a.max(v.into()), b.min(v.into())));
@@ -315,10 +315,13 @@ fn arrays(n: usize) -> Vec<(&'static str, basedpl::Value)> {
     ]
 }
 
-/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. Every result is forced through •explain, which reports whether compiled stages ran. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
-#[test]
-fn compiled_stages_match_interpreted() {
+/// Held by each test that changes process-wide settings, because plain `cargo test` runs this file's tests on parallel threads.
+static SETTINGS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds, on 16 blocks plus `more` items. Every result is forced through •explain, which reports whether compiled stages ran. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
+fn compiled_stages_match_interpreted(more: usize) {
     use basedpl::settings::{self, Compiles};
+    let _settings = SETTINGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     const SETUP: &str = "u←iuₓ₁ ⋄ v←juₓ₁ ⋄ h←ihₓ₂ ⋄ k←jhₓ₂ ⋄ w←iwₓ₄ ⋄ z←jwₓ₄ ⋄ l←ilₓ₈ ⋄ m←jlₓ₈";
     let (mut dynamic, mut fixed): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     dynamic.extend(["+", "-", "×", "÷", "π", "⌈", "⌊"].map(|g| format!("--x{g}y")));
@@ -339,47 +342,50 @@ fn compiled_stages_match_interpreted() {
         "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
-    let sizes = [0, 1, 7, 37].map(|more| 16 * settings::Sizes::DEFAULT.block + more);
-    let selected = std::env::var_os("BASEDPL_JIT_SIZE_INDEX").map(|s| {
-        s.to_str().and_then(|s| s.parse::<usize>().ok()).filter(|&i| i < sizes.len()).expect("BASEDPL_JIT_SIZE_INDEX must select an existing size index")
-    });
-    for (i, n) in sizes.into_iter().enumerate() {
-        if selected.is_some_and(|j| i != j) { continue; }
-        for (prefs, cases) in [("", &dynamic), (r#"•prefs ["kinds":"static"]"#, &fixed)] {
-            settings::reset();
-            // Static kinds make ordinary integers at the `int` width, so the arrays are made under the kinds that read them.
-            basedpl::Session::new().eval_with(prefs, options());
-            let data = arrays(n);
-            for code in cases {
-                // Compare the actual compiled route with the same graph executed natively.
-                let run = |compiles| {
-                    settings::reset();
-                    settings::set_compiles(compiles);
-                    let session = basedpl::Session::new();
-                    let eval = |code: &str| {
-                        let e = session.eval_with(code, options());
-                        assert!(e.error.is_none(), "{code}: {:?}", e.error);
-                        e.value
-                    };
-                    eval(prefs);
-                    for (name, value) in &data { session.set(name, value.clone()).unwrap(); }
-                    eval(SETUP);
-                    session.set("source", basedpl::keyed::text(code)).unwrap();
-                    eval("report←•explain source");
-                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
-                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap();
-                    let runs = runs.as_number().unwrap().as_integer().unwrap();
-                    (value, runs)
+    let n = 16 * settings::Sizes::DEFAULT.block + more;
+    for (prefs, cases) in [("", &dynamic), (r#"•prefs ["kinds":"static"]"#, &fixed)] {
+        settings::reset();
+        // Static kinds make ordinary integers at the `int` width, so the arrays are made under the kinds that read them.
+        basedpl::Session::new().eval_with(prefs, options());
+        let data = arrays(n);
+        for code in cases {
+            // Compare the actual compiled route with the same graph executed natively.
+            let run = |compiles| {
+                settings::reset();
+                settings::set_compiles(compiles);
+                let session = basedpl::Session::new();
+                let eval = |code: &str| {
+                    let e = session.eval_with(code, options());
+                    assert!(e.error.is_none(), "{code}: {:?}", e.error);
+                    e.value
                 };
-                let (compiled, runs) = run(Compiles::Always);
-                assert!(runs > 0, "{code} on {n} items ran no compiled part");
-                let interpreted = run(Compiles::Never).0;
-                assert_eq!(
-                    basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None,
-                    "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number()
-                );
-            }
+                eval(prefs);
+                for (name, value) in &data { session.set(name, value.clone()).unwrap(); }
+                eval(SETUP);
+                session.set("source", basedpl::keyed::text(code)).unwrap();
+                eval("report←•explain source");
+                let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
+                let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap();
+                let runs = runs.as_number().unwrap().as_integer().unwrap();
+                (value, runs)
+            };
+            let (compiled, runs) = run(Compiles::Always);
+            assert!(runs > 0, "{code} on {n} items ran no compiled part");
+            let interpreted = run(Compiles::Never).0;
+            assert_eq!(
+                basedpl_testkit::reference::difference(&compiled, &interpreted, None, 0.0, true), None,
+                "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number()
+            );
         }
-        eprintln!("checked size {i}: {n} items, {} dynamic and {} static cases", dynamic.len(), fixed.len());
     }
 }
+
+/// One test per size, so that nextest checks the sizes in parallel processes.
+#[test]
+fn compiled_stages_match_interpreted_plus_0() { compiled_stages_match_interpreted(0) }
+#[test]
+fn compiled_stages_match_interpreted_plus_1() { compiled_stages_match_interpreted(1) }
+#[test]
+fn compiled_stages_match_interpreted_plus_7() { compiled_stages_match_interpreted(7) }
+#[test]
+fn compiled_stages_match_interpreted_plus_37() { compiled_stages_match_interpreted(37) }

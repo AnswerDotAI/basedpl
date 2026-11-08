@@ -116,7 +116,7 @@ pub(crate) const FALSE_NAME: &str = "$f";
 
 /// The session's numeric settings, which `•prefs` changes. Comparisons and kernels take their tolerance from them, and operations that create floats from exact numbers take their width.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Numeric {
+pub struct Numeric {
     /// Whether public arithmetic uses tolerant comparison and zero divided by zero gives zero.
     pub mathish: bool,
     /// The comparison tolerance of 64-bit floats. Convergence can supply its own without changing public division.
@@ -126,7 +126,7 @@ pub(crate) struct Numeric {
     /// The width of new floats: literals parsed from now on, numbers read from data, and float results of exact arguments.
     pub width: FloatWidth,
     /// Whether a result's kind may depend on its arguments' values, which the `kinds` pref sets.
-    pub kinds: Kinds,
+    pub(crate) kinds: Kinds,
     /// The width of new integers under static kinds, which the `int` pref sets. An integer array computes at least at this width.
     pub int: Width,
     pub(crate) fixed: Option<Width>,
@@ -151,7 +151,7 @@ impl Numeric {
     pub(crate) const DEFAULT: Self = Self { mathish: true, tolerance: Tolerance::DEFAULT, int: Width::I32, ..Self::EXACT };
     /// The settings in force (`settings`).
     #[inline]
-    pub(crate) fn current() -> Self { crate::settings::numeric() }
+    pub fn current() -> Self { crate::settings::numeric() }
     /// Applies the `•prefs` setting `key` with `value`. Gives whether `key` is a numeric setting, or why `value` is invalid for it. `•prefs` and a leading header's lexing both apply settings through it. `float_set` is whether the `float` pref has set the width (`settings::float_set`). Until it has, `kinds` moves the width to the one it gives new floats (`Kinds::float_width`).
     pub(crate) fn set(&mut self, key: &str, value: &Value, float_set: &mut bool) -> Result<bool, &'static str> {
         let integer = || value.as_number().and_then(|n| n.integer().ok());
@@ -282,7 +282,7 @@ pub(crate) enum Math {
     Power,
     Log,
     Circle,
-    /// The inverse of `Circle` for each code, which `k○⁻¹` calls. It has no glyph.
+    /// The inverse of `Circle` for each code, which `k○⁻` calls. It has no glyph.
     Arc,
     Pi,
     Root,
@@ -738,7 +738,7 @@ impl Number {
     /// The width that a result of this number and `right` takes: the wider of their float widths, or 64 bits when both are exact. The caller rounds a result of exact numbers to the default width.
     fn width_with(&self, right: Option<&Self>) -> FloatWidth { self.float_width().max(right.and_then(Self::float_width)).unwrap_or(FloatWidth::F64) }
     pub(crate) fn is_infinite(&self) -> bool { self.as_float().is_some_and(f64::is_infinite) }
-    pub(crate) fn is_nan(&self) -> bool { self.as_float().is_some_and(f64::is_nan) }
+    pub fn is_nan(&self) -> bool { self.as_float().is_some_and(f64::is_nan) }
     /// Whether this is an infinity or NaN. These never make an exact number approximate.
     pub(crate) fn is_nonfinite(&self) -> bool { self.as_float().is_some_and(|n| !n.is_finite()) }
     pub fn as_exact(&self) -> Option<BigRational> { self.exact_ref().map(Cow::into_owned) }
@@ -844,7 +844,7 @@ impl Number {
     #[inline(always)]
     pub(crate) fn real_as<F: Float>(&self) -> Result<F, &'static str> { self.plain_float().map(F::narrow) }
 
-    pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> {
+    pub fn to_complex(&self) -> Result<Complex64, &'static str> {
         match self.as_complex() { Some(z) => Ok(z), None => Ok(Complex64::new(self.to_float()?, 0.0)) }
     }
 

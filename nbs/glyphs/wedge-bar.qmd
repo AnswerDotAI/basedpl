@@ -16,8 +16,8 @@ Function. Keys: `Alt-Minus 0`. Hanzi: `方/否`. Ranks: `0` monadic, `0 0` dyadi
 
 ## Inverse
 
-`⊼⁻¹Y` is `√Y`.
+`⊼⁻Y` is `√Y`.
 
 ```bpl
-⊼⁻¹9   ⍝ 3
+⊼⁻9   ⍝ 3
 ```

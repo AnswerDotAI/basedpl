@@ -397,7 +397,6 @@ fn jacobian(right: &Value, primal: &Value, columns: Vec<Value>) -> Result<Value,
 /// The Jacobian with the layout of `primal×⊗right`. Its item for result item `i` and argument item `k` has the structure of `right`'s item `k`, and holds `entry(i, j)` for each number `j` of `right` in that item.
 fn laid_out(right: &Value, primal: &Value, entry: &mut dyn FnMut(usize, usize) -> Value) -> Result<Value, Error> {
     numeric(primal)?;
-    if !(right.is_atom() && primal.is_atom()) { crate::program::trace::exact("a Jacobian laid out item by item"); }
     let rows = if primal.is_atom() { 1 } else { primal.len() };
     let (layout, items) = if right.is_atom() {
         if primal.is_atom() { return Ok(entry(0, 0)); }
@@ -466,7 +465,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, sp
         Op::Operation(op, pairing) => (op, pairing),
         // A rule describes a function of one argument, so a call with two can't use it.
         Op::Ruled(f, rule) => return Some(if left.is_none() { attached(f, rule, right, tag, span) } else { Err(two_arguments()) }),
-        // A system function's inverse runs its own code, as outside `∂`. `•json⁻¹` writes a dual as its plain value.
+        // A system function's inverse runs its own code, as outside `∂`. `•json⁻` writes a dual as its plain value.
         Op::System(g, f) => return (g.system_function().is_some() && !matches!(f.call, crate::system::Call::Active(_))).then(|| Err(system(f.name))),
         Op::Product if left.is_none() => return Some(Err(expansion())),
         Op::Fold(..) | Op::Product => return None,
@@ -755,7 +754,6 @@ fn decode(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Err
         let d = if right.shape().is_empty() { Primitive::Ravel.call(None, right, span)? } else { right.clone() };
         Primitive::Replicate.call_axis(Some(&Value::integer(len as i64)), &d, Some(d.shape().len() - 1), span)?
     };
-    crate::program::trace::exact("⊥'s bases, reshaped to the length it decodes along");
     let shape = Value::integers(vec![1], vec![len as i64]).described("invalid shape")?;
     let bases = Primitive::Shape.call(Some(&shape), &base, span)?;
     let after = Primitive::Ravel.call(Some(&Value::integer(1)), &reverse(&Primitive::Drop.call(Some(&Value::integer(1)), &bases, span)?, span)?, span)?;
@@ -839,7 +837,6 @@ fn alternated(p: Primitive, kind: FoldKind, axis: Option<usize>, right: &Value, 
             }).collect();
             Primitive::Transpose.call(Some(&Value::integers(vec![rank], to).described("invalid axes")?), right, span)?
         };
-        crate::program::trace::exact("an alternating fold's masks of even and odd positions");
         let half = |odd: usize| -> Result<Value, Error> {
             let mask = Value::integers(vec![n], (0..n).map(|i| (i % 2 == odd) as i64).collect()).described("invalid mask")?;
             let items = Primitive::Replicate.call_axis(Some(&mask), &front, Some(0), span)?;

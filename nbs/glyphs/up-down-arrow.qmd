@@ -74,11 +74,11 @@ k←¿3 4⍴0
 
 ## Inverse
 
-`↕⁻¹Y` rebuilds an array from its pairs `Y`. `N↕⁻¹Y` rebuilds it from its windows of size `N`.
+`↕⁻Y` rebuilds an array from its pairs `Y`. `N↕⁻Y` rebuilds it from its windows of size `N`.
 
 ```bpl
-↕⁻¹↕1 4 9       ⍝ 1 4 9
-3↕⁻¹3↕"abcde"   ⍝ "abcde"
+↕⁻↕1 4 9       ⍝ 1 4 9
+3↕⁻3↕"abcde"   ⍝ "abcde"
 ```
 
 ## Errors

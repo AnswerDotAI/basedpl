@@ -17,14 +17,14 @@ pub enum Ty { Bool, U8, I16, I32, I64, F32, F64 }
 
 impl Ty {
     /// The item type that holds values of this type.
-    pub(crate) fn dtype(self) -> DType {
+    pub fn dtype(self) -> DType {
         match self {
             Ty::Bool => DType::Boolean, Ty::U8 => DType::Integer(Width::U8), Ty::I16 => DType::Integer(Width::I16), Ty::I32 => DType::Integer(Width::I32),
             Ty::I64 => DType::Integer(Width::I64), Ty::F32 => DType::Float(FloatWidth::F32), Ty::F64 => DType::Float(FloatWidth::F64)
         }
     }
     /// The type of a compiled kernel's values for items of `dtype`, or `None` for a type that a stage doesn't hold (`program::blocks::readable`).
-    pub(crate) fn of(dtype: DType) -> Option<Self> { [Ty::Bool, Ty::U8, Ty::I16, Ty::I32, Ty::I64, Ty::F32, Ty::F64].into_iter().find(|t| t.dtype() == dtype) }
+    pub fn of(dtype: DType) -> Option<Self> { [Ty::Bool, Ty::U8, Ty::I16, Ty::I32, Ty::I64, Ty::F32, Ty::F64].into_iter().find(|t| t.dtype() == dtype) }
     fn bytes(self) -> i64 { self.dtype().bytes() as i64 }
     /// The type of one item in registers. A Boolean is a byte, all ones or all zeros.
     fn ir(self) -> Type {
@@ -65,10 +65,10 @@ impl Input {
 }
 
 /// A float in a scalar slot's form: its value as f64 bits, which code demotes to f32 where its type is f32 (`slot`). Every scalar and constant slot holds a float this way.
-pub(crate) fn float_slot(x: f64) -> u64 { x.to_bits() }
+pub fn float_slot(x: f64) -> u64 { x.to_bits() }
 
 /// An integer or Boolean in a scalar slot's form: its value as i64 bits, which code narrows to its type (`slot`).
-pub(crate) fn integer_slot(x: i64) -> u64 { x as u64 }
+pub fn integer_slot(x: i64) -> u64 { x as u64 }
 
 /// A value that a step reads: the input of that number, or the result of the earlier step of that number. A program's constant is a scalar input, and a number that a recipe fixes is a constant input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -135,7 +135,7 @@ fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compil
 }
 
 /// Forgets every kernel and its code, as a new process has none.
-pub(crate) fn forget_kernels() { kernels().clear() }
+pub fn forget_kernels() { kernels().clear() }
 
 /// The table `k`, emptied first where it's full and doesn't hold `key`.
 fn kept<'a>(k: &'a mut HashMap<Kernel, Option<Arc<Compiled>>>, key: &Kernel) -> &'a mut HashMap<Kernel, Option<Arc<Compiled>>> {
