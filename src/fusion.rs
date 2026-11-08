@@ -615,7 +615,7 @@ pub(crate) static FORCING: LazyLock<Span> = LazyLock::new(|| Span { source: Sour
 
 /// The value of `program`'s result, run by its plan's units (`program::planned`) after its maps move to the storage order that their operands and readers need (`program::layout::reorder`). A program whose only step gives its result, as a lone call forced at once makes, runs that step on its own with no plan (`run::lone`). Each output's value becomes the items of the pending array that `kept` gives for it, which no `forced` row counts. An error from a call inside the program stops the run. The pending array that holds `program` keeps its own nodes. On failure, each uncomputed output's owner recovers a program for that output, including only its dependencies.
 fn replayed(program: &Program, kept: &[Arc<Pending>]) -> Result<Value, Error> {
-    if let Some(value) = run::lone(program, &FORCING) { return value; }
+    if let Some(value) = run::lone(program, &[], &FORCING) { return value; }
     let moved = crate::program::layout::reorder(program);
     let program = moved.as_ref().unwrap_or(program);
     let mut values = match run::values(program, &crate::program::planned(program), &[], &FORCING) {

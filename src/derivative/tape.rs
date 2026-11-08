@@ -51,7 +51,7 @@ impl Linearized {
     /// The derivative along `seeds`, one for each part.
     pub(crate) fn evaluated(&self, seeds: &[Value], span: &Span) -> Result<Value, Error> {
         let Some(tape) = &self.tape else { return super::float_zeros(&self.value) };
-        Ok(run::read(tape, &run::values(tape, &crate::program::planned(tape), &seeds.iter().collect::<Vec<_>>(), span)?, &tape.result))
+        run::replay(tape, &crate::program::planned(tape), &seeds.iter().collect::<Vec<_>>(), span)
     }
 
     /// `u` times the Jacobian, with the argument's layout.
@@ -158,7 +158,7 @@ fn transpose(tape: &Program, u: Value, seeds: usize, span: &Span) -> Result<Vec<
     for (j, node) in nodes.iter().enumerate() {
         values[j] = match &node.origin {
             Origin::Input(_) => None, Origin::Held(v) => Some(v.clone()), Origin::Step(step) if step.reads().any(|i| values[i].is_none()) => None,
-            Origin::Step(step) => Some(run::run(step, nodes, &values, None, &node.desc, span)?)
+            Origin::Step(step) => Some(run::run(step, nodes, &|i| values[i].as_ref().expect("a coefficient's operands have their values"), None, &node.desc, span)?)
         };
     }
     let mut back = Back { nodes, values, cotangents: vec![None; nodes.len()], span };

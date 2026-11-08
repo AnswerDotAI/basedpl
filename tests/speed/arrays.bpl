@@ -182,7 +182,7 @@ c=c
 ⍝ Arithmetic on two keyed vectors whose keys are equal but were built separately, as the same 65,536 texts made twice.
 ⍝ Expected: 1.5 copies: as `v+w`, once the call knows that the two key vectors are equal.
 ⍝ On 30 October 2026 `ra+2×ra`, whose operands share one key object, cost 1.62 on macOS.
-⍝ On 31 October 2026 `ra+rb` cost about 1.7 on macOS: every call after the first finds its union of keys among the latest that rustymath keeps for each thread (`layout::recalled`).
+⍝ Fresh calls compare ordered key labels. Pending execution retains the resulting maps; key unions are not cached.
 ra+rb
 ⍝⍝: 3	25	33	instructions linux 42.47	allocated linux 8.096
 

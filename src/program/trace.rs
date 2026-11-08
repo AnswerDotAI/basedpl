@@ -868,14 +868,14 @@ pub(crate) fn programmed(
         Input::Left(k) => &x[k], Input::Right(k) => &y[k], Input::Name(i) => names[i].as_ref().expect("a free name that a program reads has a value")
     }).collect();
     let deferred = if purpose == Purpose::Call && matches!(&recording.result, Descs::Leaf(_)) { crate::fusion::recorded(program, &inputs) } else { None };
-    let result = deferred.map(Ok).unwrap_or_else(|| run::values(program, &recording.plan, &inputs, span).map(|values| match &recording.result {
-            Descs::Leaf(_) => run::read(program, &values, &program.result),
-            // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.
-            nested => {
-                let nodes = std::iter::once(program.result.of).chain(program.outputs.iter().copied());
-                nested.built(&mut nodes.zip(nested.leaves()).map(|(j, desc)| run::read(program, &values, &Read::new(j, desc.layout.clone()))))
-            }
-        }))
+    let result = deferred.map(Ok).unwrap_or_else(|| match &recording.result {
+        Descs::Leaf(_) => run::replay(program, &recording.plan, &inputs, span),
+        // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.
+        nested => run::values(program, &recording.plan, &inputs, span).map(|values| {
+            let nodes = std::iter::once(program.result.of).chain(program.outputs.iter().copied());
+            nested.built(&mut nodes.zip(nested.leaves()).map(|(j, desc)| run::read(program, &values, &Read::new(j, desc.layout.clone()))))
+        })
+    })
         .and_then(|value| recording.renamed(value));
     if result.is_ok() { rustymath::events::taken(rustymath::events::Route::Trace, right.len()); }
     crate::explain::program(event, program.nodes.iter().filter(|n| matches!(n.origin, Origin::Step(_))).count(), || recording.listing(&key));

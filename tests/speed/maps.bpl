@@ -214,13 +214,13 @@ X - +/X ÷ 8
 ⍳outer_side ×⊗ 1+⍳outer_side
 ⍝⍝: 1.5	1.5	1.9	instructions linux 18.965	allocated linux 26.328
 
-⍝ A roll in a batched map draws once, on the whole frame. Each cell's item reads the word at its place in one stream that the map's cells share, the word that the cell reads when drawn alone (`rustymath::random::Items::cells`), so the map costs what one roll on its frame costs.
-⍝ Expected: 28 copies each: about 13 for ChaCha8's words, about 11 for `rand`'s mapping of each word into the range, one draw at a time, and about 4 for the addition and the result. They measure about 31 on macOS. `rustymath::random::roll` draws every word first, then maps the words into their ranges by Lemire's method in a separate pass, and the bounds convert to integers in one fold. Drawing each word through `next_u64` still costs about 15 instructions. `rand`'s `fill` draws the same words, but copies each 4-byte word through a call to `memmove`, which costs several times as much.
-⍝ CI measured 23.6 and 23.5 on Linux on 22 October 2026, and their Linux budgets follow their expected cost.
-⍝⍝⍝ route batching
+⍝ Each executes this body and its draw once per item. Draws are effects and do not batch; the bulk spelling below draws one whole array.
+⍝⍝⍝ allows itemwise "batch cells": random draws run separately for each item
 {⍵+¿10}¨v
 ⍝⍝: 56	2300	2000	instructions linux 2226.287	allocated linux 72.614
 
+⍝ Expected: 28 copies for the bulk form: about 13 for ChaCha8's words, about 11 for `rand`'s mapping of each word into the range, one draw at a time, and about 4 for the addition and the result. The bulk form measured about 31 on macOS. `rustymath::random::roll` draws every word first, then maps the words into their ranges by Lemire's method in a separate pass, and the bounds convert to integers in one fold. Drawing each word through `next_u64` still costs about 15 instructions. `rand`'s `fill` draws the same words, but copies each 4-byte word through a call to `memmove`, which costs several times as much.
+⍝ Older batched-form measurements were 23.5–23.6 copies on CI's Linux on 22 October 2026; the bulk form's Linux budget follows its expected cost.
 v+¿n⍴10
 ⍝⍝: 56	48	90	instructions linux 62.433	allocated linux 40.54
 

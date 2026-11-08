@@ -36,28 +36,35 @@ pub(crate) fn values(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     Ok(r.values)
 }
 
-/// The result of one step on held values, without making a block plan. A normalized array Map can also read direct copies of held values: their saved maps feed one whole-array primitive call, without materializing its arguments. For these copy-bearing Maps, explicit stage-compilation requests stay with block planning. No side outputs or other computation enters this route.
-pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error>> {
+/// The program's result. A plan of ordinary nodes can run a lone step on its bound operands directly.
+pub(crate) fn replay(program: &Program, plan: &Plan, inputs: &[&Value], span: &Span) -> Result<Value, Error> {
+    if plan.units.iter().all(|u| matches!(u, Unit::Node(_))) {
+        if let Some(value) = lone(program, inputs, span) { return value; }
+    }
+    Ok(taken(program, &mut values(program, plan, inputs, span)?, &program.result))
+}
+
+/// The result of one step on held values or bound inputs, without making a block plan. A normalized array Map can also read their direct copies: its saved maps feed one whole-array primitive call, without materializing arguments. Copy-bearing Maps leave explicit stage-compilation requests to block planning. No side outputs or other computation enters this route.
+pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<Result<Value, Error>> {
     let j = program.result.of;
-    let alone = program.outputs.is_empty() && matches!(program.nodes[j].origin, Origin::Step(_));
-    if !alone { return None; }
-    if !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))) {
+    let node = &program.nodes[j];
+    let Origin::Step(step) = &node.origin else { return None };
+    if !program.outputs.is_empty() { return None; }
+    let leaf = |i: usize| match &program.nodes[i].origin { Origin::Input(k) => Some(inputs[*k]), Origin::Held(v) => Some(v), _ => None };
+    if !program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some()) {
         #[cfg(not(web))]
         if crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
-        let node = &program.nodes[j];
-        let Origin::Step(Step::Map { left, right, plan }) = &node.origin else { return None };
+        let Step::Map { left, right, plan } = step else { return None };
         let layout = &node.desc.layout;
         if node.desc.atom || !layout.plain() || program.result.view(&program.nodes) { return None; }
-        if !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))
-            || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if matches!(program.nodes[*of].origin, Origin::Held(_)))) { return None; }
+        if !program.nodes.iter().enumerate().all(|(i, n)| i == j || leaf(i).is_some()
+            || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if leaf(*of).is_some())) { return None; }
         let argument = |r: &Read| {
             let n = &program.nodes[r.of];
-            match &n.origin {
-                Origin::Held(v) if n.desc.atom && !r.view(&program.nodes) => Some((v, Mapping::Single)),
-                Origin::Held(v) if !n.desc.atom && r.layout == *layout => Some((v, Mapping::Linear(1))),
-                Origin::Step(Step::Copy { of, map }) if !n.desc.atom && r.layout == *layout => match &program.nodes[*of].origin {
-                    Origin::Held(v) => Some((v, map.clone())), _ => None,
-                },
+            match (leaf(r.of), &n.origin) {
+                (Some(v), _) if n.desc.atom && !r.view(&program.nodes) => Some((v, Mapping::Single)),
+                (Some(v), _) if !n.desc.atom && r.layout == *layout => Some((v, Mapping::Linear(1))),
+                (_, Origin::Step(Step::Copy { of, map })) if !n.desc.atom && r.layout == *layout => Some((leaf(*of)?, map.clone())),
                 _ => None,
             }
         };
@@ -70,9 +77,9 @@ pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error
         return Some(Primitive::planned(plan, left, right, span, false, agreement).at(span).and_then(|v| checked(node, j, v, span)));
     }
     if crate::settings::verifies() { super::verify::check(program); }
-    let values = program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => Some(v.clone()), _ => None }).collect();
-    let mut r = Replay { program, values, inputs: &[] };
-    Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result)))
+    Some(run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span)
+        .and_then(|value| checked(node, j, value, span)).map(|value|
+            if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
 }
 
 /// Stores a completed step at its declared kind and checks the value against its description.
@@ -104,7 +111,8 @@ impl Replay<'_> {
                     }
                     _ => None,
                 };
-                checked(node, j, run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?, span)?
+                let value = |i: usize| self.values[i].as_ref().expect("a step's operands have their values");
+                checked(node, j, run(step, &self.program.nodes, &value, owned, &node.desc, span)?, span)?
             }
         };
         self.values[j] = Some(value);
@@ -123,8 +131,9 @@ impl Replay<'_> {
 }
 
 /// The value of `step`, on `values`, laid out as `desc` describes. A step whose operands carry a running level's data goes through the call boundary, which that level takes (`transform::call`), as a tape's steps do when an outer `∂` or trace runs. A large copy stays pending (`fusion::copy`), which a product or a fold reads in place. A copy that `desc` describes as an atom gives its one item (`plan::item`). `owned` is an accumulation's base, where the replay gives up its value, so that the accumulation writes into it with no copy.
-pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: Option<Value>, desc: &Desc, span: &Span) -> Result<Value, Error> {
-    let node = |i: usize| values[i].as_ref().expect("a step's operands have their values");
+pub(crate) fn run<'a>(
+    step: &Step, nodes: &[Node], node: &dyn Fn(usize) -> &'a Value, owned: Option<Value>, desc: &Desc, span: &Span
+) -> Result<Value, Error> {
     let value = |r: &Read| through(node(r.of), r, nodes);
     match step {
         Step::Map { left, right, plan } => {

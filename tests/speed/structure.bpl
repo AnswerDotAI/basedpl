@@ -50,7 +50,6 @@ rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
 ⍝ Floor returns exact integers, so this reads a pending copy through an ordinary kernel rather than fusion.
 ⍝ Expected: 3.25 copies: a reversed copy of each block into a buffer, about 0.5 copies, then a tolerant floor of about 11 vector operations an item, with 64-bit writes. It was 2 copies, from the old count for a tolerant floor.
 ⍝ CI measured 4.75 to 5.07 in wasm in runs 56-61.
-⍝⍝⍝ held linux 4.36: floor's dynamic integer result writes floats, scans them for a width, then converts
 ⌊⌽sv
 ⍝⍝: 6.5	3.5	6.7	instructions linux 7.997	allocated linux 9.066
 
