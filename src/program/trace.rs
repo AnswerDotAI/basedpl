@@ -7,7 +7,7 @@ use crate::{
     number::Numeric, plan::{self, Operand}, primitive::{FoldKind, Operation, Primitive, structural::Form}, session,
     transform::{Carrier, Ended, Kind, Op, Pairing}
 };
-use rustymath::{agreement::Mapping, buffer::{Buffer, DType}, domain::Range, structure::IndexPart};
+use rustymath::{agreement::Mapping, buffer::DType, domain::Range, structure::IndexPart};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, atomic::{AtomicBool, Ordering}};
 
 /// The node of a traced value that isn't in the program, such as an item that code with no rule for traces read (`Carrier::storage`). Any call on it stops the trace.
@@ -49,10 +49,6 @@ impl Tracer {
     fn stopping(&self, reason: &'static str) { self.builder().stopped.get_or_insert(reason); }
     /// Keeps a name that `•index` drew during the trace, which each replay renames in its result (`Recording::renamed`).
     pub(crate) fn named(&self, name: Arc<str>) { self.builder().named.push(name); }
-    /// The step that copies node `of` through `map` for a result of `shape`: one copy of the source where `of` is itself a copy whose map composes with `map` (`copy_of_copy`).
-    fn copy(&self, of: usize, map: &Mapping, shape: &[usize]) -> Step {
-        super::copy_of_copy(&self.builder().nodes, of, map, shape).unwrap_or_else(|| Step::Copy { of, map: map.split(shape) })
-    }
     /// The value of node `node`, computed from the free names that it reads, each of which this marks as held: a replay needs the same value there (`Expect::Held`). A free name's node gives the name's value. A step gives what the steps that it reads compute from the names' values, run through the program's block stages (`run::values`). `None` at once in a trace with no free names and in one that has stopped, and otherwise where node `node` reads any other input, such as an argument, or where that run fails.
     fn hold(&self, node: usize) -> Option<Value> {
         let mut guard = self.builder();
@@ -136,7 +132,9 @@ impl Traced {
     /// Item `i`, as `Value::at` reads one: a copy of that one item, an atom (`plan::item`).
     pub(crate) fn item(&self, i: usize) -> Value {
         let desc = plan::item(&self.desc()).expect("an atom's layout has no renderer");
-        self.stepped(desc, |of| self.tracer.copy(of.of, &Mapping::Steps { base: i, steps: Default::default() }, &[]))
+        if self.read.of == OUTSIDE { return self.outside(Shape::EMPTY); }
+        let read = self.tracer.builder().nodes.copied(self.read.clone(), Mapping::Steps { base: i, steps: Default::default() }, desc.clone());
+        traced(self.level, self.role, read, &desc, &self.tracer)
     }
     /// Item `i` as bulk iteration reads it (`Carrier::element`): a tape value's item (`item`), or for a trace an atom outside the program, on which any call stops the trace.
     pub(crate) fn element(&self, i: usize) -> Value { match self.role { Role::Tape => self.item(i), Role::Trace => self.outside(Shape::EMPTY) } }
@@ -158,8 +156,10 @@ impl Traced {
         if self.role == Role::Tape && !matches!((self.desc().kind.dtype, to), (Some(DType::Float(_)), DType::Float(_))) {
             return Err(Error::domain("a tangent converts only to floats").at(span));
         }
-        Ok(match plan::convert(&self.desc(), to) {
-            Ok(desc) => self.stepped(desc, |of| Step::Convert { of: of.clone(), numeric: Numeric::current() }),
+        if self.read.of == OUTSIDE { return Ok(self.outside(self.read.layout.shape().into())); }
+        let read = self.tracer.builder().nodes.converted(self.read.clone(), to, Numeric::current());
+        Ok(match read {
+            Ok(read) => { let desc = read.desc(&self.tracer.builder().nodes); traced(self.level, self.role, read, &desc, &self.tracer) }
             Err(_) => self.outside(self.read.layout.shape().into()),
         })
     }
@@ -174,11 +174,16 @@ impl Traced {
     /// The items laid out by `layout`, read through `map`: a copy step, which holds the map.
     fn copy(&self, layout: Layout, map: &Mapping) -> Value {
         let shape: Shape = layout.shape().into();
-        match crate::plan::copy(&self.desc(), &layout) {
-            Ok(desc) => self.stepped(desc, |of| self.tracer.copy(of.of, map, &shape)), Err(_) => self.outside(shape)
+        if self.read.of == OUTSIDE { return self.outside(shape); }
+        match plan::copy(&self.desc(), &layout) {
+            Ok(desc) => {
+                let read = self.tracer.builder().nodes.copied(self.read.clone(), map.clone(), desc.clone());
+                traced(self.level, self.role, read, &desc, &self.tracer)
+            }
+            Err(_) => self.outside(shape),
         }
     }
-    /// `form`'s result on `inputs`, with `params` and `fill` read at each run (`structural::plan`): a step that holds the recipe (`Step::Structural`), whose layout each run plans from its inputs. A parameter that this level carries must be one that the trace holds (`observed`) or a count by `≢`, which each run plans from (`count`), since its value decides the layout. The result takes the join of the kinds of the inputs and fill that hold items, or the first input's kind where none holds an item (`array::items_kind`), as `fusion::copy` joins them at each run. A join of numbers with other items stops a trace, or gives UNSUPPORTED ERROR on a tape.
+    /// Records `form` with geometry resolved from current parameters and input layouts. Observed free parameters retain value guards; shape counts retain exact-layout guards. Inputs and explicit fill bind again on replay.
     pub(crate) fn structural(&self, form: &Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
         let (level, role) = (self.level, self.role);
         let fail = |reason| failed(role, level, &self.tracer, reason);
@@ -191,20 +196,14 @@ impl Traced {
         let parameters = params.iter().zip(&values).map(|(v, known)| {
             Arg::of(if crate::transform::nested(v) { known } else { v }, level, role)
         }).collect::<Result<Vec<_>, _>>().map_err(fail)?;
-        let layout = {
-            let layouts: Vec<&Layout> = args.iter().map(|a| &a.desc().layout).collect();
-            crate::primitive::structural::plan(form, &values, &layouts)?.0
-        };
-        let kind = crate::array::items_kind(args.iter().chain(&fill).map(|a| (a.desc().layout.count(), a.desc().kind)), crate::array::Widening::Arrays)
-            .unwrap_or(args[0].desc().kind);
-        if kind.dtype.is_none() { return Err(fail("a copy that joins numbers with other items")); }
-        // Atoms copied to no axes stay atoms where the form keeps them, as `fusion::copy` gives them at each run (`Form::keeps_atoms`).
-        let source = Desc { kind, ..args[0].desc().clone() };
-        let atoms = form.keeps_atoms() && layout.shape().is_empty() && args.iter().chain(&fill).all(|a| a.desc().atom);
-        let desc = if atoms { plan::item(&source) } else { plan::copy(&source, &layout) }.map_err(fail)?;
-        let step = Step::Structural { inputs: args.into_iter().map(|a| a.read(&self.tracer)).collect(), form: form.clone(),
-            params: parameters.into_iter().map(|a| a.read(&self.tracer)).collect(), fill: fill.map(|a| a.read(&self.tracer)) };
-        Ok(node(level, role, &self.tracer, desc, step))
+        let descriptions: Vec<Desc> = args.iter().map(|a| a.desc().clone()).collect();
+        let (desc, plan) = plan::structural(form, &values, &descriptions, fill.as_ref().map(Arg::desc))?;
+        if desc.kind.dtype.is_none() { return Err(fail("a copy that joins numbers with other items")); }
+        let inputs = args.iter().map(|a| a.read(&self.tracer)).collect();
+        let params = parameters.iter().map(|a| a.read(&self.tracer)).collect();
+        let fill = fill.as_ref().map(|a| a.read(&self.tracer));
+        let read = self.tracer.builder().nodes.structured(form.clone(), params, inputs, fill, desc.clone(), plan);
+        Ok(traced(level, role, read, &desc, &self.tracer))
     }
     /// The items of `value`, this value, that `parts` select, where a part holds positions that the program computes (`primitive::select`): a gather step (`gather`).
     pub(crate) fn selected(&self, value: &Value, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Value, Error> {
@@ -281,8 +280,8 @@ const HOLDS_TRACED: &str = "a traced value inside a nested array";
 
 /// The traced value of a new node at level `level` for `role`, made by `step` and described by `desc`.
 fn node(level: u64, role: Role, tracer: &Arc<Tracer>, desc: Desc, step: Step) -> Value {
-    let node = tracer.add(desc.clone(), Origin::Step(step));
-    traced(level, role, Read::new(node, desc.layout.clone()), &desc, tracer)
+    let read = tracer.builder().nodes.stepped(desc.clone(), step);
+    traced(level, role, read, &desc, tracer)
 }
 
 /// Each of `parts` as an argument at level `level` for `role`, or the reason that a program can't hold one.
@@ -351,33 +350,8 @@ impl<'a> Arg<'a> {
         Ok(if desc.atom { Value::integer(0) } else { desc.layout.filled(&Value::integer(0)) })
     }
     /// The argument's read: its own, or the read of a new node that holds the value.
-    fn read(self, tracer: &Tracer) -> Read {
-        match self {
-            Arg::Traced(read, _) => read,
-            Arg::Held(value, desc) => {
-                let layout = desc.layout.clone();
-                // A pending copy enters as a copy of its source, which the run leaves pending for calls that read it in place, so the program never holds the copy's items (`fusion::source`).
-                if let Some((source, map)) = crate::fusion::source(value) && let Some(d) = Desc::of(&source) {
-                    let of = Arg::Held(&source, d).read(tracer);
-                    let step = tracer.copy(of.of, &map, layout.shape());
-                    return Read::new(tracer.add(desc, Origin::Step(step)), layout);
-                }
-                // An array of one repeated value holds that item, which a broadcast copy reads, so that a program holds no array of ones or zeros.
-                let one = (!value.carried() && value.len() > 1 && value.pending().is_none() && value.view().is_some_and(Buffer::same)).then(|| value.at(0));
-                let copied = one.and_then(|item| {
-                    let d = Desc::of(&item)?;
-                    Some((plan::copy(&d, &layout).ok()?, d, item))
-                });
-                let node = match copied {
-                    Some((copy, d, item)) => {
-                        let of = tracer.add(d, Origin::Held(item));
-                        tracer.add(copy, Origin::Step(Step::Copy { of, map: Mapping::Single }))
-                    }
-                    None => tracer.add(desc, Origin::Held(value.clone())),
-                };
-                Read::new(node, layout)
-            }
-        }
+    fn read(&self, tracer: &Tracer) -> Read {
+        match self { Arg::Traced(read, _) => read.clone(), Arg::Held(value, desc) => tracer.builder().nodes.held(value, desc.clone()) }
     }
 }
 
@@ -401,44 +375,41 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
     };
     let desc = |arg: &Arg| arg.desc().clone();
     let numeric = Numeric::current();
-    let planned = match (operation, pairing, &args.0) {
+    let reads = || (args.0.as_ref().map(|x| x.read(&tracer)), args.1.read(&tracer));
+    let built = match (operation, pairing, &args.0) {
         (Operation::Primitive(p), Pairing::Axis(None), x) => {
-            plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric).map(Planned::Map)
+            let mapped = match plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric) {
+                Ok(mapped) => mapped, Err(reason) => return stop(reason),
+            };
+            if role == Role::Trace && let Some(kept) = crate::pervasive::unchanged(&mapped.plan, left, right) { return Some(Ok(kept.clone())); }
+            let (left, right) = reads();
+            Ok(tracer.builder().nodes.mapped(mapped, left, right))
         }
         (Operation::Fold(p, kind), Pairing::Axis(axis), x) => {
             let (seed, y) = (x.as_ref().map(desc), desc(&args.1));
-            plan::fold_desc(p, kind, axis, seed.as_ref(), &y, numeric).map(|(d, axis)| Planned::Fold(p, kind, d, axis))
+            plan::fold_desc(p, kind, axis, seed.as_ref(), &y, numeric).map(|(desc, axis)| {
+                let (left, right) = reads();
+                tracer.builder().nodes.folded(p, kind, axis, left, right, desc)
+            })
         }
         (Operation::Product(f, g), Pairing::Axis(None) | Pairing::Matrices, Some(x)) => {
             let (x, y, stacked) = (desc(x), desc(&args.1), matches!(pairing, Pairing::Matrices));
-            plan::product_desc(f, g, &x, &y, stacked, numeric).map(|d| Planned::Product(f, g, d, stacked))
+            plan::product_desc(f, g, &x, &y, stacked, numeric).map(|desc| {
+                let (left, right) = reads();
+                tracer.builder().nodes.stepped(desc, Step::Product { f, g, left: left.expect("a product has a left argument"), right, stacked })
+            })
         }
         (Operation::Primitive(p), Pairing::At(writes), Some(base)) => {
-            plan::at(p, &desc(base), &desc(&args.1), numeric).map(|d| Planned::At(p, d, writes.into()))
+            plan::at(p, &desc(base), &desc(&args.1), numeric).map(|desc| {
+                let (left, items) = reads();
+                tracer.builder().nodes.stepped(desc, Step::At { p, base: left.expect("an accumulation has a base"), items, writes: Writes::Map(writes.into()) })
+            })
         }
         _ => Err("a call that programs don't take yet"),
     };
-    let planned = match planned { Ok(planned) => planned, Err(reason) => return stop(reason) };
-    if role == Role::Trace && let Planned::Map(m) = &planned && let Some(kept) = crate::pervasive::unchanged(&m.plan, left, right) {
-        return Some(Ok(kept.clone()));
-    }
-    // An unseeded `+` fold of a traced `×` runs as one product where its operands allow (`contraction`), and an unseeded fold of a copy that repeats items folds the copy's source (`fold_of_copy`). A tape records the same steps, and its transpose runs them as products and folds.
-    if let (Planned::Fold(p, kind, d, axis), None, Arg::Traced(read, _)) = (&planned, &args.0, &args.1) {
-        let mut builder = tracer.builder();
-        if let Some(read) = super::contraction::routed(&mut builder.nodes, *p, *kind, read, &[*axis], d, numeric) {
-            let desc = read.desc(&builder.nodes);
-            drop(builder);
-            return Some(Ok(traced(level, role, read, &desc, &tracer)));
-        }
-    }
-    let (left, right) = (args.0.map(|x| x.read(&tracer)), args.1.read(&tracer));
-    let (desc, step) = match planned {
-        Planned::Map(m) => (m.desc, Step::Map { left, right, plan: m.plan }),
-        Planned::Fold(p, kind, d, axis) => (d, Step::Fold { p, kind, axis, seed: left, of: right }),
-        Planned::Product(f, g, d, stacked) => (d, Step::Product { f, g, left: left.expect("a planned product has a left argument"), right, stacked }),
-        Planned::At(p, d, writes) => (d, Step::At { p, base: left.expect("an accumulation has a base"), items: right, writes: Writes::Map(writes) }),
-    };
-    Some(Ok(node(level, role, &tracer, desc, step)))
+    let read = match built { Ok(read) => read, Err(reason) => return stop(reason) };
+    let desc = read.desc(&tracer.builder().nodes);
+    Some(Ok(traced(level, role, read, &desc, &tracer)))
 }
 
 /// `≢` or `⍴` of the traced input's layout. A count is recorded as `Step::Shape` and remains available to structural parameters (`Traced::held`). Shape stays constant because its dynamic integer width depends on its lengths. Both are valid while replay's concrete-layout guards hold.
@@ -470,12 +441,12 @@ pub(crate) fn chosen(mask: &Value, yes: &Value, no: &Value) -> Option<Value> {
     let [m, y, n] = [mask, yes, no].map(|v| Arg::of(v, level, role).ok());
     let (m, y, n) = (m?, y?, n?);
     let select = plan::select(&m.operand(), &y.operand(), &n.operand()).ok()?;
-    let step = Step::Select { mask: m.read(&tracer), yes: y.read(&tracer), no: n.read(&tracer) };
-    Some(node(level, role, &tracer, select.desc, step))
+    let (mask, yes, no) = (m.read(&tracer), y.read(&tracer), n.read(&tracer));
+    let read = tracer.builder().nodes.selected(&select, mask, yes, no);
+    let desc = read.desc(&tracer.builder().nodes);
+    Some(traced(level, role, read, &desc, &tracer))
 }
 
-/// A call's plan, before its arguments have nodes.
-enum Planned { Map(plan::Mapped), Fold(Primitive, FoldKind, Desc, usize), Product(Primitive, Primitive, Desc, bool), At(Primitive, Desc, Mapping) }
 
 /// The binding read from `place` while trace level `level` runs, where `place` lies outside the traced call's frames: a free name of the call. An array or number becomes an input, which a replay reads again from `place`. An observing read of it, such as a position or a count, sees the name's value. A replay then needs the same value there (`Traced::observed`). A function, or any other value, stays as it is, and a replay checks that `place` still holds it. A place read again gives what its first read gave.
 pub(crate) fn read(binding: crate::eval::Binding, place: Place, level: u64, tracer: &Arc<Tracer>) -> crate::eval::Binding {

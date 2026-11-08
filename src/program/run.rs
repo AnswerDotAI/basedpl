@@ -52,38 +52,38 @@ pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<
     if !program.outputs.is_empty() { return None; }
     let leaf = |i: usize| match &program.nodes[i].origin { Origin::Input(k) => Some(inputs[*k]), Origin::Held(v) => Some(v), _ => None };
     let all_leaves = program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some());
-    let mapped = || {
-        #[cfg(not(web))]
-        if !all_leaves && crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
-        let Step::Map { left, right, plan } = step else { return None };
-        let layout = &node.desc.layout;
-        if node.desc.atom || !layout.plain() || program.result.view(&program.nodes) { return None; }
-        if !all_leaves && !program.nodes.iter().enumerate().all(|(i, n)| i == j || leaf(i).is_some()
-            || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if leaf(*of).is_some())) { return None; }
-        let argument = |r: &Read| {
-            let n = &program.nodes[r.of];
-            match (leaf(r.of), &n.origin) {
-                (Some(v), _) if n.desc.atom && !r.view(&program.nodes) => Some((v, Mapping::Single)),
-                (Some(v), _) if !n.desc.atom && r.layout == *layout => Some((v, Mapping::Linear(1))),
-                (_, Origin::Step(Step::Copy { of, map })) if !n.desc.atom && r.layout == *layout => Some((leaf(*of)?, map.clone())),
-                _ => None,
-            }
-        };
-        let left = match left { Some(r) => Some(argument(r)?), None => None };
-        let (right, right_map) = argument(right)?;
-        let (left, left_map) = left.map_or((None, Mapping::Single), |(v, m)| (Some(v), m));
-        if crate::transform::carried(left, right) { return None; }
-        if crate::settings::verifies() { super::verify::check(program); }
-        let agreement = Agreement { layout: layout.clone(), len: layout.count(), left: left_map, right: right_map };
-        Some(crate::primitive::weakened(left, right, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span))
-            .and_then(|v| checked(node, j, v, span)))
-    };
-    if let Some(value) = mapped() { return Some(value); }
-    if !all_leaves { return None; }
+    let copies = program.nodes.iter().enumerate().all(|(i, n)| i == j || leaf(i).is_some()
+        || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if leaf(*of).is_some()));
+    #[cfg(not(web))]
+    if !all_leaves && crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
+    if !all_leaves && (!copies || !matches!(step, Step::Map { .. })) { return None; }
     if crate::settings::verifies() { super::verify::check(program); }
-    Some(run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span)
-        .and_then(|value| checked(node, j, value, span)).map(|value|
-            if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
+    let result = match mapped(step, &program.nodes, &leaf, &node.desc, span) {
+        Some(result) => result,
+        None if all_leaves => run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span),
+        None => return None,
+    };
+    Some(result.and_then(|value| checked(node, j, value, span)).map(|value|
+        if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
+}
+
+fn mapped<'a>(step: &Step, nodes: &[Node], value: &dyn Fn(usize) -> Option<&'a Value>, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
+    let Step::Map { left, right, plan } = step else { return None };
+    let layout = &desc.layout;
+    let argument = |read: &Read| {
+        if nodes[read.of].desc.atom && !read.view(nodes) { return Some((value(read.of)?, Mapping::Single)); }
+        if read.layout != *layout { return None; }
+        if let Some(v) = value(read.of) { return Some((v, Mapping::Linear(1))); }
+        let (source, map) = super::positional_source(nodes, read.of)?;
+        Some((value(source.of)?, map))
+    };
+    let left = match left { Some(read) => Some(argument(read)?), None => None };
+    let (right, right_map) = argument(right)?;
+    let (left, left_map) = left.map_or((None, Mapping::Single), |(v, map)| (Some(v), map));
+    if crate::transform::carried(left, right) { return None; }
+    if desc.atom { return Some(plan.p.pervasive_apply(Some(plan), left, right, span, false).at(span)); }
+    let agreement = Agreement { layout: layout.clone(), len: layout.count(), left: left_map, right: right_map };
+    Some(crate::primitive::weakened(left, right, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span)))
 }
 
 /// Stores a completed step at its declared kind and checks the value against its description.
@@ -141,22 +141,27 @@ pub(crate) fn run<'a>(
     let value = |r: &Read| through(node(r.of), r, nodes);
     match step {
         Step::Map { left, right, plan } => {
+            if let Some(result) = mapped(step, nodes, &|j| Some(node(j)), desc, span) { return result; }
             let (left, right) = (left.as_ref().map(value), value(right));
             if crate::transform::carried(left.as_deref(), &right) { return plan.p.call(left.as_deref(), &right, span); }
-            plan.p.pervasive_apply(Some(plan), left.as_deref(), &right, span, false).at(span)
+            unreachable!("a program Map has normalized positional operands")
         }
         Step::Convert { of, numeric } => {
             let of = value(of);
             if crate::transform::carried(None, &of) { return crate::derivative::converted(&of, desc.dtype(), span); }
             of.converted(desc.dtype(), *numeric).described("a program's conversion").at(span)
         }
-        Step::Copy { of, map } => crate::fusion::copied(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
+        Step::Copy { of, map } => crate::fusion::copied_now(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
             .map(|copied| if desc.atom { copied.at(0) } else { copied }),
-        Step::Structural { inputs, form, params, fill } => {
-            let (inputs, params): (Vec<Value>, Vec<Value>) =
-                (inputs.iter().map(|r| value(r).into_owned()).collect(), params.iter().map(|r| value(r).into_owned()).collect());
+        Step::Structural { inputs, form, params, fill, plan } => {
+            let inputs: Vec<Value> = inputs.iter().map(|r| value(r).into_owned()).collect();
+            let params: Vec<Value> = params.iter().map(|r| value(r).into_owned()).collect();
             let fill = fill.as_ref().map(|r| value(r).into_owned());
-            crate::fusion::copy(form, &params, &inputs.iter().collect::<Vec<_>>(), fill.as_ref())
+            let refs: Vec<&Value> = inputs.iter().collect();
+            if let Some(carrier) = crate::transform::newest_carrier(params.iter().chain(refs.iter().copied())) {
+                return carrier.structural(form, &params, &refs, fill.as_ref());
+            }
+            crate::fusion::structured(desc, plan, &refs, fill.as_ref())
         }
         Step::Gather { of, by } => {
             let (source, parts) = (value(of), by.parts(|r| value(r).into_owned()));

@@ -705,9 +705,9 @@ pub fn accounting(results: &[JsonValue]) -> JsonValue {
 /// The modes that `case` plans: the names of its runs (`runs`).
 pub fn modes(case: &JsonValue) -> Vec<&'static str> { runs(case).into_iter().map(|run| run.words).collect() }
 
-/// The result of `case` when the process checking it stopped: each mode it plans (`modes`) with a `"crash"` status, and `message` saying why.
+/// The case's worker abort. Mode results were not returned and remain "unchecked".
 pub fn crashed(case: &JsonValue, message: &str) -> JsonValue {
-    let modes: Vec<_> = modes(case).into_iter().map(|mode| json!({"mode":mode, "status":"crash"})).collect();
+    let modes: Vec<_> = modes(case).into_iter().map(|mode| json!({"mode":mode, "status":"unchecked"})).collect();
     recorded(case, json!({"status":"crash", "message":message, "modes":modes}))
 }
 

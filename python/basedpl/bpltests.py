@@ -384,11 +384,11 @@ def _section(section):
     if header is None: raise ValueError(f'tests/speed/{name} has no section {part!r}')
     return speed['setup'], header
 
-def _section_setup(section, setup):
-    "`setup`, or for a `section`, that section's preferences and then its speed file's setup, as one text."
-    if not section: return setup
-    file_setup, prefs = _section(section)
-    return f'{prefs}\n{file_setup}'
+def _section_setup(section, setup, prefs):
+    "Setup and preferences, keeping preferences before source construction."
+    if not section: return setup, prefs
+    file_setup, header = _section(section)
+    return file_setup, '\n'.join([prefs, header])
 
 @delegates(environment)
 def time_cases(
@@ -404,9 +404,7 @@ def time_cases(
     **kwargs
 ):
     "Time fully read calculations, taking the fastest of five warm runs per worker or the first run with `cold=True`, then the fastest over `rounds`. Several builds alternate order each round and return `ByBuild`."
-    if section:
-        setup, header = _section(section)
-        prefs = '\n'.join([prefs, header])
+    setup, prefs = _section_setup(section, setup, prefs)
     setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
     cases = listify(cases)
     limit = Limit.of(timeout)
@@ -509,10 +507,10 @@ _ROUGH = 1e8
 # A case that names N outside its strings supplies its own repetition and reads.
 _NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\'.\'')
 
-def _command(case, n, setup, forever=False):
+def _command(case, n, setup, prefs, forever=False):
     "The `bpl --worker` arguments and standard input for one instruction-count or sampling process. Its `steps` request runs `setup` with `N` set to `n`, then each step evaluates `case` at top level and forces its value, as the speed suite's timings do (`timing::time`). A case that doesn't name `N` runs `n` steps; one that names it runs once and makes its own repetition. With `forever`, a 1-step request warms the case, and its reply marks readiness, before a second request repeats it until the process is killed."
     named = _NAMES_N.search(_QUOTED.sub('', case))
-    def request(steps): return json.dumps({'steps': {'prefs': '', 'setup': f'{setup}\nN←{n}', 'cases': [case], 'steps': steps}})
+    def request(steps): return json.dumps({'steps': {'prefs': prefs, 'setup': f'{setup}\nN←{n}', 'cases': [case], 'steps': steps}})
     return ['--worker'], '\n'.join([request(1), request(10**12)] if forever else [request(1 if named else n)]) + '\n'
 
 def _raise_errors(text):
@@ -533,6 +531,7 @@ def _locked(pool, calls, limit=None):
 def instructions(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N 0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
+    prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
     counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from rough counts that compare 2s steps with s steps, from s = 2 and 100 times as many each round, until the difference passes `_ROUGH`
     runs=3, # Processes at each value of `N`, of which the lowest count is used
@@ -541,14 +540,15 @@ def instructions(
     **kwargs
 ):
     "The instructions that each case retires per unit of `N`, on one thread. Each step evaluates the case at top level and forces its value, as the speed suite's timings do (`timing::time`), through the worker's `steps` request; a case that names `N` runs once per process and makes its own repetition. A build without that request, such as the release's, can't be counted. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build is resolved once, as the count starts."
-    cases, setup = listify(cases), _section_setup(section, setup)
+    cases = listify(cases)
+    setup, prefs = _section_setup(section, setup, prefs)
     builds = listify(build) or [None]
     def slope(ns, cs): return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
     paths, limit = [resolved(b) for b in builds], Limit.of(timeout)
     with ThreadPoolExecutor(os.cpu_count()) as pool:
         def lowest(jobs, runs=runs):
             "The lowest count of `runs` processes for each `(code, n, build)` in `jobs`, from processes that run at once as one batch (`_locked`)."
-            got = _locked(pool, [(_retired, _command(code, n, setup), build, kwargs, limit) for code, n, build in jobs for _ in range(runs)], limit)
+            got = _locked(pool, [(_retired, _command(code, n, setup, prefs), build, kwargs, limit) for code, n, build in jobs for _ in range(runs)], limit)
             return [min(got[i:i+runs]) for i in range(0, len(got), runs)]
         if counts: ns = [counts]*len(cases)
         else:
@@ -671,14 +671,14 @@ def _self_samples(command, bpl, seconds, within, settings, callers, annotate=Fal
     if not named or total <= 0: raise ValueError('sample returned no symbolized main-thread samples')
     return named, total, None
 
-def _estimates(case, setup, build, seconds, limit, settings, counts, runs, callers, annotate=False):
+def _estimates(case, setup, prefs, build, seconds, limit, settings, counts, runs, callers, annotate=False):
     "Each function's estimated instructions per step of `N` for `case` on `build`, and the build's instructions per step, as `profile` describes, under the settings that `worker.environment` takes."
     if callers < 0: raise ValueError('callers must be nonnegative')
     if sys.platform not in ('darwin', 'linux'): raise ValueError(f'no sampling profiler on {sys.platform}')
     if annotate and sys.platform != 'linux': raise ValueError('annotate needs Linux perf')
     bpl = resolved(build)
-    [(_, per_step)] = instructions(case, setup, build=bpl, counts=counts, runs=runs, timeout=limit, **settings)
-    command = _command(case, max(1, round(1e8/per_step)), setup, forever=True)
+    [(_, per_step)] = instructions(case, setup, prefs=prefs, build=bpl, counts=counts, runs=runs, timeout=limit, **settings)
+    command = _command(case, max(1, round(1e8/per_step)), setup, prefs, forever=True)
     with timing_lock(), limit.running(): samples, total, annotated = _self_samples(command, bpl, seconds, limit.left(), settings, callers, annotate)
     return {f: per_step*n/total for f, n in samples.items()}, per_step, annotated
 
@@ -686,6 +686,7 @@ def _estimates(case, setup, build, seconds, limit, settings, counts, runs, calle
 def profile(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     setup='', # BPL that defines what the case uses, run before it
+    prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
     build:str=None, # The build to profile, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     seconds=3, # How long the sampling profiler watches the build
@@ -698,7 +699,8 @@ def profile(
     **kwargs
 ):
     "Where `case`'s instructions per step of `N` go, by function. After setup and one warm execution of the measured path, a fresh process repeats the case on one thread while macOS `sample` or Linux `perf` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
-    estimates, total, annotated = _estimates(case, _section_setup(section, setup), build, seconds, Limit.of(timeout), kwargs, counts, runs, callers, annotate)
+    setup, prefs = _section_setup(section, setup, prefs)
+    estimates, total, annotated = _estimates(case, setup, prefs, build, seconds, Limit.of(timeout), kwargs, counts, runs, callers, annotate)
     return FunctionCounts(sorted(estimates.items(), key=lambda r: -r[1])[:rows], [('total', total)], annotated)
 
 @delegates(environment)
@@ -706,6 +708,7 @@ def profile_diff(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
     setup='', # BPL that defines what the case uses, run before it
+    prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
     build:str=None, # The build to compare with `base`, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     seconds=3, # How long the sampling profiler watches each build
@@ -717,8 +720,9 @@ def profile_diff(
     **kwargs
 ):
     "Where `case`'s instructions per step of `N` moved between two builds, by function, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
-    limit, setup = Limit.of(timeout), _section_setup(section, setup)
-    (before, tb, _), (after, ta, _) = _estimates(case, setup, base, seconds, limit, kwargs, counts, runs, callers), _estimates(case, setup, build, seconds, limit, kwargs, counts, runs, callers)
+    setup, prefs = _section_setup(section, setup, prefs)
+    limit = Limit.of(timeout)
+    (before, tb, _), (after, ta, _) = _estimates(case, setup, prefs, base, seconds, limit, kwargs, counts, runs, callers), _estimates(case, setup, prefs, build, seconds, limit, kwargs, counts, runs, callers)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return FunctionCounts([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], [('total', tb, ta)])
 
@@ -792,6 +796,7 @@ def call_profile(
     case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{⍵}⍣N 0`
     function, # A regex that the demangled name of the function to count matches, such as `binder::derived`. A function that is always inlined has no code of its own and never stops the process
     setup='', # BPL that defines what the case uses, run before it
+    prefs='', # BPL preferences to run before setup
     base:str=None, # The build to compare with, resolved as `build` is, such as the one installed before a change; None: count one build
     build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     skip=3, # Calls of `function` to let run first, while the case warms up
@@ -802,7 +807,7 @@ def call_profile(
 ):
     "Every instruction that one call of `function` retires, with the calls it makes, counted by function, on macOS on Apple silicon. `lldb` runs `case` once per step in a fresh process, lets `skip` calls of `function` run, and single-steps the next one to its return. The counts are exact, where `profile`'s estimates come from time, but they cover one call. At the 450 or so instructions a second that `lldb` steps, the largest call it counts, 100,000 instructions, takes about four minutes. The allocator's functions, with the functions they call, share the row `allocator`, which the second total leaves out. With `allocations`, they have a row for each function that called the allocator, named `allocator ← function`."
     if sys.platform != 'darwin' or os.uname().machine != 'arm64': raise ValueError('`call_profile` runs only on macOS on Apple silicon')
-    command, timeout = _command(case, 1000, setup), Limit.of(timeout)
+    command, timeout = _command(case, 1000, setup, prefs), Limit.of(timeout)
     merged, allocated = [defaultdict(int) for _ in range(2 if base else 1)], [0, 0]
     for k, (b, m) in enumerate(zip([base, build] if base else [build], merged)):
         for f, n in _counted_call(command, function, skip, b, timeout, kwargs).items():

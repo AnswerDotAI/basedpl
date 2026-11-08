@@ -178,7 +178,8 @@ impl<'a> Reordering<'a> {
     fn map(&mut self, node: &Node, o: &[usize]) -> Option<usize> {
         let Origin::Step(Step::Map { left, right, plan }) = &node.origin else { return None };
         let (old, new) = (&node.desc.layout, node.desc.layout.axes(o.iter().copied()));
-        let agreement = Agreement::new(left.as_ref().map_or(&Layout::default(), |l| &l.layout), &right.layout).ok()?;
+        let mut agreement: crate::agreement::Agreement = crate::agreement::Agree::new(
+            left.as_ref().map_or(&Layout::default(), |l| &l.layout), &right.layout).ok()?;
         let shift = along(old.shape(), o);
         let mut operand = |read: &Read, through: &Mapping| -> Option<Read> {
             if self.nodes[read.of].desc.atom { return Some(Read::new(self.at[read.of], read.layout.clone())); }
@@ -186,7 +187,9 @@ impl<'a> Reordering<'a> {
         };
         let left = match left { Some(l) => Some(operand(l, &agreement.left)?), None => None };
         let right = operand(right, &agreement.right)?;
-        Some(self.out.add(Node { desc: Desc { layout: new, ..node.desc.clone() }, origin: Origin::Step(Step::Map { left, right, plan: plan.clone() }) }))
+        agreement.layout = new.clone();
+        let mapped = crate::plan::Mapped { desc: Desc { layout: new, ..node.desc.clone() }, plan: plan.clone(), agreement };
+        Some(self.out.mapped(mapped, left, right).of)
     }
     /// Fold step `node`, which folds a moved map in its old layout, folding the map's new node along the moved axis instead, with a copy that puts the kept axes back in the fold's order where they differ.
     fn fold(&mut self, node: &Node) -> Option<usize> {

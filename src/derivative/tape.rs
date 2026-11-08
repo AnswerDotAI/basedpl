@@ -251,14 +251,8 @@ impl Back<'_> {
         self.add_at(read, Places::Walk { base, steps: &kept }, &u)
     }
 
-    /// A structural step's plan on its inputs' layouts, with its parameters' held values (`structural::plan`).
-    fn planned(&self, inputs: &[Read], form: &crate::primitive::structural::Form, params: &[Read]) -> Result<ReadPlan, Error> {
-        let params = params.iter().map(|r| self.held(r)).collect::<Result<Vec<_>, _>>()?;
-        let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
-        Ok(crate::primitive::structural::plan(form, &params, &layouts)?.1)
-    }
 
-    fn walked(&self, j: usize) -> Option<(Read, Mapping)> { crate::program::positional_source(self.nodes, j, |j| self.values[j].as_ref()) }
+    fn walked(&self, j: usize) -> Option<(Read, Mapping)> { crate::program::positional_source(self.nodes, j) }
 
     /// Transposes a complete, unit-stride windows product as a full correlation, without storing or scattering its window cotangent.
     fn convolved_back(&self, t: &Read, c: &Value, u: &Value) -> Result<Option<(Read, Value)>, Error> {
@@ -366,8 +360,7 @@ impl Back<'_> {
                 else { let back = product_back(&c, &u, &t.layout, coefficient_left, span)?; self.add(t, back) }
             }
             Step::Copy { of, map } => { let (base, steps) = map.to_walk(desc.shape()); self.add_walked(&Read::node(self.nodes, *of), base, &steps, u) }
-            Step::Structural { inputs, form, params, .. } => {
-                let plan = self.planned(inputs, form, params)?;
+            Step::Structural { inputs, plan, .. } => {
                 // A plan that reads one input by affine axes, as a transpose, reversal or reshape does, writes back along its walk, as a copy's does.
                 if let Some((source, map)) = plan.positional(desc.shape()) {
                     // A source past the inputs is the fill, which takes no cotangent.

@@ -124,8 +124,8 @@ fn factored(
     let yo = match &held { Some(v) => Operand::Held(v), None => Operand::Traced(&yd) };
     let mapped = crate::plan::map(Primitive::Arithmetic(Arithmetic::Times), Some(&Operand::Traced(&xd)), &yo, false, numeric)?;
     if mapped.desc.dtype() != result.dtype() || mapped.desc.kind.fixed != result.kind.fixed { return Err("a product of another type than the fold's"); }
-    let at = nodes.add(Node { desc: mapped.desc, origin: Origin::Step(Step::Map { left: Some(x), right: y, plan: mapped.plan }) });
-    Ok(Read::new(at, result.layout.clone()))
+    let read = nodes.mapped(mapped, Some(x), y);
+    Ok(Read::new(read.of, result.layout.clone()))
 }
 
 /// The read of new nodes in `nodes` that compute the fold by `p` along `axis` of `of`, a read of a copy under any shape, from the copy's source: the source's fold along the axis that `axis` steps along, spread over the copy's other axes (`spread`). The copy must step along its source from its first item, as `stepped` describes, read the whole of that axis, and read more items than its source holds, as a broadcast does. A fold of a broadcast then folds the broadcast's source once, and never computes the broadcast. A copy that reads each item once folds its source in place when it runs (`Mapping::block` in `pervasive::mapped_fold`). `None`, adding nothing, for a scan, a seeded fold and any other read.

@@ -133,6 +133,10 @@ impl Desc {
         let kind = Self::kind_of(value)?;
         Some(Self { kind, atom: value.is_atom(), layout: value.layout().clone(), range: kind.dtype.map_or(Range::ANY, Range::of_dtype).meet(value.range()) })
     }
+
+    pub(crate) fn held(value: &Value) -> Self {
+        Self::of(value).unwrap_or_else(|| Self { kind: Kind::value(value), atom: value.is_atom(), layout: value.layout().clone(), range: Range::ANY })
+    }
     /// What a plan reads of `value`, a held value that this describes: a plain atom itself, whose number can pick a kernel as a constant, and otherwise this description, whose facts stay fixed while the value's items are computed or carry a level. The trace plans each step with it (`trace::Arg::operand`), and verification plans again with it (`verify::planned`).
     pub(crate) fn operand<'a>(&'a self, value: &'a Value) -> Operand<'a> {
         if value.is_atom() && !value.carried() { Operand::Held(value) } else { Operand::Traced(self) }
@@ -146,7 +150,7 @@ impl Desc {
         let dtype = kind.dtype.filter(|&d| d != DType::Character)?;
         Some(Kind::stored(Some(dtype), kind.fixed, kind.weak))
     }
-    /// The type of the described items. Only a pending copy's program holds characters, and no step reads them (`fusion::held`).
+    /// The stored item type. Pending structural copies may hold characters; traced numeric operations use `describes`.
     pub(crate) fn dtype(&self) -> DType { self.kind.dtype.expect("a description has a type") }
     /// The shape of the described value.
     pub(crate) fn shape(&self) -> &[usize] { self.layout.shape() }
@@ -165,7 +169,7 @@ impl Desc {
             DType::Boolean => Number::from_bool(false), DType::Integer(w) if self.kind.fixed.is_some() => Number::fixed(0, w),
             DType::Integer(_) => Number::from_integer(0), DType::Float(w) => Number::float(0.0, w),
             DType::Complex(w) => Number::complex(num_complex::Complex64::new(0.0, 0.0), w.into()),
-            DType::Character => unreachable!("a program holds no characters")
+            DType::Character => return Value::Character(' '),
         };
         Value::Number(n.marked(self.kind.weak))
     }
@@ -371,7 +375,14 @@ impl Operand<'_> {
 }
 
 /// A planned pervasive call: its result's description, and its plan.
-pub(crate) struct Mapped { pub(crate) desc: Desc, pub(crate) plan: Pervasive }
+pub(crate) struct Mapped { pub(crate) desc: Desc, pub(crate) plan: Pervasive, pub(crate) agreement: Agreement }
+
+impl Mapped {
+    pub(crate) fn new(plan: Pervasive, agreement: Agreement, atom: bool, weak: bool) -> Result<Self, &'static str> {
+        let desc = plan.result_desc(agreement.layout.clone(), atom, weak)?;
+        Ok(Self { desc, plan, agreement })
+    }
+}
 
 /// The operand facts of a pervasive call, before settling its result.
 fn map_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Pervasive, &'static str> {
@@ -394,17 +405,19 @@ fn map_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, n
 }
 
 /// A pervasive call's output, with geometry from its operands and numeric facts from its plan.
-fn mapped_desc(plan: &Pervasive, left: Option<&Operand>, right: &Operand) -> Result<Desc, &'static str> {
+fn mapped_desc(plan: &Pervasive, left: Option<&Operand>, right: &Operand) -> Result<(Desc, Agreement), &'static str> {
     let agreement = Agreement::new(&left.map_or_else(Layout::default, Operand::layout), &right.layout()).map_err(|_| "shapes that don't agree")?;
     let atom = right.atom() && left.is_none_or(Operand::atom);
     let weak = atom && right.weak() && left.is_none_or(Operand::weak);
-    plan.result_desc(agreement.layout, atom, weak)
+    let desc = plan.result_desc(agreement.layout.clone(), atom, weak)?;
+    Ok((desc, agreement))
 }
 
 /// The plan of pervasive primitive `p` on `left` and `right` under `numeric`, where `same` says whether both are one value (`Pervasive::same`), with its result's description, or the reason that a program can't hold the call.
 pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Mapped, &'static str> {
     let plan = map_plan(p, left, right, same, numeric)?;
-    Ok(Mapped { desc: mapped_desc(&plan, left, right)?, plan })
+    let (desc, agreement) = mapped_desc(&plan, left, right)?;
+    Ok(Mapped { desc, plan, agreement })
 }
 
 /// Checks a declared plan against its operands before settling its result. Constants compare by their bits, so that a NaN constant matches itself, only where a held operand still exposes them. Normalization can hide an observed scalar constant, as in `(⊂3)+4`; the declared plan owns that observation and its derived computing kind (`at`).
@@ -416,7 +429,7 @@ pub(crate) fn check_map(plan: &Pervasive, left: Option<&Operand>, right: &Operan
     if without_constants(&inferred) != without_constants(plan) || constants(&inferred) != constants(plan) {
         return Err("a plan other than the one that its operands give");
     }
-    mapped_desc(plan, left, right)
+    mapped_desc(plan, left, right).map(|(desc, _)| desc)
 }
 
 /// The description of what `p` gives where it combines items that `items` describes into the base that `base` describes, as `Pairing::At` pairs them (`pervasive::combine_at`): the base's layout, and `p`'s result on one item of each joined with the base's kind as `Widening::Items` joins items. An error for an atom base, where `p` doesn't plan on the two, or where the join would leave the base mixed, which programs can't hold.
@@ -561,6 +574,23 @@ impl Product {
 pub(crate) fn copy(source: &Desc, layout: &Layout) -> Result<Desc, &'static str> {
     if layout.renderer().is_some() { return Err("a layout with a renderer"); }
     Ok(Desc { kind: Kind::stored(source.kind.dtype, source.kind.fixed, false), atom: false, layout: layout.clone(), range: source.range })
+}
+
+
+pub(crate) fn structural(form: &crate::primitive::structural::Form, params: &[Value], inputs: &[Desc], fill: Option<&Desc>)
+    -> Result<(Desc, rustymath::agreement::ReadPlan), crate::Error> {
+    let layouts: Vec<&Layout> = inputs.iter().map(|d| &d.layout).collect();
+    let (layout, plan) = crate::primitive::structural::plan(form, params, &layouts)?;
+    let first = &inputs[0];
+    let parts = || inputs.iter().chain(fill);
+    let kind = crate::array::items_kind(parts().map(|d| (d.layout.count(), d.kind)), crate::array::Widening::Arrays).unwrap_or(first.kind);
+    let atom = form.keeps_atoms() && layout.shape().is_empty() && parts().all(|d| d.atom);
+    let range = match plan.positional(layout.shape()) {
+        Some((source, _)) if fill.is_none() => inputs[source].range,
+        _ => parts().fold(Range::of(Some(0.0)), |range, d| range.join(d.range)),
+    };
+    let kind = Kind::stored(kind.dtype, kind.fixed, false);
+    Ok((Desc { kind, atom, layout, range }, plan))
 }
 
 /// The description of a copy of one item of a value that `source` describes, as `Value::at` reads one: an atom of the source's type and fixedness.

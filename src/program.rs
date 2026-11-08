@@ -8,7 +8,7 @@ pub(crate) mod trace;
 pub(crate) mod verify;
 
 use crate::{Value, array::Layout, number::Numeric, plan::Desc, primitive::{FoldKind, Operation, Primitive, structural::Form}};
-use rustymath::{agreement::Mapping, gather::Steps, hashing::{HashMap, Hashing}, layout::strides, structure::IndexPart};
+use rustymath::{agreement::{Mapping, ReadPlan}, gather::Steps, hashing::{HashMap, Hashing}, layout::strides, structure::IndexPart};
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -88,6 +88,84 @@ impl Nodes {
         self.list.push(node);
         at
     }
+
+    pub(crate) fn held(&mut self, value: &Value, desc: Desc) -> Read {
+        let layout = desc.layout.clone();
+        // Pending identities belong to demand/retention; resolution composes their reads when sharing permits it.
+        let one = (!value.carried() && value.len() > 1 && value.pending().is_none()
+            && value.view().is_some_and(rustymath::buffer::Buffer::same)).then(|| value.at(0));
+        if let Some(item) = one && let Some(d) = Desc::of(&item) {
+            // Every item has the array's proved bounds and kind; extraction may narrow an ordinary integer atom.
+            let of = self.held(&item, Desc { kind: desc.kind, range: desc.range, ..d });
+            return self.copied(of, Mapping::Single, desc);
+        }
+        let plain = Layout::from(value.shape().to_vec());
+        let held = match value.pending() {
+            Some(p) => Value::deferred(plain.clone(), p.clone()),
+            None if value.layout().plain() => value.clone(),
+            None => value.relaid(plain.clone()).expect("a held value keeps its item count"),
+        };
+        let of = self.add(Node { desc: Desc { layout: plain, ..desc }, origin: Origin::Held(held) });
+        Read::new(of, layout)
+    }
+    pub(crate) fn stepped(&mut self, desc: Desc, step: Step) -> Read {
+        let layout = desc.layout.clone();
+        let of = self.add(Node { desc, origin: Origin::Step(step) });
+        Read::new(of, layout)
+    }
+    pub(crate) fn copied(&mut self, of: Read, map: Mapping, desc: Desc) -> Read {
+        let step = copy_of_copy(self, of.of, &map, desc.shape()).unwrap_or_else(|| Step::Copy { of: of.of, map: map.split(desc.shape()) });
+        self.stepped(desc, step)
+    }
+    fn mapped_read(&mut self, of: Read, map: Mapping, frame: &Layout) -> Read {
+        let desc = of.desc(self);
+        if desc.atom { return of; }
+        if map.in_order(desc.layout.count(), frame.shape()) && positional_source(self, of.of).is_none() { return Read::new(of.of, frame.clone()); }
+        self.copied(of, map, Desc { layout: frame.clone(), ..desc })
+    }
+
+    /// An explicit array copy, including where one atom supplies all the requested items.
+    pub(crate) fn copied_value(&mut self, value: &Value, map: Mapping, frame: &[usize]) -> Read {
+        let of = self.held(value, Desc::held(value));
+        let layout = Layout::from(frame.to_vec());
+        if of.desc(self).atom {
+            let desc = crate::plan::copy(&of.desc(self), &layout).expect("a generated copy has no renderer");
+            return self.copied(of, map, desc);
+        }
+        self.mapped_read(of, map, &layout)
+    }
+    pub(crate) fn mapped(&mut self, mapped: crate::plan::Mapped, left: Option<Read>, right: Read) -> Read {
+        let crate::plan::Mapped { desc, plan, agreement } = mapped;
+        let frame: Layout = desc.shape().into();
+        let left = left.map(|of| self.mapped_read(of, agreement.left, &frame));
+        let right = self.mapped_read(right, agreement.right, &frame);
+        let layout = desc.layout.clone();
+        let read = self.stepped(Desc { layout: frame, ..desc }, Step::Map { left, right, plan });
+        Read::new(read.of, layout)
+    }
+    pub(crate) fn selected(&mut self, plan: &crate::plan::Select, mask: Read, yes: Read, no: Read) -> Read {
+        let frame: Layout = plan.desc.shape().into();
+        let mask = self.mapped_read(mask, Mapping::Linear(1), &frame);
+        let yes = self.mapped_read(yes, plan.yes.clone(), &frame);
+        let no = self.mapped_read(no, plan.no.clone(), &frame);
+        let read = self.stepped(Desc { layout: frame, ..plan.desc.clone() }, Step::Select { mask, yes, no });
+        Read::new(read.of, plan.desc.layout.clone())
+    }
+    pub(crate) fn converted(&mut self, of: Read, to: rustymath::buffer::DType, numeric: Numeric) -> Result<Read, &'static str> {
+        let desc = crate::plan::convert(&of.desc(self), to)?;
+        Ok(self.stepped(desc, Step::Convert { of, numeric }))
+    }
+    pub(crate) fn folded(&mut self, p: Primitive, kind: FoldKind, axis: usize, seed: Option<Read>, of: Read, desc: Desc) -> Read {
+        if seed.is_none() && let Some(read) = contraction::routed(self, p, kind, &of, &[axis], &desc, Numeric::current()) { return read; }
+        self.stepped(desc, Step::Fold { p, kind, axis, seed, of })
+    }
+    pub(crate) fn structured(&mut self, form: Form, params: Vec<Read>, inputs: Vec<Read>, fill: Option<Read>, desc: Desc, plan: ReadPlan) -> Read {
+        if fill.is_none() && let Some((source, map)) = plan.positional(desc.shape())
+            && let Ok(copied) = crate::plan::copy(&inputs[source].desc(self), &desc.layout) && copied.kind == desc.kind {
+            return self.copied(inputs[source].clone(), map, desc);
+        }
+        self.stepped(desc, Step::Structural { inputs, form, params, fill, plan })
+    }
 }
 
 impl std::ops::Deref for Nodes {
@@ -124,18 +202,11 @@ fn added(own: Nodes, nodes: &mut Nodes, mut replaced: impl FnMut(&mut Nodes, &[u
     at
 }
 
-/// The positional source of a copy or kind-preserving structural step. Structural parameters must already be stored under their recorded layouts; otherwise returns `None` without forcing or observation.
-pub(crate) fn positional_source<'a>(nodes: &[Node], node: usize, value: impl Fn(usize) -> Option<&'a Value>) -> Option<(Read, Mapping)> {
+/// The source and resolved positional mapping of a kind-preserving structural read, without item access.
+pub(crate) fn positional_source(nodes: &[Node], node: usize) -> Option<(Read, Mapping)> {
     match &nodes[node].origin {
         Origin::Step(Step::Copy { of, map }) => Some((Read::node(nodes, *of), map.clone())),
-        Origin::Step(Step::Structural { inputs, form, params, .. }) => {
-            let params = params.iter().map(|r| {
-                let v = value(r.of)?;
-                if v.pending().is_some() || v.carried() || v.layout() != &r.layout { return None; }
-                Some(v.clone())
-            }).collect::<Option<Vec<_>>>()?;
-            let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
-            let plan = crate::primitive::structural::plan(form, &params, &layouts).ok()?.1;
+        Origin::Step(Step::Structural { inputs, plan, .. }) => {
             let (source, map) = plan.positional(nodes[node].desc.shape())?;
             let source = inputs.get(source)?;
             if nodes[source.of].desc.kind != nodes[node].desc.kind { return None; }
@@ -145,9 +216,9 @@ pub(crate) fn positional_source<'a>(nodes: &[Node], node: usize, value: impl Fn(
     }
 }
 
-/// One copy of node `node`'s positional source, composing its map with `map` for a result of `shape`. Unresolved parameters and maps that don't compose give `None`.
+/// One copy of node `node`'s positional source, composing its map with `map` for a result of `shape`.
 pub(crate) fn copy_of_copy(nodes: &[Node], node: usize, map: &Mapping, shape: &[usize]) -> Option<Step> {
-    let (source, inner) = positional_source(nodes, node, |j| match &nodes[j].origin { Origin::Held(v) => Some(v), _ => None })?;
+    let (source, inner) = positional_source(nodes, node)?;
     Some(Step::Copy { of: source.of, map: inner.compose(map, nodes[node].desc.shape(), shape)? })
 }
 
@@ -204,8 +275,8 @@ pub(crate) enum Step {
     Convert { of: Read, numeric: Numeric },
     /// A value's items read through `map`, as a structural glyph copies them (`fusion::copied`). Only a fused chain holds one.
     Copy { of: usize, map: Mapping },
-    /// A structural primitive's call on `inputs`, with parameters `params` and an explicit `fill`, which plans its read on the inputs' layouts when it runs (`structural::plan`) and reads through `fusion::copy`. A recording holds the structural call rather than its resolved copy.
-    Structural { inputs: Vec<Read>, form: Form, params: Vec<Read>, fill: Option<Read> },
+    /// A structural call and its resolved source-relative geometry. Its recipe remains available for transformed execution and deliberate rebinding.
+    Structural { inputs: Vec<Read>, form: Form, params: Vec<Read>, fill: Option<Read>, plan: ReadPlan },
     /// The items of `of` that `by`'s parts select, as `.[]` or `⌷` reads them, planned at replay on the parts' values (`primitive::parts_plan`), where a part's positions are a value that the program computes, such as an argument's.
     Gather { of: Read, by: Selector },
     /// A fold or scan by `p` along `axis`, with an atom seed (`plan::fold`).
@@ -218,7 +289,7 @@ pub(crate) enum Step {
     At { p: Primitive, base: Read, items: Read, writes: Writes },
     /// A mask of Booleans in the layout of `of`, true at the item of each lane along `axis` that `p`, `⌈` or `⌊`, picks, the first of any ties (`derivative::extreme_mask`, `plan::picks`).
     Picks { p: Primitive, axis: usize, of: Read },
-    /// Monadic `p`, `≢` or `⍴`, of `of`, read from its value's layout when the step runs, so that a replay at new lengths gives the new count or shape (`trace::build` needn't key the lengths exactly).
+    /// Monadic `p`, `≢` or `⍴`, of `of`, read from its current layout when the step runs. Exact-layout guards also protect any shape facts used during construction.
     Shape { p: Primitive, of: Read },
 }
 
@@ -340,7 +411,7 @@ impl Program {
                 }
                 Origin::Step(Step::Convert { of, .. }) => format!("convert {}", read(of)),
                 Origin::Step(Step::Copy { of, .. }) => format!("copy {}", at(*of)),
-                Origin::Step(Step::Structural { inputs, form, params, fill }) => format!(
+                Origin::Step(Step::Structural { inputs, form, params, fill, .. }) => format!(
                     "{form:?} {}{}{}", inputs.iter().map(read).collect::<Vec<_>>().join(" "),
                     params.iter().map(|p| " ".to_owned() + &read(p)).collect::<String>(),
                     fill.as_ref().map(|f| " fill ".to_owned() + &read(f)).unwrap_or_default()

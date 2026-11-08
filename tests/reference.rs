@@ -84,6 +84,9 @@ fn reference_format_and_comparison() {
         let checked = reference::check(&cases(&format!("⍝ —\n{code}   ⍝ 3"))[0], &InterruptHandle::default());
         assert!(reference::fails(&checked) && !reference::obliged(&checked), "{checked}");
     }
+    let aborted = reference::reply(vec![reference::crashed(&exact, "the child stopped")]);
+    assert_eq!(aborted["failures"][0]["status"], "crash");
+    assert!(aborted["accounting"].as_object().unwrap().values().all(|c| c["planned"] == 1 && c["checked"] == 0 && c["failed"] == 0));
 }
 
 /// The speed files, `tests/speed/*.bpl`.
