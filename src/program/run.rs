@@ -44,20 +44,21 @@ pub(crate) fn replay(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     Ok(taken(program, &mut values(program, plan, inputs, span)?, &program.result))
 }
 
-/// The result of one step on held values or bound inputs, without making a block plan. A normalized array Map can also read their direct copies: its saved maps feed one whole-array primitive call, without materializing arguments. Copy-bearing Maps leave explicit stage-compilation requests to block planning. No side outputs or other computation enters this route.
+/// The result of one step on held values or bound inputs, without making a block plan. A plain array Map reads them or their direct copies through known mappings in one whole-array primitive call. Copy-bearing Maps leave explicit stage-compilation requests to block planning. No side outputs or other computation enters this route.
 pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<Result<Value, Error>> {
     let j = program.result.of;
     let node = &program.nodes[j];
     let Origin::Step(step) = &node.origin else { return None };
     if !program.outputs.is_empty() { return None; }
     let leaf = |i: usize| match &program.nodes[i].origin { Origin::Input(k) => Some(inputs[*k]), Origin::Held(v) => Some(v), _ => None };
-    if !program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some()) {
+    let all_leaves = program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some());
+    let mapped = || {
         #[cfg(not(web))]
-        if crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
+        if !all_leaves && crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
         let Step::Map { left, right, plan } = step else { return None };
         let layout = &node.desc.layout;
         if node.desc.atom || !layout.plain() || program.result.view(&program.nodes) { return None; }
-        if !program.nodes.iter().enumerate().all(|(i, n)| i == j || leaf(i).is_some()
+        if !all_leaves && !program.nodes.iter().enumerate().all(|(i, n)| i == j || leaf(i).is_some()
             || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if leaf(*of).is_some())) { return None; }
         let argument = |r: &Read| {
             let n = &program.nodes[r.of];
@@ -74,8 +75,11 @@ pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<
         if crate::transform::carried(left, right) { return None; }
         if crate::settings::verifies() { super::verify::check(program); }
         let agreement = Agreement { layout: layout.clone(), len: layout.count(), left: left_map, right: right_map };
-        return Some(Primitive::planned(plan, left, right, span, false, agreement).at(span).and_then(|v| checked(node, j, v, span)));
-    }
+        Some(crate::primitive::weakened(left, right, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span))
+            .and_then(|v| checked(node, j, v, span)))
+    };
+    if let Some(value) = mapped() { return Some(value); }
+    if !all_leaves { return None; }
     if crate::settings::verifies() { super::verify::check(program); }
     Some(run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span)
         .and_then(|value| checked(node, j, value, span)).map(|value|
