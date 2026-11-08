@@ -111,10 +111,10 @@ impl Input {
     }
 }
 
-/// Whether a stage's runs read an input through `map` as one item each: a repeated item, or a repeat of at least `run` items (`Mapping::repeats`), at whose ends the runs split (`reading`). A repeat whose items compiled parts read from a table, as `read` says (`Reading::Tabled`), isn't one item.
+/// Whether compiled runs read an input through `map` as one item each: a repeated item, or a repeat of at least `run` items (`Mapping::repeats`), at whose ends the runs split (`reading`). A repeat whose items compiled parts read from a table, as `read` says (`Reading::Tabled`), isn't one item.
 #[cfg(not(web))]
 fn one_item(map: &Mapping, read: Reading, run: usize) -> bool {
-    !matches!(read, Reading::Tabled(_)) && (matches!(map, Mapping::Single) || map.repeats().is_some_and(|r| r >= run))
+    !matches!(read, Reading::Tabled) && (matches!(map, Mapping::Single) || map.repeats().is_some_and(|r| r >= run))
 }
 
 /// A block stage: steps on `n` items, which read the program's arrays in `inputs` through their maps and its atoms in `constants`, then store the steps that `stores` names as the program's values, and fold the last step where `fold` says. `extra` lists the stored steps that write outputs of their own: each stored step but the last, which writes the value's slots, unless the fold reads the last. `slots` gives each step's buffer, of the type that `kinds` gives. `count` is the number of buffers that the steps would take if every buffer had one type, which with `size`, the bytes of the widest type that a step computes at, sizes the blocks. `converted` holds each step's constants at its type, where the program holds every constant that the stage reads, and `laid` the stage's split into blocks under the sizes in force when it was made. `plain` says whether every input reads in place over any range, as a repeated item or the identity, and `tables` holds each tabled input's runs: their length and stride, and the offset of each run's first item (`Mapping::runs`). `parts` splits the steps into the runs that each run computes in turn (`Part`), and `folding` is the kernel that folds the last step for a stage of one compiled part (`Blocks::over`). `nodes` are the program's nodes that the stage computes, and `glyphs` their glyphs, for `•explain`.
@@ -518,11 +518,10 @@ impl Blocks {
                     self.parts.iter().any(|p| p.lowered.is_some() && p.steps.contains(&s)) || !step.operands.contains(&Some(Operand::Input(k)))
                 });
             let Some((l, step)) = self.inputs[k].map.regular() else { continue };
-            // A repeat that runs would read as one item keeps its length, at which a run that no compiled part takes still ends.
-            let repeat = match self.laid.reads[k] { Reading::Copied => None, Reading::Runs(Some(r)) if step == 0 => Some(r), _ => continue };
+            match self.laid.reads[k] { Reading::Copied => {}, Reading::Runs(Some(_)) if step == 0 => {}, _ => continue }
             if !only || step.unsigned_abs() > STRIDE || l < least || len.is_some_and(|len| len != l) { continue; }
             let Some(runs) = self.inputs[k].map.runs(self.n) else { continue };
-            (len, self.laid.reads[k], self.tables[k]) = (Some(l), Reading::Tabled(repeat), Some(runs));
+            (len, self.laid.reads[k], self.tables[k]) = (Some(l), Reading::Tabled, Some(runs));
         }
         len.is_some()
     }
@@ -532,7 +531,7 @@ impl Blocks {
     fn read(&self, o: Operand) -> jit::Read {
         let Operand::Input(k) = o else { return jit::Read::Forward };
         match (self.laid.reads[k], self.tables.get(k).and_then(Option::as_ref)) {
-            (Reading::Tabled(_), Some(&(_, step, _))) => jit::Read::Runs(match step {
+            (Reading::Tabled, Some(&(_, step, _))) => jit::Read::Runs(match step {
                 0 => jit::Within::Repeated, 1 => jit::Within::Forward, -1 => jit::Within::Backward, _ => jit::Within::Strided
             }),
             _ => jit::Read::Forward,
@@ -656,7 +655,7 @@ impl Blocks {
         pervasive::map(&crate::plan::pervasive_on(fold.p, Some(&value), &seed, fold.numeric), Some(&value), &seed, &agreement)
     }
 
-    /// Run the stage block by block, split at input repeats. Native steps bind RM reads; compiled parts prepare ABI spans. Stored steps copy to their output, and the last writes final slots or the fold's cache-sized block. A single compiled part can cover several blocks (`over`).
+    /// Run the stage block by block, splitting compiled runs at input repeats. Native steps bind RM reads; compiled parts prepare ABI spans. Stored steps copy to their outputs. The last step writes directly to its final output or the fold's buffer.
     fn range(&self, range: Range<usize>, run: &Run<'_>, outs: &[Option<Shared>], last: &mut Last<'_, '_>) -> bool {
         let (block, tally) = (run.block, run.tally);
         let mut bufs: Vec<Buffer> = Vec::new();
@@ -820,7 +819,7 @@ impl Blocks {
             // Tabled reads still point at the source buffer, so its actual type must be checked before either ABI branch.
             if let jit::Read::Runs(_) = self.read(operand) {
                 let Operand::Input(k) = operand else { return None };
-                let (Reading::Tabled(_), Some((len, _, starts))) = (run.reads[k], self.tables[k].as_ref()) else { return None };
+                let (Reading::Tabled, Some((len, _, starts))) = (run.reads[k], self.tables[k].as_ref()) else { return None };
                 *arrays.get_mut(a)? = run.inputs[k].view.as_ptr();
                 *arrays.get_mut(a + 1)? = starts.get(from / len..)?.as_ptr().cast::<u8>();
                 runs = Some([*len as u64, (len - from % len) as u64]);
@@ -877,7 +876,7 @@ impl Blocks {
     #[cfg(not(web))]
     fn prepared<'a>(&self, run: &'a Run<'_>, copies: &'a mut [Buffer], from: usize, n: usize) -> Option<Vec<View<'a>>> {
         run.inputs.iter().zip(run.plans).zip(copies).enumerate().map(|(k, ((source, plan), copy))| {
-            if matches!(run.reads[k], Reading::Tabled(_)) { return Some(source.view); }
+            if matches!(run.reads[k], Reading::Tabled) { return Some(source.view); }
             let read = rustymath::agreement::Read { sources: std::slice::from_ref(source), plan };
             let range = from..from + n;
             if !with_item!(source.view.dtype(), A => read.in_place::<A>(&range)) { run.tally.copied(n); }
@@ -957,23 +956,23 @@ fn buffers(steps: &[BlockStep]) -> (Vec<Option<usize>>, Vec<DType>, usize) {
 /// How a block stage reads an input in blocks of a given size.
 #[derive(Clone, Copy)]
 enum Reading {
-    /// In place, run by run. A run ends at each multiple of the period, where there is one.
+    /// Compiled runs read in place and end at each multiple of the period, where there is one.
     Runs(Option<usize>),
     /// From its period, written out once to cover a block at any phase: a cycle shorter than a block.
     Cycle,
     /// Copied into a buffer, run by run.
     Copied,
-    /// In place, run by run, where compiled parts read each run from a table of the runs' first items, in one call for each block (`Mapping::runs`). A run that no compiled part takes copies, except where the input repeats each item over `Some(r)` positions: such a run ends at each repeat and reads its item there, as `Runs` does.
+    /// In place, run by run, where compiled parts read each run from a table of its first items, in one call for each block (`Mapping::runs`). Native kernels read through their maps.
     #[cfg_attr(web, expect(dead_code, reason = "the browser build compiles nothing"))]
-    Tabled(Option<usize>),
+    Tabled,
 }
 
 impl Reading {
-    /// The period at each multiple of which a run ends, in a run that uses compiled parts where `compiled` holds: a repeat or long cycle that runs read in place (`Runs`), and a tabled repeat where no compiled part reads it.
-    fn ends(self, compiled: bool) -> Option<usize> { match self { Self::Runs(r) => r, Self::Tabled(r) if !compiled => r, _ => None } }
+    /// The period at which a compiled run ends to read a repeat or long cycle in place. Native kernels split their own reads.
+    fn ends(self, compiled: bool) -> Option<usize> { match self { Self::Runs(r) if compiled => r, _ => None } }
 }
 
-/// How a block stage reads an input through `m` in blocks of `block` items. Runs end at each repeat of at least `run` items (`Mapping::repeats`) and each cycle of at least `block` items, so that each run reads one repeat, or a stretch of one cycle, in place. A shorter repeat copies. A map of steps copies where `Mapping::copies` says most blocks would.
+/// How a block stage reads an input through `m` in blocks of `block` items. Compiled runs end at each repeat of at least `run` items (`Mapping::repeats`) and each cycle of at least `block` items, so that each reads one repeat, or a stretch of one cycle, in place. A shorter repeat copies. A map of steps copies where `Mapping::copies` says most blocks would.
 fn reading(m: &Mapping, block: usize, run: usize) -> Reading {
     if let Some(r) = m.repeats().filter(|&r| r >= run) { return Reading::Runs(Some(r)); }
     match *m {
