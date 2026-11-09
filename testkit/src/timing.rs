@@ -419,17 +419,38 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     Ok(json!({"n":n, "costs":costs, "output":[], "error":null}))
 }
 
-/// Runs each case `steps` times as `time` runs it, for an instruction count or a profile, and gives no timing. Unlike `request`, it takes no timing lock, so counts can run side by side under one shared hold.
+/// Runs each case `steps` times as `time` runs it, for an instruction count, and gives no timing. Unlike `request`, it takes no timing lock, so counts can run side by side under one shared hold.
 pub fn steps_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    repeated_request(spec, interrupt, None::<fn() -> Result<(), String>>)
+}
+
+/// Prepares one case, forces two warm calls, signals readiness, then repeats in that same Session.
+pub fn profile_request(
+    spec: &JsonValue, interrupt: &InterruptHandle, ready: impl FnOnce() -> Result<(), String>
+) -> Result<JsonValue, String> {
+    repeated_request(spec, interrupt, Some(ready))
+}
+
+fn repeated_request(
+    spec: &JsonValue, interrupt: &InterruptHandle, mut ready: Option<impl FnOnce() -> Result<(), String>>
+) -> Result<JsonValue, String> {
     let text = |key| spec[key].as_str().ok_or_else(|| format!("steps needs {key} as a string"));
     let steps = spec["steps"].as_u64().ok_or("steps needs steps as a count")?;
     let cases = spec["cases"].as_array().ok_or("steps needs cases as an array")?;
+    if ready.is_some() && cases.len() != 1 { return Err("profiling needs exactly one case".into()); }
     let session = match session(text("prefs")?, text("setup")?) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         let mut failed = None;
         match runner(&session, code, interrupt) {
-            Ok(mut run) => { for _ in 0..steps { run(&mut failed); if failed.is_some() { break; } } } Err(error) => failed = Some(error)
+            Ok(mut run) => {
+                if let Some(ready) = ready.take() {
+                    for _ in 0..2 { run(&mut failed); if let Some(failed) = failed { return Ok(response(failed)); } }
+                    ready()?;
+                }
+                for _ in 0..steps { run(&mut failed); if failed.is_some() { break; } }
+            }
+            Err(error) => failed = Some(error)
         }
         if let Some(failed) = failed { return Ok(response(failed)); }
     }

@@ -511,10 +511,10 @@ _ROUGH = 1e8
 _NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\'.\'')
 
 def _command(case, n, setup, prefs, forever=False):
-    "The `bpl --worker` arguments and standard input for one instruction-count or sampling process. Its `steps` request runs `setup` with `N` set to `n`, then each step evaluates `case` at top level and forces its value, as the speed suite's timings do (`timing::time`). A case that doesn't name `N` runs `n` steps; one that names it runs once and makes its own repetition. With `forever`, a 1-step request warms the case, and its reply marks readiness, before a second request repeats it until the process is killed."
+    "The `bpl --worker` arguments and standard input for one instruction-count or sampling process. A `steps` request runs `setup` with `N` set to `n`, then each step evaluates `case` at top level and forces its value. A case that doesn't name `N` runs `n` steps; one that names it runs once and makes its own repetition. With `forever`, one `profile` request prepares and forces two warm runs, signals readiness, then repeats in that same Session until the process is killed."
     named = _NAMES_N.search(_QUOTED.sub('', case))
-    def request(steps): return json.dumps({'steps': {'prefs': prefs, 'setup': f'{setup}\nN←{n}', 'cases': [case], 'steps': steps}})
-    return ['--worker'], '\n'.join([request(1), request(10**12)] if forever else [request(1 if named else n)]) + '\n'
+    spec = {'prefs': prefs, 'setup': f'{setup}\nN←{n}', 'cases': [case], 'steps': 10**12 if forever else 1 if named else n}
+    return ['--worker'], json.dumps({'profile' if forever else 'steps': spec})+'\n'
 
 def _raise_errors(text):
     "Raise the first error in a worker's reply lines, which a failed step, or a request that the build doesn't know, gives."
@@ -647,11 +647,13 @@ def _self_samples(command, bpl, seconds, within, settings, callers, annotate=Fal
                 with selectors.DefaultSelector() as waiting:
                     waiting.register(p.stdout, selectors.EVENT_READ)
                     while b'\n' not in printed:
-                        if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its warm call before the deadline')
+                        if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its two warm calls before the deadline')
                         chunk = os.read(p.stdout.fileno(), 4096)
                         if not chunk: raise ValueError(f'profiled process exited {p.wait()} before readiness:\n{errors.read_text()}')
                         printed += chunk
-                _raise_errors(printed.decode().partition("\n")[0])
+                reply = printed.partition(b"\n")[0].decode()
+                _raise_errors(reply)
+                if not json.loads(reply)['result'].get('ready'): raise ValueError('profiling needs an updated worker that signals readiness')
                 if sys.platform == 'linux': sampled = (*_perf_samples(p.pid, seconds, limit.left(), directory, callers), _annotated(directory/'perf.data', limit.left()) if annotate else None)
                 else:
                     report = directory/'sample.txt'
@@ -659,7 +661,10 @@ def _self_samples(command, bpl, seconds, within, settings, callers, annotate=Fal
                     except subprocess.TimeoutExpired: raise TimeoutError("sample did not finish before the call's deadline; check Developer Tools authorization") from None
                     if s.returncode: raise ValueError(s.stdout + s.stderr)
                     lines = report.read_text().splitlines()
-                if p.poll() is not None: raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{errors.read_text()}')
+                if p.poll() is not None:
+                    printed += p.stdout.buffer.read()
+                    _raise_errors(printed.decode())
+                    raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{errors.read_text()}')
                 if sys.platform == 'linux': return sampled
             finally:
                 p.kill(); p.wait(); p.stdout.close()
@@ -716,7 +721,7 @@ def profile(
     out:Path=None, # Keep raw samples, build IDs, JIT map, command and stderr in this new directory; None: clean up after profiling
     **kwargs
 ):
-    """Where `case`'s instructions per step of `N` go, by function. After setup and one warm execution of the measured path, a fresh process repeats the case on one thread while macOS `sample` or Linux `perf` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate.
+    """Where `case`'s instructions per step of `N` go, by function. A fresh process prepares setup and the parsed case, forces two warm executions, then signals readiness before repeating that same runner on one thread. macOS `sample` or Linux `perf` starts after readiness and counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate. The worker must support the profiling request; `time_cases` can still compare older builds.
 
     `out` retains the recording and symbolized IPs, command/build path, build-ID cache and worker stderr. Set `BASEDPL_JIT_DISASM=1` to retain generated code in stderr. Linux also keeps `/tmp/perf-PID.map`, where perf looks for JIT symbols regardless of `--symfs`. Restore the archived map there with `cp -n OUT/perf-PID.map /tmp/` if absent. Read the recording after worker exit with `perf --buildid-dir OUT/buildid script -i OUT/perf.data -F ip,sym --demangle`.
     """
@@ -740,7 +745,7 @@ def profile_diff(
     runs=3, # Instruction-count processes at each `N`, as `instructions` takes
     **kwargs
 ):
-    "Where `case`'s instructions per step of `N` moved between two builds, by function, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
+    "Where `case`'s instructions per step of `N` moved between two builds, by function, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone. Both workers need the profiling request; use `time_cases` to compare older builds."
     setup, prefs = _section_setup(section, setup, prefs)
     limit = Limit.of(timeout)
     (before, tb, _), (after, ta, _) = _estimates(case, setup, prefs, base, seconds, limit, kwargs, counts, runs, callers), _estimates(case, setup, prefs, build, seconds, limit, kwargs, counts, runs, callers)

@@ -6,10 +6,10 @@ use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 9] = [
+    let checks: [fn(); 10] = [
         mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results, hanzi_spellings_and_language,
         leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header, retained_selection_parameters_survive_data_reads,
-        retained_programs_rebind_block_geometry,
+        retained_programs_rebind_block_geometry, recorded_agreements_keep_source_maps,
     ];
     for check in checks {
         basedpl::settings::reset();
@@ -224,6 +224,16 @@ fn retained_selection_parameters_survive_data_reads() {
         }
         check(r#""q"⌷["b":4 "a":5]"#, "0");
     }
+}
+
+fn recorded_agreements_keep_source_maps() {
+    let s = Session::new();
+    assert!(s.eval(r#"•prefs ["mathish":$f "kinds":"static" "float":32]"#).error.is_none());
+    equiv_in(&s, "f←{(-⊗)⍨⍵} ⋄ (f⍣2)2.0 4.0", "2 2 2 2⍴0 2 ¯2 0 ¯2 0 ¯4 ¯2 2 4 0 2 0 2 ¯2 0");
+    for (body, expected) in [("{1.0 3.0+⊗⍵}", "2 2 2⍴4 6 6 8 6 8 8 10"), ("{1.0 3.0⊣⊗⍵}", "2 2 2⍴1 1 1 1 3 3 3 3")] {
+        equiv_in(&s, &format!("f←{body} ⋄ (f⍣2)2.0 4.0"), expected);
+    }
+    equiv_in(&s, "g←{+/,1.0 3.0+⊗⍵} ⋄ g∂2.0 4.0", "2.0 2.0");
 }
 
 fn retained_programs_rebind_block_geometry() {

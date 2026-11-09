@@ -366,17 +366,6 @@ fn derivative_replay_tracks_input_layouts() {
 }
 
 #[test]
-fn recorded_agreements_keep_source_maps() {
-    let s = Session::new();
-    assert!(s.eval(r#"•prefs ["mathish":$f "kinds":"static" "float":32]"#).error.is_none());
-    equiv_in(&s, "f←{(-⊗)⍨⍵} ⋄ (f⍣2)2.0 4.0", "2 2 2 2⍴0 2 ¯2 0 ¯2 0 ¯4 ¯2 2 4 0 2 0 2 ¯2 0");
-    for (body, expected) in [("{1.0 3.0+⊗⍵}", "2 2 2⍴4 6 6 8 6 8 8 10"), ("{1.0 3.0⊣⊗⍵}", "2 2 2⍴1 1 1 1 3 3 3 3")] {
-        equiv_in(&s, &format!("f←{body} ⋄ (f⍣2)2.0 4.0"), expected);
-    }
-    equiv_in(&s, "g←{+/,1.0 3.0+⊗⍵} ⋄ g∂2.0 4.0", "2.0 2.0");
-}
-
-#[test]
 fn primitive_bodies_share_fold_facts() {
     for (body, monad) in [("{⍺+⍵}", Some("+3")), ("{x←⍺ ⋄ x+⍵}", None)] {
         let s = Session::new();

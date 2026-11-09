@@ -44,53 +44,18 @@ pub(crate) fn replay(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     Ok(taken(program, &mut values(program, plan, inputs, span)?, &program.result))
 }
 
-/// The result of one step on held values or bound inputs, without making a block plan. A plain array Map reads them or their direct copies through known mappings in one whole-array primitive call. Copy-bearing Maps leave explicit stage-compilation requests to block planning. No side outputs or other computation enters this route.
+/// The result of one step whose operands are held values or bound inputs, without making a block plan. No intermediate computation or side outputs enter this route.
 pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<Result<Value, Error>> {
     let j = program.result.of;
     let node = &program.nodes[j];
     let Origin::Step(step) = &node.origin else { return None };
     if !program.outputs.is_empty() { return None; }
     let leaf = |i: usize| match &program.nodes[i].origin { Origin::Input(k) => Some(inputs[*k]), Origin::Held(v) => Some(v), _ => None };
-    let all_leaves = program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some());
-    let copies = program.nodes.iter().enumerate().all(|(i, n)| i == j || leaf(i).is_some()
-        || matches!(&n.origin, Origin::Step(Step::Copy { of, .. }) if leaf(*of).is_some()));
-    #[cfg(not(web))]
-    if !all_leaves && crate::settings::compiles() == crate::settings::Compiles::Always { return None; }
-    if !all_leaves && (!copies || !matches!(step, Step::Map { .. })) { return None; }
+    if !program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some()) { return None; }
     if crate::settings::verifies() { super::verify::check(program); }
-    let result = match mapped(step, &program.nodes, &leaf, &node.desc, span) {
-        Some(result) => result,
-        None if all_leaves => run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span),
-        None => return None,
-    };
+    let result = run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span);
     Some(result.and_then(|value| checked(node, j, value, span)).map(|value|
         if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
-}
-
-/// Executes a Map's saved reads. Native array work may borrow a composable Copy source; Number semantics and carrier dispatch need actual operand values.
-fn mapped<'a>(step: &Step, nodes: &[Node], value: &dyn Fn(usize) -> Option<&'a Value>, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
-    let Step::Map { left: left_read, right: right_read, plan } = step else { return None };
-    let layout = &desc.layout;
-    let argument = |read: &Read| {
-        if let Some(v) = value(read.of) { return Some((v, read.pointwise(nodes))); }
-        let (source, map) = super::positional_source(nodes, read.of)?;
-        let map = map.compose(&read.pointwise(nodes), nodes[read.of].desc.shape(), desc.shape())?;
-        Some((value(source.of)?, map))
-    };
-    let left = match left_read { Some(read) => Some(argument(read)?), None => None };
-    let (right, right_map) = argument(right_read)?;
-    let (left, left_map) = left.map_or((None, Mapping::Single), |(v, map)| (Some(v), map));
-    let carried = crate::transform::carried(left, right);
-    if desc.atom || carried {
-        // Number semantics and carrier dispatch need actual operands, not a Copy's array source plus its map.
-        let read = |r: &Read| value(r.of).map(|v| through(v, r, nodes));
-        let left = match left_read { Some(r) => Some(read(r)?), None => None };
-        let right = read(right_read)?;
-        return Some(if carried { plan.p.call(left.as_deref(), right.as_ref(), span) }
-            else { plan.p.pervasive_apply(Some(plan), left.as_deref(), right.as_ref(), span, false).at(span) });
-    }
-    let agreement = Agreement { layout: layout.clone(), len: layout.count(), left: left_map, right: right_map };
-    Some(crate::primitive::weakened(left, right, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span)))
 }
 
 /// Stores a completed step at its declared kind and checks the value against its description.
@@ -156,7 +121,18 @@ pub(crate) fn run<'a>(
 ) -> Result<Value, Error> {
     let value = |r: &Read| through(node(r.of), r, nodes);
     match step {
-        Step::Map { .. } => mapped(step, nodes, &|j| Some(node(j)), desc, span).expect("an executing Map's operand nodes have their values"),
+        Step::Map { left, right, plan } => {
+            let (x, y) = (left.as_ref().map(|r| node(r.of)), node(right.of));
+            let carried = crate::transform::carried(x, y);
+            if desc.atom || carried {
+                let (left, right) = (left.as_ref().map(value), value(right));
+                return if carried { plan.p.call(left.as_deref(), right.as_ref(), span) }
+                    else { plan.p.pervasive_apply(Some(plan), left.as_deref(), right.as_ref(), span, false).at(span) };
+            }
+            let agreement = Agreement { layout: desc.layout.clone(), len: desc.layout.count(),
+                left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(nodes)), right: right.pointwise(nodes) };
+            crate::primitive::weakened(x, y, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span))
+        }
         Step::Convert { of, numeric } => {
             let of = value(of);
             if crate::transform::carried(None, &of) { return crate::derivative::converted(&of, desc.dtype(), span); }

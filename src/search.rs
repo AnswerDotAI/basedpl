@@ -88,10 +88,6 @@ pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
     if let Some(classes) = shared_classes(cells) { return Ok(classes); }
     let (width, t) = compared_at(cells.float_width(), Numeric::current());
     if let Some(classes) = compact_view(cells).and_then(|x| search::view_classes(x, t)) { return classes.map_err(Error::from); }
-    let compact = with_float_width!(width, F => match cells {
-        Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes(t, &x)), Cells::Arrays(_) => None,
-    });
-    if let Some(classes) = compact { return classes.map_err(Error::from); }
     if let Some(x) = exact_cells(cells) { return Ok(search::first_classes(&x, |k| k)); }
     if let Some(x) = hashes(cells, &Hashing::default()) { return hashed_classes(cells, &x, span); }
     if let Some(x) = reals(cells, width) { return tolerant::classes(t, &*x).map_err(Error::from); }

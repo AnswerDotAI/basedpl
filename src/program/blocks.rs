@@ -1,4 +1,4 @@
-//! Block stages: a run of a program's elementwise steps on values of one item count, and a fold of the last of them that ends the run, computed a block of items at a time. Pending work and dfn replays run this way. `plan` finds the runs.
+//! Stage execution: one native operation runs whole on prepared inputs; real elementwise chains and their terminal fold run cache-sized blocks. Pending work and function replays share these stages; `plan` groups them.
 //!
 //! RM's reads bind each operand's geometry and actual storage type; its kernels read at their computing type and write final slots through the shared output writer. A comparison writes Booleans when stored or folded, and may write 1 and 0 at a later float step's type when only such steps read it. Explicit language conversions use RM's floored/tolerant conversion, distinct from input preparation.
 //!
@@ -13,7 +13,7 @@ use crate::{
     number::{Halving, Numeric}, pervasive::{self, Reduce}, plan::Pervasive, primitive::{FoldKind, Primitive}
 };
 use rustymath::{
-    agreement::{Binding, Mapping, Missing, Period, ReadPlan, Walked, expanded_items, tiled_cycle}, buffer::{Buffer, DType, Element, FloatWidth, MapOutput, Scratch, View, Width},
+    agreement::{Binding, Mapping, Missing, Period, ReadPlan, Walked}, buffer::{Buffer, DType, Element, FloatWidth, MapOutput, Scratch, View, Width},
     gather::Steps, layout::strides, operation::{Kernel, Settings}, parallel::{self, Slots}, reduce, tolerant::Tolerance
 };
 use std::{borrow::Cow, ops::Range};
@@ -87,7 +87,7 @@ fn ran_compiled(items: usize) {
     crate::events::taken(crate::events::routes::Compiled, items);
 }
 
-/// An array that a stage reads: the program's node `of`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, the stage writes the node's cycle out once each time it runs (`gathered_once`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), the stage gathers the whole copy through `gather` instead, and `map` reads it in order. Both maps find their walk and cycle once and keep them for every run (`Walked`).
+/// An array that a stage reads: the program's node `of`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, RM writes the node's cycle out once each time it runs (`Walked::gathered`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), RM gathers the whole copy through `gather` instead, and `map` reads it in order. Both maps find their walk and cycle once and keep them for every run (`Walked`).
 #[derive(PartialEq)]
 struct Input { of: usize, items: usize, map: Walked<'static>, gather: Option<Walked<'static>> }
 
@@ -394,10 +394,10 @@ impl Blocks {
         let laid = if self.laid.sizes == sizes { Cow::Borrowed(&self.laid) } else { Cow::Owned(self.laid_out(sizes)) };
         let (main, rest) = {
             let read = |of: usize| values[of].as_ref()?.view().filter(|v| readable(v.dtype()));
-            // What each input gathers once for every range (`gathered_once`): its cycle, written out to cover a block at any phase where it's shorter, or the whole copy.
+            // RM prepares a cycle's backing or a whole walking copy once, before any parallel ranges.
             let gathered: Vec<Option<Buffer>> = self.inputs.iter().zip(&laid.reads).map(|(x, r)| match &x.gather {
                 Some(g) => {
-                    let items = gathered_once(read(x.of)?, g, laid.block);
+                    let items = g.gathered(read(x.of)?, laid.block)?;
                     if matches!(r, Reading::Cycle) { tally.copied(items.len()); }
                     Some(Some(items))
                 }
@@ -449,11 +449,14 @@ impl Blocks {
         Some(Ok(()))
     }
 
+    /// Input copies are geometry, not extra operations whose intermediate values need block fusion.
+    fn one_operation(&self) -> bool { self.steps.len() == 1 && self.fold.is_none() }
+
     /// The kernels of the stage's compiled parts.
     #[cfg(not(web))]
     fn kernels(&self) -> impl Iterator<Item = &Compiling> { self.parts.iter().filter_map(|p| p.lowered.as_ref()).map(|l| &l.code) }
 
-    /// Whether this run uses the stage's compiled parts, as the compile setting asks (`settings::compiles`). A stage compiles all its parts or none. `Never` uses none, and `Always` compiles them where they aren't compiled yet. The policy compiles them where the items repay a compile (`COMPILES_AT`) or where the first part's kernel ran or compiled before, in this stage or another (`jit::Kernel::seen`). A dfn program's stages therefore compile on the program's first reuse. A part reads an input as one item for the sizes it was lowered under (`one_item`), so it serves only runs under those sizes. It reads each input at its node's planned dtype, which a program stores each step's items at (`run::node`). Each run that uses compiled parts counts in `compiled_runs` and takes the `compiled` route. Where the setting asks, each reason that `parted` found for a step that compiles in no part declines that route.
+    /// Whether compiled parts serve this run. Policy compiles stages with intermediate work to fuse when their size repays it or their kernel ran before; one-operation stages stay on whole-array native kernels. Always still requests compilation for either category. A part serves only the run sizes and input dtypes it was lowered for. Asked-for unsupported parts record their existing decline reasons.
     #[cfg(not(web))]
     fn compiles(&self, sizes: crate::settings::Sizes) -> bool {
         use crate::settings::Compiles;
@@ -461,7 +464,8 @@ impl Blocks {
         let first = self.kernels().next();
         let asks = sizes.run == self.laid.sizes.run && match crate::settings::compiles() {
             Compiles::Never => false, Compiles::Always => true,
-            Compiles::Policy => compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen())
+            Compiles::Policy => !self.one_operation()
+                && (compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen()))
         };
         if asks { for &reason in &self.declines { declined(crate::events::routes::Compiled, reason, self.n); } }
         if first.is_none() || !asks { return false; }
@@ -659,11 +663,18 @@ impl Blocks {
     /// Run the stage block by block, splitting compiled runs at input repeats. Native steps bind RM reads; compiled parts prepare ABI spans. Stored steps copy to their outputs. The last step writes directly to its final output or the fold's buffer.
     fn range(&self, range: Range<usize>, run: &Run<'_>, outs: &[Option<Shared>], last: &mut Last<'_, '_>) -> bool {
         let (block, tally) = (run.block, run.tally);
+        let mut scratch = Scratch::default();
+        if self.one_operation() && !run.compiled && !range.is_empty() {
+            tally.block();
+            tally.run();
+            let ok = self.step(&self.steps[0], run, &[], &run.constants[0], &mut scratch, range.start, range.len(), last.output());
+            tally.copied(scratch.copied());
+            return ok;
+        }
         let mut bufs: Vec<Buffer> = Vec::new();
         let mut held = matches!(last, Last::Fold(_)).then(|| Buffer::with_capacity(self.steps[self.steps.len() - 1].made(), block));
         #[cfg(not(web))]
         let mut copies: Vec<Buffer> = if run.compiled { run.inputs.iter().map(|d| Buffer::with_capacity(d.view.dtype(), 0)).collect() } else { Vec::new() };
-        let mut scratch = Scratch::default();
         let mut ok = true;
         let mut start = range.start;
         while start < range.end {
@@ -846,7 +857,7 @@ impl Blocks {
             };
             if item.len() != 1 { return None; }
             if matches!(scalar, Scalar::Input(_)) && jit::Ty::of(item.dtype()) != ty { return None; }
-            *slot = with_item!(item.dtype(), A => A::held(item)[0].slot());
+            *slot = with_item!(item.dtype(), A => A::of(item).expect("a scalar slot has its argument's dtype")[0].slot());
         }
         let mut c = lowered.scalars.len();
         if let Some(runs) = runs {

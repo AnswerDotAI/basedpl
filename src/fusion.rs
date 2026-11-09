@@ -334,7 +334,10 @@ pub(crate) fn recorded(program: &Program, inputs: &[&Value]) -> Option<Value> {
         let value = match &node.origin { Origin::Input(k) => inputs[*k], Origin::Held(value) => value, _ => return None };
         Some(nodes.held(value, node.desc.clone()).of)
     });
-    Some(pending_program(Program::new(nodes, result), desc.layout.clone(), desc.dtype(), desc.zero()))
+    let program = Program::new(nodes, result);
+    // Rebinding a repeated dense input can add a Copy beyond the recipe's own step count.
+    if own_steps(&program) > MAX_NODES { return None; }
+    Some(pending_program(program, desc.layout.clone(), desc.dtype(), desc.zero()))
 }
 
 /// `program` as a pending array of `layout`, holding items of `dtype`, with `prototype` as its prototype. Where gathering it would take more than `MAX_NODES` programs, or it would keep alive more than `MAX_KEPT` times its largest array, the pending arrays it reads run first.
