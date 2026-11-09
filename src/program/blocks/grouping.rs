@@ -92,11 +92,11 @@ impl Group {
         let items = node.desc.layout.count();
         if node.desc.atom || self.items.is_some_and(|n| n != items) { return false; }
         let fits = match step {
-            Step::Map { left, right, plan } => computes(plan, node.desc.dtype()).is_some() && self.reads_paired(program, left.as_ref(), right),
-            Step::Convert { of, .. } => readable(node.desc.dtype()) && self.reads(program, of, &Mapping::Linear(1)) && !read_through(program, readers, j),
+            Step::Map { plan, .. } => computes(plan, node.desc.dtype()).is_some() && step.operands().all(|r| self.reads(program, r)),
+            Step::Convert { of, .. } => readable(node.desc.dtype()) && self.reads(program, of) && !read_through(program, readers, j),
             Step::Select { mask, yes, no } => {
                 readable(node.desc.dtype()) && program.nodes[mask.of].desc.dtype() == DType::Boolean
-                    && [mask, yes, no].into_iter().all(|r| self.reads(program, r, &Mapping::Linear(1)))
+                    && [mask, yes, no].into_iter().all(|r| self.reads(program, r))
             }
             Step::Copy { of, .. } => !self.nodes.contains(of) && input(program, *of),
             _ => false,
@@ -108,15 +108,10 @@ impl Group {
         }
         fits
     }
-    /// Whether a step of the group can read `read` through `map`, as `Blocks::operand` reads it: a step of the group only item for item, and a copy in the group, an atom or an array of a type that a stage holds (`readable`) through any map.
-    fn reads(&self, program: &Program, read: &Read, map: &Mapping) -> bool {
+    /// Whether a normalized pointwise operand reads an earlier step, an atom or an array of a type that a stage holds.
+    fn reads(&self, program: &Program, read: &Read) -> bool {
         let node = &program.nodes[read.of];
-        if !self.nodes.contains(&read.of) { return node.desc.atom || readable(node.desc.dtype()); }
-        match node.origin { Origin::Step(Step::Copy { .. }) => true, _ => { let n = node.desc.layout.count(); map.in_order(n, &[n]) } }
-    }
-    /// Whether a step of the group can read `left`, where it's dyadic, and `right` through the maps that agreement gives them (`reads`).
-    fn reads_paired(&self, program: &Program, left: Option<&Read>, right: &Read) -> bool {
-        agreement(left, right).is_some_and(|a| left.is_none_or(|r| self.reads(program, r, &a.left)) && self.reads(program, right, &a.right))
+        self.nodes.contains(&read.of) || node.desc.atom || readable(node.desc.dtype())
     }
     /// Adds the group's nodes to `units`, leaving the group empty: a block stage where the group forms one (`stages`), or each node on its own. A copy that a node outside the stage reads also runs on its own before the stage, for that node. A shape with no items takes its nodes one at a time, where a fold of no items gives the reduction's unit, such as 0 for a sum, rather than its identity, -0.0, at which a stage's fold starts.
     fn finish(&mut self, program: &Program, readers: &[Vec<usize>], units: &mut Vec<Unit>) {
@@ -140,11 +135,6 @@ pub(crate) fn readable(dtype: DType) -> bool { matches!(dtype, DType::Boolean | 
 
 /// Whether node `i` is an array that a block stage reads as an input.
 fn input(program: &Program, i: usize) -> bool { !program.nodes[i].desc.atom && readable(program.nodes[i].desc.dtype()) }
-
-/// How the operands of a map step read over its result: `left`, where the step is dyadic, and `right`.
-pub(super) fn agreement(left: Option<&Read>, right: &Read) -> Option<Agreement> {
-    Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout).ok()
-}
 
 /// Whether node `j` is a conversion that only inner products read, each of which reads its operand through it (`pervasive::reads_widened`). A replay leaves it pending for them (`Unit::Pending`), so that its converted items are never stored.
 fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {

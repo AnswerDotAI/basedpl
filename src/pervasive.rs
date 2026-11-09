@@ -508,9 +508,11 @@ pub(crate) fn table_kernel(p: Primitive, dyadic: bool, table: DType, stored: DTy
 pub(crate) fn constants(left: Option<&Value>, right: &Value) -> [Option<f64>; 2] { [left.and_then(Value::as_real), right.as_real()] }
 
 /// The argument that `plan`'s call on `left` and `right` gives unchanged (`Pervasive::kept`), where the result has its shape: the other argument is an atom, or the kept one isn't. A weak number beside a strong one isn't kept: the call's result is strong, as `∞⌈1ₓ₁` gives a strong `∞`, an ordinary float.
-pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Value>, right: &'a Value) -> Option<&'a Value> {
-    let (kept, other) = if plan.kept()? == 0 { (left?, Some(right)) } else { (right, left) };
-    let strengthens = matches!((kept, other), (Value::Number(n), Some(Value::Number(o))) if n.is_weak() && !o.is_weak());
+pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Value>, right: &'a Value, agreement: &Agreement) -> Option<&'a Value> {
+    let (kept, other, map) = if plan.kept()? == 0 { (left?, Some(right), &agreement.left) } else { (right, left, &agreement.right) };
+    // Returning the source also returns its layout and item order, not the call's broadcast or permutation.
+    if kept.layout() != &agreement.layout || !map.in_order(kept.len(), agreement.layout.shape()) { return None; }
+    let strengthens = Kind::value(kept).weak && other.is_some_and(|o| !Kind::value(o).weak);
     (!strengthens && other.is_none_or(|o| o.is_atom() || !kept.is_atom())).then_some(kept)
 }
 
@@ -518,7 +520,7 @@ pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Valu
 pub(crate) fn expected(p: Primitive, left: Option<&Value>, right: &Value) -> Option<DType> {
     let numeric = Numeric::current();
     if numeric.is_static() { return None; }
-    plan::pervasive_on(p, left, right, numeric).kernel().map(|k| k.result_dtype())
+    plan::pervasive_on(p, left, right, numeric, None).kernel().map(|k| k.result_dtype())
 }
 
 /// `p` on the number `y`, and on `x` where it's dyadic: the one path for functions on numbers, through `p`'s formula as `map` computes arrays. Machine numbers compute at the kind `map` chooses, with its reruns (`computed`). Exact numbers, rationals and unbounded integers, compute through the formula's exact form. Where the formula has no exact form or gives no exact result, as for an irrational root, they compute at the widest float argument's width, as a machine integer beside it does, or at `numeric`'s float width beside no float.

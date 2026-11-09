@@ -410,11 +410,11 @@ pub(crate) fn copy(form: &Form, params: &[Value], inputs: &[&Value], fill: Optio
     let descriptions: Vec<Desc> = inputs.iter().map(|v| Desc::held(v)).collect();
     let fill_desc = fill.map(Desc::held);
     let (desc, plan) = crate::plan::structural(form, params, &descriptions, fill_desc.as_ref())?;
-    let positional = plan.positional(desc.shape());
-    if let ([source], Some((0, map))) = (inputs, positional.as_ref()) && map.in_order(source.len(), desc.shape()) {
-        return if desc.atom { Ok((*source).clone()) } else { source.relaid(desc.layout).described("a structural view") };
-    }
-    if !desc.atom && desc.kind.dtype.is_some() && fill.is_none() && defers(true, desc.layout.count()) && positional.is_some() {
+    if !desc.atom && desc.kind.dtype.is_some() && fill.is_none() && defers(true, desc.layout.count())
+        && let Some((source, map)) = plan.positional(desc.shape()) {
+        if let [value] = inputs && source == 0 && map.in_order(value.len(), desc.shape()) {
+            return value.relaid(desc.layout).described("a structural view");
+        }
         let (layout, dtype, prototype) = (desc.layout.clone(), desc.dtype(), desc.zero());
         let mut nodes = Nodes::default();
         let params = params.iter().map(|v| nodes.held(v, Desc::held(v))).collect();
@@ -468,6 +468,9 @@ fn copy_through(source: &Value, plan: &rustymath::agreement::ReadPlan, layout: &
     Some(match input.route() {
         ReadRoute::Input(0) => copy_value(source, layout.clone(), map, fill, defer),
         ReadRoute::Map { map: Mapping::Steps { steps, .. }, .. } => {
+            if let Some((0, identity)) = plan.positional(layout.shape()) && identity.in_order(source.len(), layout.shape()) {
+                return Some(copy_value(source, layout.clone(), &identity, fill, defer));
+            }
             let inner = Layout::from(steps.iter().map(Steps::len).collect::<Vec<_>>());
             copy_through(source, input, &inner, fill, defer)?.and_then(|padded| {
                 padded.force();
@@ -489,9 +492,10 @@ pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping, fill: Opt
 }
 
 fn copy_value(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>, defer: bool) -> Result<Value, ErrorKind> {
-    let len = generated_len(layout.shape())?;
+    // A zero-copy view allocates no items and needs no generation admission.
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
     if map.in_order(right.len(), layout.shape()) { return right.relaid(layout); }
+    let len = generated_len(layout.shape())?;
     let fill = fill.filter(|_| map.fills());
     if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
     if defer && fill.is_none() && defers(true, len) && let Some(copy) = pending(right, &layout, map) { return Ok(copy); }

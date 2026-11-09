@@ -66,7 +66,7 @@ macro_rules! speed_tests {
 
 speed_tests!(
     timed_arrays counts_arrays "arrays.bpl", timed_calls counts_calls "calls.bpl", timed_growth counts_growth "growth.bpl", timed_images counts_images "images.bpl", timed_maps counts_maps "maps.bpl",
-    timed_models counts_models "models.bpl", timed_steps counts_steps "steps.bpl", timed_structure counts_structure "structure.bpl", timed_tables counts_tables "tables.bpl",
+    timed_models counts_models "models.bpl", timed_moving counts_moving "moving.bpl", timed_steps counts_steps "steps.bpl", timed_structure counts_structure "structure.bpl", timed_tables counts_tables "tables.bpl",
 );
 
 const MATHISH_COMPARISONS: &str = "comparisons_mathish.bpl";

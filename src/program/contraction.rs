@@ -1,7 +1,7 @@
 //! Folds that read their argument's sources instead of computing it. A `+` fold of a `×` whose operands read their sources through affine maps runs as one product, which never computes the grid of products (`contracted`): index notation's level 3. A fold of a copy that repeats items, as a broadcast does, folds the copy's source, which never computes the copy (`fold_of_copy`). Fusion's pending programs and the trace both call each, so the two routes find the same folds.
 
 use super::{Laid, Node, Nodes, Origin, Read, Step, along, laid_out, stepped};
-use crate::{agreement::{Agree, Agreement}, array::Layout, number::{Arithmetic, Numeric}, plan::{Desc, Operand}, primitive::{FoldKind, Primitive}};
+use crate::{array::Layout, number::{Arithmetic, Numeric}, plan::{Desc, Operand}, primitive::{FoldKind, Primitive}};
 use rustymath::{agreement::Mapping, gather::Steps, layout::{count, strides}};
 
 /// The read that an unseeded fold by `p` along `axes` of `of` folds through in place of a `Step::Fold`: one product where the fold is a `+` of a `×` (`contracted`), or the source of a copy that repeats items, along `axes[0]` (`fold_of_copy`). `desc` is the fold's description along one axis. Recording and fusion both route a fold through here. `None`, adding nothing, where neither applies.
@@ -31,10 +31,8 @@ fn product(nodes: &mut Nodes, x: &Read, y: &Read, numeric: Numeric, kind: FoldKi
     // A view merges only folded axes, so that the fold's result keeps the frame's other axes as they are.
     let kept: Vec<usize> = (0..frame.len()).filter(|a| !folded.contains(a)).collect();
     if result.layout.shape() != lens(&kept).as_slice() { return Err("a view of the products"); }
-    let agreement =
-        Agreement::new(&x.layout, &y.layout).ok().filter(|a| a.layout.shape() == frame.as_slice()).ok_or("operands that don't pair as the products do")?;
-    let (mut left, mut right) =
-        Source::of(nodes, x, &agreement.left, &frame).zip(Source::of(nodes, y, &agreement.right, &frame)).ok_or("a read that isn't affine")?;
+    let (mut left, mut right) = Source::of(nodes, x, &x.pointwise(nodes), &frame)
+        .zip(Source::of(nodes, y, &y.pointwise(nodes), &frame)).ok_or("a read that isn't affine")?;
     // An operand that holds one item along each folded axis factors out of the fold (`factored`).
     let constant = |s: &Source| folded.iter().all(|&a| frame[a] == 1 || s.strides[a] == 0);
     match (constant(&left), constant(&right)) {
@@ -122,7 +120,7 @@ fn factored(
     let (xd, yd) = (x.desc(nodes), y.desc(nodes));
     let held = match &nodes[y.of].origin { Origin::Held(v) if yd.atom => Some(v.clone()), _ => None };
     let yo = match &held { Some(v) => Operand::Held(v), None => Operand::Traced(&yd) };
-    let mapped = crate::plan::map(Primitive::Arithmetic(Arithmetic::Times), Some(&Operand::Traced(&xd)), &yo, false, numeric)?;
+    let mapped = crate::plan::map(Primitive::Arithmetic(Arithmetic::Times), Some(&Operand::Traced(&xd)), &yo, false, numeric, None)?;
     if mapped.desc.dtype() != result.dtype() || mapped.desc.kind.fixed != result.kind.fixed { return Err("a product of another type than the fold's"); }
     let read = nodes.mapped(mapped, Some(x), y);
     Ok(Read::new(read.of, result.layout.clone()))

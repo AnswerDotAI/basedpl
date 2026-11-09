@@ -112,7 +112,7 @@ pub(crate) fn taped(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span
     let linear = match op {
         Op::Operation(Operation::Primitive(p), _) if matches!(p.facts(left.is_some()).form, Form::Moves { .. }) => return None,
         Op::Operation(Operation::Primitive(Primitive::Arithmetic(Arithmetic::Plus)), Pairing::At(_)) => left.is_some(),
-        Op::Operation(Operation::Primitive(p), Pairing::Axis(None)) => match (p.facts(left.is_some()).linear, left) {
+        Op::Operation(Operation::Primitive(p), Pairing::Axis(None) | Pairing::Agreed(_)) => match (p.facts(left.is_some()).linear, left) {
             (Some(LinearMap::Product), Some(l)) => tape(l) != tape(right), (Some(LinearMap::Quotient), Some(_)) => !tape(right),
             (Some(LinearMap::Sum | LinearMap::Difference), Some(_)) | (Some(LinearMap::Same | LinearMap::Negation), None) => true, _ => false
         },

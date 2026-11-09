@@ -9,7 +9,7 @@
 use super::{Origin, Program, Read, Step, run::{Plan, Unit}};
 use crate::plan::Desc;
 use crate::{
-    Number, Value, agreement::{Agree, Agreement}, array::{Layout, Storage, float_width_of}, element::Stored, explain::Tally,
+    Number, Value, agreement::{Agree, Agreement}, array::{Storage, float_width_of}, element::Stored, explain::Tally,
     number::{Halving, Numeric}, pervasive::{self, Reduce}, plan::Pervasive, primitive::{FoldKind, Primitive}
 };
 use rustymath::{
@@ -129,7 +129,8 @@ impl std::fmt::Debug for Blocks {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Blocks").field("nodes", &self.nodes).finish() }
 }
 
-/// One step of a block stage. `tolerance` applies to float-to-integer conversion. `desc` preserves the published atom, kind and layout independently of the temporary computing dtype (`made`).
+/// One block-stage step. `op` and `tolerance` feed native JIT lowering; `map` executes precompiled work with its resolved settings. `desc` preserves the published atom, kind and layout independently of the temporary computing dtype (`made`).
+#[cfg_attr(web, expect(dead_code, reason = "op and tolerance are shared-construction metadata for native JIT lowering"))]
 struct BlockStep {
     j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, desc: Desc, map: rustymath::operation::Map
 }
@@ -157,6 +158,7 @@ impl BlockStep {
 }
 
 /// What a step computes: a pervasive primitive as its plan plans it, its operand converted to the step's type, or its first operand where its third, a mask, is true and its second where it's false.
+#[cfg_attr(web, expect(dead_code, reason = "Map’s plan is native JIT lowering metadata"))]
 enum Op { Map(Pervasive), Convert, Select }
 
 impl Op {
@@ -230,7 +232,8 @@ impl Blocks {
             match step {
                 Step::Map { left, right, plan } => {
                     let at = computes(plan, node.desc.dtype())?;
-                    let (x, y) = b.paired(program, members, left.as_ref(), right, shape)?;
+                    let x = match left { Some(r) => Some(b.operand(program, members, r, &r.pointwise(&program.nodes), shape)?), None => None };
+                    let y = b.operand(program, members, right, &right.pointwise(&program.nodes), shape)?;
                     let map = rustymath::operation::Map::Kernel(plan.kernel()?.clone(), plan.numeric.settings_for(plan.computes()?));
                     b.steps.push(made(Op::Map(plan.clone()), [x, Some(y), None], at, Tolerance::EXACT, map));
                 }
@@ -243,8 +246,7 @@ impl Blocks {
                     b.steps.push(made(Op::Convert, [None, Some(y), None], node.desc.dtype(), tolerance, map));
                 }
                 Step::Select { mask, yes, no } => {
-                    let read = |r: &Read| if program.nodes[r.of].desc.atom { Mapping::Single } else { Mapping::Linear(1) };
-                    let [m, x, y] = [mask, yes, no].map(|r| b.operand(program, members, r, &read(r), shape));
+                    let [m, x, y] = [mask, yes, no].map(|r| b.operand(program, members, r, &r.pointwise(&program.nodes), shape));
                     let at = node.desc.dtype();
                     let map = rustymath::operation::Map::Kernel(
                         Kernel::new(rustymath::Choose, rustymath::domain::Variant { dtype: at, checked: false, wrapping: true }), Settings { tolerance: Tolerance::EXACT });
@@ -335,13 +337,6 @@ impl Blocks {
         }
         Some(())
     }
-    /// The operands of a step that reads `left`, where it's dyadic, and `right` through the maps that agreement gives them (`operand`).
-    fn paired(&mut self, program: &Program, members: &[usize], left: Option<&Read>, right: &Read, frame: &[usize]) -> Option<(Option<Operand>, Operand)> {
-        let agreement = agreement(left, right)?;
-        let x = match left { Some(r) => Some(self.operand(program, members, r, &agreement.left, frame)?), None => None };
-        Some((x, self.operand(program, members, right, &agreement.right, frame)?))
-    }
-
     /// The operand that reads `read`, which agreement lays over a step's items of `frame` through `map`: a step of the stage, an atom, or an array that the stage reads through `map`, composed with the map of any copy of the stage's that it reaches it through. `None` for a step of the stage that `map` doesn't read item for item, or a copy whose map doesn't compose with `map`.
     fn operand(&mut self, program: &Program, members: &[usize], read: &Read, map: &Mapping, frame: &[usize]) -> Option<Operand> {
         let (mut i, mut map) = (read.of, map.clone());
@@ -657,7 +652,7 @@ impl Blocks {
         let Some(seed) = seed else { return Some(Ok(value)) };
         let seed = Value::Number(seed.clone());
         let agreement = Agreement::new(value.layout(), seed.layout()).ok()?;
-        let result = pervasive::map(&crate::plan::pervasive_on(fold.p, Some(&value), &seed, fold.numeric), Some(&value), &seed, &agreement)?;
+        let result = pervasive::map(&crate::plan::pervasive_on(fold.p, Some(&value), &seed, fold.numeric, Some(&agreement)), Some(&value), &seed, &agreement)?;
         Some(result.map(|value| published(value, &fold.desc)))
     }
 

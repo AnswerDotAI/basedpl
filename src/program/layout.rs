@@ -53,10 +53,10 @@ fn reads(program: &Program) -> (Vec<Link>, Vec<Want>) {
     let nodes = &program.nodes;
     let (mut links, mut wants) = (Vec::new(), Vec::new());
     for (j, node) in nodes.iter().enumerate() {
-        if let Some((left, right)) = map(program, j) && let Ok(agreement) = Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout) {
-            for (read, through) in left.map(|l| (l, &agreement.left)).into_iter().chain([(right, &agreement.right)]) {
+        if let Some((left, right)) = map(program, j) {
+            for read in left.into_iter().chain([right]) {
                 if nodes[read.of].desc.shape() != read.layout.shape() { continue; }
-                let (of, through) = through_copies(nodes, read.of, through, node.desc.shape());
+                let (of, through) = through_copies(nodes, read.of, &read.pointwise(nodes), node.desc.shape());
                 let Some(axes) = permutation(&through, node.desc.shape(), nodes[of].desc.shape()) else { continue };
                 if map(program, of).is_some() { links.push(Link { reader: j, of, axes }); }
                 else { wants.push(Want { of: j, order: inverse_permutation(axes.iter().copied()) }); }
@@ -178,16 +178,16 @@ impl<'a> Reordering<'a> {
     fn map(&mut self, node: &Node, o: &[usize]) -> Option<usize> {
         let Origin::Step(Step::Map { left, right, plan }) = &node.origin else { return None };
         let (old, new) = (&node.desc.layout, node.desc.layout.axes(o.iter().copied()));
-        let mut agreement: crate::agreement::Agreement = crate::agreement::Agree::new(
-            left.as_ref().map_or(&Layout::default(), |l| &l.layout), &right.layout).ok()?;
         let shift = along(old.shape(), o);
-        let mut operand = |read: &Read, through: &Mapping| -> Option<Read> {
+        let mut operand = |read: &Read| -> Option<Read> {
             if self.nodes[read.of].desc.atom { return Some(Read::new(self.at[read.of], read.layout.clone())); }
-            Some(Read::new(self.lay(read.of, through.compose(&shift, old.shape(), new.shape())?, &new)?, new.clone()))
+            let through = read.pointwise(self.nodes).compose(&shift, old.shape(), new.shape())?;
+            Some(Read::new(self.lay(read.of, through, &new)?, new.clone()))
         };
-        let left = match left { Some(l) => Some(operand(l, &agreement.left)?), None => None };
-        let right = operand(right, &agreement.right)?;
-        agreement.layout = new.clone();
+        let left = match left { Some(l) => Some(operand(l)?), None => None };
+        let right = operand(right)?;
+        let agreement = Agreement { layout: new.clone(), len: new.count(),
+            left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(&self.out)), right: right.pointwise(&self.out) };
         let mapped = crate::plan::Mapped { desc: Desc { layout: new, ..node.desc.clone() }, plan: plan.clone(), agreement };
         Some(self.out.mapped(mapped, left, right).of)
     }

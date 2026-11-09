@@ -46,6 +46,7 @@ macro_rules! detail_value { ($field:ident) => { $field }; ($field:ident, $value:
 macro_rules! detail_label { () => { false }; (label) => { true }; }
 macro_rules! details {
     ($($variant:ident, $table:ident, $name:literal { $($field:ident: $ty:ty => $kind:ident $(($value:expr))? $(@$label:ident)?),* };)+) => {
+        #[cfg_attr(web, expect(dead_code, reason = "shared report schema retains native-JIT compile rows"))]
         pub(crate) enum Detail { $($variant { $($field: $ty),* }),+ }
         $(const $table: Table = ($name, &[$((stringify!($field), Column::$kind)),*]);)+
         impl Detail {

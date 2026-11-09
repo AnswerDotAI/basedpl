@@ -3,12 +3,12 @@
 •prefs ["seed":0] ⋄ n←100000 ⋄ v←¿n⍴0 ⋄ w←101
 ⍝⍝ moving
 ⍝ Width 101 uses rustymath's prefix/suffix sliding sum (about three additions/output), then bulk division: O(n), without an n×w window buffer.
-⍝ Their shared ceiling awaits quiet measurement of the manual form; slow wrappers do not set the budget.
+⍝ Expected: 6 copy-equivalents for HGW reads/writes, buffer initialization, serial dependencies and bulk division; the shared Linux budget is twice that. macOS/wasm await measurement.
 (+/w↕v)÷w
-⍝⍝: -	-	-
+⍝⍝: -	12	-
 
 {(+/⍵)÷≢⍵}⍤1 w↕v   ⍝ (+/w↕v)÷w
-⍝⍝: -	-	-
+⍝⍝: -	12	-
 
 (+/÷≢)⍤1 w↕v   ⍝ (+/w↕v)÷w
-⍝⍝: -	-	-
+⍝⍝: -	12	-

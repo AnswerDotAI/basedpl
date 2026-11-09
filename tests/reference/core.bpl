@@ -488,6 +488,22 @@ g←{m←2 3⍴⍵×2 ⋄ ⍵+0.001×(+/⍵)×+/0⊃↓m} ⋄ x←1 2 3 ⋄ q←
 ⍝ program-weak-atom — A weak atom keeps its weak flag in a recorded body: beside float32 data it gives float32 in a loop's traced step and in a map, as the untraced call does, and a strong float64 left argument gives float64
 v←[1 2 3]ₛ ⋄ s←+/[2.5] ⋄ [(•storage 2.5({⍺+⍵}⍣2)v).kind ; (•storage s({⍺+⍵}⍣2)v).kind ; (•storage 2.5 {⍺+⍵}¨ v).kind]   ⍝ "float32" "float64" "float32"
 
+⍝ program-weak-spelling — A weak bound tine and a dfn literal use the same typed preparation beside fixed data
+•prefs ["kinds":"static" "mathish":$f] ⋄ v←[0 1 2]ₓ₁ ⋄ x←[1 2 3]ₛ ⋄ d←{+/(1ₓ+v)×⍵} ⋄ t←+/((1ₓ+)∘(v⍨))×⊢ ⋄ e←•explain "[d∂x;t∂x]" ⋄ [e.value≡2⍴⊂[1 2 3]ₛ;2=≢e.programs.event;≢e.stopped.reason]   ⍝ $t $t 0ₓ
+
+⍝ program-weak-classes — Fresh bound integers replay within a minimum-width class and use the proper width across the 255/256 boundary
+•prefs ["kinds":"static" "mathish":$f] ⋄ v←[0 1 2]ₓ₁ ⋄ x←[1 2 3]ₛ ⋄ g←{(+/((⍺+)∘(v⍨))×⊢)∂⍵} ⋄ e←•explain "[1ₓ g x;255ₓ g x;256ₓ g x;257ₓ g x]" ⋄ [e.value≡[1 2 3;255 0 1;256 257 258;257 258 259];(4=≢e.programs.event)∧e.programs.event.[[1 3]ₓ]≡2⍴⊂"replayed"]   ⍝ $t $t
+
+⍝ program-weak-computed — An input keeps its class while adding one crosses 255/256; computed promotion and a reduction seed decline rather than reuse the first width
+•prefs ["kinds":"static" "mathish":$f] ⋄ v←[0 1 2]ₓ₁ ⋄ x←[1 2 3]ₛ ⋄ f←{+/((⍺+1ₓ)+v)×⍵} ⋄ g←{((⍺+1ₓ)+/v)×+/⍵} ⋄ e←•explain "[254ₓ(f∂)x;255ₓ(f∂)x;254ₓ(g∂)x;255ₓ(g∂)x]" ⋄ [e.value≡[255 0 1;256 257 258;2 2 2;259 259 259];≢e.programs.event]   ⍝ $t 0ₓ
+
+⍝ program-weak-observed — Observing a capture as a count also guards its weakness before reusing arithmetic on it
+•prefs ["kinds":"dynamic" "mathish":$f] ⋄ p←[254 255]ₓ₁ ⋄ x←[1 2 3]ₛ ⋄ a←2ₓ ⋄ f←{q←a↑⍵ ⋄ +/(a+p)×q} ⋄ e←•explain "f∂x" ⋄ a←↑,2ₓ ⋄ b←•explain "f∂x" ⋄ [e.value≡[0 1 0]ₛ;b.value≡[256 257 0]ₛ;1=≢e.programs.event]   ⍝ $t $t $t
+
+⍝ program-weak-polymorphic — Changing weak floating captures and fresh bound tines keep value-polymorphic replay
+•prefs ["kinds":"dynamic" "mathish":$f] ⋄ v←[1 2 3]ₛ ⋄ a←1 ⋄ f←{+/a×⍵} ⋄ e←•explain "r←f∂v ⋄ a←1.5 ⋄ s←f∂v ⋄ a←256 ⋄ t←f∂v ⋄ a←257 ⋄ [r;s;t;f∂v]" ⋄ •prefs ["kinds":"static"] ⋄ g←{(+/⍺×⊢)∂⍵} ⋄ t←•explain "[1 g v;1.5 g v;256 g v;257 g v]" ⋄ wanted←[1 1 1;1.5 1.5 1.5;256 256 256;257 257 257] ⋄ events←3⍴⊂"replayed" ⋄ [e.value≡wanted;t.value≡wanted;(1↓e.programs.event)≡events;(1↓t.programs.event)≡events]   ⍝ $t $t $t $t
+
+
 ⍝ — Power computes the same result when its body reads the clock before and after arithmetic
 h←{t←•time 0 ⋄ y←1+2×3×⍵ ⋄ z←0≤•time⁝t ⋄ y×z} ⋄ +/h⍣3⁝1 2 3   ⍝ 1425
 

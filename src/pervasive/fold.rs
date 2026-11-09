@@ -35,7 +35,7 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     };
     let Some(seed) = seed else { return Some(Ok(result)) };
     let agreement = Agreement::new(result.layout(), seed.layout()).ok()?;
-    map(&plan::pervasive_on(p, Some(&result), seed, numeric), Some(&result), seed, &agreement)
+    map(&plan::pervasive_on(p, Some(&result), seed, numeric, Some(&agreement)), Some(&result), seed, &agreement)
 }
 
 /// The fold by `p` of each group of the vector `right` that `groups` gives, by `p`'s reduction (`Reduce::run_groups`) at the kind the fold computes in. Each group's fold combines its items in their order, or in four interleaved parts among few groups (`Grouping::fold`), where the reduction may combine them in another order. `None` for a function with no reduction, for storage it doesn't fold, and where a checked total doesn't fit.

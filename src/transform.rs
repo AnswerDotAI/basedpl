@@ -319,7 +319,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span)
 /// A call with a selected running level.
 #[inline(never)]
 fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span, newest: Mark) -> Option<Result<Value, Error>> {
-    if let Op::Operation(operation, Pairing::Agreed(agreement)) = op {
+    if !matches!(newest, Mark::Trace(_) | Mark::Tape(_)) && let Op::Operation(operation, Pairing::Agreed(agreement)) = op {
         let (x, y) = agreement.laid(left, right);
         return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, span));
     }

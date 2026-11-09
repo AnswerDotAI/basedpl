@@ -71,9 +71,9 @@ fn mapped<'a>(step: &Step, nodes: &[Node], value: &dyn Fn(usize) -> Option<&'a V
     let Step::Map { left, right, plan } = step else { return None };
     let layout = &desc.layout;
     let argument = |read: &Read| {
-        if nodes[read.of].desc.atom && !read.view(nodes) { return Some((value(read.of)?, Mapping::Single)); }
+        if nodes[read.of].desc.atom && !read.view(nodes) { return Some((value(read.of)?, read.pointwise(nodes))); }
         if read.layout != *layout { return None; }
-        if let Some(v) = value(read.of) { return Some((v, Mapping::Linear(1))); }
+        if let Some(v) = value(read.of) { return Some((v, read.pointwise(nodes))); }
         let (source, map) = super::positional_source(nodes, read.of)?;
         Some((value(source.of)?, map))
     };

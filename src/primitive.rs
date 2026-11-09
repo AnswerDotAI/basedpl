@@ -714,8 +714,8 @@ impl Primitive {
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result, as the call's plan plans it (`plan::Pervasive`).
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
-        let plan = crate::plan::pervasive_on(self, left, right, Numeric::current());
-        if let Some(kept) = crate::pervasive::unchanged(&plan, left, right) { return Ok(kept.clone()); }
+        let plan = crate::plan::pervasive_on(self, left, right, Numeric::current(), Some(&agreement));
+        if let Some(kept) = crate::pervasive::unchanged(&plan, left, right, &agreement) { return Ok(kept.clone()); }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
         let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(plan.fuses(), agreement.len) {
             match crate::fusion::defer(&plan, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }

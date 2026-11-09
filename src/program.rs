@@ -114,7 +114,8 @@ impl Nodes {
         Read::new(of, layout)
     }
     pub(crate) fn copied(&mut self, of: Read, map: Mapping, desc: Desc) -> Read {
-        let step = copy_of_copy(self, of.of, &map, desc.shape()).unwrap_or_else(|| Step::Copy { of: of.of, map: map.split(desc.shape()) });
+        // Preserve compact cycles/repeats; geometry consumers expand them through Mapping only where needed.
+        let step = copy_of_copy(self, of.of, &map, desc.shape()).unwrap_or_else(|| Step::Copy { of: of.of, map });
         self.stepped(desc, step)
     }
     fn mapped_read(&mut self, of: Read, map: Mapping, frame: &Layout) -> Read {
@@ -329,6 +330,8 @@ impl Read {
     pub(crate) fn desc(&self, nodes: &[Node]) -> Desc { Desc { layout: self.layout.clone(), ..nodes[self.of].desc.clone() } }
     /// Whether this read is a view: a layout other than its node's own, which a replay relays its node's value to.
     pub(crate) fn view(&self, nodes: &[Node]) -> bool { self.layout != nodes[self.of].desc.layout }
+    /// A normalized pointwise operand reads an atom repeatedly and an array in frame order.
+    pub(crate) fn pointwise(&self, nodes: &[Node]) -> Mapping { if nodes[self.of].desc.atom { Mapping::Single } else { Mapping::Linear(1) } }
 }
 
 /// The reads of `$step`'s operands, with optional ones taken through `$as`, `as_ref` or `as_mut`, and a selector's and a structural call's reads through `$iter`, `iter` or `iter_mut`.

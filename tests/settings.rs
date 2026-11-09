@@ -231,9 +231,12 @@ fn retained_programs_rebind_block_geometry() {
     assert!(s.eval(r#"•prefs ["kinds":"static" "mathish":$f] ⋄ v←1 2 3 ⋄ x←0.25×⍳17 ⋄ f←{+/,⊼⍵+⊗v}"#).error.is_none());
     for block in [7, 64, 5] {
         basedpl::settings::set_sizes(basedpl::settings::Sizes { block, min_items: 1, ..basedpl::settings::Sizes::DEFAULT });
+        // Block geometry is construction context; the next call at that geometry reuses the recording.
         equiv_in(&s, r#"e←•explain "f∂x" ⋄ e.value"#, "12+6×0.25×⍳17");
+        equiv_in(&s, "e.programs.event", r#"["built"]"#);
+        equiv_in(&s, r#"e←•explain "f∂x" ⋄ e.value"#, "12+6×0.25×⍳17");
+        equiv_in(&s, "e.programs.event", r#"["replayed"]"#);
     }
-    equiv_in(&s, "e.programs.event", r#"["replayed"]"#);
     // Power warms ordinary calls first at length 2; derivatives warm first at length 4.
     equiv_in(&s, "a←2 2 ⋄ f←{a×⍵+1} ⋄ f⍣2⁝1 2", "10 14");
     equiv_in(&s, "f∂1 2", "[2 0⋄0 2]");

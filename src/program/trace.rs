@@ -8,7 +8,7 @@ use crate::{
     transform::{Carrier, Ended, Kind, Op, Pairing}
 };
 use rustymath::{agreement::Mapping, buffer::DType, domain::Range, structure::IndexPart};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, atomic::{AtomicUsize, Ordering}};
 
 /// The node of a traced value that isn't in the program, such as an item that code with no rule for traces read (`Carrier::storage`). Any call on it stops the trace.
 const OUTSIDE: usize = usize::MAX;
@@ -367,7 +367,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
     let (operation, pairing) = match op {
         Op::System(..) if role == Role::Trace => return None,
         Op::Operation(Operation::Primitive(p), _) if role == Role::Trace && !p.scalar(left.is_some()) => return None,
-        Op::Operation(operation, pairing @ (Pairing::Axis(_) | Pairing::Matrices | Pairing::At(_))) => (operation, pairing),
+        Op::Operation(operation, pairing @ (Pairing::Axis(_) | Pairing::Agreed(_) | Pairing::Matrices | Pairing::At(_))) => (operation, pairing),
         _ => return stop("a call that programs don't take yet"),
     };
     let args = match (left.map(|x| Arg::of(x, level, role)).transpose(), Arg::of(right, level, role)) {
@@ -377,11 +377,11 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
     let numeric = Numeric::current();
     let reads = || (args.0.as_ref().map(|x| x.read(&tracer)), args.1.read(&tracer));
     let built = match (operation, pairing, &args.0) {
-        (Operation::Primitive(p), Pairing::Axis(None), x) => {
-            let mapped = match plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric) {
+        (Operation::Primitive(p), Pairing::Axis(None) | Pairing::Agreed(_), x) => {
+            let mapped = match plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric, match pairing { Pairing::Agreed(a) => Some(a), _ => None }) {
                 Ok(mapped) => mapped, Err(reason) => return stop(reason),
             };
-            if role == Role::Trace && let Some(kept) = crate::pervasive::unchanged(&mapped.plan, left, right) { return Some(Ok(kept.clone())); }
+            if role == Role::Trace && let Some(kept) = crate::pervasive::unchanged(&mapped.plan, left, right, &mapped.agreement) { return Some(Ok(kept.clone())); }
             let (left, right) = reads();
             Ok(tracer.builder().nodes.mapped(mapped, left, right))
         }
@@ -671,25 +671,27 @@ impl Recording {
 #[derive(Debug, Default)]
 pub(crate) struct Programs(Mutex<Vec<Entry>>);
 
-/// A trace's outcome, with what the trace assumed: the argument signature that it ran on, and the free values that it read. It also counts the traces that its signature's changed free values made in a row before it, with no call of the signature between them that a kept outcome served (`CHANGES`), and notes whether one has served such a call since.
+/// An outcome and its replay guards. `unreused_builds` counts recording attempts since any cached outcome last served this signature: a build carries its count, and a lookup hit resets the newest matching entry.
 #[derive(Debug)]
-struct Entry { key: Key, captured: Vec<Captured>, outcome: Outcome, changes: usize, served: AtomicBool }
+struct Entry { key: Key, captured: Vec<Captured>, outcome: Outcome, unreused_builds: AtomicUsize }
 
 /// What a trace made: a program, or the reason that it stopped, with whether the stop applies to calls with any signature (`Kept::Always`).
 #[derive(Clone, Debug)]
 enum Outcome { Built(Arc<Recording>), Stopped { reason: &'static str, any_key: bool } }
 
-/// What `Programs::find` gives a call: the newest outcome that applies to it, with the values that a program's inputs read from free values (`Entry::reread`); where none applies, a trace to make, with the number of traces that the signature's changed free values made in a row before it (`CHANGES`); or, after `CHANGES` such traces, a stop for every call with the signature.
+/// An applicable cached outcome with current free inputs, a new trace carrying its attempt count, or a stop after `MAX_UNREUSED_BUILDS` attempts without a cache hit.
 enum Lookup { Applies(Outcome, Vec<Option<Value>>), Trace(usize), Changing }
 
 impl Entry {
     /// The free values, read again for a call: `None` at an index that isn't an input. A name is read from where it's bound, and a datum from `data`, the data of the function that the call runs. The outer `None` means a free value no longer holds what the trace assumed, so the outcome doesn't apply to the call.
     fn reread(&self, data: &[Value]) -> Option<Vec<Option<Value>>> {
+        let kind = |v: &Value| Desc::of(v).map(|d| d.kind);
+        let same = |v: &Value, w: &Value| v.same(w) && kind(v) == kind(w);
         self.captured.iter().map(|c| match (c.free.found(data)?, &c.expect) {
-            (Found::Value(v), Expect::Value(desc)) if desc.matches(&v) && Desc::of(&v).is_some_and(|d| d.range.within(desc.range.lo, desc.range.hi))
+            (Found::Value(v), Expect::Value(desc)) if desc.matches(&v) && Desc::of(&v).is_some_and(|d| d.kind == desc.kind && d.range.within(desc.range.lo, desc.range.hi))
                     && laid_alike(&desc.layout, v.layout(), self.exact()) => { Some(Some(v)) }
             (Found::Function(f), Expect::Function(g)) if f.identity() == g.identity() => Some(None),
-            (Found::Value(v), Expect::Same(w)) if v.same(w) => Some(None), (Found::Value(v), Expect::Held(w)) if v.same(w) => Some(Some(v)), _ => None
+            (Found::Value(v), Expect::Same(w)) if same(&v, w) => Some(None), (Found::Value(v), Expect::Held(w)) if same(&v, w) => Some(Some(v)), _ => None
         }).collect()
     }
     /// Built programs retain concrete layouts and counts; stopped outcomes key length classes.
@@ -699,12 +701,12 @@ impl Entry {
 /// The most outcomes that one definition, or one structure of function, keeps. The oldest goes first.
 const KEPT: usize = 8;
 
-/// The traces that a signature's changed free values can make in a row, with no call of the signature between them that a kept outcome served, after which a definition stops tracing calls with that signature, and the interpreter runs them.
-const CHANGES: usize = 3;
+/// The most recording attempts for one signature without a cache hit before ordinary execution replaces further recording.
+const MAX_UNREUSED_BUILDS: usize = 3;
 
 impl Programs {
     fn entries(&self) -> std::sync::MutexGuard<'_, Vec<Entry>> { self.0.lock().unwrap_or_else(PoisonError::into_inner) }
-    /// What a call with argument signature `key` finds, where `data` and the names that the traces read give its free values (`Lookup`). An outcome that applies marks the signature's newest entry as served.
+    /// Finds a guarded outcome for this call. A valid lookup resets the newest matching signature's build count, even when an older entry supplies the outcome.
     fn find(&self, key: &Key, data: &[Value]) -> Lookup {
         let entries = self.entries();
         // The signature's newest entry, and the newest outcome that applies, with the free values that its trace read.
@@ -718,11 +720,11 @@ impl Programs {
             if applies.is_some() && newest.is_some() { break; }
         }
         if let Some((outcome, names)) = applies {
-            if let Some(newest) = newest { newest.served.store(true, Ordering::Relaxed); }
+            if let Some(newest) = newest { newest.unreused_builds.store(0, Ordering::Relaxed); }
             return Lookup::Applies(outcome.clone(), names);
         }
-        match newest.filter(|e| !e.served.load(Ordering::Relaxed)).map_or(0, |e| e.changes + 1) {
-            CHANGES => Lookup::Changing, changes => Lookup::Trace(changes)
+        match newest.map_or(0, |e| e.unreused_builds.load(Ordering::Relaxed)) {
+            MAX_UNREUSED_BUILDS => Lookup::Changing, builds => Lookup::Trace(builds + 1)
         }
     }
     /// Keeps `entry` as the newest. An entry whose trace read no free values applies to every call with its signature, or with any signature for a stop that applies to them all, so it replaces the entries that it hides. The oldest goes first past `KEPT`.
@@ -792,13 +794,12 @@ pub(crate) fn programmed(
         Lookup::Applies(outcome, names) => (outcome, Some(names), "replayed"),
         Lookup::Changing => {
             let reason = "a free value that changes on every call";
-            programs.add(Entry { key, captured: Vec::new(), outcome: Outcome::Stopped { reason, any_key: false }, changes: CHANGES,
-                served: AtomicBool::new(false) });
+            programs.add(Entry { key, captured: Vec::new(), outcome: Outcome::Stopped { reason, any_key: false }, unreused_builds: AtomicUsize::new(0) });
             if purpose == Purpose::Call { return declined(reason); }
             crate::events::stopped(reason, right.len(), || None);
             return None;
         }
-        Lookup::Trace(changes) => {
+        Lookup::Trace(unreused_builds) => {
             let (built, captured) = build(left, right, data, traced);
             let outcome = match built {
                 Ok(recording) if purpose == Purpose::Call && (!matches!(&recording.result, Descs::Leaf(_)) || !crate::fusion::records_dense(&recording.program)) => {
@@ -812,7 +813,7 @@ pub(crate) fn programmed(
                 Err(Ended::Failed(error)) => { crate::explain::fallback(error, right.len()); Outcome::Stopped { reason: "an error", any_key: false } }
                 Err(Ended::Passed(error)) => return Some(Err(error)),
             };
-            let entry = Entry { key: key.clone(), captured, outcome: outcome.clone(), changes, served: AtomicBool::new(false) };
+            let entry = Entry { key: key.clone(), captured, outcome: outcome.clone(), unreused_builds: AtomicUsize::new(unreused_builds) };
             let names = entry.reread(data);
             programs.add(entry);
             (outcome, names, "built")
