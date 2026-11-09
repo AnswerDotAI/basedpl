@@ -107,12 +107,23 @@ impl Replay<'_> {
         }
     }
 }
+/// A Copy has an explicit result category; an atom copied to a rank-0 array is still an array.
+fn copied_result(value: Value, desc: &Desc) -> Result<Value, crate::ErrorKind> {
+    if desc.atom { return Ok(value.at(0)); }
+    if !value.is_atom() { return Ok(value); }
+    if value.carrier().is_none() && let Some(view) = value.view() {
+        let buffer = rustymath::buffer::Buffer::cast(view, desc.dtype())?;
+        return Value::from_storage(desc.layout.clone(), crate::array::Storage::Compact(buffer).fixed(desc.kind.fixed.is_some()));
+    }
+    value.relaid(desc.layout.clone())
+}
+
 
 /// An operand Copy is a logical read, not a demand for its expanded storage. Terminal program outputs use `run`, including when a pending copy is forced.
 pub(crate) fn copy_read<'a>(step: &Step, node: &dyn Fn(usize) -> &'a Value, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
     let Step::Copy { of, map } = step else { return None; };
-    Some(crate::fusion::copied(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
-        .map(|copied| if desc.atom { copied.at(0) } else { copied }))
+    Some(crate::fusion::copied(node(*of), desc.layout.clone(), map, None)
+        .and_then(|value| copied_result(value, desc)).described("a program's copy").at(span))
 }
 
 /// Executes `step` on its operands. A demanded Copy produces stored items; internal copies keep their logical read (`copy_read`). Carried operands go through their call boundary. `owned` gives an accumulation a base whose old value the replay no longer needs.
@@ -138,8 +149,8 @@ pub(crate) fn run<'a>(
             if crate::transform::carried(None, &of) { return crate::derivative::converted(&of, desc.dtype(), span); }
             of.converted(desc.dtype(), *numeric).described("a program's conversion").at(span)
         }
-        Step::Copy { of, map } => crate::fusion::copied_now(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
-            .map(|copied| if desc.atom { copied.at(0) } else { copied }),
+        Step::Copy { of, map } => crate::fusion::copied_now(node(*of), desc.layout.clone(), map, None)
+            .and_then(|value| copied_result(value, desc)).described("a program's copy").at(span),
         Step::Structural { inputs, form, params, fill, plan } => {
             let inputs: Vec<Value> = inputs.iter().map(|r| value(r).into_owned()).collect();
             let params: Vec<Value> = params.iter().map(|r| value(r).into_owned()).collect();

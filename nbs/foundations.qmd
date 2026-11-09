@@ -9,7 +9,7 @@ BPL evaluates functions through shared primitive calls. Basedpl owns language ru
 
 Reading a pending value gathers compatible programs. The planner groups elementwise calls and supported reductions into cache-sized block stages. A stage uses rustymath kernels or JIT-compiled arithmetic according to its execution policy. Deferred work and traced recordings use the same `Program`, steps and executor. Tracing is a separate collection policy on symbolic inputs, not an extra pass over every ordinary function call. Eligible ordinary Power bodies also reuse compatible recordings.
 
-Autodiff and batching intercept primitive calls through tagged transformation levels. Forward AD propagates primal values and tangents. Reverse AD records linear calls into a `Program` through its tape driver, then transposes those calls. Batching calls a function on many cells together where its operations support that transformation. Unsupported recording or batching returns to ordinary evaluation. This page describes the working eager/Program engine; the historical one-graph proposal in [the target](target.qmd) is not its specification.
+Autodiff and batching intercept primitive calls through tagged transformation levels. Forward AD propagates primal values and tangents. Reverse AD records linear calls into a `Program` through its tape driver, then transposes those calls. Batching calls a function on many cells together where its operations support that transformation. Unsupported recording or batching returns to ordinary evaluation.
 
 ## Why owning the language helps
 
@@ -57,7 +57,7 @@ A known weak integer keeps the minimum width that holds its value. A computed we
 
 Recording stops before effects, random draws, unsupported observations and value-dependent kinds it cannot describe. The whole call then runs normally. Stopping before visible work avoids rollback or replaying effects. Reading a guard predicate from a traced argument is one such observation. Reads of ordinary eager values remain normal execution. [Autodiff](autodiff.qmd) owns the supported operations and trace-stop list.
 
-Finite untransformed Power can reuse compatible recordings for eligible dense array bodies. Replay binds current inputs and captures under the existing exact guards; unsupported bodies use ordinary calls. Full Each body reuse, broader length reuse and further construction consolidation remain open in `meta/next-release-plan.md`. Deferred calls and the tracer emit the same `Program` steps but collect concrete pending inputs and symbolic traced inputs under different policies. Sharing the representation does not require tracing every top-level call. Further consolidation has to remove responsibilities without losing first-call fusion, selective reads or safe replay.
+Finite untransformed Power can reuse compatible recordings for eligible dense array bodies. Replay binds current inputs and captures under the existing exact guards; unsupported bodies use ordinary calls. Deferred calls and the tracer emit the same `Program` steps but collect concrete pending inputs and symbolic traced inputs under different policies. Sharing the representation does not require tracing every top-level call. Further consolidation has to remove responsibilities without losing first-call fusion, selective reads or safe replay.
 
 ## Transformations keep whole-array work
 
@@ -93,7 +93,7 @@ A formula over `Ops` describes arithmetic for native and generated execution. Sp
 
 Lowering retains immutable read recipes. Basedpl binds values and slots, schedules stages and packs the JIT ABI. Rustymath's `Read` and `Binding` read current storage and chunk windows; `Walked` constructs cycle backings or mapped buffers before parallel execution. Native maps, explicit conversions and elementwise selection (`Choose`) share operand reads and the output writer. Conversion scratch is reused across blocks within one execution. Row probes query existing geometry without general view/export normalization. Compiled input preparation preserves each bound array's actual storage dtype and declines an incompatible buffer. Semantic conversion, including float-to-integer flooring and tolerance, stays separate from exact input casts.
 
-Pending items are observed at the storage/read boundary. A read can force pending work under the settings captured by its calls. Language shape, kind, name and host-operation checks remain with their owners. Recording stops are internal control flow, distinct from user errors. The eager engine does not rely on the parked design's graph-wide effect tokens or deferred error-slot protocol. Glyph pages define individual operations' results and errors; this page adds no new exceptional-input guarantees.
+Pending items are observed at the storage/read boundary. A read can force pending work under the settings captured by its calls. Language shape, kind, name and host-operation checks remain with their owners. Recording stops are internal control flow, distinct from user errors. Glyph pages define individual operations' results and errors; this page adds no new exceptional-input guarantees.
 
 Default fills, explicit fills, an empty result's prototype and write destinations are different facts. They can share lower-level operations without becoming interchangeable. Reads and writes should consume established selection geometry instead of reconstructing it from a stored result. A copied value does not by itself retain the relationship needed for assignment.
 
@@ -101,11 +101,11 @@ Keep hot numerical bodies inlinable, and dispatch once per block or whole call w
 
 ## Development and measurements
 
-[`DEV.md`](https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md) owns build profiles, commands and contributor contracts. Do not duplicate profile settings here. Source and measurements for this work live on Syd1; Mac validation supplies the ARM/macOS comparison.
+[`DEV.md`](https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md) documents build profiles, commands and contributor contracts.
 
 Measure completed analytical operators, including final forcing and work repeated inside their loops. Report first recording/compilation separately. Use calibrated tools or measured slopes to separate fixed outer setup, never an estimated blanket subtraction. Compare matching numeric modes, input layouts, build profiles and hardware.
 
-Main `.bpl` reference tests and substantive speed/count tests run with Mathish off. Dedicated `*_mathish.bpl` files preserve deliberate Mathish stories and a few cheap regression canaries. This is a test policy, not a change to the user-facing Mathish default. Pages and notebooks retain their existing language-default mode until migrated. Mathish is useful optional behavior, not a performance target requiring more machinery.
+Main `.bpl` reference tests and substantive speed/count tests run with Mathish off. Dedicated `*_mathish.bpl` files preserve deliberate Mathish stories and a few cheap regression canaries. This is a test policy, not a change to the user-facing Mathish default. Pages and notebooks exercise the language-default mode. Mathish is useful optional behavior, not a performance target requiring more machinery.
 
-Give each fact one home and each job one mechanism. A type is useful when it narrows what an actual consumer accepts; passing it through unrelated code adds an obligation. Prefer a small substantive test or ratchet when static enforcement would spread through the codebase. Before adding substantial machinery, identify owners, affected callers, state and code it removes. The active work plan holds proposed stages and measurements; this page records the architecture that works.
+Give each fact one home and each job one mechanism. A type is useful when it narrows what an actual consumer accepts; passing it through unrelated code adds an obligation. Prefer a small substantive test or ratchet when static enforcement would spread through the codebase. Before adding substantial machinery, identify owners, affected callers, state and code it removes.
 

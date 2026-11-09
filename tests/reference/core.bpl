@@ -447,6 +447,16 @@ x←2 3 1 ⋄ n←{(⍵+2÷⍵)÷2} ⋄ a←{z←⍕⍵ ⋄ ⌈/⍵}∂ x ⋄ b�
 ⍝ program-item — `∂` runs from a program where a dfn reads one item of a traced array, as `↑`, `⊃`, subscripts and selection do. No trace stops
 v←1 2 3 4 ⋄ f←{(↑⍵)×+/⍵} ⋄ g←{(1⊃⍵)+⍵₃} ⋄ h←{+/⍵×⍵.[2]} ⋄ e←•explain "[f∂v ; g∂v ; h∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[11 1 1 1] [0 1 0 1] [3 3 13 3] 3ₓ 0ₓ]
 
+⍝ pending-fill-scalar-read — A small read of deferred filled arithmetic preserves atom, vector and scalar-box selection shapes
+a←128⍴0.5 ⋄ r←a×a ⋄ [r₁ ; ⍴r.[[1]] ; ⍴(⊂1)⌷r ; ↑r]   ⍝ [0.25 [1]ₓ ⍬ₓ 0.25]
+
+⍝ pending-fill-static-floor — A scalar-box Copy keeps its planned float storage before a static floor reads it
+•prefs ["kinds":"static" "float":32] ⋄ a←128⍴0.5 ⋄ r←⌊a ⋄ [r₁ ; (•storage r).kind ; ⍴3↑r]   ⍝ [0 "float32" [3]ₓ]
+
+⍝ pending-fill-typed-items — Partial reads retain Boolean results and the fixed width of an integer fill's product
+a←128⍴$t ⋄ b←128⍴2ₓ₂ ⋄ r←b×b ⋄ x←r₁ ⋄ [(~a)₁ ; x ; (•storage x).kind]   ⍝ $f 4ₓ₂ "int16"
+
+
 ⍝ program-per-item — A dfn equivalent to multiplication uses the fold's program; Each through a guard on traced data runs without one
 v←1 2 3 4 ⋄ f←{{⍺×⍵}/⍵} ⋄ g←{+/{⍵>2?⍵×2;⍵}¨⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[24 12 8 6] [1 1 2 2] 1ₓ 1ₓ]
 

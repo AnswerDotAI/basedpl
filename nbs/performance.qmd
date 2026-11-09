@@ -73,7 +73,7 @@ w←1000↕¿1000000⍴0
 
 ## Compiled loops
 
-A group of 3,145,728 items or more compiles its loop into machine code. The compiled loop keeps intermediate values in registers. A smaller group compiles too where the process has already compiled its loop. A compile takes about a millisecond. `•explain` records each run of compiled code as a `"compiled"` route:
+By default, a group of more than one operation compiles its loop into machine code at 3,145,728 items or more. The compiled loop keeps intermediate values in registers. A smaller group compiles too where the process has already compiled its loop. A single operation normally runs its native kernel unless compilation is explicitly forced. A compile takes about a millisecond. `•explain` records each run of compiled code as a `"compiled"` route:
 
 ```bpl
 y←¿3145728⍴0
@@ -131,6 +131,6 @@ Large calls split across the machine's cores. A call splits only when it has eno
 The plan includes:
 
 - One pass for several reductions of the same data. Today each reduction, as in `+/v ÷ ⌈/v`, makes its own pass.
-- A tracing point for whole training steps, such as `⍣`. A repeated step's forward pass, gradient and update would then run as one program.
+- A tracing point that combines a whole training step's forward pass, gradient and update into one program. Finite Power already reuses compatible recordings for eligible dense bodies; that is not a whole-step trace.
 - Programs for maps whose cells take different branches, so that `∂` can trace them.
 - The GPU, through WebGPU, with 16-bit brain floats (bf16), and compiled code in the browser.
