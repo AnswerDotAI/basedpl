@@ -18,14 +18,17 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     let len = shape.remove(axis);
     let mapping = copy.as_ref().map_or(Mapping::Linear(1), |(_, mapping)| mapping.clone());
     let fill = mapping.fills().then(|| crate::array::Layout::from([1]).filled(&right.prototype()));
-    let args: Vec<_> = std::iter::once((items, &mapping, right.len())).chain(fill.as_ref().map(|f| (f, &Mapping::Single, 1))).collect();
-    let missing = if fill.is_some() { Missing::Scalar(1) } else { Missing::Default };
-    let ((out, order), _) = with_reads(&args, missing, |reads, types| {
+    let run = |reads: &[Read<'_>], types: &[DType]| {
         computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
             let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), 0);
             kernel.fold_read(right.shape(), Some(axis), Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|order| (out, order))
         })
-    })?.ok().flatten()?;
+    };
+    let reduced = match fill.as_ref() {
+        Some(fill) => with_reads([(items, &mapping, right.len()), (fill, &Mapping::Single, 1)], Missing::Scalar(1), run),
+        None => with_reads([(items, &mapping, right.len())], Missing::Default, run)
+    }?;
+    let ((out, order), _) = reduced.ok().flatten()?;
     // A copy lays out folds left in their source's order, pending where it's large, so that a later fold of windows can slide over them.
     let laid = if order.is_some() { vec![out.len()] } else { shape.clone() };
     let result =
@@ -35,7 +38,7 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     };
     let Some(seed) = seed else { return Some(Ok(result)) };
     let agreement = Agreement::new(result.layout(), seed.layout()).ok()?;
-    map(&plan::pervasive_on(p, Some(&result), seed, numeric), Some(&result), seed, &agreement)
+    map(&plan::pervasive_on(p, Some(&result), seed, numeric, Some(&agreement)), Some(&result), seed, &agreement)
 }
 
 /// The fold by `p` of each group of the vector `right` that `groups` gives, by `p`'s reduction (`Reduce::run_groups`) at the kind the fold computes in. Each group's fold combines its items in their order, or in four interleaved parts among few groups (`Grouping::fold`), where the reduction may combine them in another order. `None` for a function with no reduction, for storage it doesn't fold, and where a checked total doesn't fit.

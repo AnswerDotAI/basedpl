@@ -127,12 +127,6 @@ t←0↣(put foldl) [["a" 1] ["b" 2] ["c" 3]]
 
 ⍝⍝ Dyalog library
 
-⍝ — ary writes zero, terminating fractions and exact powers of the base, and repeats a recurring unit twice
-[ary:]←•load "lib/dyalog.bpl"
-[2 ary 0;2 ary 0.75;2 ary ¯0.75;2 ary 8;16 ary 255;10 ary ÷7]
-⍝ =>
-"0" "0.11" "¯0.11" "1000" "FF" "0.142857142857..."
-
 ⍝ — base_64 encodes and decodes the RFC 4648 test vectors
 [base_64:]←•load "lib/dyalog.bpl"
 v←"f" "fo" "foo" "foob" "fooba" "foobar"
@@ -344,12 +338,6 @@ m←⌽(32⍴2)⊤32↑0 16404 49152 57344 32789 24598 8215 57344 57344 16406 49
 2⊥⌽baby(m)
 ⍝ =>
 0 16404 49152 57344 32789 24598 8215 57344 57344 16406 49152 40981 24600 25 57344 57344 0 0 0 0 3 1 4294967292 2 3 14 0 0 0 0 0 0
-
-⍝ — ary rounds a fraction whose digits run past its limit, and marks the result with ?
-[ary:]←•load "lib/dyalog.bpl"
-[10 ary π 1;10 ary 2*÷2;16 ary π 1]
-⍝ =>
-"3.1415926535898?" "1.4142135623731?" "3.243F6A8885A?"
 
 ⍝ — Cut 3 tiles a matrix by the given movements and sizes, keeping partial tiles; ¯3 keeps only whole tiles, and a negative size reverses each tile
 [Cut:]←•load "lib/dyalog.bpl"

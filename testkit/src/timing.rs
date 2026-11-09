@@ -1,5 +1,5 @@
 //! BPL measurements share reference records and setups. Numerical timing, copy units, footprint copies and retries live in Rustymath.
-use crate::{reference::{self, File}, timing_lock};
+use crate::{DEFAULT_PREFS, reference::{self, File}, timing_lock};
 use basedpl::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, protocol::response};
 use rustymath::hashing::HashMap;
 use rustymath_timing::{Budget, COUNT_MARGIN, Cause, CopyTime, Count, Footprint, Held, MEASURES, NATIVE_COLUMN, copy_time, footprint};
@@ -29,7 +29,7 @@ pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> { configure
 fn configured(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
     single_threaded_defaults();
     let session = Session::new();
-    let result = session.eval(&format!("•prefs [\"seed\":0]\n{prefs}\n{setup}"));
+    let result = session.eval(&format!("{DEFAULT_PREFS}\n•prefs [\"seed\":0]\n{prefs}\n{setup}"));
     if result.error.is_some() { Err(result) } else { Ok(session) }
 }
 
@@ -46,23 +46,27 @@ fn runner(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<
     })
 }
 
-/// Parse once, warm once, then take the fastest of the evaluations that `rustymath_timing::fastest` makes, forcing the result each time. Gives that time, the most bytes that those evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first of them left.
-pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
+/// Parse once, time the first fully forced evaluation, then take the fastest warm evaluation. Gives the warm time, peak bytes held during warm runs, bytes left held, and first-evaluation time. Parsing and setup are outside both timings.
+pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize, f64), Evaluation> {
     timed_runs(session, code, interrupt, true)
 }
 
 /// The least time that a case's timed evaluations take together: 5 ms. A case that runs in microseconds then gives the fastest of hundreds of evaluations, which varies less between test runs than the fastest of `rustymath_timing::RUNS`.
 const LEAST: std::time::Duration = std::time::Duration::from_millis(5);
 
-fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool) -> Result<(f64, usize, usize), Evaluation> {
+fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool) -> Result<(f64, usize, usize, f64), Evaluation> {
     let (mut run, mut failed) = (runner(session, code, interrupt)?, None);
-    if warmup { run(&mut failed); }
+    let cold_seconds = if warmup {
+        let first = rustymath::parallel::Instant::now();
+        run(&mut failed);
+        first.elapsed().as_secs_f64()
+    } else { 0.0 };
     let mut start = 0;
     let (seconds, held) = rustymath::memory::peak_held(|| {
         rustymath_timing::fastest(LEAST, |k| { run(&mut failed); if k == 0 { start = rustymath::memory::held(); } })
     });
     let left = rustymath::memory::held().saturating_sub(start);
-    failed.map_or(Ok((seconds, held, left)), Err)
+    failed.map_or(Ok((seconds, held, left, cold_seconds)), Err)
 }
 
 /// The browser build's budget column: a case's third budget, after its macOS and Linux budgets.
@@ -121,7 +125,7 @@ impl<'a> Group<'a> {
             self.current = name;
         }
         single_threaded_defaults();
-        self.session.eval(header);
+        self.session.eval(&format!("{DEFAULT_PREFS}\n{header}"));
         if self.size == Size::Small { basedpl::settings::set_small_sizes(true); }
         Ok(&self.session)
     }
@@ -177,7 +181,7 @@ pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, footprint
         let copy = (section != "widths").then(|| copy_time::<f64>(n));
         let session = group.session(section)?;
         let obligations = route(session, case, interrupt)?.violations();
-        let (total, held, left) = timed_runs(session, code, interrupt, false).map_err(|failed| failure(code, failed))?;
+        let (total, held, left, _) = timed_runs(session, code, interrupt, false).map_err(|failed| failure(code, failed))?;
         if rustymath::memory::checks() && left > 0 {
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
@@ -408,24 +412,45 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         match time(&session, code, interrupt) {
-            Ok((seconds, ..)) => costs.push(json!({"code":code, "seconds":seconds, "copies":seconds / n as f64 / copy.seconds})),
+            Ok((seconds, _, _, cold_seconds)) => costs.push(json!({"code":code, "seconds":seconds, "cold_seconds":cold_seconds, "copies":seconds / n as f64 / copy.seconds})),
             Err(failed) => return Ok(response(failed)),
         }
     }
     Ok(json!({"n":n, "costs":costs, "output":[], "error":null}))
 }
 
-/// Runs each case `steps` times as `time` runs it, for an instruction count or a profile, and gives no timing. Unlike `request`, it takes no timing lock, so counts can run side by side under one shared hold.
+/// Runs each case `steps` times as `time` runs it, for an instruction count, and gives no timing. Unlike `request`, it takes no timing lock, so counts can run side by side under one shared hold.
 pub fn steps_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    repeated_request(spec, interrupt, None::<fn() -> Result<(), String>>)
+}
+
+/// Prepares one case, forces two warm calls, signals readiness, then repeats in that same Session.
+pub fn profile_request(
+    spec: &JsonValue, interrupt: &InterruptHandle, ready: impl FnOnce() -> Result<(), String>
+) -> Result<JsonValue, String> {
+    repeated_request(spec, interrupt, Some(ready))
+}
+
+fn repeated_request(
+    spec: &JsonValue, interrupt: &InterruptHandle, mut ready: Option<impl FnOnce() -> Result<(), String>>
+) -> Result<JsonValue, String> {
     let text = |key| spec[key].as_str().ok_or_else(|| format!("steps needs {key} as a string"));
     let steps = spec["steps"].as_u64().ok_or("steps needs steps as a count")?;
     let cases = spec["cases"].as_array().ok_or("steps needs cases as an array")?;
+    if ready.is_some() && cases.len() != 1 { return Err("profiling needs exactly one case".into()); }
     let session = match session(text("prefs")?, text("setup")?) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         let mut failed = None;
         match runner(&session, code, interrupt) {
-            Ok(mut run) => { for _ in 0..steps { run(&mut failed); if failed.is_some() { break; } } } Err(error) => failed = Some(error)
+            Ok(mut run) => {
+                if let Some(ready) = ready.take() {
+                    for _ in 0..2 { run(&mut failed); if let Some(failed) = failed { return Ok(response(failed)); } }
+                    ready()?;
+                }
+                for _ in 0..steps { run(&mut failed); if failed.is_some() { break; } }
+            }
+            Err(error) => failed = Some(error)
         }
         if let Some(failed) = failed { return Ok(response(failed)); }
     }

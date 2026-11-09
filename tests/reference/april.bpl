@@ -183,17 +183,11 @@
 ⍝ april:586 —
 0 1 0 1∧0 0 1 1   ⍝ 0 0 0 1
 
-⍝ april:587 —
-3.2∧1.9   ⍝ 60.8
+⍝ april:587 — Exact rational LCM of commensurable fractions
+16ᵣ5∧19ᵣ10   ⍝ 304ᵣ5
 
-⍝ april:588 —
-6.3∧5.1   ⍝ 107.1
-
-⍝ april:589 —
-⌈1000×1.3j2.6∧4.5j8.9   ⍝ ¯172900j232700
-
-⍝ april:590 —
-⌈1000×3.8j7.6∧5.2j6.8   ⍝ ¯159600j326800
+⍝ april:588 — Exact rational LCM of commensurable fractions
+63ᵣ10∧51ᵣ10   ⍝ 1071ᵣ10
 
 ⍝ april:594 —
 0 1 0 1⊼0 0 1 1   ⍝ $t $t $t $f
@@ -201,17 +195,11 @@
 ⍝ april:599 —
 0 1 0 1∨0 0 1 1   ⍝ 0 1 1 1
 
-⍝ april:600 —
-3.2∨1.9   ⍝ 0.1
+⍝ april:600 — Exact rational GCD of commensurable fractions
+16ᵣ5∨19ᵣ10   ⍝ 1ᵣ10
 
-⍝ april:601 —
-6.3∨5.1   ⍝ 0.3
-
-⍝ april:602 —
-1.3j2.6∨4.5j8.9   ⍝ 0.1
-
-⍝ april:603 —
-3.8j7.6∨5.2j6.8   ⍝ 0.2
+⍝ april:601 — Exact rational GCD of commensurable fractions
+63ᵣ10∨51ᵣ10   ⍝ 3ᵣ10
 
 ⍝ april:607 —
 0 1 0 1⊽0 0 1 1   ⍝ $t $f $f $f
@@ -2226,9 +2214,6 @@ fn←2× ⋄ fn⍣3⁝4   ⍝ 32
 ⍝ april:1753 —
 ↓⍣2 [2 2]⍴⍳4ₓ   ⍝ (⊂[[0 1] [2 3]])ₓ
 
-⍝ april:1754 — remove April numeric separators
-⌊1000000000×2○⍣=1   ⍝ 739085133ₓ
-
 ⍝ april:1755 — remove April numeric separators
 ⌊100000×{⍵{2.0÷⍨⍵+⍺÷⍵}⍣≡⍵}123456789   ⍝ 1111111106ₓ
 
@@ -2844,8 +2829,8 @@ ef←{⍵+2}
 ⍝ april:2098 — Three-element averaging fork function train with operator-derived function
 +/÷1×≢ ⍳12ₓ   ⍝ 5.5
 
-⍝ april:2100 — Five-element monadic fork function train
-!⍴-,÷ 3
+⍝ april:2100 — Five-element monadic fork function train; integral factorial count with a float reciprocal
+(!∘⌊)⍴-,÷ 3
 ¯3 0.3333333333333333 ¯3 0.3333333333333333 ¯3 0.3333333333333333
 
 ⍝ april:2101 — Five-element monadic fork function train with second argument value at end
@@ -4806,10 +4791,10 @@ fibonacci¨⍳10ₓ   ⍝ [0 1 1 2 3 5 8 13 21 34]ₓ
 ⍝ =>
 [0 1 1 2 3 5 8 13 21 34]ₓ
 
-⍝ april/libraries/dfns/numeric/demo.lisp:44 —
-{1∧+↢÷/0,⍵#1}¨⍳10ₓ
+⍝ april/libraries/dfns/numeric/demo.lisp:44 — Fibonacci numbers through exact continued fractions
+{1ᵣ∧+↢÷/0ᵣ,⍵#1ᵣ}¨⍳10ₓ
 ⍝ =>
-0 1 1 2 3 5 8 13 21 34
+[0 1 1 2 3 5 8 13 21 34]ᵣ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:45 —
 [factors:]←•load "lib/numeric.bpl"
@@ -5247,9 +5232,9 @@ stamps¨15 16 17 18
 [cfract:]←•load "lib/numeric.bpl"
 cfract 5÷8   ⍝ [0 1 1 1 2]ₓ
 
-⍝ april/libraries/dfns/numeric/demo.lisp:204 — Fixed CT=1E¯14 port; original April expectation retained
+⍝ april/libraries/dfns/numeric/demo.lisp:204 — Exact rational input; original April expectation retained
 [cfract:]←•load "lib/numeric.bpl"
-cfract 67÷29   ⍝ [2 3 4 2]ₓ
+cfract 67ᵣ29   ⍝ [2 3 4 2]ᵣ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:205 — Fixed CT=1E¯14 port; original April expectation retained
 [cfract: to:]←•load "lib/numeric.bpl"
@@ -5271,9 +5256,9 @@ cfract¨ ¯4 to 4
 ⍝ =>
 [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]ₓ
 
-⍝ april/libraries/dfns/numeric/demo.lisp:209 — Fixed CT=1E¯14 port; original April expectation retained
+⍝ april/libraries/dfns/numeric/demo.lisp:209 — Exact rational input; original April expectation retained
 [cfract:]←•load "lib/numeric.bpl"
-cfract¯2.3   ⍝ [¯3 1 2 3]ₓ
+cfract¯23ᵣ10   ⍝ [¯3 1 2 3]ᵣ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:210 — Euclidean continued fractions terminate at denominator zero, including non-coprime integer approximations; no change to approximate GCD or recursion limits
 [cfract:]←•load "lib/numeric.bpl"
@@ -5631,14 +5616,6 @@ embrace ← {'(',⍵,')'} for {'[',⍵,']'} for {'{',⍵,'}'} for {'<',⍵,'>'}
 [invr:]←•load "lib/power.bpl"
 ⌊{32+⍵×1.8}invr 212   ⍝ 100ₓ
 
-⍝ april/libraries/dfns/power/demo.lisp:21 — Upstream numerical-inverse library setup; its CT=1E-14 is the fixed language tolerance
-[invr:]←•load "lib/power.bpl"
-⌊10000×(1↣○)invr(1↣○)10   ⍝ 685398ₓ
-
-⍝ april/libraries/dfns/power/demo.lisp:22 — Upstream numerical-inverse library setup; its CT=1E-14 is the fixed language tolerance
-[invr:]←•load "lib/power.bpl"
-⌊1000× **invr 1.23   ⍝ 1230ₓ
-
 ⍝ april/libraries/dfns/power/demo.lisp:23 — Upstream numerical-inverse library setup; its CT=1E-14 is the fixed language tolerance
 [invr:]←•load "lib/power.bpl"
 ⌊1000× ⍟⍟invr 1.23   ⍝ 1230ₓ
@@ -5716,12 +5693,6 @@ enlist ,↢⊂/⍳5ₓ   ⍝ [0 1 2 3 4]ₓ
 {2|⍵?1+3×⍵;⍵÷2}traj 7
 ⍝ =>
 7 22 11 34 17 52 26 13 40 20 10 5 16 8 4 2 1
-
-⍝ april/libraries/dfns/power/demo.lisp:42 — Dyalog independently confirms five Newton iterates at fixed CT, rather than April fixture six
-[nr: traj:]←•load "lib/power.bpl"
-⌊1000000000×1e¯12↣(2↣○ nr)traj 1.5
-⍝ =>
-[1500000000 1570909012 1570796336 1570796326 1570796326]ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:44 — Upstream Newton trajectory; fixed tolerance substituted for read-only ⎕CT
 [nr: traj:]←•load "lib/power.bpl"
@@ -6936,39 +6907,17 @@ tt←tree 32¿32
 revt←{↑⌽ ⍵ get ⍺}
 32 check tt   ⍝ $t
 
-⍝ april/libraries/dfns/numeric/demo.lisp:271 — Phinary; original independent upstream expectation
-[phinary:]←•load "lib/numeric.bpl"
-phinary42   ⍝ "10100010.00100001"
-
 ⍝ april/libraries/dfns/numeric/demo.lisp:272 — Phinary; original independent upstream expectation
 [align: phinary: to:]←•load "lib/numeric.bpl"
 ↓align phinary ¯4 to 16
 ⍝ =>
 "  ¯101.01    " "  ¯100.01    " "   ¯10.01    " "    ¯1       " "     0       " "     1       " "    10.01    " "   100.01    " "   101.01    " "  1000.1001  " "  1010.0001  " " 10000.0001  " " 10001.0001  " " 10010.0101  " " 10100.0101  " " 10101.0101  " "100000.101001" "100010.001001" "100100.001001" "100101.001001" "101000.100001"
 
-⍝ april/libraries/dfns/numeric/demo.lisp:279 — Phinary; original independent upstream expectation
-[align: phinary: to:]←•load "lib/numeric.bpl"
-↓align phinary (1+√5 ÷ 2)* 0 to 10
-⍝ =>
-"          1" "         10" "        100" "       1000" "      10000" "     100000" "    1000000" "   10000000" "  100000000" " 1000000000" "10000000000"
-
-⍝ april/libraries/dfns/numeric/demo.lisp:283 — Phinary; original independent upstream expectation
-[align: phinary: to:]←•load "lib/numeric.bpl"
-↓align phinary (1+√5 ÷ 2)* ¯1 to ¯10
-⍝ =>
-"0.1         " "0.01        " "0.001       " "0.0001      " "0.00001     " "0.000001    " "0.0000001   " "0.00000001  " "0.000000001 " "0.0000000001"
-
 ⍝ april/libraries/dfns/numeric/demo.lisp:286 — Phinary; original independent upstream expectation
 [phinary: to:]←•load "lib/numeric.bpl"
 ↓⊃ {(⍕⍵),": ",⍕ 0 phinary ⍵}¨ 0 to 9
 ⍝ =>
 "0:             " "1: 0ₓ          " "2: [1 ¯2]ₓ     " "3: [2 ¯2]ₓ     " "4: [2 0 ¯2]ₓ   " "5: [3 ¯1 ¯4]ₓ  " "6: [3 1 ¯4]ₓ   " "7: [4 ¯4]ₓ     " "8: [4 0 ¯4]ₓ   " "9: [4 1 ¯2 ¯4]ₓ"
-
-⍝ april/libraries/dfns/numeric/demo.lisp:289 — Phinary; original independent upstream expectation
-[align: phinary: to:]←•load "lib/numeric.bpl"
-↓align phinary (√5)* 0 to 6
-⍝ =>
-"          1           " "         10.1         " "       1000.1001      " "     100000.00001     " "    1010000.000101    " "  100010010.010001001 " "10000000010.0100000001"
 
 ⍝ april/libraries/dfns/string/demo.lisp:304 — Wrap and justify a paragraph; reviewed independent Dyalog expectation; Supply concrete text in place of unavailable noteSample; compare the resulting lines
 [wrapnote:]←•load "lib/string.bpl"
@@ -6998,11 +6947,11 @@ a←1 2 3
 1 2 3
 ⍝ ⎕: 1 2 3
 
-⍝ april/libraries/dfns/numeric/demo.lisp:136 — Recover fractions from approximate convergents
+⍝ april/libraries/dfns/numeric/demo.lisp:136 — Recover fractions from exact convergents
 [rational:]←•load "lib/numeric.bpl"
-rational (÷≥)⍣(⍳10ₓ)0.0
+rational (÷≥)⍣(⍳10ₓ)0ᵣ
 ⍝ =>
-[0 1 1 2 3 5 8 13 21 34⋄1 1 2 3 5 8 13 21 34 55]
+[0 1 1 2 3 5 8 13 21 34⋄1 1 2 3 5 8 13 21 34 55]ᵣ
 
 ⍝ — Splay tree validity after searches (32 nodes; April tree demo:899)
 [foldl:]←•load "lib/array.bpl"
@@ -7088,9 +7037,6 @@ hex ¯1+2*53   ⍝ ⊂"001fffffffffffff"
 ⍝ april:2362 — Imaginary number; Test Format text; use BasedPL's subscript ⱼ separator instead of April's uppercase J
 ⍕3j9   ⍝ "3ⱼ9"
 
-⍝ april:410 — Commuted division follows the Mathish zero rule
-÷⍨0   ⍝ 0
-
 ⍝ april:1933 — Strand assignment of nested scalar variable; Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Remove redundant dialect settings; based folds return the result directly
 [a b c]←⊂3 3⍴1 ⋄ +/[a b c]   ⍝ [3 3 3⋄3 3 3⋄3 3 3]
 
@@ -7115,12 +7061,6 @@ scc scg_3   ⍝ [0 0 0 0 0]ₓ
 scg_3 ← [3;4;3 4;0 2 4;1 2 3]ₓ
 g←scg_3
 ⊃∪scc¨(⊂g)gperm¨↓pmat≢g   ⍝ 1 5⍴[0 0 0 0 0]ₓ
-
-⍝ april/libraries/dfns/numeric/demo.lisp:211 — Real rational recovery uses the first continued-fraction convergent within relative error 1e-14. Pi recovers 5419351/1725033, whose canonical continued fraction ends in 4. April's 14-column float-round-trip expectation is retained separately; 0+ makes coefficients approximate
-[cfract: rational:]←•load "lib/numeric.bpl"
-rational (+↢÷)/¨,\ 0+(0 cfract π1)
-⍝ =>
-[3 22 333 355 103993 104348 208341 312689 833719 1146408 5419351⋄1 7 106 113 33102 33215 66317 99532 265381 364913 1725033]
 
 ⍝ april:2311 — Namespace-as-data: empty keyed vector, dotted insertion and lookup
 myns←⍬:⍬

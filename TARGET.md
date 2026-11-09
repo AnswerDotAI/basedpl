@@ -1,5 +1,7 @@
 # Target: the finished core
 
+> Historical design from the one-graph experiment, retained for rationale and comparison rather than current requirements. [Computational foundations](nbs/foundations.qmd) describes the implemented eager/Program engine.
+
 Measure for every step, diff and review in the one-graph release. Existing code supplies behavior and reusable algorithms, not a requirement to retain its architecture. Reuse sound algorithms in their single intended homes. This file owns the current design; `archive/one-graph-2026-10-31.md` keeps reasons, evidence and history.
 
 Goals, required behavior, acceptance criteria, budgets and explicit process rules are constraints. Parts, interfaces, algorithms and ownership describe the current working design. Continuously improve that design as implementation reveals simpler solutions, updating this document and affected consumers together. Ask Jeremy only when proceeding requires changing a constraint, information only he holds, or a substantive trade-off that cannot be resolved within the agreed priorities. A departure from the working design alone is not a blocker.

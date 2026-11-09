@@ -1,6 +1,6 @@
 //! A traced program's maps in the storage order that their operands and readers need (`ordered`).
 
-use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, stepped, through_copies};
+use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, forward_axes, through_copies};
 use crate::plan::Desc;
 use crate::{array::Layout, number::Numeric};
 use rustymath::{agreement::{Agreement, Mapping}, gather::counts_up, layout::count, search::inverse_permutation};
@@ -53,10 +53,10 @@ fn reads(program: &Program) -> (Vec<Link>, Vec<Want>) {
     let nodes = &program.nodes;
     let (mut links, mut wants) = (Vec::new(), Vec::new());
     for (j, node) in nodes.iter().enumerate() {
-        if let Some((left, right)) = map(program, j) && let Ok(agreement) = Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout) {
-            for (read, through) in left.map(|l| (l, &agreement.left)).into_iter().chain([(right, &agreement.right)]) {
+        if let Some((left, right)) = map(program, j) {
+            for read in left.into_iter().chain([right]) {
                 if nodes[read.of].desc.shape() != read.layout.shape() { continue; }
-                let (of, through) = through_copies(nodes, read.of, through, node.desc.shape());
+                let (of, through) = through_copies(nodes, read.of, &read.pointwise(nodes), node.desc.shape());
                 let Some(axes) = permutation(&through, node.desc.shape(), nodes[of].desc.shape()) else { continue };
                 if map(program, of).is_some() { links.push(Link { reader: j, of, axes }); }
                 else { wants.push(Want { of: j, order: inverse_permutation(axes.iter().copied()) }); }
@@ -127,10 +127,10 @@ fn chosen(group: &Group, links: &[Link], wants: &[Want]) -> Option<Vec<usize>> {
     (met(best) + crossed > now).then(|| best.clone())
 }
 
-/// The axis of an array of `shape` that each axis of `frame` steps along, where `map` reads the array over `frame` as a permutation of its axes: as many items, read from the first, with each axis of more than one item stepping along an axis of its length (`stepped`), and each axis of one item matching one of the array's in order.
+/// The axis of an array of `shape` that each axis of `frame` steps along, where `map` reads the array over `frame` as a permutation of its axes: as many items, read from the first, with each axis of more than one item stepping along an axis of its length (`forward_axes`), and each axis of one item matching one of the array's in order.
 fn permutation(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<usize>> {
     if frame.len() != shape.len() || frame.contains(&0) || count(frame) != count(shape) { return None; }
-    let along = stepped(map, frame, shape)?;
+    let along = forward_axes(map, frame, shape)?;
     let mut ones = (0..shape.len()).filter(|&b| shape[b] == 1);
     along.iter().zip(frame).map(|(b, &len)| match *b { Some(b) if shape[b] == len => Some(b), None if len == 1 => ones.next(), _ => None }).collect()
 }
@@ -178,15 +178,18 @@ impl<'a> Reordering<'a> {
     fn map(&mut self, node: &Node, o: &[usize]) -> Option<usize> {
         let Origin::Step(Step::Map { left, right, plan }) = &node.origin else { return None };
         let (old, new) = (&node.desc.layout, node.desc.layout.axes(o.iter().copied()));
-        let agreement = Agreement::new(left.as_ref().map_or(&Layout::default(), |l| &l.layout), &right.layout).ok()?;
         let shift = along(old.shape(), o);
-        let mut operand = |read: &Read, through: &Mapping| -> Option<Read> {
+        let mut operand = |read: &Read| -> Option<Read> {
             if self.nodes[read.of].desc.atom { return Some(Read::new(self.at[read.of], read.layout.clone())); }
-            Some(Read::new(self.lay(read.of, through.compose(&shift, old.shape(), new.shape())?, &new)?, new.clone()))
+            let through = read.pointwise(self.nodes).compose(&shift, old.shape(), new.shape())?;
+            Some(Read::new(self.lay(read.of, through, &new)?, new.clone()))
         };
-        let left = match left { Some(l) => Some(operand(l, &agreement.left)?), None => None };
-        let right = operand(right, &agreement.right)?;
-        Some(self.out.add(Node { desc: Desc { layout: new, ..node.desc.clone() }, origin: Origin::Step(Step::Map { left, right, plan: plan.clone() }) }))
+        let left = match left { Some(l) => Some(operand(l)?), None => None };
+        let right = operand(right)?;
+        let agreement = Agreement { layout: new.clone(), len: new.count(),
+            left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(&self.out)), right: right.pointwise(&self.out) };
+        let mapped = crate::plan::Mapped { desc: Desc { layout: new, ..node.desc.clone() }, plan: plan.clone(), agreement };
+        Some(self.out.mapped(mapped, left, right).of)
     }
     /// Fold step `node`, which folds a moved map in its old layout, folding the map's new node along the moved axis instead, with a copy that puts the kept axes back in the fold's order where they differ.
     fn fold(&mut self, node: &Node) -> Option<usize> {

@@ -7,7 +7,7 @@ pub(super) fn each_pair(
     whole: impl FnOnce() -> Option<crate::batch::Arguments>, mixed: Option<&'static str>, span: &Span) -> Result<Bound, Error> {
     // One cell of atoms runs faster on its own than through a batched call. A cell of rank 1 or more doesn't.
     let atoms = len == 1 && { let (x, y) = pair(0)?; x.as_ref().is_none_or(Value::is_atom) && y.is_atom() };
-    if !atoms {
+    if !atoms || crate::session().tracing().is_some() {
         if let Some(result) = crate::batch::tried(operand, whole, &layout, mixed.is_some(), span) { return result.map(Bound::from); }
     }
     // A recording can take the batched route; reject only the per-item fallback here.
@@ -15,9 +15,10 @@ pub(super) fn each_pair(
         let (x, y) = pair(0)?;
         crate::program::trace::per_item(x.as_ref(), &y)?;
     }
+    let mut body = BodyCaller::new(operand);
     let items = assembled(len, layout, mixed, |i, empty| {
         let (x, y) = pair(i)?;
-        result_item(if empty { on_prototypes(operand, x.as_ref(), &y, span)? } else { operand.call_with(x, y, span)? }.value)
+        result_item(if empty { on_prototypes(operand, x.as_ref(), &y, span)?.value } else { body.call(x, y, span)? })
     })?;
     Ok(if mixed.is_some() { Bound::from(items) } else { Bound::new(Binding::Value(items)) })
 }

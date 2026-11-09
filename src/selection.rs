@@ -58,7 +58,7 @@ impl Labels {
     }
     fn len(&self) -> usize { match &self.places { Places::Offsets(n) => *n, Places::Paths(paths) => paths.len() } }
     fn build(&mut self, a: &Value, path: &mut Vec<usize>) -> Result<Value, Error> {
-        crate::explain::itemwise(rustymath::events::Route::NestedLabels, a.len());
+        crate::explain::itemwise(crate::events::routes::NestedLabels, a.len());
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
             generated_len(&[self.len() + self.nested.len() + 1])?;
@@ -129,7 +129,7 @@ impl Labels {
         Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
     }
     fn collect(&self, selected: &Value, right: &Value, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
-        crate::explain::itemwise(rustymath::events::Route::LabelIds, selected.len());
+        crate::explain::itemwise(crate::events::routes::LabelIds, selected.len());
         let aligned;
         let right = if right.has_keys() && selected.has_keys() {
             aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).described("replacement does not supply selected keys")?;
@@ -264,8 +264,8 @@ impl Labelled {
             let (layout, plan) = crate::primitive::structural::plan(form, &params, &[input.layout()])?;
             match plan.route() {
                 ReadRoute::Input(0) => return Ok(l.view(layout)),
-                ReadRoute::Map { input: source, map, .. } if matches!(source.route(), ReadRoute::Input(0)) => {
-                    return l.copied(layout, map, fill.map(|f| strip(f, level)).as_ref()).described("a structural copy");
+                ReadRoute::Map(read) if matches!(read.input.route(), ReadRoute::Input(0)) => {
+                    return l.copied(layout, &read.map, fill.map(|f| strip(f, level)).as_ref()).described("a structural copy");
                 }
                 _ => {}
             }

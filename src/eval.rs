@@ -574,15 +574,16 @@ impl Function {
     // Inlined into `dispatch`, this would put a second copy of `call` and `dispatch` in the stack frame of every BPL call.
     #[inline(never)]
     fn ruled(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> { self.call(left, right, span) }
-    /// `traced` run, from a program, on this function, or on one with its data replaced (`trace::tacit`), and these arguments, or `None` where no program takes the call and the interpreter runs it. `∂` asks first (`derivative::differentiate`). A dfn keeps its programs on its definition, which every call of its text shares. Any other function's programs are kept by its structure (`trace::Tacit`).
+    /// `traced` run, from a program, on this function, or on one with its data replaced (`trace::tacit`), and these arguments, or `None` where no program takes the call and the interpreter runs it. Body reuse and `∂` supply distinct purposes, so their recordings and stops stay separate. A dfn keeps its programs on its definition, which every call of its text shares. Any other function's programs are kept by its structure (`trace::Tacit`).
     pub(crate) fn programmed(
-        &self, left: Option<&Value>, right: &Value, span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>
+        &self, purpose: crate::program::trace::Purpose, previous: Option<&mut Option<crate::program::trace::Key>>,
+        left: Option<&Value>, right: &Value, span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>
     ) -> Option<Result<Value, Error>> {
         match self.node() {
             FunctionNode::Defined(closure) => {
-                crate::program::trace::programmed(closure.definition.programs(), closure.environment, left, right, span, &[], &|_, x, y| traced(self, x, y))
+                crate::program::trace::programmed(closure.definition.programs(), purpose, previous, closure.environment, left, right, span, &[], &|_, x, y| traced(self, x, y))
             }
-            _ => crate::program::trace::tacit(self, left, right, span, traced),
+            _ => crate::program::trace::tacit(self, purpose, previous, left, right, span, traced),
         }
     }
     /// Calls the function as a running level takes it, where one carries an argument (`transform::call`). Otherwise it calls the function that computes this call through a fast combination, where the form rewriter gave one (`rewrite`), or sends compositions, forks and dfns straight to their handlers, with the arguments as the caller gave them, and other functions to `apply`.
@@ -1075,7 +1076,7 @@ pub struct Session {
     pub(crate) drawn: crate::distribution::Drawn,
     /// The program's command-line arguments.
     pub(crate) args: std::cell::RefCell<Vec<String>>,
-    /// The programs that `∂` builds for functions other than dfns, kept by the functions' structure (`trace::tacit`).
+    /// The programs built for functions other than dfns, kept by the functions' structure (`trace::tacit`).
     pub(crate) tacit: crate::program::trace::Tacit,
 }
 

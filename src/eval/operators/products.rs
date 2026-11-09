@@ -140,20 +140,19 @@ pub(crate) fn primitive_product(f: Primitive, g: Primitive, left: &Value, right:
 
 /// Monadic `f.g` for primitives `f` and `g`, as `Operation::run` and the combinations `Determinant` and `Permanent` give it: for a square matrix of numbers, the determinant of `-.×` (`primitive::determinant`) and, below 64 rows, the permanent of `+.×`, and otherwise the expansion by minors that function operands take (`expansion`), whose calls of the operation by its primitives a running level takes.
 pub(crate) fn primitive_expansion(f: Primitive, g: Primitive, right: &Value, span: &Span) -> Result<Value, Error> {
-    use rustymath::events::Route;
     let route = match Operation::Product(f, g) {
-        Operation::MINUS_TIMES => Some(Route::Determinant), Operation::PLUS_TIMES => Some(Route::Permanent), _ => None
+        Operation::MINUS_TIMES => Some(crate::events::routes::Determinant), Operation::PLUS_TIMES => Some(crate::events::routes::Permanent), _ => None
     };
     if let Some(route) = route {
         let square = matrix(right).filter(|&[m, n]| m == n && n > 0 && !crate::transform::carried(None, right)).map(|[_, n]| n);
         let fast = match (route, square) {
-            (Route::Determinant, Some(n)) => crate::primitive::determinant(right, n)?, (Route::Permanent, Some(n)) if n < 64 => permanent(right, n)?, _ => None
+            (crate::events::routes::Determinant, Some(n)) => crate::primitive::determinant(right, n)?, (crate::events::routes::Permanent, Some(n)) if n < 64 => permanent(right, n)?, _ => None
         };
         let Some(value) = fast else {
-            rustymath::events::declined(route, "arguments that don't suit it", right.len());
+            crate::events::declined(route, "arguments that don't suit it", right.len());
             return expansion(&Function::primitive(f), &Function::primitive(g), right, span)?.array(span);
         };
-        if rustymath::events::running() { crate::explain::fast(route, format!("{}.{}", f.glyph(), g.glyph())); }
+        if crate::events::running() { crate::explain::fast(route, format!("{}.{}", f.glyph(), g.glyph())); }
         return Ok(value);
     }
     expansion(&Function::primitive(f), &Function::primitive(g), right, span)?.array(span)

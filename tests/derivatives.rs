@@ -129,6 +129,7 @@ fn derivatives_match_numerical_ones() {
         for _ in 0..3 {
             let n: usize = c.shape.iter().product();
             let x: Vec<f64> = (0..n).map(|_| points.next(c.low, c.high)).collect();
+            eprintln!("derivative {} at {x:?}, shape {:?}", c.f, c.shape);
             let s = Session::new();
             let result = s.eval(&format!("f←{} ⋄ x←{}", c.f, literal(&x, c.shape)));
             assert!(result.error.is_none(), "{}: {:?}", c.f, result.error);

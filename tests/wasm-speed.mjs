@@ -2,12 +2,12 @@
 // them against their native budgets. Both call the same timing code, `basedpl_testkit::timing::costs`, through the module's `costs`. Run it
 // as `node --no-liftoff --test tests/wasm-speed.mjs`. V8 first compiles wasm with Liftoff, which doesn't optimise, and recompiles a
 // function with TurboFan only once it runs often. The test calls each kernel only a few times. Without the flag, it would time
-// Liftoff's code. A case over its budget is timed again after the rest, after each pause in `RETRY_PAUSES` and a `warm`, and fails only if it's
+// Liftoff's code. On Syd1, a case over its budget is timed again after the rest, after each pause in `RETRY_PAUSES` and a `warm`, and fails only if it's
 // over every time, as in `tests/speed.rs`. With `BASEDPL_COSTS` set, it also prints every case's cost.
 // Node can't lock a file. `basedpl.bpltests.wasm_test` holds the machine's timing lock around this test.
 // Run directly, the test takes no lock.
 // The test fails on a wasm budget only on Syd1's CPU, as `checks_budgets` decides. On any
-// other CPU, it prints every cost, then each case still over its budget after the retries, marked `over`, and fails on none.
+// other CPU, it prints every cost, then each case over its budget, marked `over`, without retries or failures.
 // Each case whose gap's hold has outlived the gap is printed too, marked `stale`. The rows that `costs` gives carry each case's
 // wasm budget with any hold, and whether its cost is over it or its hold is stale, as `rustymath_timing::Budget` decides.
 import assert from 'node:assert/strict';
@@ -40,7 +40,7 @@ test('each BPL speed case takes no longer than its wasm budget on Syd1', async (
     }
     let failures = all.filter(over);
     for (const pause of RETRY_PAUSES) {
-        if (!failures.length) break;
+        if (!checks || !failures.length) break;
         await new Promise(resolve => setTimeout(resolve, pause * 1000));
         warm();
         for (const c of failures) console.log(`${line(c)}: over, timed again after ${pause} s`);

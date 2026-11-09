@@ -1,12 +1,12 @@
 use crate::cancel::check;
 use crate::{
-    Described, Error, ErrorKind, Number, display::{Elide, positions}, element::{Stored, Whole}, fusion::Pending, keyed::Keys, number::{Numeric, int::Int, real},
+    Described, Error, ErrorKind, Number, display::{Elide, positions}, element::Whole, fusion::Pending, keyed::Keys, number::{Numeric, int::Int, real},
     transform::Carrier
 };
 use num_complex::{Complex32, Complex64};
 use rustymath::{
     agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, Element, Fill, FloatBuf, FloatWidth, Floats, IntBuf, View, Width}, domain::Range, error::Kind,
-    gather::Writes, with_float_width, with_width
+    gather::Writes, with_width
 };
 use std::{borrow::Cow, fmt, sync::Arc};
 
@@ -747,15 +747,16 @@ impl Value {
         let Self::Array(a) = self else { return None };
         (self.dtype() == Some(DType::Integer(width))).then(|| ArrayData::part(a, 0..a.len(), a.layout.clone(), true))
     }
-    /// This value's numbers as fixed integers of `width`, each converted as `Converts` converts it, with floats floored within the tolerance that `numeric` gives their width. Compact integers of `width` become fixed without a copy (`as_fixed`). Characters, functions and complex numbers are DOMAIN.
+    /// This value's numbers as fixed integers of `width`, through rustymath's floor/wrap/saturate conversion. Compact integers of `width` become fixed without a copy (`as_fixed`). Characters, functions and complex numbers are DOMAIN.
     pub(crate) fn to_fixed(&self, width: Width, numeric: Numeric) -> Result<Self, ErrorKind> {
         if let Self::Number(n) = self { return Ok(Self::Number(n.to_fixed(width, numeric)?)); }
         if !matches!(self, Self::Array(_)) { return Err(Kind::Domain.into()); }
         if let Some(fixed) = self.as_fixed(width) { return Ok(fixed); }
-        let Some(buffer) = self.as_items().view().and_then(|v| with_width!(width, T => crate::element::converted::<T>(v, numeric).map(T::buffer))) else {
+        let Some(view) = self.view().filter(|v| v.dtype().is_real()) else {
             let values = self.elements().map(|v| v.to_fixed(width, numeric)).collect::<Result<Vec<_>, _>>()?;
             return self.layout().collect(values, self.prototype().to_fixed(width, numeric)?);
         };
+        let buffer = Buffer::floored(view, DType::Integer(width), numeric.tolerance_of(view.dtype()))?;
         Self::from_storage(self.layout().clone(), Storage::Compact(buffer).fixed(true))
     }
     /// This value's numbers as integers of `width` (`to_fixed`), which are fixed where `numeric` has a fixed width and ordinary otherwise, as a call under `numeric` gives them.
@@ -774,17 +775,16 @@ impl Value {
     }
     /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or the value is such an atom.
     pub fn float_width(&self) -> Option<FloatWidth> { float_width_of(self.dtype()?) }
-    /// The numbers of this value as floats of `width`, each rounded once, with the arrays nested in it converted too. Complex numbers take parts of `width`, and 32-bit parts for 16 bits. Floats already of `width`, pending ones included, stay as they are, with no copy. Characters and functions are DOMAIN.
+    /// The numbers of this value at float width `width`, including nested arrays. Complex numbers take parts of `width`, and 32-bit parts for 16 bits. Floats already of `width`, pending ones included, stay as they are, with no copy. Characters and functions are DOMAIN.
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, ErrorKind> {
         if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| Kind::Domain.into()); }
         if !matches!(self, Self::Array(_)) { return Err(Kind::Domain.into()); }
         if self.dtype() == Some(DType::Float(width)) { return Ok(self.clone()); }
         match self.view() {
-            Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) => {
-                with_float_width!(width, F => F::build(self.layout().clone(), crate::element::read_as::<F>(self).ok_or(Kind::Domain)?.into_owned()))
-                    .ok_or_else(|| Kind::Domain.into())
+            Some(view) if view.dtype() != DType::Character => {
+                let to = match view { View::Complexes(_) => DType::Complex(width.into()), _ => DType::Float(width) };
+                Self::from_storage(self.layout().clone(), Storage::Compact(Buffer::cast_results(view, to, false)?))
             }
-            Some(View::Complexes(z)) => Self::complex(self.layout().clone(), ComplexBuf::collect(width.into(), z.widened().iter().copied())),
             _ => {
                 self.layout().collect(self.elements().map(|e| e.to_float_width(width)).collect::<Result<Vec<_>, _>>()?, self.prototype().to_float_width(width)?)
             }
@@ -843,7 +843,7 @@ impl Value {
     pub fn widened_for_export(&self) -> Option<Buffer> {
         let width = self.export_widening()?;
         let View::Integers(ints) = self.view()? else { return None };
-        Some(with_width!(width, T => <T as rustymath::buffer::Element>::buffer(crate::element::cast::<T>(ints).into_owned())))
+        Some(Buffer::cast_results(View::Integers(ints), DType::Integer(width), false).expect("integers convert to integers"))
     }
     /// Whether the array reads another array's items, as a view.
     pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }

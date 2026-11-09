@@ -687,8 +687,9 @@ fn _captured_literal(value: &str) -> PyResult<String> {
 
 /// Shared setup and records, including native budget-footer byte spans.
 #[pyfunction]
-fn _reference_file(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
-    let file = basedpl_testkit::reference::file("", text).map_err(PyValueError::new_err)?;
+#[pyo3(signature = (text, name = ""))]
+fn _reference_file(py: Python<'_>, text: &str, name: &str) -> PyResult<Py<PyAny>> {
+    let file = basedpl_testkit::reference::file(name, text).map_err(PyValueError::new_err)?;
     python(py, &serde_json::json!({"setup":file.setup, "cases":file.cases}))
 }
 

@@ -87,6 +87,10 @@ pub(crate) fn static_width(width: Width) -> Option<Width> { crate::settings::int
 /// The width that stores ordinary integers that `width` holds: `width` itself, the narrowest that holds their values, under dynamic kinds, and `static_width` under static kinds.
 #[inline]
 pub(crate) fn ordinary_width(width: Width) -> Width { static_width(width).unwrap_or(width) }
+/// The ordinary width of integer bounds, saturated at i64, or i64 when no bounds are known.
+pub(crate) fn ordinary_width_for(range: Option<Range>) -> Width {
+    range.map_or(Width::I64, |r| ordinary_width(Width::narrowest(r.lo as i64, r.hi as i64)))
+}
 /// The compact dtype that holds `item`, if any does (`Number::dtype`).
 pub(crate) fn item_dtype(item: &Value) -> Option<DType> {
     match item { Value::Number(n) => n.dtype(), Value::Character(_) => Some(DType::Character), _ => None }
@@ -187,7 +191,7 @@ impl Storage {
     pub(crate) fn at(buffer: Buffer, fixed: Option<Width>, known: Option<Range>) -> (Self, Range) {
         match (buffer, fixed) {
             (Buffer::Integers(v), Some(width)) if v.view().tag() == width => (Self::Fixed(v), Range::ANY), (Buffer::Integers(v), Some(width)) => (
-                Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true),
+                Self::Compact(Buffer::cast_results(View::Integers(v.view()), DType::Integer(width), false).expect("integers convert to integers")).fixed(true),
                 Range::ANY), (Buffer::Integers(IntBuf::U8(v)), None) => Self::narrowed(v, known),
             (Buffer::Integers(IntBuf::I16(v)), None) => Self::narrowed(v, known), (Buffer::Integers(IntBuf::I32(v)), None) => Self::narrowed(v, known),
             (Buffer::Integers(IntBuf::I64(v)), None) => Self::narrowed(v, known), (buffer, _) => (Self::Compact(buffer), Range::ANY)
@@ -208,13 +212,13 @@ impl Storage {
             let (min, max) = rustymath::reduce::extremes(&data);
             Range { lo: min.to_i64() as f64, hi: max.to_i64() as f64 }
         });
-        let width = ordinary_width(Width::narrowest(range.lo as i64, range.hi as i64));
+        let width = ordinary_width_for(Some(range));
         (Self::within(data, if T::WIDTH.join(width) == T::WIDTH { width } else { T::WIDTH }), range)
     }
     /// The integers `data` at `width`, which holds them all. Integers that have the width already keep their buffer.
     pub(crate) fn within<T: Whole>(data: Vec<T>, width: Width) -> Self {
         Self::Compact(if width == T::WIDTH { T::buffer(data) }
-        else { with_width!(width, U => U::buffer(data.iter().map(|&n| U::from_i64(n.to_i64())).collect())) })
+        else { Buffer::cast_results(T::view(&data), DType::Integer(width), false).expect("integers convert to integers") })
     }
     /// Copies `range` of `source` when it has this storage's dtype, and gives whether it could.
     fn copy_slice(&mut self, source: Items, range: std::ops::Range<usize>) -> bool {

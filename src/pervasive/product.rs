@@ -8,10 +8,10 @@ pub(crate) fn inner(
     use rustymath::error::{Error, Kind};
     let (g, folds) = (&plan.g, plan.folds());
     let operands = [x, y].map(read);
-    let args: Vec<(&Value, &Mapping, usize)> = operands.iter().zip([x, y]).map(|((v, mapping), o)| (v, mapping, o.len())).collect();
+    let args = [(&operands[0], x), (&operands[1], y)].map(|((v, mapping), o)| (v, mapping, o.len()));
     let at = g.computes()?;
     let settings = g.numeric.settings_for(at);
-    let ran = with_reads(&args, Missing::Default, |reads, types| {
+    let ran = with_reads(args, Missing::Default, |reads, types| {
         computed(g.p, None, types, at, g.numeric, |map| {
             let t = map.result_dtype();
             let fold = table_kernel(plan.f, true, t, t, [None; 2], folds).ok_or_else(|| Error::new(Kind::Domain, "a product whose fold has no formula"))?;

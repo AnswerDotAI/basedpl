@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "fastws-cli>=0.0.34", "maturin>=1.13,<2.0", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.49"]
+dev = ["fastship>=0.0.11", "fastws-cli>=0.0.35", "maturin>=1.13,<2.0", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.49"]
 
 [project.scripts]
 basedpl-install = "basedpl.install:main"
@@ -44,7 +44,7 @@ module-name = "basedpl._core"
 macos-deployment-target = "15.0"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "image/Cargo.toml" }, { file = "jit/Cargo.toml" }, { file = "py/Cargo.toml" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cli/Cargo.toml" }, { file = "image/Cargo.toml" }, { file = "jit/Cargo.toml" }, { file = "py/Cargo.toml" }, { file = "testkit/Cargo.toml" }]
 
 [tool.fastws]
 dev-profile = "release"

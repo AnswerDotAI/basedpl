@@ -562,13 +562,13 @@ impl Number {
         let right = crate::plan::Kind::number(right);
         match left { Some(left) => crate::plan::Kind::fixed([crate::plan::Kind::number(left), right]), None => crate::plan::Kind::fixed([right]) }
     }
-    /// This number as a fixed integer of `width`, converted as `element::Converts` converts it, with a float floored within the tolerance that `numeric` gives its width. A complex number is DOMAIN.
+    /// This number as a fixed integer of `width`: integers wrap, floats floor within their width's tolerance and saturate, and exact fractions floor and saturate unless whole. A complex number is DOMAIN.
     pub(crate) fn to_fixed(&self, width: Width, numeric: Numeric) -> Result<Self, ErrorKind> {
-        use {crate::element::Converts, rustymath::tolerant::Exactly};
         let n = rustymath::with_width!(width, T => i64::from(match (self.as_integer(), self.0.float(), &self.0) {
-            (Some(n), ..) => <i64 as Converts<T>>::converted(n, Exactly),
-            (_, Some((x, w)), _) => <f64 as Converts<T>>::converted(x, numeric.tolerance_at(w)),
-            (_, _, Exact(q, _)) => <&BigRational as Converts<T>>::converted(q, Exactly),
+            (Some(n), ..) => n as T,
+            (_, Some((x, w)), _) => rustymath::convert::floored::<T, _>(x, numeric.tolerance_at(w)),
+            (_, _, Exact(q, _)) if q.is_integer() => low_bits(q.numer()) as T,
+            (_, _, Exact(q, _)) => rustymath::convert::saturated(&q.floor().to_integer()),
             _ => return Err(Kind::Domain.into()),
         }));
         Ok(Self::fixed(n, width))
