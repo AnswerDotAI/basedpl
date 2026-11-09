@@ -13,12 +13,12 @@ use crate::{
     number::{Halving, Numeric}, pervasive::{self, Reduce}, plan::Pervasive, primitive::{FoldKind, Primitive}
 };
 use rustymath::{
-    agreement::{Binding, Mapping, Missing, Period, ReadPlan, Walked}, buffer::{Buffer, DType, Element, FloatWidth, MapOutput, Scratch, View, Width},
+    agreement::{Binding, Mapping, Missing, Period, ReadPlan, Walked}, buffer::{Buffer, DType, Element, FloatWidth, MapOutput, Scratch, Width},
     gather::Steps, layout::strides, operation::{Kernel, Settings}, parallel::{self, Slots}, reduce, tolerant::Tolerance
 };
 use std::{borrow::Cow, ops::Range};
 #[cfg(not(web))]
-use {crate::jit, std::sync::{Arc, OnceLock, atomic::Ordering::Relaxed}};
+use {crate::jit, rustymath::buffer::View, std::sync::{Arc, OnceLock, atomic::Ordering::Relaxed}};
 
 /// Runs `$body` with `$t` bound to the item type of `$dtype`, a type that a stage holds (`readable`).
 macro_rules! with_item {
