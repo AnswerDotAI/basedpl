@@ -12,10 +12,10 @@ step←{[[0]]⌷⍵ ←0 ⋄ ⍵}
 ⍝⍝⍝ held macos 105: each dfn call takes about 270 ns on macOS against the expected 150
 ⍝⍝⍝ held linux 307: each dfn call costs about 2.8 times its expected share on Syd1; 255 in the dist build
 fib 16ₓ
-⍝⍝: 96	160	150	instructions linux 5390.63	allocated linux 37.463
+⍝⍝: 96	160	150	instructions macos 5618.961 linux 5390.63	allocated macos 37.463 linux 37.463
 
 ⍝ A train whose tine is a dfn that writes one item of its argument, in the spelling that the style page prefers to `1+(step ⍵-0.5)`. The train gives its argument to `step`, which writes in place.
 ⍝ Expected: 4.6 copies, what `{1+(step ⍵-0.5)} v` costs on macOS: two passes for `-` and `+`, and `step`'s call, which writes its item in place.
 ⍝⍝⍝ allows forced "←": an indexed write computes its pending target whole before it writes
 {1+step ⍵-0.5} v
-⍝⍝: 9.2	35	9.4	instructions linux 10.071	allocated linux 16.983
+⍝⍝: 9.2	35	9.4	instructions macos 15.067 linux 10.071	allocated macos 16.983 linux 16.983

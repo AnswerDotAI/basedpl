@@ -6,8 +6,9 @@ w←v×1+5e¯15
 ⍝ The operands differ by less than Mathish's relative tolerance, not by exact equality.
 ⍝ These are low-priority cost canaries, not optimization targets.
 v=w   ⍝ n⍴$t
-⍝⍝: - - - instructions linux 23.104
+⍝⍝: -	-	-	instructions macos 38.772 linux 23.104	allocated macos 2.27
 
+⍝ mathish_less —
 v<w   ⍝ n⍴$f
-⍝⍝: - - - instructions linux 23.205
+⍝⍝: -	-	-	instructions macos 38.985 linux 23.205	allocated macos 2.27
 
