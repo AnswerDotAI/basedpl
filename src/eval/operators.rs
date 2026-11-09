@@ -21,6 +21,26 @@ use rustymath::error::Kind;
 use rustymath::{agreement::Mapping, hashing::{HashMap, HashMapExt}};
 use std::borrow::Cow;
 
+/// One operator invocation's previous signature, not another program cache.
+struct BodyCaller<'a> { f: &'a Function, previous: Option<crate::program::trace::Key> }
+
+impl<'a> BodyCaller<'a> {
+    fn new(f: &'a Function) -> Self { Self { f, previous: None } }
+    fn call<L: Argument, R: Argument>(&mut self, left: Option<L>, right: R, span: &Span) -> Result<Binding, Error> {
+        let dense = |v: &Value| !v.is_atom() && crate::plan::Desc::describes(v);
+        // Value natives observe every argument; a formal trace input has no value to observe.
+        if !matches!(self.f.node(), FunctionNode::System(f) if matches!(&f.call, crate::system::Call::Value(_)))
+            && !session().prototype.get() && dense(right.value()) && left.as_ref().is_none_or(|v| dense(v.value())) {
+            check().at(span)?;
+            if let Some(result) = self.f.programmed(crate::program::trace::Purpose::Call, Some(&mut self.previous),
+                left.as_ref().map(Argument::value), right.value(), span, &|f, x, y| f.call_with(x, y, span)?.array(span)) {
+                return result.map(Binding::Value);
+            }
+        } else { self.previous = None; }
+        self.f.call_with(left, right, span).map(|result| result.value)
+    }
+}
+
 /// `f` called on `left` and `right` under `mark`: through the mark's own function, or on the arguments that the mark converts, where `f`'s primitive has one for it (`Primitive::marked`), and otherwise with its results converted (`converted_by`).
 pub(super) fn marked(f: &Function, mark: crate::number::Mark, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     use crate::primitive::Marked;

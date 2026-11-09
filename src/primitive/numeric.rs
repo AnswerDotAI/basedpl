@@ -38,7 +38,7 @@ pub(super) fn complex_parts(right: &Value, polar: bool) -> Result<Value, Error> 
         _ => None,
     };
     if let Some(parts) = parts { return Ok(parts); }
-    crate::explain::itemwise(rustymath::events::Route::NumberParts, right.len());
+    crate::explain::itemwise(crate::events::routes::NumberParts, right.len());
     let mut data = Vec::with_capacity(generated_len(layout.shape())?);
     for item in right.elements() {
         check()?;

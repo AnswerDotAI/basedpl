@@ -6,9 +6,10 @@ use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 8] = [
+    let checks: [fn(); 11] = [
         mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results, hanzi_spellings_and_language,
         leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header, retained_selection_parameters_survive_data_reads,
+        retained_programs_rebind_block_geometry, recorded_agreements_keep_source_maps, operator_bodies_reuse_consecutive_signatures,
     ];
     for check in checks {
         basedpl::settings::reset();
@@ -223,4 +224,50 @@ fn retained_selection_parameters_survive_data_reads() {
         }
         check(r#""q"⌷["b":4 "a":5]"#, "0");
     }
+}
+
+fn recorded_agreements_keep_source_maps() {
+    let s = Session::new();
+    assert!(s.eval(r#"•prefs ["mathish":$f "kinds":"static" "float":32]"#).error.is_none());
+    equiv_in(&s, "f←{(-⊗)⍨⍵} ⋄ (f⍣2)2.0 4.0", "2 2 2 2⍴0 2 ¯2 0 ¯2 0 ¯4 ¯2 2 4 0 2 0 2 ¯2 0");
+    for (body, expected) in [("{1.0 3.0+⊗⍵}", "2 2 2⍴4 6 6 8 6 8 8 10"), ("{1.0 3.0⊣⊗⍵}", "2 2 2⍴1 1 1 1 3 3 3 3")] {
+        equiv_in(&s, &format!("f←{body} ⋄ (f⍣2)2.0 4.0"), expected);
+    }
+    equiv_in(&s, "g←{+/,1.0 3.0+⊗⍵} ⋄ g∂2.0 4.0", "2.0 2.0");
+}
+
+fn operator_bodies_reuse_consecutive_signatures() {
+    let s = Session::new();
+    assert!(s.eval(r#"•prefs ["kinds":"static" "mathish":$f "float":32] ⋄ f←{⍵+1.0}"#).error.is_none());
+    basedpl::settings::set_sizes(basedpl::settings::Sizes { min_items: 1, ..basedpl::settings::Sizes::DEFAULT });
+    equiv_in(&s, r#"e←•explain "f⍣2⁝1.0 2.0" ⋄ [e.value;≢e.programs.event]"#, "[3 4;0ₓ]");
+    equiv_in(&s, r#"e←•explain "f⍣4⁝1.0 2.0" ⋄ [e.value;e.programs.event]"#, r#"[5 6;["built";"replayed"]]"#);
+    equiv_in(&s, r#"e←•explain "f⍣2⁝1.0 2.0" ⋄ [e.value;e.programs.event]"#, r#"[3 4;["replayed"]]"#);
+    equiv_in(&s, r#"g←{0.0 1.0+⊗⍵} ⋄ e←•explain "g⍣6⁝,0.0" ⋄ [e.value≡g g g g g g ,0.0;≢e.programs.event]"#, "[$t;0ₓ]");
+    equiv_in(&s, "blend←{(0.5×⍺)+(0.25×⍵)} ⋄ cells←[2.0 4.0;6.0 8.0;10.0 12.0] ⋄ seed←1.0 3.0 ⋄ seed(blend/)cells", "2.078125 3.421875");
+    equiv_in(&s, "seed(blend\\)cells", "[1 2.5;2 3.25;3.5 4.625]");
+}
+
+fn retained_programs_rebind_block_geometry() {
+    let s = Session::new();
+    assert!(s.eval(r#"•prefs ["kinds":"static" "mathish":$f] ⋄ v←1 2 3 ⋄ x←0.25×⍳17 ⋄ f←{+/,⊼⍵+⊗v}"#).error.is_none());
+    for block in [7, 64, 5] {
+        basedpl::settings::set_sizes(basedpl::settings::Sizes { block, min_items: 1, ..basedpl::settings::Sizes::DEFAULT });
+        // Block geometry is construction context; the next call at that geometry reuses the recording.
+        equiv_in(&s, r#"e←•explain "f∂x" ⋄ e.value"#, "12+6×0.25×⍳17");
+        equiv_in(&s, "e.programs.event", r#"["built"]"#);
+        equiv_in(&s, r#"e←•explain "f∂x" ⋄ e.value"#, "12+6×0.25×⍳17");
+        equiv_in(&s, "e.programs.event", r#"["replayed"]"#);
+    }
+    // Power warms ordinary calls first at length 2; derivatives warm first at length 4.
+    equiv_in(&s, "a←2 2 ⋄ f←{a×⍵+1} ⋄ f⍣2⁝1 2", "10 14");
+    equiv_in(&s, "f∂1 2", "[2 0⋄0 2]");
+    equiv_in(&s, "f⍣2⁝1 2", "10 14");
+    equiv_in(&s, "a←3 3 ⋄ f⍣2⁝1 2", "21 30");
+    equiv_in(&s, "f∂1 2", "[3 0⋄0 3]");
+    equiv_in(&s, "a←3 3 3 3 ⋄ f∂1 2 3 4", "[3 0 0 0⋄0 3 0 0⋄0 0 3 0⋄0 0 0 3]");
+    equiv_in(&s, "f⍣2⁝1 2 3 4", "21 30 39 48");
+    equiv_in(&s, "a←4 4 4 4 ⋄ [f∂1 2 3 4 ; f⍣2⁝1 2 3 4]", "[[4 0 0 0⋄0 4 0 0⋄0 0 4 0⋄0 0 0 4];36 52 68 84]");
+    equiv_in(&s, "h←{⊂2×⍵} ⋄ h⍣2⁝1 2", "⊂⊂4 8");
+    equiv_in(&s, "h⍣2⁝3 4", "⊂⊂12 16");
 }

@@ -10,7 +10,7 @@ use super::{
 use crate::primitive::{Folding, Order, Pick, Special};
 use crate::syntax::{Node, NodeKind, cover};
 use crate::{Described, Error, Span, Value, name::Name, primitive::{FoldKind, OperatorKind, Primitive}};
-use rustymath::events::Route;
+use crate::events::Route;
 use std::{borrow::Cow, cell::Cell, convert::Infallible, ops::Range, sync::OnceLock};
 
 /// Each fast combination apart from the selections, which `rules` adds: its pattern, and the function that computes it.
@@ -430,16 +430,16 @@ pub(crate) fn combined(s: Special, left: Option<&Value>, right: &Value, span: &S
     }
     let (route, fast) = match s {
         Special::Selected(order, pick) => {
-            (if matches!(order, Order::Grade(_)) { Route::PartialGrade } else { Route::PartialSort }, selected(order, pick, left, right, span))
+            (if matches!(order, Order::Grade(_)) { crate::events::routes::PartialGrade } else { crate::events::routes::PartialSort }, selected(order, pick, left, right, span))
         }
-        Special::Ranks(down) => (Route::Ranks, ranks(down, right, span)),
+        Special::Ranks(down) => (crate::events::routes::Ranks, ranks(down, right, span)),
         Special::GroupCounts | Special::GroupFolds(..) => return grouped(s, left, right, span)?.array(span),
         Special::Determinant => return primitive_expansion(Primitive::Arithmetic(Minus), Primitive::Arithmetic(Times), right, span),
         Special::Permanent => return primitive_expansion(Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times), right, span),
         _ => unreachable!("a kernel computes this combination"),
     };
     if let Some(result) = fast { if result.is_ok() { taken(route, s) } return result; }
-    rustymath::events::declined(route, "arguments that don't suit it", right.len());
+    crate::events::declined(route, "arguments that don't suit it", right.len());
     match s {
         Special::Selected(order, pick) => pick.primitive().call(left, &order.primitive().call(None, right, span)?, span),
         Special::Ranks(down) => Primitive::Grade(false).call(None, &Primitive::Grade(down).call(None, right, span)?, span),
@@ -448,7 +448,7 @@ pub(crate) fn combined(s: Special, left: Option<&Value>, right: &Value, span: &S
 }
 
 /// Records for `•explain`, where it's on, that the function of combination `s` computed it by its own algorithm, along `route`. It names the combination by its row's glyph, as `↑⍋` names every selection.
-pub(super) fn taken(route: Route, s: Special) { if rustymath::events::running() { crate::explain::fast(route, Primitive::Special(s).glyph().into()) } }
+pub(super) fn taken(route: Route, s: Special) { if crate::events::running() { crate::explain::fast(route, Primitive::Special(s).glyph().into()) } }
 
 /// The items of `right`'s order that `pick` takes, through rustymath's partial selection, where `right` is a vector without keys. `left` is the count to take or the position to pick.
 fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {

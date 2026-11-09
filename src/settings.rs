@@ -6,7 +6,7 @@ use rustymath::buffer::{FloatWidth, Width};
 use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}};
 
 /// The sizes that decide which calls wait and how block stages and batched maps split their items. `set_sizes` sets them for the whole process, and a block stage reads them when it runs.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sizes {
     /// The fewest result items of a call that dispatch defers. A call with a smaller result runs at once.
     pub min_items: usize,

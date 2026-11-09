@@ -1,5 +1,5 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import csv, difflib, json, math, os, re, selectors, statistics, subprocess, sys, tempfile, time, tomllib
+import csv, difflib, json, math, os, re, selectors, shutil, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
 from queue import Empty, Queue
@@ -345,10 +345,13 @@ def reference_summary(
     kinds = defaultdict(list)
     for r in failing:
         if r['status'] == 'mismatch' and (k := _kind(r)) != 'other mismatch' and len(kinds[k]) < examples: kinds[k].append(r)
+    messages = Counter()
+    for r in failing:
+        messages.update({m['message'] for m in r.get('modes', ()) if m.get('message') and m['status'] not in ('pass', 'not applicable', 'unchecked')})
     return ReferenceSummary(
         cases=len(results), obligations=sum(counted['obliged']), modes=modes,
         passing=Counter(m['mode'] for r in failing for m in r.get('modes', ()) if m['status'] == 'pass'), statuses=statuses, kinds=dict(kinds),
-        messages=Counter(r.get('message') or '' for r in failing if r['status'] == 'error'), files=Counter(r.get('file') for r in failing),
+        messages=messages, files=Counter(r.get('file') for r in failing),
         lost=[r for r in results if any(m['status'] == _LOST for m in r.get('modes', ()))], compared=baseline is not None)
 
 _ROOT = Path(__file__).parents[2]
@@ -376,19 +379,19 @@ class ByBuild(list):
         w = 13 - len(self.unit)
         return '\n'.join([head, *(''.join(f'{r[1]:>{w},.0f}{self.unit}' for r in rs) + f' {rs[-1][1]/rs[0][1]-1:>+7.1%}  {_commented(rs[0][0])}' for rs in zip(*self))])
 
-def _section(section):
+def speed_setup(section):
     "The setup of a speed file and the preferences of one of its sections, from `file:section` such as `models.bpl:static`."
     name, _, part = section.partition(':')
-    speed = _reference_file((_SPEED/name).read_text())
+    speed = _reference_file((_SPEED/name).read_text(), name)
     header = next((c.get('prefs', '') for c in speed['cases'] if c['section'] == part), None)
     if header is None: raise ValueError(f'tests/speed/{name} has no section {part!r}')
     return speed['setup'], header
 
-def _section_setup(section, setup):
-    "`setup`, or for a `section`, that section's preferences and then its speed file's setup, as one text."
-    if not section: return setup
-    file_setup, prefs = _section(section)
-    return f'{prefs}\n{file_setup}'
+def _section_setup(section, setup, prefs):
+    "Setup and preferences, keeping preferences before source construction."
+    if not section: return setup, prefs
+    file_setup, header = speed_setup(section)
+    return file_setup, '\n'.join([prefs, header])
 
 @delegates(environment)
 def time_cases(
@@ -404,9 +407,7 @@ def time_cases(
     **kwargs
 ):
     "Time fully read calculations, taking the fastest of five warm runs per worker or the first run with `cold=True`, then the fastest over `rounds`. Several builds alternate order each round and return `ByBuild`."
-    if section:
-        setup, header = _section(section)
-        prefs = '\n'.join([prefs, header])
+    setup, prefs = _section_setup(section, setup, prefs)
     setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
     cases = listify(cases)
     limit = Limit.of(timeout)
@@ -509,11 +510,11 @@ _ROUGH = 1e8
 # A case that names N outside its strings supplies its own repetition and reads.
 _NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\'.\'')
 
-def _command(case, n, setup, forever=False):
-    "The `bpl --worker` arguments and standard input for one instruction-count or sampling process. Its `steps` request runs `setup` with `N` set to `n`, then each step evaluates `case` at top level and forces its value, as the speed suite's timings do (`timing::time`). A case that doesn't name `N` runs `n` steps; one that names it runs once and makes its own repetition. With `forever`, a 1-step request warms the case, and its reply marks readiness, before a second request repeats it until the process is killed."
+def _command(case, n, setup, prefs, forever=False):
+    "The `bpl --worker` arguments and standard input for one instruction-count or sampling process. A `steps` request runs `setup` with `N` set to `n`, then each step evaluates `case` at top level and forces its value. A case that doesn't name `N` runs `n` steps; one that names it runs once and makes its own repetition. With `forever`, one `profile` request prepares and forces two warm runs, signals readiness, then repeats in that same Session until the process is killed."
     named = _NAMES_N.search(_QUOTED.sub('', case))
-    def request(steps): return json.dumps({'steps': {'prefs': '', 'setup': f'{setup}\nN←{n}', 'cases': [case], 'steps': steps}})
-    return ['--worker'], '\n'.join([request(1), request(10**12)] if forever else [request(1 if named else n)]) + '\n'
+    spec = {'prefs': prefs, 'setup': f'{setup}\nN←{n}', 'cases': [case], 'steps': 10**12 if forever else 1 if named else n}
+    return ['--worker'], json.dumps({'profile' if forever else 'steps': spec})+'\n'
 
 def _raise_errors(text):
     "Raise the first error in a worker's reply lines, which a failed step, or a request that the build doesn't know, gives."
@@ -533,6 +534,7 @@ def _locked(pool, calls, limit=None):
 def instructions(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N 0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
+    prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
     counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from rough counts that compare 2s steps with s steps, from s = 2 and 100 times as many each round, until the difference passes `_ROUGH`
     runs=3, # Processes at each value of `N`, of which the lowest count is used
@@ -541,14 +543,15 @@ def instructions(
     **kwargs
 ):
     "The instructions that each case retires per unit of `N`, on one thread. Each step evaluates the case at top level and forces its value, as the speed suite's timings do (`timing::time`), through the worker's `steps` request; a case that names `N` runs once per process and makes its own repetition. A build without that request, such as the release's, can't be counted. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build is resolved once, as the count starts."
-    cases, setup = listify(cases), _section_setup(section, setup)
+    cases = listify(cases)
+    setup, prefs = _section_setup(section, setup, prefs)
     builds = listify(build) or [None]
     def slope(ns, cs): return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
     paths, limit = [resolved(b) for b in builds], Limit.of(timeout)
     with ThreadPoolExecutor(os.cpu_count()) as pool:
         def lowest(jobs, runs=runs):
             "The lowest count of `runs` processes for each `(code, n, build)` in `jobs`, from processes that run at once as one batch (`_locked`)."
-            got = _locked(pool, [(_retired, _command(code, n, setup), build, kwargs, limit) for code, n, build in jobs for _ in range(runs)], limit)
+            got = _locked(pool, [(_retired, _command(code, n, setup, prefs), build, kwargs, limit) for code, n, build in jobs for _ in range(runs)], limit)
             return [min(got[i:i+runs]) for i in range(0, len(got), runs)]
         if counts: ns = [counts]*len(cases)
         else:
@@ -606,51 +609,70 @@ def _perf_samples(pid, seconds, within, directory, callers):
     "Main-thread self samples from Linux perf, rejecting failed or empty recordings."
     limit = Limit.of(within)
     path = Path(directory)/'perf.data'
+    perf = ['perf', '--buildid-dir', str(Path(directory)/'buildid')]
     with limit.running():
-        recorded = bounded(['perf', 'record', '-q', '-e', 'cycles:u', '-F', '199', '--call-graph', 'dwarf,16384', '-t', str(pid), '-o', path, '--', 'sleep', str(seconds)], limit.left())
+        recorded = bounded([*perf, 'record', '-q', '-e', 'cycles:u', '-F', '199', '--call-graph', 'dwarf,16384', '-t', str(pid), '-o', path, '--', 'sleep', str(seconds)], limit.left())
     if recorded.returncode: raise ValueError(f'perf record failed; check perf_event_paranoid and access to cycles:u:\n{recorded.stdout}{recorded.stderr}')
-    with limit.running(): scripted = bounded(['perf', 'script', '-i', path, '-F', 'ip,sym', '--demangle'], limit.left())
+    with limit.running(): scripted = bounded([*perf, 'script', '-i', path, '-F', 'ip,sym', '--demangle'], limit.left())
     if scripted.returncode: raise ValueError(f'perf script failed:\n{scripted.stdout}{scripted.stderr}')
+    (Path(directory)/'samples.txt').write_text(scripted.stdout)
     return _perf_counts(_demangle(scripted.stdout, limit.left()), callers)
 
 def _annotated(path, within):
     "The hottest sampled function's instructions, each with its share of that function's samples, from `perf annotate` on the recording at `path`, which lists functions hottest first."
-    result = bounded(['perf', 'annotate', '-i', path, '--stdio', '--no-source'], within)
+    result = bounded(['perf', '--buildid-dir', str(Path(path).parent/'buildid'), 'annotate', '-i', path, '--stdio', '--no-source'], within)
     if result.returncode: raise ValueError(f'perf annotate failed:\n{result.stdout}{result.stderr}')
     return _demangle(result.stdout.split('\n Percent |')[0], within)
 
-def _self_samples(command, bpl, seconds, within, settings, callers, annotate=False):
+def _self_samples(command, bpl, seconds, within, settings, callers, annotate=False, out=None):
     "Sample a fresh worker's main thread, then stop it. macOS uses sample; Linux uses perf with DWARF call chains."
     limit = Limit.of(within)
-    with limit.running(), tempfile.TemporaryDirectory() as directory:
+    with limit.running(), tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary) if out is None else Path(out).expanduser().absolute()
+        if out is not None: directory.mkdir(parents=True)
         env = environment(**settings)
-        if sys.platform == 'linux': env['PERF_BUILDID_DIR'] = directory
+        if sys.platform == 'linux':
+            (directory/'buildid').mkdir()
+            env['PERF_BUILDID_DIR'] = str(directory/'buildid')
         args, requests = command
-        p = subprocess.Popen([resolved(bpl), *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        p.stdin.write(requests)
-        p.stdin.close()
-        try:
+        errors = directory/'stderr.txt'
+        with errors.open('w') as stderr:
+            p = subprocess.Popen([resolved(bpl), *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True, env=env)
             printed = b''
-            with selectors.DefaultSelector() as waiting:
-                waiting.register(p.stdout, selectors.EVENT_READ)
-                while b'\n' not in printed:
-                    if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its warm call before the deadline')
-                    chunk = os.read(p.stdout.fileno(), 4096)
-                    if not chunk: raise ValueError(f'profiled process exited {p.wait()} before readiness:\n{p.stderr.read()}')
-                    printed += chunk
-            _raise_errors(printed.decode().partition("\n")[0])
-            if sys.platform == 'linux': sampled = (*_perf_samples(p.pid, seconds, limit.left(), directory, callers), _annotated(Path(directory)/'perf.data', limit.left()) if annotate else None)
-            else:
-                with tempfile.NamedTemporaryFile('r', suffix='.txt', dir=directory) as report:
-                    try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True, timeout=limit.left())
+            try:
+                if out is not None:
+                    (directory/'command.json').write_text(json.dumps(dict(argv=p.args, pid=p.pid, stdin=requests, settings=settings, jit_disasm=env.get('BASEDPL_JIT_DISASM')), indent=2, default=str))
+                p.stdin.write(requests)
+                p.stdin.close()
+                with selectors.DefaultSelector() as waiting:
+                    waiting.register(p.stdout, selectors.EVENT_READ)
+                    while b'\n' not in printed:
+                        if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its two warm calls before the deadline')
+                        chunk = os.read(p.stdout.fileno(), 4096)
+                        if not chunk: raise ValueError(f'profiled process exited {p.wait()} before readiness:\n{errors.read_text()}')
+                        printed += chunk
+                reply = printed.partition(b"\n")[0].decode()
+                _raise_errors(reply)
+                if not json.loads(reply)['result'].get('ready'): raise ValueError('profiling needs an updated worker that signals readiness')
+                if sys.platform == 'linux': sampled = (*_perf_samples(p.pid, seconds, limit.left(), directory, callers), _annotated(directory/'perf.data', limit.left()) if annotate else None)
+                else:
+                    report = directory/'sample.txt'
+                    try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report], capture_output=True, text=True, timeout=limit.left())
                     except subprocess.TimeoutExpired: raise TimeoutError("sample did not finish before the call's deadline; check Developer Tools authorization") from None
                     if s.returncode: raise ValueError(s.stdout + s.stderr)
-                    lines = report.read().splitlines()
-            if p.poll() is not None: raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{p.stderr.read()}')
-            if sys.platform == 'linux': return sampled
-        finally:
-            p.kill(); p.wait(); p.stdout.close(); p.stderr.close()
-            if sys.platform == 'linux': Path(f'/tmp/perf-{p.pid}.map').unlink(missing_ok=True)
+                    lines = report.read_text().splitlines()
+                if p.poll() is not None:
+                    printed += p.stdout.buffer.read()
+                    _raise_errors(printed.decode())
+                    raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{errors.read_text()}')
+                if sys.platform == 'linux': return sampled
+            finally:
+                p.kill(); p.wait(); p.stdout.close()
+                (directory/'stdout.txt').write_bytes(printed)
+                if sys.platform == 'linux':
+                    perf_map = Path(f'/tmp/perf-{p.pid}.map')
+                    if out is None: perf_map.unlink(missing_ok=True)
+                    elif perf_map.exists(): shutil.copy2(perf_map, directory/perf_map.name)
     start = next((i for i, line in enumerate(lines) if 'com.apple.main-thread' in line), None)
     if start is None: raise ValueError('sample returned no main-thread report')
     total, selfs, stack = int(lines[start].split()[0]), defaultdict(int), []
@@ -671,21 +693,22 @@ def _self_samples(command, bpl, seconds, within, settings, callers, annotate=Fal
     if not named or total <= 0: raise ValueError('sample returned no symbolized main-thread samples')
     return named, total, None
 
-def _estimates(case, setup, build, seconds, limit, settings, counts, runs, callers, annotate=False):
+def _estimates(case, setup, prefs, build, seconds, limit, settings, counts, runs, callers, annotate=False, out=None):
     "Each function's estimated instructions per step of `N` for `case` on `build`, and the build's instructions per step, as `profile` describes, under the settings that `worker.environment` takes."
     if callers < 0: raise ValueError('callers must be nonnegative')
     if sys.platform not in ('darwin', 'linux'): raise ValueError(f'no sampling profiler on {sys.platform}')
     if annotate and sys.platform != 'linux': raise ValueError('annotate needs Linux perf')
     bpl = resolved(build)
-    [(_, per_step)] = instructions(case, setup, build=bpl, counts=counts, runs=runs, timeout=limit, **settings)
-    command = _command(case, max(1, round(1e8/per_step)), setup, forever=True)
-    with timing_lock(), limit.running(): samples, total, annotated = _self_samples(command, bpl, seconds, limit.left(), settings, callers, annotate)
+    [(_, per_step)] = instructions(case, setup, prefs=prefs, build=bpl, counts=counts, runs=runs, timeout=limit, **settings)
+    command = _command(case, max(1, round(1e8/per_step)), setup, prefs, forever=True)
+    with timing_lock(), limit.running(): samples, total, annotated = _self_samples(command, bpl, seconds, limit.left(), settings, callers, annotate, out)
     return {f: per_step*n/total for f, n in samples.items()}, per_step, annotated
 
 @delegates(environment)
 def profile(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     setup='', # BPL that defines what the case uses, run before it
+    prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
     build:str=None, # The build to profile, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     seconds=3, # How long the sampling profiler watches the build
@@ -695,10 +718,15 @@ def profile(
     counts=None, # Explicit `N` counts for expensive cases; None: `instructions` calibrates
     runs=3, # Instruction-count processes at each `N`, as `instructions` takes
     annotate=False, # Also show the hottest function's instructions, each with its share of that function's samples, from Linux `perf annotate` on the same recording; `disasm` shows a function's code without samples
+    out:Path=None, # Keep raw samples, build IDs, JIT map, command and stderr in this new directory; None: clean up after profiling
     **kwargs
 ):
-    "Where `case`'s instructions per step of `N` go, by function. After setup and one warm execution of the measured path, a fresh process repeats the case on one thread while macOS `sample` or Linux `perf` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
-    estimates, total, annotated = _estimates(case, _section_setup(section, setup), build, seconds, Limit.of(timeout), kwargs, counts, runs, callers, annotate)
+    """Where `case`'s instructions per step of `N` go, by function. A fresh process prepares setup and the parsed case, forces two warm executions, then signals readiness before repeating that same runner on one thread. macOS `sample` or Linux `perf` starts after readiness and counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate. The worker must support the profiling request; `time_cases` can still compare older builds.
+
+    `out` retains the recording and symbolized IPs, command/build path, build-ID cache and worker stderr. Set `BASEDPL_JIT_DISASM=1` to retain generated code in stderr. Linux also keeps `/tmp/perf-PID.map`, where perf looks for JIT symbols regardless of `--symfs`. Restore the archived map there with `cp -n OUT/perf-PID.map /tmp/` if absent. Read the recording after worker exit with `perf --buildid-dir OUT/buildid script -i OUT/perf.data -F ip,sym --demangle`.
+    """
+    setup, prefs = _section_setup(section, setup, prefs)
+    estimates, total, annotated = _estimates(case, setup, prefs, build, seconds, Limit.of(timeout), kwargs, counts, runs, callers, annotate, out)
     return FunctionCounts(sorted(estimates.items(), key=lambda r: -r[1])[:rows], [('total', total)], annotated)
 
 @delegates(environment)
@@ -706,6 +734,7 @@ def profile_diff(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
     setup='', # BPL that defines what the case uses, run before it
+    prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
     build:str=None, # The build to compare with `base`, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     seconds=3, # How long the sampling profiler watches each build
@@ -716,9 +745,10 @@ def profile_diff(
     runs=3, # Instruction-count processes at each `N`, as `instructions` takes
     **kwargs
 ):
-    "Where `case`'s instructions per step of `N` moved between two builds, by function, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
-    limit, setup = Limit.of(timeout), _section_setup(section, setup)
-    (before, tb, _), (after, ta, _) = _estimates(case, setup, base, seconds, limit, kwargs, counts, runs, callers), _estimates(case, setup, build, seconds, limit, kwargs, counts, runs, callers)
+    "Where `case`'s instructions per step of `N` moved between two builds, by function, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone. Both workers need the profiling request; use `time_cases` to compare older builds."
+    setup, prefs = _section_setup(section, setup, prefs)
+    limit = Limit.of(timeout)
+    (before, tb, _), (after, ta, _) = _estimates(case, setup, prefs, base, seconds, limit, kwargs, counts, runs, callers), _estimates(case, setup, prefs, build, seconds, limit, kwargs, counts, runs, callers)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return FunctionCounts([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], [('total', tb, ta)])
 
@@ -792,6 +822,7 @@ def call_profile(
     case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{⍵}⍣N 0`
     function, # A regex that the demangled name of the function to count matches, such as `binder::derived`. A function that is always inlined has no code of its own and never stops the process
     setup='', # BPL that defines what the case uses, run before it
+    prefs='', # BPL preferences to run before setup
     base:str=None, # The build to compare with, resolved as `build` is, such as the one installed before a change; None: count one build
     build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     skip=3, # Calls of `function` to let run first, while the case warms up
@@ -802,7 +833,7 @@ def call_profile(
 ):
     "Every instruction that one call of `function` retires, with the calls it makes, counted by function, on macOS on Apple silicon. `lldb` runs `case` once per step in a fresh process, lets `skip` calls of `function` run, and single-steps the next one to its return. The counts are exact, where `profile`'s estimates come from time, but they cover one call. At the 450 or so instructions a second that `lldb` steps, the largest call it counts, 100,000 instructions, takes about four minutes. The allocator's functions, with the functions they call, share the row `allocator`, which the second total leaves out. With `allocations`, they have a row for each function that called the allocator, named `allocator ← function`."
     if sys.platform != 'darwin' or os.uname().machine != 'arm64': raise ValueError('`call_profile` runs only on macOS on Apple silicon')
-    command, timeout = _command(case, 1000, setup), Limit.of(timeout)
+    command, timeout = _command(case, 1000, setup, prefs), Limit.of(timeout)
     merged, allocated = [defaultdict(int) for _ in range(2 if base else 1)], [0, 0]
     for k, (b, m) in enumerate(zip([base, build] if base else [build], merged)):
         for f, n in _counted_call(command, function, skip, b, timeout, kwargs).items():

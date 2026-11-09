@@ -714,11 +714,11 @@ impl Primitive {
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result, as the call's plan plans it (`plan::Pervasive`).
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
-        let plan = crate::plan::pervasive_on(self, left, right, Numeric::current());
-        if let Some(kept) = crate::pervasive::unchanged(&plan, left, right) { return Ok(kept.clone()); }
+        let plan = crate::plan::pervasive_on(self, left, right, Numeric::current(), Some(&agreement));
+        if let Some(kept) = crate::pervasive::unchanged(&plan, left, right, &agreement) { return Ok(kept.clone()); }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
-        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(plan.fuses(), agreement.len) {
-            match crate::fusion::defer(self, &plan, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
+        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(agreement.len) {
+            match crate::fusion::defer(&plan, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
         } else { agreement };
         Self::planned(&plan, left, right, span, fill, agreement)
     }
@@ -819,7 +819,7 @@ fn int_count(n: usize) -> u64 {
 /// The depth of `right`: 0 for an atom, and for an array one more than its deepest element. An empty array counts its prototype. A carried array answers from its carrier's template, without reading its items.
 pub(crate) fn depth(right: &Value) -> usize {
     if right.is_atom() { return 0; }
-    if let Some(carrier) = right.carrier() { return depth(carrier.template()); }
+    if let Some(carrier) = right.carrier() { return depth(carrier.template()).max(1); }
     1 + match right.as_items() { Items::Values([]) => depth(&right.prototype()), Items::Values(items) => items.iter().map(depth).max().unwrap_or(0), _ => 0 }
 }
 
@@ -863,7 +863,7 @@ pub(crate) fn weakened<R>(left: Option<&Value>, right: &Value, f: impl FnOnce(Op
 
 /// `f` on each pair of items that `agreement` pairs from `left` and `right`, gathered as items and laid out as `agreement` lays out the result.
 fn pairwise(left: Option<&Value>, right: &Value, agreement: Agreement, f: &dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>) -> Result<Value, Error> {
-    crate::explain::itemwise(rustymath::events::Route::ItemPairs, agreement.len);
+    crate::explain::itemwise(crate::events::routes::ItemPairs, agreement.len);
     let mut data = Gather::items(agreement.len);
     for i in 0..agreement.len {
         let (x, y) = agreement.values_ref(left, right, i);

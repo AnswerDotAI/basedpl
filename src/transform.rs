@@ -319,7 +319,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span)
 /// A call with a selected running level.
 #[inline(never)]
 fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span, newest: Mark) -> Option<Result<Value, Error>> {
-    if let Op::Operation(operation, Pairing::Agreed(agreement)) = op {
+    if !matches!(newest, Mark::Trace(_) | Mark::Tape(_)) && let Op::Operation(operation, Pairing::Agreed(agreement)) = op {
         let (x, y) = agreement.laid(left, right);
         return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, span));
     }
@@ -407,7 +407,7 @@ impl Carrier {
     }
     /// The items of a dual or a batch for `storage`, built once into `cell` as `n` items from `at`. Building them records an `itemwise` row in `•explain` under `route`.
     pub(crate) fn built<'a>(
-        cell: &'a std::sync::OnceLock<crate::array::Storage>, route: rustymath::events::Route, n: usize, at: impl Fn(usize) -> Value
+        cell: &'a std::sync::OnceLock<crate::array::Storage>, route: crate::events::Route, n: usize, at: impl Fn(usize) -> Value
     ) -> &'a crate::array::Storage {
         cell.get_or_init(|| {
             crate::explain::itemwise(route, n);

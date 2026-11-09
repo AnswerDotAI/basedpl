@@ -2,8 +2,8 @@
 
 use super::{Node, Origin, Program, Read, Step, Writes};
 use crate::plan::Desc;
-use crate::{At, Described, Error, Span, Value, primitive::{Operation, Primitive}, transform::Pairing};
-use rustymath::structure::IndexPart;
+use crate::{At, Described, Error, Span, Value, agreement::Agreement, primitive::{Operation, Primitive}, transform::Pairing};
+use rustymath::{agreement::Mapping, structure::IndexPart};
 use std::borrow::Cow;
 
 /// How a replay runs a program: one node on its own, a conversion that it leaves pending for the products that read through it, or a block stage that computes several a block of items at a time, through compiled parts where it has them (`blocks`). `blocks::plan` chooses.
@@ -36,15 +36,41 @@ pub(crate) fn values(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     Ok(r.values)
 }
 
-/// The value of `program`'s result where its only step gives it and it has no outputs, computed by that step on the program's held values, as a plan of each node on its own computes it (`blocks::plan`), without making the plan. `None` for any other program.
-pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error>> {
+/// The program's result. A plan of ordinary nodes can run a lone step on its bound operands directly.
+pub(crate) fn replay(program: &Program, plan: &Plan, inputs: &[&Value], span: &Span) -> Result<Value, Error> {
+    if plan.units.iter().all(|u| matches!(u, Unit::Node(_))) {
+        if let Some(value) = lone(program, inputs, span) { return value; }
+    }
+    Ok(taken(program, &mut values(program, plan, inputs, span)?, &program.result))
+}
+
+/// The result of one step whose operands are held values or bound inputs, without making a block plan. No intermediate computation or side outputs enter this route.
+pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<Result<Value, Error>> {
     let j = program.result.of;
-    let alone = program.outputs.is_empty() && matches!(program.nodes[j].origin, Origin::Step(_));
-    if !alone || !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))) { return None; }
+    let node = &program.nodes[j];
+    let Origin::Step(step) = &node.origin else { return None };
+    if !program.outputs.is_empty() { return None; }
+    let leaf = |i: usize| match &program.nodes[i].origin { Origin::Input(k) => Some(inputs[*k]), Origin::Held(v) => Some(v), _ => None };
+    if !program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some()) { return None; }
     if crate::settings::verifies() { super::verify::check(program); }
-    let values = program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => Some(v.clone()), _ => None }).collect();
-    let mut r = Replay { program, values, inputs: &[] };
-    Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result)))
+    let result = run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span);
+    Some(result.and_then(|value| checked(node, j, value, span)).map(|value|
+        if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
+}
+
+/// Stores a completed step at its declared kind and checks the value against its description.
+fn checked(node: &Node, j: usize, value: Value, span: &Span) -> Result<Value, Error> {
+    let value = value.stored_at(node.desc.dtype());
+    if !node.desc.matches(&value) {
+        let Origin::Step(step) = &node.origin else { unreachable!("only a step's result is checked"); };
+        let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
+        let atom = |a: bool| if a { " atom" } else { "" };
+        return Err(Error::domain(format!(
+            "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype,
+            planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
+        )).at(span));
+    }
+    Ok(value)
 }
 
 impl Replay<'_> {
@@ -61,16 +87,10 @@ impl Replay<'_> {
                     }
                     _ => None,
                 };
-                let value = run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?.stored_at(node.desc.dtype());
-                if !node.desc.matches(&value) {
-                    let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
-                    let atom = |a: bool| if a { " atom" } else { "" };
-                    return Err(Error::domain(format!(
-                        "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype,
-                        planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
-                    )).at(span));
-                }
-                value
+                let value = |i: usize| self.values[i].as_ref().expect("a step's operands have their values");
+                let result = if !self.program.takes(j) && let Some(copy) = copy_read(step, &value, &node.desc, span) { copy }
+                    else { run(step, &self.program.nodes, &value, owned, &node.desc, span) };
+                checked(node, j, result?, span)?
             }
         };
         self.values[j] = Some(value);
@@ -87,29 +107,59 @@ impl Replay<'_> {
         }
     }
 }
+/// A Copy has an explicit result category; an atom copied to a rank-0 array is still an array.
+fn copied_result(value: Value, desc: &Desc) -> Result<Value, crate::ErrorKind> {
+    if desc.atom { return Ok(value.at(0)); }
+    if !value.is_atom() { return Ok(value); }
+    if value.carrier().is_none() && let Some(view) = value.view() {
+        let buffer = rustymath::buffer::Buffer::cast(view, desc.dtype())?;
+        return Value::from_storage(desc.layout.clone(), crate::array::Storage::Compact(buffer).fixed(desc.kind.fixed.is_some()));
+    }
+    value.relaid(desc.layout.clone())
+}
 
-/// The value of `step`, on `values`, laid out as `desc` describes. A step whose operands carry a running level's data goes through the call boundary, which that level takes (`transform::call`), as a tape's steps do when an outer `∂` or trace runs. A large copy stays pending (`fusion::copy`), which a product or a fold reads in place. A copy that `desc` describes as an atom gives its one item (`plan::item`). `owned` is an accumulation's base, where the replay gives up its value, so that the accumulation writes into it with no copy.
-pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: Option<Value>, desc: &Desc, span: &Span) -> Result<Value, Error> {
-    let node = |i: usize| values[i].as_ref().expect("a step's operands have their values");
+
+/// An operand Copy is a logical read, not a demand for its expanded storage. Terminal program outputs use `run`, including when a pending copy is forced.
+pub(crate) fn copy_read<'a>(step: &Step, node: &dyn Fn(usize) -> &'a Value, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
+    let Step::Copy { of, map } = step else { return None; };
+    Some(crate::fusion::copied(node(*of), desc.layout.clone(), map, None)
+        .and_then(|value| copied_result(value, desc)).described("a program's copy").at(span))
+}
+
+/// Executes `step` on its operands. A demanded Copy produces stored items; internal copies keep their logical read (`copy_read`). Carried operands go through their call boundary. `owned` gives an accumulation a base whose old value the replay no longer needs.
+pub(crate) fn run<'a>(
+    step: &Step, nodes: &[Node], node: &dyn Fn(usize) -> &'a Value, owned: Option<Value>, desc: &Desc, span: &Span
+) -> Result<Value, Error> {
     let value = |r: &Read| through(node(r.of), r, nodes);
     match step {
         Step::Map { left, right, plan } => {
-            let (left, right) = (left.as_ref().map(value), value(right));
-            if crate::transform::carried(left.as_deref(), &right) { return plan.p.call(left.as_deref(), &right, span); }
-            plan.p.pervasive_apply(Some(plan), left.as_deref(), &right, span, false).at(span)
+            let (x, y) = (left.as_ref().map(|r| node(r.of)), node(right.of));
+            let carried = crate::transform::carried(x, y);
+            if desc.atom || carried {
+                let (left, right) = (left.as_ref().map(value), value(right));
+                return if carried { plan.p.call(left.as_deref(), right.as_ref(), span) }
+                    else { plan.p.pervasive_apply(Some(plan), left.as_deref(), right.as_ref(), span, false).at(span) };
+            }
+            let agreement = Agreement { layout: desc.layout.clone(), len: desc.layout.count(),
+                left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(nodes)), right: right.pointwise(nodes) };
+            crate::primitive::weakened(x, y, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span))
         }
         Step::Convert { of, numeric } => {
             let of = value(of);
             if crate::transform::carried(None, &of) { return crate::derivative::converted(&of, desc.dtype(), span); }
             of.converted(desc.dtype(), *numeric).described("a program's conversion").at(span)
         }
-        Step::Copy { of, map } => crate::fusion::copied(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
-            .map(|copied| if desc.atom { copied.at(0) } else { copied }),
-        Step::Structural { inputs, form, params, fill } => {
-            let (inputs, params): (Vec<Value>, Vec<Value>) =
-                (inputs.iter().map(|r| value(r).into_owned()).collect(), params.iter().map(|r| value(r).into_owned()).collect());
+        Step::Copy { of, map } => crate::fusion::copied_now(node(*of), desc.layout.clone(), map, None)
+            .and_then(|value| copied_result(value, desc)).described("a program's copy").at(span),
+        Step::Structural { inputs, form, params, fill, plan } => {
+            let inputs: Vec<Value> = inputs.iter().map(|r| value(r).into_owned()).collect();
+            let params: Vec<Value> = params.iter().map(|r| value(r).into_owned()).collect();
             let fill = fill.as_ref().map(|r| value(r).into_owned());
-            crate::fusion::copy(form, &params, &inputs.iter().collect::<Vec<_>>(), fill.as_ref())
+            let refs: Vec<&Value> = inputs.iter().collect();
+            if let Some(carrier) = crate::transform::newest_carrier(params.iter().chain(refs.iter().copied())) {
+                return carrier.structural(form, &params, &refs, fill.as_ref());
+            }
+            crate::fusion::structured(desc, plan, &refs, fill.as_ref())
         }
         Step::Gather { of, by } => {
             let (source, parts) = (value(of), by.parts(|r| value(r).into_owned()));
@@ -124,7 +174,7 @@ pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: 
         }
         Step::Product { f, g, left, right, stacked } => {
             Operation::Product(*f, *g).call(Pairing::stacked(*stacked), Some(&value(left)), &value(right), span).inspect(|_| {
-                if rustymath::events::running() { crate::explain::fast(rustymath::events::Route::Contraction, step.glyph()); }
+                if crate::events::running() { crate::explain::fast(crate::events::Route::Contraction, step.glyph()); }
             })
         }
         Step::At { p, base, items, writes } => {

@@ -48,7 +48,7 @@ impl Dual {
     #[cold]
     #[inline(never)]
     pub(crate) fn storage(&self) -> &crate::array::Storage {
-        crate::transform::Carrier::built(&self.items, rustymath::events::Route::DerivativeItems, self.primal.len(), |i| self.element(i))
+        crate::transform::Carrier::built(&self.items, crate::events::routes::DerivativeItems, self.primal.len(), |i| self.element(i))
     }
     /// `form`'s result on `inputs`, with `params` and `fill` (`Carrier::structural`): the copy of the primals and the copy of the tangents, through the same plan (`fusion::copy`). An input that isn't a dual at this tag has zeros as its tangent, and the tangents' copy reads zeros where the primals' reads the fill.
     pub(crate) fn structural(
@@ -341,7 +341,7 @@ pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, s
             None if leaf.template().is_exact() => converted(leaf, DType::Float(numeric.width_of([None])), span), None => Ok(leaf.clone())
         }
     })?;
-    if let Some(result) = f.programmed(left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
+    if let Some(result) = f.programmed(crate::program::trace::Purpose::Derivative, None, left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
     derived(f, left, right, span)
 }
 
@@ -356,10 +356,7 @@ pub(crate) fn unrendered(value: &Value) -> Value {
 fn derived(f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let n = leaves(right)?;
     if n > 1 { return reverse(f, left, right, n, span); }
-    let tag = session().begin(crate::transform::Kind::Derivative);
-    let passes = pass(f, left, right, tag, n, span);
-    session().end();
-    let (primal, columns) = passes?;
+    let (primal, columns) = session().with_level(crate::transform::Kind::Derivative, |tag| pass(f, left, right, tag, n, span))?;
     jacobian(right, &primal, columns)
 }
 

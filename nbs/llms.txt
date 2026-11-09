@@ -2,7 +2,7 @@
 
 > BPL: Based-array Programming Language. APL-derived; J, BQN ideas. Base: Dyalog `⎕ML≥2` (`↑` first/take, `⊃` mix/pick) except below. Most APL idioms don't apply: write BPL.
 
-Entry: Dyalog diff, example, defining page. Not the reference: read the page before relying on an entry. Links relative to https://answerdotai.github.io/basedpl/. Session: `]help ⍳` shows a glyph's or system fn's page.
+Entry: Dyalog diff, example, defining page. Index, not reference: read a feature's full page before using, reviewing or describing it; entry or grep hit insufficient. Links relative to https://answerdotai.github.io/basedpl/. Session: `]help ⍳` shows a glyph's or system fn's page.
 
 ## Terms
 

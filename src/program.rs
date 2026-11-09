@@ -8,7 +8,7 @@ pub(crate) mod trace;
 pub(crate) mod verify;
 
 use crate::{Value, array::Layout, number::Numeric, plan::Desc, primitive::{FoldKind, Operation, Primitive, structural::Form}};
-use rustymath::{agreement::Mapping, gather::Steps, hashing::{HashMap, Hashing}, layout::strides, structure::IndexPart};
+use rustymath::{agreement::{Mapping, ReadPlan}, gather::Steps, hashing::{HashMap, Hashing}, layout::strides, structure::IndexPart};
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -63,7 +63,7 @@ fn held_identity(v: &Value) -> Option<*const ()> {
 pub(crate) struct Nodes { list: Vec<Node>, index: HashMap<u64, Vec<usize>> }
 
 impl Nodes {
-    /// Adds `node`, or finds the newest node that gives the same value (`Node::matches`), and gives its number. The trace and fusion's pending programs both add their nodes through it, so that a program computes each value once.
+    /// Interns an already-described node, returning the newest equivalent node (`Node::matches`) or its new number. This runs no operation rewrites, so contraction/layout can emit replacement steps without restarting `folded`.
     pub(crate) fn add(&mut self, node: Node) -> usize {
         let key = node.key(self.index.hasher());
         let found = key.and_then(|k| self.index.get(&k)?.iter().rev().copied().find(|&j| self.list[j].matches(&node)));
@@ -87,6 +87,89 @@ impl Nodes {
         if let Some(k) = key { self.index.entry(k).or_default().push(at); }
         self.list.push(node);
         at
+    }
+
+    pub(crate) fn held(&mut self, value: &Value, desc: Desc) -> Read {
+        let layout = desc.layout.clone();
+        // Pending identities belong to demand/retention; resolution composes their reads when sharing permits it.
+        let one = (!value.carried() && value.len() > 1 && value.pending().is_none()
+            && value.view().is_some_and(rustymath::buffer::Buffer::same)).then(|| value.at(0));
+        if let Some(item) = one && let Some(d) = Desc::of(&item) {
+            // Every item has the array's proved bounds and kind; extraction may narrow an ordinary integer atom.
+            let of = self.held(&item, Desc { kind: desc.kind, range: desc.range, ..d });
+            return self.copied(of, Mapping::Single, desc);
+        }
+        let plain = Layout::from(value.shape().to_vec());
+        let held = match value.pending() {
+            Some(p) => Value::deferred(plain.clone(), p.clone()),
+            None if value.layout().plain() => value.clone(),
+            None => value.relaid(plain.clone()).expect("a held value keeps its item count"),
+        };
+        let of = self.add(Node { desc: Desc { layout: plain, ..desc }, origin: Origin::Held(held) });
+        Read::new(of, layout)
+    }
+    pub(crate) fn stepped(&mut self, desc: Desc, step: Step) -> Read {
+        let layout = desc.layout.clone();
+        let of = self.add(Node { desc, origin: Origin::Step(step) });
+        Read::new(of, layout)
+    }
+    pub(crate) fn copied(&mut self, of: Read, map: Mapping, desc: Desc) -> Read {
+        // Preserve compact cycles/repeats; geometry consumers expand them through Mapping only where needed.
+        let step = copy_of_copy(self, of.of, &map, desc.shape()).unwrap_or_else(|| Step::Copy { of: of.of, map });
+        self.stepped(desc, step)
+    }
+    fn mapped_read(&mut self, of: Read, map: Mapping, frame: &Layout) -> Read {
+        let desc = of.desc(self);
+        if desc.atom { return of; }
+        if map.in_order(desc.layout.count(), frame.shape()) && positional_source(self, of.of).is_none() { return Read::new(of.of, frame.clone()); }
+        self.copied(of, map, Desc { layout: frame.clone(), ..desc })
+    }
+
+    /// An explicit array copy, including where one atom supplies all the requested items.
+    pub(crate) fn copied_value(&mut self, value: &Value, map: Mapping, frame: &[usize]) -> Read {
+        let of = self.held(value, Desc::held(value));
+        let layout = Layout::from(frame.to_vec());
+        if of.desc(self).atom {
+            let desc = crate::plan::copy(&of.desc(self), &layout).expect("a generated copy has no renderer");
+            return self.copied(of, map, desc);
+        }
+        self.mapped_read(of, map, &layout)
+    }
+    pub(crate) fn mapped(&mut self, mapped: crate::plan::Mapped, left: Option<Read>, right: Read) -> Read {
+        let crate::plan::Mapped { desc, plan, agreement } = mapped;
+        let frame: Layout = desc.shape().into();
+        let left = left.map(|of| self.mapped_read(of, agreement.left, &frame));
+        let right = self.mapped_read(right, agreement.right, &frame);
+        let layout = desc.layout.clone();
+        let read = self.stepped(Desc { layout: frame, ..desc }, Step::Map { left, right, plan });
+        Read::new(read.of, layout)
+    }
+    pub(crate) fn selected(&mut self, plan: &crate::plan::Select, mask: Read, yes: Read, no: Read) -> Read {
+        let frame: Layout = plan.desc.shape().into();
+        let mask = self.mapped_read(mask, Mapping::Linear(1), &frame);
+        let yes = self.mapped_read(yes, plan.yes.clone(), &frame);
+        let no = self.mapped_read(no, plan.no.clone(), &frame);
+        let read = self.stepped(Desc { layout: frame, ..plan.desc.clone() }, Step::Select { mask, yes, no });
+        Read::new(read.of, plan.desc.layout.clone())
+    }
+    pub(crate) fn converted(&mut self, of: Read, to: rustymath::buffer::DType, numeric: Numeric) -> Result<Read, &'static str> {
+        let desc = crate::plan::convert(&of.desc(self), to)?;
+        Ok(self.stepped(desc, Step::Convert { of, numeric }))
+    }
+    pub(crate) fn folded(&mut self, p: Primitive, kind: FoldKind, axis: usize, seed: Option<Read>, of: Read, desc: Desc) -> Read {
+        if seed.is_none() && let Some(read) = contraction::routed(self, p, kind, &of, &[axis], &desc, Numeric::current()) { return read; }
+        self.stepped(desc, Step::Fold { p, kind, axis, seed, of })
+    }
+    pub(crate) fn structured(&mut self, form: Form, params: Vec<Read>, inputs: Vec<Read>, fill: Option<Read>, desc: Desc, plan: ReadPlan) -> Read {
+        if fill.is_none() && let Some((source, map)) = plan.positional(desc.shape())
+            && let Ok(copied) = crate::plan::copy(&inputs[source].desc(self), &desc.layout) && copied.kind == desc.kind {
+            let input = inputs[source].desc(self);
+            if input.kind == desc.kind && input.atom == desc.atom && map.in_order(input.layout.count(), desc.shape()) {
+                return Read::new(inputs[source].of, desc.layout);
+            }
+            return self.copied(inputs[source].clone(), map, desc);
+        }
+        self.stepped(desc, Step::Structural { inputs, form, params, fill, plan })
     }
 }
 
@@ -124,18 +207,11 @@ fn added(own: Nodes, nodes: &mut Nodes, mut replaced: impl FnMut(&mut Nodes, &[u
     at
 }
 
-/// The positional source of a copy or kind-preserving structural step. Structural parameters must already be stored under their recorded layouts; otherwise returns `None` without forcing or observation.
-pub(crate) fn positional_source<'a>(nodes: &[Node], node: usize, value: impl Fn(usize) -> Option<&'a Value>) -> Option<(Read, Mapping)> {
+/// The source and resolved positional mapping of a kind-preserving structural read, without item access.
+pub(crate) fn positional_source(nodes: &[Node], node: usize) -> Option<(Read, Mapping)> {
     match &nodes[node].origin {
         Origin::Step(Step::Copy { of, map }) => Some((Read::node(nodes, *of), map.clone())),
-        Origin::Step(Step::Structural { inputs, form, params, .. }) => {
-            let params = params.iter().map(|r| {
-                let v = value(r.of)?;
-                if v.pending().is_some() || v.carried() || v.layout() != &r.layout { return None; }
-                Some(v.clone())
-            }).collect::<Option<Vec<_>>>()?;
-            let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
-            let plan = crate::primitive::structural::plan(form, &params, &layouts).ok()?.1;
+        Origin::Step(Step::Structural { inputs, plan, .. }) => {
             let (source, map) = plan.positional(nodes[node].desc.shape())?;
             let source = inputs.get(source)?;
             if nodes[source.of].desc.kind != nodes[node].desc.kind { return None; }
@@ -145,9 +221,9 @@ pub(crate) fn positional_source<'a>(nodes: &[Node], node: usize, value: impl Fn(
     }
 }
 
-/// One copy of node `node`'s positional source, composing its map with `map` for a result of `shape`. Unresolved parameters and maps that don't compose give `None`.
+/// One copy of node `node`'s positional source, composing its map with `map` for a result of `shape`.
 pub(crate) fn copy_of_copy(nodes: &[Node], node: usize, map: &Mapping, shape: &[usize]) -> Option<Step> {
-    let (source, inner) = positional_source(nodes, node, |j| match &nodes[j].origin { Origin::Held(v) => Some(v), _ => None })?;
+    let (source, inner) = positional_source(nodes, node)?;
     Some(Step::Copy { of: source.of, map: inner.compose(map, nodes[node].desc.shape(), shape)? })
 }
 
@@ -159,7 +235,7 @@ pub(crate) fn through_copies(nodes: &[Node], of: usize, map: &Mapping, frame: &[
 }
 
 /// The axis of an array of `shape` that each axis of `frame` steps forwards along by that axis's stride, where `map` reads the array over `frame` from its first item, or `None` for an axis that repeats one item. `None` where `map` starts at another item, where an axis steps any other way or past the end of its source axis (`Walk::new`), and where two axes step along one axis of the array.
-pub(crate) fn stepped(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<Option<usize>>> {
+pub(crate) fn forward_axes(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<Option<usize>>> {
     let walk = rustymath::structure::Walk::new(&map.tables(frame), frame, shape)?;
     let forward = |(s, b): (&Steps, &Option<usize>)| match (s, *b) {
         (Steps::Stride { start: 0, .. }, None) => true,
@@ -204,8 +280,8 @@ pub(crate) enum Step {
     Convert { of: Read, numeric: Numeric },
     /// A value's items read through `map`, as a structural glyph copies them (`fusion::copied`). Only a fused chain holds one.
     Copy { of: usize, map: Mapping },
-    /// A structural primitive's call on `inputs`, with parameters `params` and an explicit `fill`, which plans its read on the inputs' layouts when it runs (`structural::plan`) and reads through `fusion::copy`. A recording holds the structural call rather than its resolved copy.
-    Structural { inputs: Vec<Read>, form: Form, params: Vec<Read>, fill: Option<Read> },
+    /// A structural call and its resolved source-relative geometry. Its recipe remains available for transformed execution and deliberate rebinding.
+    Structural { inputs: Vec<Read>, form: Form, params: Vec<Read>, fill: Option<Read>, plan: ReadPlan },
     /// The items of `of` that `by`'s parts select, as `.[]` or `⌷` reads them, planned at replay on the parts' values (`primitive::parts_plan`), where a part's positions are a value that the program computes, such as an argument's.
     Gather { of: Read, by: Selector },
     /// A fold or scan by `p` along `axis`, with an atom seed (`plan::fold`).
@@ -218,7 +294,7 @@ pub(crate) enum Step {
     At { p: Primitive, base: Read, items: Read, writes: Writes },
     /// A mask of Booleans in the layout of `of`, true at the item of each lane along `axis` that `p`, `⌈` or `⌊`, picks, the first of any ties (`derivative::extreme_mask`, `plan::picks`).
     Picks { p: Primitive, axis: usize, of: Read },
-    /// Monadic `p`, `≢` or `⍴`, of `of`, read from its value's layout when the step runs, so that a replay at new lengths gives the new count or shape (`trace::build` needn't key the lengths exactly).
+    /// Monadic `p`, `≢` or `⍴`, of `of`, read from its current layout when the step runs. Exact-layout guards also protect any shape facts used during construction.
     Shape { p: Primitive, of: Read },
 }
 
@@ -254,6 +330,8 @@ impl Read {
     pub(crate) fn desc(&self, nodes: &[Node]) -> Desc { Desc { layout: self.layout.clone(), ..nodes[self.of].desc.clone() } }
     /// Whether this read is a view: a layout other than its node's own, which a replay relays its node's value to.
     pub(crate) fn view(&self, nodes: &[Node]) -> bool { self.layout != nodes[self.of].desc.layout }
+    /// A normalized pointwise operand reads an atom repeatedly and an array in frame order.
+    pub(crate) fn pointwise(&self, nodes: &[Node]) -> Mapping { if nodes[self.of].desc.atom { Mapping::Single } else { Mapping::Linear(1) } }
 }
 
 /// The reads of `$step`'s operands, with optional ones taken through `$as`, `as_ref` or `as_mut`, and a selector's and a structural call's reads through `$iter`, `iter` or `iter_mut`.
@@ -327,20 +405,21 @@ impl Program {
     pub(crate) fn at(nodes: Nodes, result: usize) -> Self { let result = Read::node(&nodes, result); Self::new(nodes, result) }
     /// Whether the caller takes node `j`'s value: the node that the result reads, or one of the outputs.
     pub(crate) fn takes(&self, j: usize) -> bool { j == self.result.of || self.outputs.contains(&j) }
-    /// The program as text, one line for each value: its number, what makes it, and its type and shape. `input` names input `k`.
+    /// The program as text, one line for each value: its number, what makes it, and its type and shape. `input` names input `k`. Only plain atoms print their literal; listing arrays or carriers never reads their items.
     pub(crate) fn listing(&self, input: impl Fn(usize) -> String) -> String {
         let at = |i: usize| format!("v{i}");
         let read = |r: &Read| at(r.of);
         self.nodes.iter().enumerate().map(|(i, node)| {
             let made = match &node.origin {
                 Origin::Input(k) => input(*k),
-                Origin::Held(v) => format!("held {}", v.source(crate::display::Elide::NONE)),
+                Origin::Held(v) if v.is_atom() && !v.carried() => format!("held {}", v.source(crate::display::Elide::NONE)),
+                Origin::Held(_) => "held".into(),
                 Origin::Step(step @ Step::Map { left, right, .. }) => {
                     format!("{} {}", step.glyph(), left.iter().chain([right]).map(read).collect::<Vec<_>>().join(" "))
                 }
                 Origin::Step(Step::Convert { of, .. }) => format!("convert {}", read(of)),
                 Origin::Step(Step::Copy { of, .. }) => format!("copy {}", at(*of)),
-                Origin::Step(Step::Structural { inputs, form, params, fill }) => format!(
+                Origin::Step(Step::Structural { inputs, form, params, fill, .. }) => format!(
                     "{form:?} {}{}{}", inputs.iter().map(read).collect::<Vec<_>>().join(" "),
                     params.iter().map(|p| " ".to_owned() + &read(p)).collect::<String>(),
                     fill.as_ref().map(|f| " fill ".to_owned() + &read(f)).unwrap_or_default()
@@ -478,7 +557,7 @@ impl<E, const MOST: usize> Recent<E, MOST> {
 impl<E, const MOST: usize> Default for Recent<E, MOST> { fn default() -> Self { Self(Vec::new()) } }
 
 /// The plans that `planned` made, each with the settings it was made under and its program with inputs in place of held arrays (`Program::keyed`).
-static PLANS: Mutex<Recent<(Numeric, Program, Arc<run::Plan>), PLANNED>> = Mutex::new(Recent(Vec::new()));
+static PLANS: Mutex<Recent<(Numeric, crate::settings::Sizes, Program, Arc<run::Plan>), PLANNED>> = Mutex::new(Recent(Vec::new()));
 
 /// The most plans that `PLANS` keeps.
 const PLANNED: usize = 32;
@@ -486,17 +565,17 @@ const PLANNED: usize = 32;
 /// Forgets every kept plan, as a new process has none.
 pub fn forget_plans() { PLANS.lock().unwrap_or_else(PoisonError::into_inner).0.clear() }
 
-/// The plan that runs `program` (`blocks::plan`), made once for each structure of program under each of the settings that planning reads (`Numeric`). The plan comes from the program with inputs in place of its held arrays, whose items a block stage reads as it runs. Programs that differ only in their arrays' items share a plan, as each force of one pending chain does. Programs whose held atoms differ get plans of their own, because a plan can depend on an atom's value, as `○`'s does on its left argument. A program with a table of positions (`Step::tabled`), which can hold as many positions as the data has items, is planned each time and never kept. Where the session checks programs (`settings::verifies`), each program that's planned is checked first as it is, because a step planned on a held array's values plans differently on the input that replaces it.
+/// The plan that runs `program` (`blocks::plan`), made once for each structure of program under each of the settings that planning reads (`Numeric` and `Sizes`). The plan comes from the program with inputs in place of its held arrays, whose items a block stage reads as it runs. Programs that differ only in their arrays' items share a plan, as each force of one pending chain does. Programs whose held atoms differ get plans of their own, because a plan can depend on an atom's value, as `○`'s does on its left argument. A program with a table of positions (`Step::tabled`), which can hold as many positions as the data has items, is planned each time and never kept. Where the session checks programs (`settings::verifies`), each program that's planned is checked first as it is, because a step planned on a held array's values plans differently on the input that replaces it.
 pub(crate) fn planned(program: &Program) -> Arc<run::Plan> {
     let tabled = program.nodes.iter().any(|n| matches!(&n.origin, Origin::Step(s) if s.tabled()));
-    let numeric = Numeric::current();
+    let (numeric, sizes) = (Numeric::current(), crate::settings::sizes());
     let plans = || PLANS.lock().unwrap_or_else(PoisonError::into_inner);
-    if !tabled && let Some((_, _, plan)) = plans().find(|(n, p, _)| *n == numeric && p.plans_as(program)) { return plan.clone(); }
+    if !tabled && let Some((_, _, _, plan)) = plans().find(|(n, s, p, _)| *n == numeric && *s == sizes && p.plans_as(program)) { return plan.clone(); }
     if crate::settings::verifies() { verify::check(program); }
     if tabled { return Arc::new(blocks::plan(program)); }
     // Planning runs without the lock, which a force on another thread may need meanwhile.
     let keyed = program.keyed();
     let plan = Arc::new(blocks::plan(&keyed));
-    plans().keep((numeric, keyed, plan.clone()));
+    plans().keep((numeric, sizes, keyed, plan.clone()));
     plan
 }

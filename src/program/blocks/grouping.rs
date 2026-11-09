@@ -92,11 +92,11 @@ impl Group {
         let items = node.desc.layout.count();
         if node.desc.atom || self.items.is_some_and(|n| n != items) { return false; }
         let fits = match step {
-            Step::Map { left, right, plan } => computes(plan, node.desc.dtype()).is_some() && self.reads_paired(program, left.as_ref(), right),
-            Step::Convert { of, .. } => readable(node.desc.dtype()) && self.reads(program, of, &Mapping::Linear(1)) && !read_through(program, readers, j),
+            Step::Map { plan, .. } => computes(plan, node.desc.dtype()).is_some() && step.operands().all(|r| self.reads(program, r)),
+            Step::Convert { of, .. } => readable(node.desc.dtype()) && self.reads(program, of) && !read_through(program, readers, j),
             Step::Select { mask, yes, no } => {
                 readable(node.desc.dtype()) && program.nodes[mask.of].desc.dtype() == DType::Boolean
-                    && [mask, yes, no].into_iter().all(|r| self.reads(program, r, &Mapping::Linear(1)))
+                    && [mask, yes, no].into_iter().all(|r| self.reads(program, r))
             }
             Step::Copy { of, .. } => !self.nodes.contains(of) && input(program, *of),
             _ => false,
@@ -108,15 +108,10 @@ impl Group {
         }
         fits
     }
-    /// Whether a step of the group can read `read` through `map`, as `Blocks::operand` reads it: a step of the group only item for item, and a copy in the group, an atom or an array of a type that a stage holds (`readable`) through any map.
-    fn reads(&self, program: &Program, read: &Read, map: &Mapping) -> bool {
+    /// Whether a normalized pointwise operand reads an earlier step, an atom or an array of a type that a stage holds.
+    fn reads(&self, program: &Program, read: &Read) -> bool {
         let node = &program.nodes[read.of];
-        if !self.nodes.contains(&read.of) { return node.desc.atom || readable(node.desc.dtype()); }
-        match node.origin { Origin::Step(Step::Copy { .. }) => true, _ => { let n = node.desc.layout.count(); map.in_order(n, &[n]) } }
-    }
-    /// Whether a step of the group can read `left`, where it's dyadic, and `right` through the maps that agreement gives them (`reads`).
-    fn reads_paired(&self, program: &Program, left: Option<&Read>, right: &Read) -> bool {
-        agreement(left, right).is_some_and(|a| left.is_none_or(|r| self.reads(program, r, &a.left)) && self.reads(program, right, &a.right))
+        self.nodes.contains(&read.of) || node.desc.atom || readable(node.desc.dtype())
     }
     /// Adds the group's nodes to `units`, leaving the group empty: a block stage where the group forms one (`stages`), or each node on its own. A copy that a node outside the stage reads also runs on its own before the stage, for that node. A shape with no items takes its nodes one at a time, where a fold of no items gives the reduction's unit, such as 0 for a sum, rather than its identity, -0.0, at which a stage's fold starts.
     fn finish(&mut self, program: &Program, readers: &[Vec<usize>], units: &mut Vec<Unit>) {
@@ -141,11 +136,6 @@ pub(crate) fn readable(dtype: DType) -> bool { matches!(dtype, DType::Boolean | 
 /// Whether node `i` is an array that a block stage reads as an input.
 fn input(program: &Program, i: usize) -> bool { !program.nodes[i].desc.atom && readable(program.nodes[i].desc.dtype()) }
 
-/// How the operands of a map step read over its result: `left`, where the step is dyadic, and `right`.
-pub(super) fn agreement(left: Option<&Read>, right: &Read) -> Option<Agreement> {
-    Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout).ok()
-}
-
 /// Whether node `j` is a conversion that only inner products read, each of which reads its operand through it (`pervasive::reads_widened`). A replay leaves it pending for them (`Unit::Pending`), so that its converted items are never stored.
 fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {
     let Origin::Step(Step::Convert { ref of, .. }) = program.nodes[j].origin else { return false };
@@ -156,16 +146,7 @@ fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {
 
 /// Whether a block stage folds items of `dtype` by `p` a block at a time (`reduction`): floats by `+`, `×`, `⌈` and `⌊`, integers by `⌈` and `⌊`, and by `+` where `result`'s integers wrap (`Numeric::wraps`), and Booleans by the reductions their truth tables name.
 fn folds(p: Primitive, dtype: DType, result: &Desc) -> bool {
-    let fold = reduction(p, dtype);
-    match dtype {
-        DType::Float(FloatWidth::F32 | FloatWidth::F64) => matches!(fold, Some(Reduce::Sum | Reduce::Product | Reduce::Max | Reduce::Min)),
-        DType::Integer(_) => {
-            matches!(fold, Some(Reduce::Max | Reduce::Min))
-                || Numeric::current().wraps(result.kind.dtype, result.kind.fixed) && matches!(fold, Some(Reduce::Sum))
-        }
-        DType::Boolean => matches!(fold, Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)),
-        _ => false,
-    }
+    reduction(p, dtype).is_some_and(|f| f.stage(dtype, Numeric::current().wraps(result.kind.dtype, result.kind.fixed)))
 }
 
 /// Whether a block stage folds items of `dtype` by `p` through rustymath's `Alternated`, a block at a time: floats by `-`, and by `÷` through `ScaledProduct`, whose running quotient keeps its exponent apart, so it stays in range however many blocks it takes. No compiled part folds this way, and `short_window` takes only the reductions of `folds`.
@@ -176,14 +157,7 @@ fn alternates(p: Primitive, dtype: DType) -> bool {
 
 /// Whether a stage's fold by `p` of items of `items` takes a seed of type `seed` into a result of type `result`, combining the seed with each total at the end (`Blocks::folded`): a fold of floats with a float seed, whose result keeps the items' width, of integers with an integer seed, by `⌈` or `⌊`, or by `+` into a result of the items' width, and a count of Booleans by `+` with an integer seed. A sum of integers into a wider integer folds after the stage, because a compiled part sums integers at the items' width.
 fn seeds(p: Primitive, items: DType, seed: DType, result: DType) -> bool {
-    match (items, seed, result) {
-        (DType::Float(a), DType::Float(_), DType::Float(b)) => a == b,
-        (DType::Integer(_), DType::Boolean | DType::Integer(_), DType::Integer(_)) => match reduction(p, items) {
-            Some(Reduce::Max | Reduce::Min) => true, Some(Reduce::Sum) => items == result, _ => false
-        },
-        (DType::Boolean, DType::Boolean | DType::Integer(_), DType::Integer(_)) => matches!(reduction(p, items), Some(Reduce::Sum)),
-        _ => false,
-    }
+    reduction(p, items).is_some_and(|f| f.seeds(items, seed, result))
 }
 
 /// The reduction by which a stage folds items of `dtype` by `p`: the fold of `p`'s kernel there (`Kernel::fold`), which for Booleans is the one their truth table names.

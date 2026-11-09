@@ -4475,11 +4475,11 @@ Nv←1 ¯5 6 ⋄ ↑÷(¯2÷(1↣⊃-(¯1 1×(2*↢÷⍨((×⍨1↣⊃)-(×/4@1)
 192 ¯192
 
 ⍝ aplcart/table.tsv:1571 — Numeric matrix of all unordered combinations of Is out of Js without replacement
-Is←2
-Js←4
-Is {⍵#₋₁⍨∧⌿ </₁∘ 2↣↕ ⍵}(-↣↑↢↦)⍉∘⊤↢⍳(!×↢!⊣) Js
+Is←2ₓ
+Js←4ₓ
+Is {⍵#₋₁⍨∧⌿ </₁∘ 2ₓ↣↕ ⍵}(-↣↑↢↦)⍉∘⊤↢⍳(!×↢!⊣) Js
 ⍝ =>
-[0 0 0 1 1 2⋄1 2 3 2 3 3]
+[0 0 0 1 1 2⋄1 2 3 2 3 3]ₓ
 
 ⍝ aplcart/table.tsv:1573 — Value of saddle point; First-true masks use cumulative counts under basedpl left scan
 Nm←[3 4⋄1 2] ⋄ ,#⍨(⊢=⍴⍴⌈⌿){⍵∧1=+\⍵}∘,∘∧⊢=↢⍉⌽∘⍴⍴⌊/ Nm   ⍝ [3]
@@ -5233,11 +5233,6 @@ Y←2 3 4⍴⍳24ₓ ⋄ ,⍠ ¯1↓⍳≢⍴Y 1#Y
 
 ⍝ aplcart/table.tsv:1902 — Valid siteswap pattern?
 Jv←5 3 1 ⋄ {n=≢∪n|⍵+⍳n←≢⍵}Jv   ⍝ $t
-
-⍝ aplcart/table.tsv:1903 — Rounding N to I decimal places (Fast ⍎Is⍕N)
-I←2
-N←1.234 ¯2.345 0.005
-I{p÷⍨⌊0.5+⍵×p←10*⍺}N   ⍝ 1.23 ¯2.34 0.01
 
 ⍝ aplcart/table.tsv:1904 — Rotate first major cells (1⊖) of each subvector of Y indicated by Av (fast ∊1⌽¨Av⊂Yv)
 Av←1 0 1 0 0
@@ -6195,8 +6190,8 @@ Nv←1e16 1 ¯1e16
 1
 
 ⍝ aplcart/table.tsv:2141 — Numeric matrix of all permutations of length Js in unspecified order (faster than generating in lexicographical order)
-Js←3 ⋄ {⍉⊃{1=⍵?,⊂,0;,/¨(⍳⍵)⌽¨⊂(∇,↢⊂!⍴⊢)⍵-1}⍵}Js
-[0 1 2⋄1 0 2⋄1 2 0⋄0 2 1⋄2 0 1⋄2 1 0]
+Js←3ₓ ⋄ {⍉⊃{1ₓ=⍵?,⊂,0ₓ;,/¨(⍳⍵)⌽¨⊂(∇,↢⊂!⍴⊢)⍵-1ₓ}⍵}Js
+[0 1 2⋄1 0 2⋄1 2 0⋄0 2 1⋄2 0 1⋄2 1 0]ₓ
 
 ⍝ aplcart/table.tsv:2142 — Editing Dv with Cv ('/' to delete and ',' to insert)
 Cv← " /,xy"
@@ -8455,11 +8450,11 @@ J←1 9 10 999 ⋄ ⌊1+10↣⍟ J   ⍝ [1 1 2 3]ₓ
 Js←4 ⋄ ≢∘∪⊢∨⍳ Js   ⍝ 3ₓ
 
 ⍝ aplcart/tt.tsv:1323 — Numeric matrix of all unordered combinations of Is out of Js without replacement; Reuse concrete inputs from aplcart/table.tsv:1571; execute this alternate recipe independently
-Is←2
-Js←4
-Is {⍵#₋₁⍨∧⌿ </₁∘ 2↣↕ ⍵}{(-⍺)↑↦⍵}⍉∘⊤↢⍳!×↢!⊣ Js
+Is←2ₓ
+Js←4ₓ
+Is {⍵#₋₁⍨∧⌿ </₁∘ 2ₓ↣↕ ⍵}{(-⍺)↑↦⍵}⍉∘⊤↢⍳!×↢!⊣ Js
 ⍝ =>
-[0 0 0 1 1 2⋄1 2 3 2 3 3]
+[0 0 0 1 1 2⋄1 2 3 2 3 3]ₓ
 
 ⍝ aplcart/tt.tsv:1328 — Odd integers from 1 to 2×Js
 Js←4 ⋄ 1+2×⍳ Js   ⍝ 1 3 5 7
@@ -9030,10 +9025,6 @@ mac "A=++ AA"   ⍝ "++++"
 [baby:]←•load "lib/dyalog.bpl"
 m←⌽(32⍴2)⊤32↑0 16389 24582 57344 0 13 0
 2⊥⌽6⌷baby(m)   ⍝ 4294967283
-
-⍝ aplcart/table.tsv:1706 — ⍺-ary representation of rational ⍵; Ported in lib/dyalog.bpl; checked against the independent Dyalog expectation; Concrete arguments; shared 0-origin based-array port loaded from lib/dyalog.bpl; The source reads the comparison tolerance; this port uses the fixed 1e-14
-[ary:]←•load "lib/dyalog.bpl"
-2 ary ÷3   ⍝ "0.0101..."
 
 ⍝ aplcart/table.tsv:1740 — Box the simple text array ⍵; Ported in lib/dyalog.bpl; checked against the independent Dyalog expectation; Concrete arguments; shared 0-origin based-array port loaded from lib/dyalog.bpl
 [box:]←•load "lib/dyalog.bpl"

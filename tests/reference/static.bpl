@@ -172,7 +172,7 @@ g←{⍵+1} ⋄ f←{+/⍵×(g ⍵×m)} ⋄ m←2 ⋄ a←f∂1.5 2.5 ⋄ m←3 
 x←0.5×[3 2]⍴⍳6 ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ e←•explain "c∂x" ⋄ [g ; h ; e.value ; e.programs.event]
 [[0 0⋄0 0⋄3 3] [0 0⋄3 3⋄0 0] [1 1⋄1 1⋄1 1] ["replayed"]]
 
-⍝ — A free name that a dfn reads as a count holds its value in the program: every call after the first, while the name holds the same value, replays, and a new value makes a new trace. After nine traces in a row that never replayed, the definition traces no more: a call that no program fits runs without one, with the stopped-trace reason "a free value that changes on every call". Its kept programs go on serving, so a second run of this code replays the first nine counts and needs nine new ones after them, which the eighteen counts give
+⍝ — A free count observation guards a recording by value. Repeated changes without reuse can stop further recording for that argument signature; ordinary differentiation still gives the right value, and •explain reports why it fell back.
 x←0.5×⍳20 ⋄ n←0 ⋄ f←{+/n↑⍵} ⋄ t←{n⊢←⍵ ⋄ f∂x} ⋄ j←t¨1↦18 ⋄ n←19 ⋄ k←•explain "f∂x" ⋄ [k.value ; k.stopped.reason]
 [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 ; ["a free value that changes on every call"]]
 
@@ -318,3 +318,7 @@ e←0⍴0.5
 ⍝ structural-operator-captures — Axis names and rank vectors held in names remain call-time inputs, even after a body has been recorded
 d←["r":2 "c":3]⍴⍳6 ⋄ axis←"r" ⋄ f←{+/⍠axis ⍵} ⋄ a←f d ⋄ axis←"c" ⋄ b←f d ⋄ m←2 3⍴⍳6 ⋄ ranks←0 1 ⋄ g←{≢⍤ranks ⍵} ⋄ c←g m ⋄ ranks←1 0 ⋄ e←g m ⋄ [a≡+⌿d ; b≡+/d ; c≡(≢⍤[0 1])m ; e≡(≢⍤[1 0])m]
 4⍴$t
+
+⍝ capture-reuse-keeps-recording — Reusing an older program between changes to an observed count keeps recording useful; the final count's derivative can still replay
+x←0.5×⍳5 ⋄ n←1 ⋄ f←{+/n↑⍵} ⋄ t←{n⊢←⍵ ⋄ f∂x} ⋄ j←t¨1 2 1 3 1 4 ⋄ e←•explain "f∂x" ⋄ [e.value ; e.programs.event ; ≢e.stopped.reason]
+[1 1 1 1 0 ; ["replayed"] ; 0ₓ]

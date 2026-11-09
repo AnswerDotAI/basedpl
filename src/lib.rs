@@ -12,6 +12,7 @@ mod distribution;
 mod element;
 mod error;
 mod eval;
+mod events;
 mod execution;
 mod explain;
 #[cfg(not(web))]
@@ -51,6 +52,7 @@ mod xml;
 /// What `basedpl-testkit`'s reference checks and speed measurements take from the interpreter's internals. Not part of BPL's API.
 #[doc(hidden)]
 pub mod hooks {
+    pub use crate::events::event_routes;
     pub use crate::explain::{Events, explained};
     pub use crate::number::Numeric;
     pub use crate::program::{blocks::compiled_runs, forget_plans};

@@ -18,23 +18,23 @@ fn key_cells<'v>(left: Option<&'v Value>, right: &'v Value) -> Result<(&'v Value
 
 /// Key's fast combinations (`rewrite`): `GroupCounts` counts each group without building it, and `GroupFolds` folds each group of a vector in one pass, with no call for each group. Other arguments take Key's general path with the operand that the combination stands for, `≢⊢` or the fold of `⊢`, which reuses the class numbers that the fold read.
 pub(in crate::eval) fn grouped(s: crate::primitive::Special, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
-    use {crate::primitive::Special, rustymath::events::Route};
+    use crate::primitive::Special;
     let (keys, key_cells) = key_cells(left, right)?;
     let (operand, numbered) = match s {
         Special::GroupCounts if keys.shape()[0] > 0 => {
             let sizes = crate::search::class_counts(&key_cells, span)?;
             let value = Value::positions(vec![sizes.len()], keys.shape()[0] + 1, sizes.into_iter()).described("invalid key result")?;
-            crate::eval::rewrite::taken(Route::GroupCounts, s);
+            crate::eval::rewrite::taken(crate::events::routes::GroupCounts, s);
             return Ok(Bound::from(value));
         }
         Special::GroupFolds(by, first) => {
             let suits = left.is_some() && keys.shape()[0] > 0 && right.shape().len() == 1 && !crate::transform::carried(None, right);
             let numbered = if suits { Some(crate::search::numbered(&key_cells, span)?) } else { None };
             if let Some(result) = numbered.as_ref().and_then(|n| crate::pervasive::fold_groups(by.primitive(), right, n)) {
-                crate::eval::rewrite::taken(Route::GroupFolds, s);
+                crate::eval::rewrite::taken(crate::events::routes::GroupFolds, s);
                 return Ok(Bound::from(result));
             }
-            rustymath::events::declined(Route::GroupFolds, "arguments that don't suit it", right.len());
+            crate::events::declined(crate::events::routes::GroupFolds, "arguments that don't suit it", right.len());
             (Function::new(FunctionNode::Fold(Function::primitive(by.primitive()), FoldKind { scan: false, first }), span)?, numbered)
         }
         _ => (Function::primitive(Primitive::Tally), None),
@@ -71,7 +71,7 @@ fn groups(
         return Ok(Bound::from(Value::assemble(&[0], &[], &result).described("invalid key result")?));
     }
     let firsts = &classes.firsts;
-    crate::explain::itemwise(rustymath::events::Route::KeyGroups, count);
+    crate::explain::itemwise(crate::events::routes::KeyGroups, count);
     let mut results = Vec::with_capacity(count);
     let mut apply = |g: usize, y: Value, span: &Span| -> Result<(), Error> {
         results.push(f.call_with(Some(&*key_cells.get(firsts[g])), y, span)?.array(span)?);

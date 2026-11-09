@@ -114,7 +114,7 @@ fn selected(
     };
     let [no, yes] = cases;
     let (y, x) = (items(no)?, items(yes)?);
-    if rustymath::events::running() { crate::explain::fast(rustymath::events::Route::MaskedSelect, text()); }
+    if crate::events::running() { crate::explain::fast(crate::events::routes::MaskedSelect, text()); }
     Ok(Some(crate::fusion::select(mask, &x, &y, right.layout(), &plan)))
 }
 
@@ -441,9 +441,9 @@ fn fronted(first: &[usize], n: usize) -> Vec<usize> { first.iter().copied().chai
 
 /// `f@g` for a function `g`: `f⍥g`, with the result written back. A `g` that selects writes it back where it took it from. Any other `g` is undone by its inverse.
 fn under_function(f: &Function, g: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
-    let level = session().begin(crate::transform::Kind::Label);
-    let selected = crate::selection::labelled(right, level).and_then(|(labels, y)| Ok((labels, g.call_with(None::<&Value>, y, span)?.array(span)?)));
-    session().end();
+    let (level, selected) = session().with_level(crate::transform::Kind::Label, |level| {
+        (level, crate::selection::labelled(right, level).and_then(|(labels, y)| Ok((labels, g.call_with(None::<&Value>, y, span)?.array(span)?))))
+    });
     let (mut labels, selected) = selected?;
     let read = labels.read(&selected, level);
     let x = left.map(|x| g.call_array(None, x, span)).transpose()?;

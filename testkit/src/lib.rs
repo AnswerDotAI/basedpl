@@ -2,7 +2,10 @@
 pub mod reference;
 pub mod timing;
 
+pub(crate) const DEFAULT_PREFS: &str = r#"•prefs ["mathish":$f]"#;
+
 /// basedpl's root directory, which holds `tests/`: the one above this crate's.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) fn root() -> &'static std::path::Path { std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("testkit sits in basedpl's root") }
 
 /// Takes the machine's timing lock exclusively, as `rustymath_timing::exclusive` describes, then writes `started` to stderr. A worker's caller counts a timing's deadline from that note (`basedpl.worker`).

@@ -372,6 +372,7 @@ fn compiled_stages_match_interpreted(more: usize) {
             let (compiled, runs) = run(Compiles::Always);
             assert!(runs > 0, "{code} on {n} items ran no compiled part");
             let interpreted = run(Compiles::Never).0;
+            if matches!(code.as_str(), "+/b-1" | "0ₓ₄+/xf<yf") { assert!(compiled.is_atom() && interpreted.is_atom(), "{code} returned an array instead of an atom"); }
             assert_eq!(
                 basedpl_testkit::reference::difference(&compiled, &interpreted, None, 0.0, true), None,
                 "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number()

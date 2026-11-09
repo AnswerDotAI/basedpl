@@ -150,7 +150,7 @@ impl<G: rustymath::Float> rustymath::facts::Visit for Emitted<'_, '_, G> {
     }
 }
 
-/// Whether a compiled kernel converts items of type `from` to `to` as a step whose tolerance is `tolerance` reads them (`Converts`): to any type but Booleans, and from a float to an integer only where the tolerance is exact, since the kernel floors exactly.
+/// Whether a compiled kernel converts items of type `from` to `to` as a step whose tolerance is `tolerance` reads them (`Buffer::floored`): to any type but Booleans, and from a float to an integer only where the tolerance is exact, since the kernel floors exactly.
 pub(super) fn converts(from: DType, to: DType, tolerance: Tolerance) -> bool {
     from == to || (to != DType::Boolean && (matches!(to, DType::Float(_)) || !matches!(from, DType::Float(_)) || tolerance.is_exact()))
 }

@@ -141,16 +141,16 @@ pub(crate) fn integral(p: Primitive, dyadic: bool, kind: DType, numeric: Numeric
 
 /// The whole floats `floats` as integers, saturating as Rust's `as` does (`Buffer::cast_results`): NaN gives 0, and an infinity or a value past the width gives the width's nearest limit, as `⌊2*70` gives the largest i64. Where integers wrap, the width is the `int` width. Otherwise it's the width that stores the floats' range (`ordinary_width`), from their least and greatest, so storage keeps the buffer as it is; i64 where those come out NaN.
 fn whole(floats: View<'_>, numeric: Numeric) -> Buffer {
-    use rustymath::{convert::saturated, reduce::{max, min}};
+    use rustymath::reduce::{max, min};
     let range = match floats {
         View::Floats(f) if !numeric.wrapping() => with_floats!(f, |xs| {
             let (lo, hi) = (min(xs), max(xs));
-            (!lo.is_nan() && !hi.is_nan()).then(|| (saturated::<i64, _>(lo), saturated::<i64, _>(hi)))
+            (!lo.is_nan() && !hi.is_nan()).then(|| rustymath::domain::Range { lo: lo.into(), hi: hi.into() })
         }),
         _ => None,
     };
     let width =
-        if numeric.wrapping() { numeric.integer_width() } else { range.map_or(Width::I64, |(lo, hi)| crate::array::ordinary_width(Width::narrowest(lo, hi))) };
+        if numeric.wrapping() { numeric.integer_width() } else { crate::array::ordinary_width_for(range) };
     Buffer::cast_results(floats, DType::Integer(width), false).expect("floats convert to integers")
 }
 
@@ -222,14 +222,18 @@ fn computed<R>(
 }
 
 /// Reads of `args` as rustymath kernels take them, with each value's kind: each value through its mapping onto `len` items, with `missing` for the positions a mapping reaches no item at. `None` where a value isn't compact.
-pub(crate) fn with_reads<R>(args: &[(&Value, &Mapping, usize)], missing: Missing, f: impl FnOnce(&[Read<'_>], &[DType]) -> R) -> Option<R> {
+pub(crate) fn with_reads<R, const N: usize>(args: [(&Value, &Mapping, usize); N], missing: Missing, f: impl FnOnce(&[Read<'_>], &[DType]) -> R) -> Option<R> {
     use rustymath::agreement::{Binding, ReadPlan};
-    let views: Vec<View<'_>> = args.iter().map(|(value, ..)| value.view()).collect::<Option<_>>()?;
-    let types: Vec<DType> = views.iter().map(|v| v.dtype()).collect();
-    let sources: Vec<_> = views.iter().map(|&view| Binding::full(view)).collect();
-    let plans: Vec<_> = args.iter().zip(&views).enumerate()
-        .map(|(source, ((_, mapping, len), view))| ReadPlan::copy(source, view.len(), (*mapping).clone(), *len, missing.clone())).collect();
-    let reads: Vec<_> = plans.iter().map(|plan| Read { sources: &sources, plan }).collect();
+    let mut bindings = args.iter().map_while(|(value, ..)| value.view().map(Binding::full)).fuse();
+    let sources: [_; N] = std::array::from_fn(|_| bindings.next());
+    if sources.iter().any(Option::is_none) { return None; }
+    let sources = sources.map(Option::unwrap);
+    let types = sources.map(|binding| binding.view.dtype());
+    let plans: [_; N] = std::array::from_fn(|source| {
+        let (_, mapping, len) = args[source];
+        ReadPlan::copy(source, sources[source].items, mapping.clone(), len, missing.clone())
+    });
+    let reads = plans.each_ref().map(|plan| Read { sources: &sources, plan });
     Some(f(&reads, &types))
 }
 
@@ -241,20 +245,18 @@ fn applied(kernel: &Kernel, reads: &[Read<'_>], len: usize, settings: rustymath:
 
 /// Floor a logical float input directly to its narrowest integer width, chosen before writing from the floors of its two extrema.
 fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<Buffer, rustymath::error::Error> {
-    use rustymath::{convert::saturated, tolerant::Tolerant};
+    use rustymath::tolerant::Tolerant;
     let mut scratch = Buffer::with_capacity(at, 0);
     let view = read.part_view(0..len, at, !numeric.is_static(), &mut scratch)?;
     let View::Floats(floats) = view else { unreachable!("floor input has its float computing dtype") };
     rustymath::with_tolerance!(numeric.tolerance_of(at), |t| {
-        let width = with_floats!(floats, |xs| {
+        let range = with_floats!(floats, |xs| {
             let (lo, hi) = (reduce::min(xs), reduce::max(xs));
-            if lo.is_nan() || hi.is_nan() || xs.is_empty() {
-                Width::I64
-            } else {
-                crate::array::ordinary_width(Width::narrowest(saturated::<i64, _>(t.floor(lo)), saturated::<i64, _>(t.floor(hi))))
-            }
+            (!lo.is_nan() && !hi.is_nan() && !xs.is_empty())
+                .then(|| rustymath::domain::Range { lo: t.floor(lo).into(), hi: t.floor(hi).into() })
         });
-        rustymath::events::taken(rustymath::events::Route::VectorKernel, len);
+        let width = crate::array::ordinary_width_for(range);
+        crate::events::taken(crate::events::Route::VectorKernel, len);
         rustymath::operation::report_maps([read.plan], 0..len);
         Buffer::floored(view, DType::Integer(width), t)
     })
@@ -263,21 +265,23 @@ fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<B
 /// A pervasive function applied to stored arguments on `agreement`'s frame, as `plan` plans it, through `p`'s formula (`resolve`) at the kind the plan computes in, with `computed`'s reruns. Each argument reads through its agreement mapping and converts to that kind as it reads. `None` where the arguments have no compact reads or no kind has a kernel. A selected kernel's failure returns its error after the wider-kind retries.
 pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Result<Value, crate::Error>> {
     let (p, numeric, len) = (plan.p, plan.numeric, agreement.len);
-    let code = match left { Some(left) if p.info().dyad.code => Some(code_of(left)?), _ => None };
+    let code = match left { Some(_) if p.info().dyad.code => Some(plan.constants[0].and_then(circle_code)?), _ => None };
     // A comparison's constant that stands for an integer (`Pervasive::narrowed`) reads as that integer, stored at its narrowest width, so its kernel resolves at the plan's integer kind.
     let narrow = plan.narrowed().and_then(|(side, n)| Some((side, Value::integers(Vec::<usize>::new(), vec![n]).ok()?)));
     let (left, right) = match &narrow { Some((0, n)) => (Some(n), right), Some((_, n)) => (left, n), None => (left, right) };
-    let args: Vec<(&Value, &Mapping, usize)> = match left.filter(|_| code.is_none()) {
-        Some(left) => vec![(left, &agreement.left, len), (right, &agreement.right, len)], None => vec![(right, &agreement.right, len)]
-    };
     let at = plan.computes()?;
     let settings = numeric.settings_for(at);
-    let (out, dtype) = match with_reads(&args, Missing::Default, |reads, types| {
+    let run = |reads: &[Read<'_>], types: &[DType]| {
         let flooring = !numeric.wrapping() && integral(p, plan.dyadic, at, numeric)
             && matches!(formula(p, types.len(), numeric.mathish_at(at), false, numeric.tolerance_of(at)), Some(Op::Floor(_)));
         if flooring { floored(&reads[0], len, at, numeric).map(|out| Some((out, at))) }
         else { computed(p, code, types, at, numeric, |kernel| applied(kernel, reads, len, settings)) }
-    })? { Ok(Some(result)) => result, Ok(None) => return None, Err(error) => return Some(Err(error.into())) };
+    };
+    let result = match left.filter(|_| code.is_none()) {
+        Some(left) => with_reads([(left, &agreement.left, len), (right, &agreement.right, len)], Missing::Default, run),
+        None => with_reads([(right, &agreement.right, len)], Missing::Default, run)
+    }?;
+    let (out, dtype) = match result { Ok(Some(result)) => result, Ok(None) => return None, Err(error) => return Some(Err(error.into())) };
     let out = whole_results(p, plan.dyadic, dtype, out, numeric);
     let known = [left, Some(right)].into_iter().flatten().all(|v| v.is_atom() || v.range() != rustymath::domain::Range::ANY);
     Some(
@@ -298,7 +302,7 @@ pub(crate) fn character_item(p: Primitive, x: &Value, y: &Value) -> Option<Resul
     };
     let (a, b) = (read(x)?, read(y)?);
     let mut picked = None;
-    let result = with_reads(&[(&a, &Mapping::Single, 1), (&b, &Mapping::Single, 1)], Missing::Default, |reads, types| {
+    let result = with_reads([(&a, &Mapping::Single, 1), (&b, &Mapping::Single, 1)], Missing::Default, |reads, types| {
         computed(p, None, types, DType::Character, numeric, |kernel| {
             picked = kernel.selected_input();
             applied(kernel, reads, 1, settings)
@@ -405,7 +409,7 @@ fn scatter_under(plan: &Pervasive, held: rustymath::domain::Range, z: &mut Value
     // A kernel that can't fail an item runs once, so it writes into `z`'s own items where `z` holds them alone (`Value::take_buffer`). An accumulation that no finite bound holds can overflow a checked integer kind, which only the copy below reruns wider.
     let unbounded = computes.is_integral() && variant(computes, numeric).fails_on_overflow() && !(held.lo.is_finite() && held.hi.is_finite());
     if z.dtype() == Some(computes) && plan.never_fails() && !unbounded {
-        let written = with_reads(&[(values, &map, n)], Missing::Default, |reads, types| {
+        let written = with_reads([(values, &map, n)], Missing::Default, |reads, types| {
             let mut root = Some(z.take_buffer()?);
             Some(computed(p, None, &[computes, types[0]], computes, numeric, |kernel| {
                 let mut out = Buffer::with_capacity(kernel.result_dtype(), 0);
@@ -419,7 +423,7 @@ fn scatter_under(plan: &Pervasive, held: rustymath::domain::Range, z: &mut Value
             return Some(Route::InPlace);
         }
     }
-    let (out, dtype) = with_reads(&[(&*z, &Mapping::Linear(1), len), (values, &map, n)], Missing::Default, |reads, types| {
+    let (out, dtype) = with_reads([(&*z, &Mapping::Linear(1), len), (values, &map, n)], Missing::Default, |reads, types| {
         computed(p, None, &types[..2], computes, numeric, |kernel| {
             let mut out = Buffer::with_capacity(kernel.result_dtype(), len);
             rustymath::operation::at(Some(kernel), WriteRoot::Read(reads[0]), reads[1], writes, kernel.variant().checked, settings, &mut out).map(|()| out)
@@ -509,9 +513,11 @@ pub(crate) fn table_kernel(p: Primitive, dyadic: bool, table: DType, stored: DTy
 pub(crate) fn constants(left: Option<&Value>, right: &Value) -> [Option<f64>; 2] { [left.and_then(Value::as_real), right.as_real()] }
 
 /// The argument that `plan`'s call on `left` and `right` gives unchanged (`Pervasive::kept`), where the result has its shape: the other argument is an atom, or the kept one isn't. A weak number beside a strong one isn't kept: the call's result is strong, as `∞⌈1ₓ₁` gives a strong `∞`, an ordinary float.
-pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Value>, right: &'a Value) -> Option<&'a Value> {
-    let (kept, other) = if plan.kept()? == 0 { (left?, Some(right)) } else { (right, left) };
-    let strengthens = matches!((kept, other), (Value::Number(n), Some(Value::Number(o))) if n.is_weak() && !o.is_weak());
+pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Value>, right: &'a Value, agreement: &Agreement) -> Option<&'a Value> {
+    let (kept, other, map) = if plan.kept()? == 0 { (left?, Some(right), &agreement.left) } else { (right, left, &agreement.right) };
+    // Returning the source also returns its layout and item order, not the call's broadcast or permutation.
+    if kept.layout() != &agreement.layout || !map.in_order(kept.len(), agreement.layout.shape()) { return None; }
+    let strengthens = Kind::value(kept).weak && other.is_some_and(|o| !Kind::value(o).weak);
     (!strengthens && other.is_none_or(|o| o.is_atom() || !kept.is_atom())).then_some(kept)
 }
 
@@ -519,7 +525,7 @@ pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Valu
 pub(crate) fn expected(p: Primitive, left: Option<&Value>, right: &Value) -> Option<DType> {
     let numeric = Numeric::current();
     if numeric.is_static() { return None; }
-    plan::pervasive_on(p, left, right, numeric).kernel().map(|k| k.result_dtype())
+    plan::pervasive_on(p, left, right, numeric, None).kernel().map(|k| k.result_dtype())
 }
 
 /// `p` on the number `y`, and on `x` where it's dyadic: the one path for functions on numbers, through `p`'s formula as `map` computes arrays. Machine numbers compute at the kind `map` chooses, with its reruns (`computed`). Exact numbers, rationals and unbounded integers, compute through the formula's exact form. Where the formula has no exact form or gives no exact result, as for an irrational root, they compute at the widest float argument's width, as a machine integer beside it does, or at `numeric`'s float width beside no float.

@@ -1,4 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
+use crate::DEFAULT_PREFS;
 use basedpl::{EvalOptions, InterruptHandle, Session, Value, hooks::Numeric, settings::Compiles};
 use serde_json::{Value as JsonValue, json};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
@@ -132,10 +133,10 @@ fn runs(case: &JsonValue) -> Vec<Run> {
 fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
     basedpl::settings::reset();
     basedpl::settings::set_verifies(true);
-    if let Some(prefs) = prefs
-        && let Some(error) = Session::current().eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
-            return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
-        }
+    let prefs = format!("{DEFAULT_PREFS}\n{}", prefs.unwrap_or_default());
+    if let Some(error) = Session::current().eval_apart(&prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
+        return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
+    }
     if let Some(Run { batch, fused, compiles, .. }) = run {
         basedpl::settings::set_batch(batch);
         basedpl::settings::set_small_sizes(fused);
@@ -292,9 +293,9 @@ pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Resu
 }
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
-/// The routes and kinds of event that rustymath's inventory requires some case to exercise (`events::Route`): each route with each kind, "taken", "declined" or "itemwise", that it reports.
+/// The routes and kinds of event that BPL and rustymath require some case to exercise (`events::Route`): each route with each kind, "taken", "declined" or "itemwise", that it reports.
 pub fn inventory() -> impl Iterator<Item = (&'static str, rustymath::events::Route)> {
-    rustymath::events::Route::ALL.iter().flat_map(|&route| {
+    basedpl::hooks::event_routes().flat_map(|route| {
         [("taken", route.reports_taken()), ("declined", route.reports_decline()), ("itemwise", route.reports_itemwise())].into_iter()
             .filter(|&(_, required)| required).map(move |(kind, _)| (kind, route))
     })
@@ -461,6 +462,7 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         offset += line.len() + 1;
     }
     let prefs = lines.first().filter(|line| line.starts_with("•prefs")).copied().unwrap_or_default();
+    let mathish = if name.ends_with("_mathish.bpl") { r#"•prefs ["mathish":$t]"# } else { "" };
     let (mut i, mut title, mut local) = (usize::from(!prefs.is_empty()), "", "");
     let mut file = File { name: name.into(), setup: String::new(), cases: Vec::new() };
     let mut ids = rustymath::hashing::HashSet::default();
@@ -490,7 +492,7 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         let options = suffix.and_then(|(text, s)| Some((text, s.strip_suffix(']')?)))
             .filter(|(_, s)| s.starts_with("rtol=") || s.starts_with("atol=") || FLAGS.iter().any(|f| s.starts_with(f)));
         let mut case = json!({"id":id, "line":start + 1, "section":title, "comment":options.map_or(comment, |(text, _)| text)});
-        let prefs = [prefs, local].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
+        let prefs = [mathish, prefs, local].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
         if !prefs.is_empty() { case["prefs"] = json!(prefs); }
         if let Some((_, options)) = options {
             for option in options.split_whitespace() {
@@ -703,9 +705,9 @@ pub fn accounting(results: &[JsonValue]) -> JsonValue {
 /// The modes that `case` plans: the names of its runs (`runs`).
 pub fn modes(case: &JsonValue) -> Vec<&'static str> { runs(case).into_iter().map(|run| run.words).collect() }
 
-/// The result of `case` when the process checking it stopped: each mode it plans (`modes`) with a `"crash"` status, and `message` saying why.
+/// The case's worker abort. Mode results were not returned and remain "unchecked".
 pub fn crashed(case: &JsonValue, message: &str) -> JsonValue {
-    let modes: Vec<_> = modes(case).into_iter().map(|mode| json!({"mode":mode, "status":"crash"})).collect();
+    let modes: Vec<_> = modes(case).into_iter().map(|mode| json!({"mode":mode, "status":"unchecked"})).collect();
     recorded(case, json!({"status":"crash", "message":message, "modes":modes}))
 }
 
