@@ -265,16 +265,13 @@ fn chosen_mapped((mask, m): (Value, Mapping), (x, xm): (Value, Mapping), (y, ym)
     }).expect("a select reads compact items")
 }
 
-/// Whether a call with a result of `len` items is deferred: the call settles (`pervasive::settles`), so that a deferred chain never meets an overflow or a change of kind, and its result has at least the sizes' `min_items` (`settings::sizes`). The one decision between running a call now and deferring it. A call large enough to wait that doesn't settle declines fusion.
-pub(crate) fn defers(settles: bool, len: usize) -> bool {
-    if len < crate::settings::sizes().min_items { return false; }
-    if !settles { crate::events::declined(crate::events::routes::Fusion, "a result kind that depends on values", len); }
-    settles
-}
+/// Whether `len` reaches the size threshold for pending work under the current settings.
+pub(crate) fn defers(len: usize) -> bool { len >= crate::settings::sizes().min_items }
 
 /// The call of `p` on `x` and `y` as a pending array, or `agreement` back where the call can't be deferred. Its plan must fix its result's type (`Pervasive::fuses`), and each array that it reads must hold items of a type that a block stage holds (`blocks::readable`). A stored array of Booleans or integers, or a pending copy of one, must also be of the type that the call computes at, unless the stage compiles on its first run (`blocks::compiles_on_first_run`): a compiled part converts such items in registers as it reads them, while a precompiled step converts them into a buffer on every run, which costs more than computing the call at once. Where the call would gather more than `MAX_NODES` calls, the pending arrays it reads run first. Out of line, so that its code stays out of the frame of dispatch, which stays on the stack through each level of recursion.
 #[inline(never)]
 pub(crate) fn defer(plan: &crate::plan::Pervasive, x: Option<&Value>, y: &Value, agreement: Agreement) -> Result<Value, Agreement> {
+    if !plan.fuses() { return declined(agreement, "a result kind that depends on values"); }
     let args = || [x, Some(y)].into_iter().flatten();
     let at = plan.computes();
     let compiles = compiles_on_first_run(agreement.len);
@@ -331,7 +328,7 @@ pub(crate) fn records_dense(program: &Program) -> bool {
 /// Publishes an admitted dense recording through eager fusion's holding and pending-work rules.
 pub(crate) fn recorded(program: &Program, inputs: &[&Value]) -> Option<Value> {
     let desc = program.result.desc(&program.nodes);
-    if !defers(true, desc.layout.count()) || inputs.iter().any(|v| v.is_view() && v.pending().is_some()) { return None; }
+    if !defers(desc.layout.count()) || inputs.iter().any(|v| v.is_view() && v.pending().is_some()) { return None; }
     let mut nodes = Nodes::default();
     let result = Program::new(program.nodes.iter().cloned().collect(), program.result.clone()).add_to(&mut nodes, |nodes, _, _, node| {
         let value = match &node.origin { Origin::Input(k) => inputs[*k], Origin::Held(value) => value, _ => return None };
@@ -354,7 +351,7 @@ fn pending_program(program: Program, layout: Layout, dtype: DType, prototype: Va
 }
 
 /// Whether `select` defers a select by `mask` into a result of `layout`: where the result has at least `Sizes::min_items` items and `mask` holds Booleans still to be computed that nothing else holds. One program then computes the mask, the operands and the select together, and the mask never becomes stored Booleans.
-pub(crate) fn defers_select(mask: &Value, layout: &Layout) -> bool { defers(true, layout.count()) && mask.unshared_pending().is_some_and(|c| c.compares()) }
+pub(crate) fn defers_select(mask: &Value, layout: &Layout) -> bool { defers(layout.count()) && mask.unshared_pending().is_some_and(|c| c.compares()) }
 
 /// `x` where `mask` is 1 and `y` where it's 0, the masked lowering of `⍚` and `@[p]` (`selected` in `eval/operators/agenda.rs`), as `plan` plans it (`plan::select`). `x` and `y` hold floats of one width, each as an array of `layout` or an atom of that width, and `mask` holds Booleans of `layout`. The select is pending where `defers_select` says, and otherwise runs at once.
 pub(crate) fn select(mask: &Value, x: &Value, y: &Value, layout: &Layout, plan: &crate::plan::Select) -> Value {
@@ -374,7 +371,7 @@ pub(crate) fn select(mask: &Value, x: &Value, y: &Value, layout: &Layout, plan: 
 /// `value` with its numbers converted to `to` as one more pending call, which its program computes as a step (`Step::Convert`). `value` is an array of at least `Sizes::min_items` items: a pending array that a program computes, whose program then stores only the converted items, as for a size mark after a fused chain, or a compact array of a type that a block stage holds or of f16, which a later call reads through the conversion: a block stage that fuses it with its steps, or a product (`widened`). `numeric` gives the tolerance of a float's floor. `None` for any other value, such as complex numbers, where `value` already holds items of `to`, and for a type `to` that a block stage doesn't hold. The size test runs inline. The rest runs out of line, in `pending_conversion`.
 #[inline]
 pub(crate) fn convert(value: &Value, to: DType, numeric: Numeric) -> Option<Value> {
-    if value.is_atom() || !defers(true, value.len()) { return None; }
+    if value.is_atom() || !defers(value.len()) { return None; }
     pending_conversion(value, to, numeric)
 }
 /// `convert`'s pending call, for an array that passed its size test.
@@ -410,7 +407,7 @@ pub(crate) fn copy(form: &Form, params: &[Value], inputs: &[&Value], fill: Optio
     let descriptions: Vec<Desc> = inputs.iter().map(|v| Desc::held(v)).collect();
     let fill_desc = fill.map(Desc::held);
     let (desc, plan) = crate::plan::structural(form, params, &descriptions, fill_desc.as_ref())?;
-    if !desc.atom && desc.kind.dtype.is_some() && fill.is_none() && defers(true, desc.layout.count())
+    if !desc.atom && desc.kind.dtype.is_some() && fill.is_none() && defers(desc.layout.count())
         && let Some((source, map)) = plan.positional(desc.shape()) {
         if let [value] = inputs && source == 0 && map.in_order(value.len(), desc.shape()) {
             return value.relaid(desc.layout).described("a structural view");
@@ -498,7 +495,7 @@ fn copy_value(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>
     let len = generated_len(layout.shape())?;
     let fill = fill.filter(|_| map.fills());
     if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
-    if defer && fill.is_none() && defers(true, len) && let Some(copy) = pending(right, &layout, map) { return Ok(copy); }
+    if defer && fill.is_none() && defers(len) && let Some(copy) = pending(right, &layout, map) { return Ok(copy); }
     let (base, tables) = map.to_walk(layout.shape());
     walked(right, layout, base, &tables, fill)
 }

@@ -11,9 +11,12 @@ pub(crate) struct Kind {
     pub(crate) weak: bool,
     /// The sign of a bound, the bare `∞` or `¯∞` (`Number::order_class`): 1 or ¯1, and 0 for every other kind.
     bound: i8,
-    /// The actual minimum width of a known weak integer, or None for a computed weak integer whose value is still unknown. Ordinary static atoms keep this class beside their logical `dtype` (`Kind::number`).
-    narrowest: Option<Width>,
+    /// The actual minimum width needed for weak integer promotion, not a computed result's provisional dtype.
+    minimum: Minimum,
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Minimum { #[default] Unneeded, Known(Width), Unknown }
 
 /// The fixed width that parts give, built one part at a time, for `Kind::fixed` and `Kind::join`. `fixed` joins the parts' declared fixed widths, `required` the narrowest widths of their weak machine integers, and `ordinary` the widths that static kinds give their strong ordinary integers (`array::static_width`), which join a declared width but never make one. `other` marks a part that is none of these: a weak integer in the unbounded domain (`ᵣ`) has no narrowest width, so it counts as other.
 #[derive(Default)]
@@ -23,10 +26,10 @@ impl Fixing {
     fn add(&mut self, part: Kind) {
         let join = |into: &mut Option<Width>, w: Width| *into = Some(into.map_or(w, |v| v.join(w)));
         if self.other { return; }
-        if part.unknown_weak_width() { self.other = true; return; }
+        let part = part.for_promotion();
         if let Some(w) = part.fixed { join(&mut self.fixed, w); }
         else if part.dtype == Some(DType::Boolean) { }
-        else if let Some(w) = part.narrowest.filter(|_| part.weak) {
+        else if let Minimum::Known(w) = part.minimum {
             join(&mut self.required, w);
         } else if let Some(DType::Integer(w)) = part.dtype && let Some(w) = crate::array::static_width(w) { join(&mut self.ordinary, w); }
         else { self.other = true; }
@@ -56,12 +59,12 @@ impl Kind {
     }
     #[inline]
     pub(crate) fn stored(dtype: Option<DType>, fixed: Option<Width>, weak: bool) -> Self {
-        let narrowest = match dtype { Some(DType::Integer(w)) => Some(w), _ => None };
-        Self { dtype, fixed, weak, narrowest, bound: 0 }
+        let minimum = match (dtype, fixed, weak) { (Some(DType::Integer(w)), None, true) => Minimum::Known(w), _ => Minimum::Unneeded };
+        Self { dtype, fixed, weak, minimum, bound: 0 }
     }
 
-    /// Whether a weak integer's minimum width still needs its value.
-    fn unknown_weak_width(self) -> bool { self.weak && self.fixed.is_none() && matches!(self.dtype, Some(DType::Integer(_))) && self.narrowest.is_none() }
+    /// Kind facts usable by a promotion that needs a weak integer's actual minimum width.
+    fn for_promotion(self) -> Self { if self.minimum == Minimum::Unknown { Self::default() } else { self } }
     /// The fixed width that `parts` give a call or a join: the widest of their fixed widths, where every other part is a Boolean or a weak machine integer. `None` where no part is fixed, or a part is something else, such as a number in the unbounded domain (`ᵣ`), which mixing with machine integers keeps. A weak integer that doesn't fit widens the width to the narrowest that holds it (weak-literal minimum-width promotion), as `1ₓ₁+256ₓ` computes at 16 bits, and a comparison such as `v<300ₓ` of bytes compares there.
     pub(crate) fn fixed(parts: impl IntoIterator<Item = Self>) -> Option<Width> {
         let mut fixing = Fixing::default();
@@ -70,7 +73,7 @@ impl Kind {
     }
     /// `parts` joined into one kind under `widening`, as collected items join into one array's dtype. A fixed width that `fixed` finds wins. Where two parts' types don't join, the kind is unknown (`Kind::default()`). Each part is read once.
     pub(crate) fn join(parts: impl IntoIterator<Item = Self>, widening: Widening) -> Self {
-        let mut parts = parts.into_iter().map(|kind| if kind.unknown_weak_width() { Self::default() } else { kind });
+        let mut parts = parts.into_iter().map(Self::for_promotion);
         let Some(first) = parts.next() else { return Self::default() };
         // A lone part is its own join: its fixed width, if it has one, is the only width `Fixing` could find.
         let Some(second) = parts.next() else { return first };
@@ -104,8 +107,7 @@ impl Kind {
     }
     /// The width of the floats that operands of `kinds` compute in under `numeric`, for a function whose results are approximate, such as `⌹`: machine integers and Booleans compute as floats of the widest width that their division gives (`Numeric::exact_width`). `None` where an operand isn't machine integers or Booleans. Numbers in the unbounded domain (`ᵣ`) then stay exact.
     pub(crate) fn approximate(kinds: impl IntoIterator<Item = Self, IntoIter: Clone>, numeric: Numeric) -> Option<FloatWidth> {
-        let kinds = kinds.into_iter();
-        if kinds.clone().any(Self::unknown_weak_width) { return None; }
+        let kinds = kinds.into_iter().map(Self::for_promotion);
         let t = numeric.for_kinds(kinds.clone());
         let mut widest = None;
         for kind in kinds {
@@ -115,8 +117,8 @@ impl Kind {
         widest
     }
     /// The kind that a weak operand of this kind takes beside an operand of kind `other`, as `primitive::weakened_beside` converts a weak number: the width that NEP 50 gives it beside strong floats, or the width of fixed integers beside it where a weak integer fits them (`Kind::fixed`). A strong kind, or one beside another weak kind, stays as it is. So does a weak integer that doesn't fit, which promotion widens the fixed width to hold.
-    pub(crate) fn beside(self, other: Kind) -> Self {
-        if self.unknown_weak_width() && other.fixed.is_some() { return Self::default(); }
+    pub(crate) fn beside(mut self, other: Kind) -> Self {
+        if other.fixed.is_some() { self = self.for_promotion(); }
         if !self.weak || other.weak { return self; }
         if let Some(w) = other.fixed && matches!(self.dtype, Some(DType::Integer(_))) {
             return if Self::fixed([self, other]) == Some(w) { Self::stored(Some(DType::Integer(w)), Some(w), false) } else { self };
@@ -128,7 +130,7 @@ impl Kind {
     }
 }
 
-/// What a program knows of a value without its items: its kind (`plan::Kind`), whether it's an atom, its layout (its shape, keys and axis names), and a bound on its items from its type and the steps that made it (`rustymath::facts`), coarsened (`coarse`). A description's kind leaves out the narrowest width that holds a number's value. Two atoms of one type therefore share a program's key, whatever their magnitudes. An array's bound includes its recorded range (`Value::range`), so arrays share a key where their items have one sign and power-of-two magnitude.
+/// What a program knows of a value without its items: its kind, atom/array category, layout and coarsened item range. Strong atoms use their logical kind; weak integers retain the minimum-width class needed for fixed promotion, but no exact-value key. Arrays retain their recorded range, so they share a key where their items have one sign and power-of-two magnitude.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Desc { pub(crate) kind: Kind, pub(crate) atom: bool, pub(crate) layout: Layout, pub(crate) range: Range }
 
@@ -154,7 +156,7 @@ impl Desc {
         let kind = Kind::value(value);
         let dtype = kind.dtype.filter(|&d| d != DType::Character)?;
         let mut described = Kind::stored(Some(dtype), kind.fixed, kind.weak);
-        if kind.weak { described.narrowest = kind.narrowest; described.bound = kind.bound; }
+        if kind.weak { described.minimum = kind.minimum; described.bound = kind.bound; }
         Some(described)
     }
     /// The stored item type. Pending structural copies may hold characters; traced numeric operations use `describes`.
@@ -367,10 +369,8 @@ fn same_at(same: bool, agreed: Option<&Agreement>) -> bool {
 
 /// `pervasive` on the values' kinds, constants and ranges, under the supplied pairing or ordinary agreement.
 pub(crate) fn pervasive_on(p: Primitive, left: Option<&Value>, right: &Value, numeric: Numeric, agreed: Option<&Agreement>) -> Pervasive {
-    let plan = pervasive(
-        p, left.map(Kind::value), Kind::value(right), crate::pervasive::constants(left, right), [left.map_or(Range::ANY, Value::range), right.range()], numeric
-    );
-    Pervasive { same: same_at(left.is_some_and(|l| std::ptr::eq(l, right)), agreed), ..plan }
+    let same = same_at(left.is_some_and(|l| std::ptr::eq(l, right)), agreed);
+    operand_plan(p, left.map(Operand::Held).as_ref(), &Operand::Held(right), same, numeric)
 }
 
 /// An operand of a planned call: a traced value, known only by its description, or a value that the program holds.
@@ -402,33 +402,35 @@ impl Mapped {
 }
 
 /// The operand facts of a pervasive call, before settling its result.
+fn operand_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Pervasive {
+    let bounds = [left.map_or(Range::ANY, Operand::range), right.range()];
+    Pervasive { same, ..pervasive(p, left.map(Operand::kind), right.kind(), [left.and_then(Operand::constant), right.constant()], bounds, numeric) }
+}
+
+
 fn map_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Pervasive, &'static str> {
     if !p.scalar(left.is_some()) { return Err("a call that isn't pervasive"); }
-    let (x, y) = (left.map(Operand::kind), right.kind());
-    let bounds = [left.map_or(Range::ANY, Operand::range), right.range()];
-    let plan = Pervasive { same, ..pervasive(p, x, y, [left.and_then(Operand::constant), right.constant()], bounds, numeric) };
+    let plan = operand_plan(p, left, right, same, numeric);
     // 16-bit floats compute at 32 bits and round back (`pervasive::map`), which programs don't model yet.
     if plan.halve != Halving::Off { return Err("a 16-bit float"); }
     Ok(plan)
 }
 
 /// A pervasive call's output, with geometry from its operands and numeric facts from its plan.
-fn mapped_desc(plan: &Pervasive, left: Option<&Operand>, right: &Operand, agreed: Option<&Agreement>) -> Result<(Desc, Agreement), &'static str> {
+fn mapped(plan: Pervasive, left: Option<&Operand>, right: &Operand, agreed: Option<&Agreement>) -> Result<Mapped, &'static str> {
     let agreement = match agreed {
         Some(agreement) => agreement.clone(),
         None => Agreement::new(&left.map_or_else(Layout::default, Operand::layout), &right.layout()).map_err(|_| "shapes that don't agree")?,
     };
     let atom = right.atom() && left.is_none_or(Operand::atom);
     let weak = atom && right.weak() && left.is_none_or(Operand::weak);
-    let desc = plan.result_desc(agreement.layout.clone(), atom, weak)?;
-    Ok((desc, agreement))
+    Mapped::new(plan, agreement, atom, weak)
 }
 
 /// Plan the original operands under either their ordinary agreement or an already resolved pairing.
 pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric, agreed: Option<&Agreement>) -> Result<Mapped, &'static str> {
     let plan = map_plan(p, left, right, same_at(same, agreed), numeric)?;
-    let (desc, agreement) = mapped_desc(&plan, left, right, agreed)?;
-    Ok(Mapped { desc, plan, agreement })
+    mapped(plan, left, right, agreed)
 }
 
 /// Checks a declared plan against its operands before settling its result. Constants compare by their bits, so that a NaN constant matches itself, only where a held operand still exposes them. Normalization can hide an observed scalar constant, as in `(⊂3)+4`; the declared plan owns that observation and its derived computing kind (`at`).
@@ -440,7 +442,7 @@ pub(crate) fn check_map(plan: &Pervasive, left: Option<&Operand>, right: &Operan
     if without_constants(&inferred) != without_constants(plan) || constants(&inferred) != constants(plan) {
         return Err("a plan other than the one that its operands give");
     }
-    mapped_desc(plan, left, right, None).map(|(desc, _)| desc)
+    mapped(plan.clone(), left, right, None).map(|mapped| mapped.desc)
 }
 
 /// The description of what `p` gives where it combines items that `items` describes into the base that `base` describes, as `Pairing::At` pairs them (`pervasive::combine_at`): the base's layout, and `p`'s result on one item of each joined with the base's kind as `Widening::Items` joins items. An error for an atom base, where `p` doesn't plan on the two, or where the join would leave the base mixed, which programs can't hold.
@@ -523,7 +525,7 @@ pub(crate) fn takes_fixed(p: Primitive) -> bool { !matches!(p, Primitive::Exact(
 fn computed(dtype: DType, numeric: Numeric, weak: bool) -> Kind {
     let mut kind = Kind::stored(Some(dtype), numeric.fixed.filter(|_| matches!(dtype, DType::Integer(_))), weak);
     // An integer Number can narrow after execution; its result dtype does not prove its minimum width.
-    if weak && kind.fixed.is_none() { kind.narrowest = None; }
+    if matches!(kind.minimum, Minimum::Known(_)) { kind.minimum = Minimum::Unknown; }
     kind
 }
 

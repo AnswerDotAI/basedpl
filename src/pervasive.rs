@@ -141,16 +141,16 @@ pub(crate) fn integral(p: Primitive, dyadic: bool, kind: DType, numeric: Numeric
 
 /// The whole floats `floats` as integers, saturating as Rust's `as` does (`Buffer::cast_results`): NaN gives 0, and an infinity or a value past the width gives the width's nearest limit, as `⌊2*70` gives the largest i64. Where integers wrap, the width is the `int` width. Otherwise it's the width that stores the floats' range (`ordinary_width`), from their least and greatest, so storage keeps the buffer as it is; i64 where those come out NaN.
 fn whole(floats: View<'_>, numeric: Numeric) -> Buffer {
-    use rustymath::{convert::saturated, reduce::{max, min}};
+    use rustymath::reduce::{max, min};
     let range = match floats {
         View::Floats(f) if !numeric.wrapping() => with_floats!(f, |xs| {
             let (lo, hi) = (min(xs), max(xs));
-            (!lo.is_nan() && !hi.is_nan()).then(|| (saturated::<i64, _>(lo), saturated::<i64, _>(hi)))
+            (!lo.is_nan() && !hi.is_nan()).then(|| rustymath::domain::Range { lo: lo.into(), hi: hi.into() })
         }),
         _ => None,
     };
     let width =
-        if numeric.wrapping() { numeric.integer_width() } else { range.map_or(Width::I64, |(lo, hi)| crate::array::ordinary_width(Width::narrowest(lo, hi))) };
+        if numeric.wrapping() { numeric.integer_width() } else { crate::array::ordinary_width_for(range) };
     Buffer::cast_results(floats, DType::Integer(width), false).expect("floats convert to integers")
 }
 
@@ -240,19 +240,17 @@ fn applied(kernel: &Kernel, reads: &[Read<'_>], len: usize, settings: rustymath:
 
 /// Floor a logical float input directly to its narrowest integer width, chosen before writing from the floors of its two extrema.
 fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<Buffer, rustymath::error::Error> {
-    use rustymath::{convert::saturated, tolerant::Tolerant};
+    use rustymath::tolerant::Tolerant;
     let mut scratch = Buffer::with_capacity(at, 0);
     let view = read.part_view(0..len, at, !numeric.is_static(), &mut scratch)?;
     let View::Floats(floats) = view else { unreachable!("floor input has its float computing dtype") };
     rustymath::with_tolerance!(numeric.tolerance_of(at), |t| {
-        let width = with_floats!(floats, |xs| {
+        let range = with_floats!(floats, |xs| {
             let (lo, hi) = (reduce::min(xs), reduce::max(xs));
-            if lo.is_nan() || hi.is_nan() || xs.is_empty() {
-                Width::I64
-            } else {
-                crate::array::ordinary_width(Width::narrowest(saturated::<i64, _>(t.floor(lo)), saturated::<i64, _>(t.floor(hi))))
-            }
+            (!lo.is_nan() && !hi.is_nan() && !xs.is_empty())
+                .then(|| rustymath::domain::Range { lo: t.floor(lo).into(), hi: t.floor(hi).into() })
         });
+        let width = crate::array::ordinary_width_for(range);
         crate::events::taken(crate::events::Route::VectorKernel, len);
         rustymath::operation::report_maps([read.plan], 0..len);
         Buffer::floored(view, DType::Integer(width), t)

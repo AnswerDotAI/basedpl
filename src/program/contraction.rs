@@ -1,6 +1,6 @@
 //! Folds that read their argument's sources instead of computing it. A `+` fold of a `×` whose operands read their sources through affine maps runs as one product, which never computes the grid of products (`contracted`): index notation's level 3. A fold of a copy that repeats items, as a broadcast does, folds the copy's source, which never computes the copy (`fold_of_copy`). Fusion's pending programs and the trace both call each, so the two routes find the same folds.
 
-use super::{Laid, Node, Nodes, Origin, Read, Step, along, laid_out, stepped};
+use super::{Laid, Node, Nodes, Origin, Read, Step, along, laid_out, forward_axes};
 use crate::{array::Layout, number::{Arithmetic, Numeric}, plan::{Desc, Operand}, primitive::{FoldKind, Primitive}};
 use rustymath::{agreement::Mapping, gather::Steps, layout::{count, strides}};
 
@@ -126,12 +126,12 @@ fn factored(
     Ok(Read::new(read.of, result.layout.clone()))
 }
 
-/// The read of new nodes in `nodes` that compute the fold by `p` along `axis` of `of`, a read of a copy under any shape, from the copy's source: the source's fold along the axis that `axis` steps along, spread over the copy's other axes (`spread`). The copy must step along its source from its first item, as `stepped` describes, read the whole of that axis, and read more items than its source holds, as a broadcast does. A fold of a broadcast then folds the broadcast's source once, and never computes the broadcast. A copy that reads each item once folds its source in place when it runs (`Mapping::block` in `pervasive::mapped_fold`). `None`, adding nothing, for a scan, a seeded fold and any other read.
+/// The read of new nodes in `nodes` that compute the fold by `p` along `axis` of `of`, a read of a copy under any shape, from the copy's source: the source's fold along the axis that `axis` steps along, spread over the copy's other axes (`spread`). The copy must step along its source from its first item, as `forward_axes` describes, read the whole of that axis, and read more items than its source holds, as a broadcast does. A fold of a broadcast then folds the broadcast's source once, and never computes the broadcast. A copy that reads each item once folds its source in place when it runs (`Mapping::block` in `pervasive::mapped_fold`). `None`, adding nothing, for a scan, a seeded fold and any other read.
 pub(crate) fn fold_of_copy(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: &Read, axis: usize, result: &Desc, numeric: Numeric) -> Option<Read> {
     let Origin::Step(Step::Copy { of: source, map }) = &nodes[of.of].origin else { return None };
     let (source, frame, shape) = (*source, of.layout.shape(), nodes[*source].desc.shape().to_vec());
     if kind.scan || count(&shape) >= count(frame) { return None; }
-    let along = stepped(map, frame, &shape)?;
+    let along = forward_axes(map, frame, &shape)?;
     let b = along[axis].filter(|&b| frame[axis] == shape[b])?;
     let items = nodes[source].desc.clone();
     let (desc, b) = crate::plan::fold_desc(p, kind, Some(b), None, &items, numeric).ok()?;

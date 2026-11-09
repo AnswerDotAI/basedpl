@@ -63,7 +63,7 @@ fn held_identity(v: &Value) -> Option<*const ()> {
 pub(crate) struct Nodes { list: Vec<Node>, index: HashMap<u64, Vec<usize>> }
 
 impl Nodes {
-    /// Adds `node`, or finds the newest node that gives the same value (`Node::matches`), and gives its number. The trace and fusion's pending programs both add their nodes through it, so that a program computes each value once.
+    /// Interns an already-described node, returning the newest equivalent node (`Node::matches`) or its new number. This runs no operation rewrites, so contraction/layout can emit replacement steps without restarting `folded`.
     pub(crate) fn add(&mut self, node: Node) -> usize {
         let key = node.key(self.index.hasher());
         let found = key.and_then(|k| self.index.get(&k)?.iter().rev().copied().find(|&j| self.list[j].matches(&node)));
@@ -235,7 +235,7 @@ pub(crate) fn through_copies(nodes: &[Node], of: usize, map: &Mapping, frame: &[
 }
 
 /// The axis of an array of `shape` that each axis of `frame` steps forwards along by that axis's stride, where `map` reads the array over `frame` from its first item, or `None` for an axis that repeats one item. `None` where `map` starts at another item, where an axis steps any other way or past the end of its source axis (`Walk::new`), and where two axes step along one axis of the array.
-pub(crate) fn stepped(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<Option<usize>>> {
+pub(crate) fn forward_axes(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<Option<usize>>> {
     let walk = rustymath::structure::Walk::new(&map.tables(frame), frame, shape)?;
     let forward = |(s, b): (&Steps, &Option<usize>)| match (s, *b) {
         (Steps::Stride { start: 0, .. }, None) => true,

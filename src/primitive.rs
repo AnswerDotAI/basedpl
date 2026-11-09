@@ -717,7 +717,7 @@ impl Primitive {
         let plan = crate::plan::pervasive_on(self, left, right, Numeric::current(), Some(&agreement));
         if let Some(kept) = crate::pervasive::unchanged(&plan, left, right, &agreement) { return Ok(kept.clone()); }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
-        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(plan.fuses(), agreement.len) {
+        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(agreement.len) {
             match crate::fusion::defer(&plan, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
         } else { agreement };
         Self::planned(&plan, left, right, span, fill, agreement)

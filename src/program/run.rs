@@ -67,21 +67,28 @@ pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<
         if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
 }
 
+/// Executes a Map's saved reads. Native array work may borrow a composable Copy source; Number semantics and carrier dispatch need actual operand values.
 fn mapped<'a>(step: &Step, nodes: &[Node], value: &dyn Fn(usize) -> Option<&'a Value>, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
-    let Step::Map { left, right, plan } = step else { return None };
+    let Step::Map { left: left_read, right: right_read, plan } = step else { return None };
     let layout = &desc.layout;
     let argument = |read: &Read| {
-        if nodes[read.of].desc.atom && !read.view(nodes) { return Some((value(read.of)?, read.pointwise(nodes))); }
-        if read.layout != *layout { return None; }
         if let Some(v) = value(read.of) { return Some((v, read.pointwise(nodes))); }
         let (source, map) = super::positional_source(nodes, read.of)?;
+        let map = map.compose(&read.pointwise(nodes), nodes[read.of].desc.shape(), desc.shape())?;
         Some((value(source.of)?, map))
     };
-    let left = match left { Some(read) => Some(argument(read)?), None => None };
-    let (right, right_map) = argument(right)?;
+    let left = match left_read { Some(read) => Some(argument(read)?), None => None };
+    let (right, right_map) = argument(right_read)?;
     let (left, left_map) = left.map_or((None, Mapping::Single), |(v, map)| (Some(v), map));
-    if crate::transform::carried(left, right) { return None; }
-    if desc.atom { return Some(plan.p.pervasive_apply(Some(plan), left, right, span, false).at(span)); }
+    let carried = crate::transform::carried(left, right);
+    if desc.atom || carried {
+        // Number semantics and carrier dispatch need actual operands, not a Copy's array source plus its map.
+        let read = |r: &Read| value(r.of).map(|v| through(v, r, nodes));
+        let left = match left_read { Some(r) => Some(read(r)?), None => None };
+        let right = read(right_read)?;
+        return Some(if carried { plan.p.call(left.as_deref(), right.as_ref(), span) }
+            else { plan.p.pervasive_apply(Some(plan), left.as_deref(), right.as_ref(), span, false).at(span) });
+    }
     let agreement = Agreement { layout: layout.clone(), len: layout.count(), left: left_map, right: right_map };
     Some(crate::primitive::weakened(left, right, |left, right| Primitive::planned(plan, left, right, span, false, agreement).at(span)))
 }
@@ -149,12 +156,7 @@ pub(crate) fn run<'a>(
 ) -> Result<Value, Error> {
     let value = |r: &Read| through(node(r.of), r, nodes);
     match step {
-        Step::Map { left, right, plan } => {
-            if let Some(result) = mapped(step, nodes, &|j| Some(node(j)), desc, span) { return result; }
-            let (left, right) = (left.as_ref().map(value), value(right));
-            if crate::transform::carried(left.as_deref(), &right) { return plan.p.call(left.as_deref(), &right, span); }
-            unreachable!("a program Map has normalized positional operands")
-        }
+        Step::Map { .. } => mapped(step, nodes, &|j| Some(node(j)), desc, span).expect("an executing Map's operand nodes have their values"),
         Step::Convert { of, numeric } => {
             let of = value(of);
             if crate::transform::carried(None, &of) { return crate::derivative::converted(&of, desc.dtype(), span); }

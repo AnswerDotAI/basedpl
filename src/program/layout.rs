@@ -1,6 +1,6 @@
 //! A traced program's maps in the storage order that their operands and readers need (`ordered`).
 
-use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, stepped, through_copies};
+use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, forward_axes, through_copies};
 use crate::plan::Desc;
 use crate::{array::Layout, number::Numeric};
 use rustymath::{agreement::{Agreement, Mapping}, gather::counts_up, layout::count, search::inverse_permutation};
@@ -127,10 +127,10 @@ fn chosen(group: &Group, links: &[Link], wants: &[Want]) -> Option<Vec<usize>> {
     (met(best) + crossed > now).then(|| best.clone())
 }
 
-/// The axis of an array of `shape` that each axis of `frame` steps along, where `map` reads the array over `frame` as a permutation of its axes: as many items, read from the first, with each axis of more than one item stepping along an axis of its length (`stepped`), and each axis of one item matching one of the array's in order.
+/// The axis of an array of `shape` that each axis of `frame` steps along, where `map` reads the array over `frame` as a permutation of its axes: as many items, read from the first, with each axis of more than one item stepping along an axis of its length (`forward_axes`), and each axis of one item matching one of the array's in order.
 fn permutation(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<usize>> {
     if frame.len() != shape.len() || frame.contains(&0) || count(frame) != count(shape) { return None; }
-    let along = stepped(map, frame, shape)?;
+    let along = forward_axes(map, frame, shape)?;
     let mut ones = (0..shape.len()).filter(|&b| shape[b] == 1);
     along.iter().zip(frame).map(|(b, &len)| match *b { Some(b) if shape[b] == len => Some(b), None if len == 1 => ones.next(), _ => None }).collect()
 }

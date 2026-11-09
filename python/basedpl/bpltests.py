@@ -1,5 +1,5 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import csv, difflib, json, math, os, re, selectors, statistics, subprocess, sys, tempfile, time, tomllib
+import csv, difflib, json, math, os, re, selectors, shutil, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
 from queue import Empty, Queue
@@ -609,51 +609,65 @@ def _perf_samples(pid, seconds, within, directory, callers):
     "Main-thread self samples from Linux perf, rejecting failed or empty recordings."
     limit = Limit.of(within)
     path = Path(directory)/'perf.data'
+    perf = ['perf', '--buildid-dir', str(Path(directory)/'buildid')]
     with limit.running():
-        recorded = bounded(['perf', 'record', '-q', '-e', 'cycles:u', '-F', '199', '--call-graph', 'dwarf,16384', '-t', str(pid), '-o', path, '--', 'sleep', str(seconds)], limit.left())
+        recorded = bounded([*perf, 'record', '-q', '-e', 'cycles:u', '-F', '199', '--call-graph', 'dwarf,16384', '-t', str(pid), '-o', path, '--', 'sleep', str(seconds)], limit.left())
     if recorded.returncode: raise ValueError(f'perf record failed; check perf_event_paranoid and access to cycles:u:\n{recorded.stdout}{recorded.stderr}')
-    with limit.running(): scripted = bounded(['perf', 'script', '-i', path, '-F', 'ip,sym', '--demangle'], limit.left())
+    with limit.running(): scripted = bounded([*perf, 'script', '-i', path, '-F', 'ip,sym', '--demangle'], limit.left())
     if scripted.returncode: raise ValueError(f'perf script failed:\n{scripted.stdout}{scripted.stderr}')
+    (Path(directory)/'samples.txt').write_text(scripted.stdout)
     return _perf_counts(_demangle(scripted.stdout, limit.left()), callers)
 
 def _annotated(path, within):
     "The hottest sampled function's instructions, each with its share of that function's samples, from `perf annotate` on the recording at `path`, which lists functions hottest first."
-    result = bounded(['perf', 'annotate', '-i', path, '--stdio', '--no-source'], within)
+    result = bounded(['perf', '--buildid-dir', str(Path(path).parent/'buildid'), 'annotate', '-i', path, '--stdio', '--no-source'], within)
     if result.returncode: raise ValueError(f'perf annotate failed:\n{result.stdout}{result.stderr}')
     return _demangle(result.stdout.split('\n Percent |')[0], within)
 
-def _self_samples(command, bpl, seconds, within, settings, callers, annotate=False):
+def _self_samples(command, bpl, seconds, within, settings, callers, annotate=False, out=None):
     "Sample a fresh worker's main thread, then stop it. macOS uses sample; Linux uses perf with DWARF call chains."
     limit = Limit.of(within)
-    with limit.running(), tempfile.TemporaryDirectory() as directory:
+    with limit.running(), tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary) if out is None else Path(out).expanduser().absolute()
+        if out is not None: directory.mkdir(parents=True)
         env = environment(**settings)
-        if sys.platform == 'linux': env['PERF_BUILDID_DIR'] = directory
+        if sys.platform == 'linux':
+            (directory/'buildid').mkdir()
+            env['PERF_BUILDID_DIR'] = str(directory/'buildid')
         args, requests = command
-        p = subprocess.Popen([resolved(bpl), *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        p.stdin.write(requests)
-        p.stdin.close()
-        try:
+        errors = directory/'stderr.txt'
+        with errors.open('w') as stderr:
+            p = subprocess.Popen([resolved(bpl), *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True, env=env)
             printed = b''
-            with selectors.DefaultSelector() as waiting:
-                waiting.register(p.stdout, selectors.EVENT_READ)
-                while b'\n' not in printed:
-                    if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its warm call before the deadline')
-                    chunk = os.read(p.stdout.fileno(), 4096)
-                    if not chunk: raise ValueError(f'profiled process exited {p.wait()} before readiness:\n{p.stderr.read()}')
-                    printed += chunk
-            _raise_errors(printed.decode().partition("\n")[0])
-            if sys.platform == 'linux': sampled = (*_perf_samples(p.pid, seconds, limit.left(), directory, callers), _annotated(Path(directory)/'perf.data', limit.left()) if annotate else None)
-            else:
-                with tempfile.NamedTemporaryFile('r', suffix='.txt', dir=directory) as report:
-                    try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True, timeout=limit.left())
+            try:
+                if out is not None:
+                    (directory/'command.json').write_text(json.dumps(dict(argv=p.args, pid=p.pid, stdin=requests, settings=settings, jit_disasm=env.get('BASEDPL_JIT_DISASM')), indent=2, default=str))
+                p.stdin.write(requests)
+                p.stdin.close()
+                with selectors.DefaultSelector() as waiting:
+                    waiting.register(p.stdout, selectors.EVENT_READ)
+                    while b'\n' not in printed:
+                        if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its warm call before the deadline')
+                        chunk = os.read(p.stdout.fileno(), 4096)
+                        if not chunk: raise ValueError(f'profiled process exited {p.wait()} before readiness:\n{errors.read_text()}')
+                        printed += chunk
+                _raise_errors(printed.decode().partition("\n")[0])
+                if sys.platform == 'linux': sampled = (*_perf_samples(p.pid, seconds, limit.left(), directory, callers), _annotated(directory/'perf.data', limit.left()) if annotate else None)
+                else:
+                    report = directory/'sample.txt'
+                    try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report], capture_output=True, text=True, timeout=limit.left())
                     except subprocess.TimeoutExpired: raise TimeoutError("sample did not finish before the call's deadline; check Developer Tools authorization") from None
                     if s.returncode: raise ValueError(s.stdout + s.stderr)
-                    lines = report.read().splitlines()
-            if p.poll() is not None: raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{p.stderr.read()}')
-            if sys.platform == 'linux': return sampled
-        finally:
-            p.kill(); p.wait(); p.stdout.close(); p.stderr.close()
-            if sys.platform == 'linux': Path(f'/tmp/perf-{p.pid}.map').unlink(missing_ok=True)
+                    lines = report.read_text().splitlines()
+                if p.poll() is not None: raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{errors.read_text()}')
+                if sys.platform == 'linux': return sampled
+            finally:
+                p.kill(); p.wait(); p.stdout.close()
+                (directory/'stdout.txt').write_bytes(printed)
+                if sys.platform == 'linux':
+                    perf_map = Path(f'/tmp/perf-{p.pid}.map')
+                    if out is None: perf_map.unlink(missing_ok=True)
+                    elif perf_map.exists(): shutil.copy2(perf_map, directory/perf_map.name)
     start = next((i for i, line in enumerate(lines) if 'com.apple.main-thread' in line), None)
     if start is None: raise ValueError('sample returned no main-thread report')
     total, selfs, stack = int(lines[start].split()[0]), defaultdict(int), []
@@ -674,7 +688,7 @@ def _self_samples(command, bpl, seconds, within, settings, callers, annotate=Fal
     if not named or total <= 0: raise ValueError('sample returned no symbolized main-thread samples')
     return named, total, None
 
-def _estimates(case, setup, prefs, build, seconds, limit, settings, counts, runs, callers, annotate=False):
+def _estimates(case, setup, prefs, build, seconds, limit, settings, counts, runs, callers, annotate=False, out=None):
     "Each function's estimated instructions per step of `N` for `case` on `build`, and the build's instructions per step, as `profile` describes, under the settings that `worker.environment` takes."
     if callers < 0: raise ValueError('callers must be nonnegative')
     if sys.platform not in ('darwin', 'linux'): raise ValueError(f'no sampling profiler on {sys.platform}')
@@ -682,7 +696,7 @@ def _estimates(case, setup, prefs, build, seconds, limit, settings, counts, runs
     bpl = resolved(build)
     [(_, per_step)] = instructions(case, setup, prefs=prefs, build=bpl, counts=counts, runs=runs, timeout=limit, **settings)
     command = _command(case, max(1, round(1e8/per_step)), setup, prefs, forever=True)
-    with timing_lock(), limit.running(): samples, total, annotated = _self_samples(command, bpl, seconds, limit.left(), settings, callers, annotate)
+    with timing_lock(), limit.running(): samples, total, annotated = _self_samples(command, bpl, seconds, limit.left(), settings, callers, annotate, out)
     return {f: per_step*n/total for f, n in samples.items()}, per_step, annotated
 
 @delegates(environment)
@@ -699,11 +713,15 @@ def profile(
     counts=None, # Explicit `N` counts for expensive cases; None: `instructions` calibrates
     runs=3, # Instruction-count processes at each `N`, as `instructions` takes
     annotate=False, # Also show the hottest function's instructions, each with its share of that function's samples, from Linux `perf annotate` on the same recording; `disasm` shows a function's code without samples
+    out:Path=None, # Keep raw samples, build IDs, JIT map, command and stderr in this new directory; None: clean up after profiling
     **kwargs
 ):
-    "Where `case`'s instructions per step of `N` go, by function. After setup and one warm execution of the measured path, a fresh process repeats the case on one thread while macOS `sample` or Linux `perf` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
+    """Where `case`'s instructions per step of `N` go, by function. After setup and one warm execution of the measured path, a fresh process repeats the case on one thread while macOS `sample` or Linux `perf` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate.
+
+    `out` retains the recording and symbolized IPs, command/build path, build-ID cache and worker stderr. Set `BASEDPL_JIT_DISASM=1` to retain generated code in stderr. Linux also keeps `/tmp/perf-PID.map`, where perf looks for JIT symbols regardless of `--symfs`. Restore the archived map there with `cp -n OUT/perf-PID.map /tmp/` if absent. Read the recording after worker exit with `perf --buildid-dir OUT/buildid script -i OUT/perf.data -F ip,sym --demangle`.
+    """
     setup, prefs = _section_setup(section, setup, prefs)
-    estimates, total, annotated = _estimates(case, setup, prefs, build, seconds, Limit.of(timeout), kwargs, counts, runs, callers, annotate)
+    estimates, total, annotated = _estimates(case, setup, prefs, build, seconds, Limit.of(timeout), kwargs, counts, runs, callers, annotate, out)
     return FunctionCounts(sorted(estimates.items(), key=lambda r: -r[1])[:rows], [('total', total)], annotated)
 
 @delegates(environment)
