@@ -222,7 +222,8 @@ impl Pervasive {
     /// `computes`, worked out from the plan's other facts, and the kernel that `pervasive::computes` settled on there, if any.
     fn computing(&self) -> Option<(DType, Option<Kernel>)> {
         if let Some(kind) = self.compared() { return Some((kind, None)); }
-        crate::pervasive::computes(self.p, self.dyadic, self.constants, self.kind?, &self.ranges(), self.numeric)
+        let kind = self.kind?;
+        self.with_ranges(|ranges| crate::pervasive::computes(self.p, self.dyadic, self.constants, kind, ranges, self.numeric))
     }
     /// The kind that a comparison of integers computes at, in eager dispatch and in block stages alike: the kind that its operands' kinds join to, with an operand that is one integer at the narrowest width that holds it (`narrowed`). Every width that holds both operands gives the same Booleans, so static kinds add no `int` width here, as `Numeric::kind` would. `None` for other calls, and where the operands don't join to integers.
     fn compared(&self) -> Option<DType> {
@@ -254,14 +255,14 @@ impl Pervasive {
     /// `kernel` picking without promotion where the operands' order classes differ (`Kernel::ordered`).
     fn ordered(&self, kernel: Kernel) -> Kernel { match self.kinds { [Some(x), Some(y)] => kernel.ordered(&self.classes, &[x, y]), _ => kernel } }
     /// The range of each argument that the kernel takes, the left one first: a held constant's own value, except ¯0, and otherwise the operand's bound (`bounds`), as `Kernel::may_raise_on` and `Kernel::range_on` read them, so `x*2` settles on floats. Both for a dyadic call, and the right one alone for a monad and for a function whose left argument is a code, which the kernel doesn't take.
-    pub(crate) fn ranges(&self) -> Vec<Range> {
-        let range = |k: usize| match self.constants[k] { Some(c) if c != 0.0 || c.is_sign_positive() => Range::of(Some(c)), _ => self.bounds[k] };
-        (if self.dyadic && !self.p.info().dyad.code { 0..2 } else { 1..2 }).map(range).collect()
+    fn with_ranges<R>(&self, f: impl FnOnce(&[Range]) -> R) -> R {
+        let ranges = [0, 1].map(|k| match self.constants[k] { Some(c) if c != 0.0 || c.is_sign_positive() => Range::of(Some(c)), _ => self.bounds[k] });
+        f(&ranges[usize::from(!self.dyadic || self.p.info().dyad.code)..])
     }
     /// The result bound from the kernel at its operands' ranges (`Kernel::range_on`), or the square of one range for a product of one value by itself.
-    pub(crate) fn result_range(&self) -> Range { self.kernel().map_or(Range::ANY, |k| k.range_on(&self.ranges(), self.same)) }
+    pub(crate) fn result_range(&self) -> Range { self.kernel().map_or(Range::ANY, |k| self.with_ranges(|ranges| k.range_on(ranges, self.same))) }
     /// Whether the call's kernel can't fail an item on these operands, as rustymath's validity facts say at the operands' ranges (`Kernel::may_raise_on`, at `ranges`). A deferred call and an in-place write need it.
-    pub(crate) fn never_fails(&self) -> bool { self.kernel().is_some_and(|k| !k.may_raise_on(&self.ranges())) }
+    pub(crate) fn never_fails(&self) -> bool { self.kernel().is_some_and(|k| self.with_ranges(|ranges| !k.may_raise_on(ranges))) }
     /// The kind of every result, where the operands' kinds settle it: the call's kernel never fails on its operands (`never_fails`), and gives each result the kind that `result` gives. Under dynamic kinds, `√` of a negative real gives a complex number, so it settles only where its operand's range keeps it real. Programs, traces and block stages take only calls that settle, and folds and products only where each step settles (`folded`).
     pub(crate) fn settled(&self) -> Result<DType, &'static str> {
         if !self.never_fails() { return Err("a result whose type depends on values"); }

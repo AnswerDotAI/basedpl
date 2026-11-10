@@ -209,33 +209,18 @@ pub(crate) fn constant(value: &Value, level: u64) -> bool {
     value.older_than(level) && value.template_dtype().is_some() && (value.is_atom() || !value.shape().is_empty())
 }
 
-/// The Booleans that a guard's predicate `value` gives the cells of batched run `level`, laid out as the run's frame, where `value` is a batch of the run or an array of its batches that joins into one. Each cell's predicate is one Boolean, as `Value::boolean` reads it. `None` where `value` is the same for every cell.
-pub(crate) fn truths(value: &Value, level: u64) -> Option<Result<Value, ErrorKind>> {
-    let joined = joined(value);
-    let value = joined.as_ref().unwrap_or(value);
-    let b = value.carrier_at(level).and_then(Carrier::batch)?;
-    let frame = b.frame_layout();
-    if b.whole.len() != b.cells() { return Some(Err(rustymath::error::Kind::Length.into())); }
-    if b.whole.dtype() == Some(DType::Boolean) { return Some(b.whole.relaid(frame)); }
-    Some(b.whole.elements().map(|e| e.boolean()).collect::<Result<Vec<_>, _>>().and_then(|bits| Value::booleans(frame, bits)))
-}
 
-/// `value` as a case of run `level` sees it (`transform::Levels::case`): a batch of the run read by `read`, which takes the batch's whole and its number of frame axes and gives the case's whole and its number of frame axes. An array that holds such batches reads each. Any other value is the same for every cell.
-pub(crate) fn read_cells(value: &Value, level: u64, read: &impl Fn(&Value, usize) -> Result<(Value, usize), Error>) -> Result<Value, Error> {
-    if let Some(b) = value.carrier_at(level).and_then(Carrier::batch) { let (whole, frame) = read(&b.whole, b.frame)?; return Ok(batch(level, whole, frame)); }
+/// A binding's batches laid over the current run frame. Nested arrays widen each batch they hold.
+pub(crate) fn widened(value: &Value, level: u64, frame: &Layout) -> Result<Value, Error> {
+    if let Some(b) = value.carrier_at(level).and_then(Carrier::batch) {
+        let axes = frame.shape().len();
+        return if b.frame < axes { Ok(batch(level, laid_over(&b.whole, b.frame, frame).described("invalid batch")?, axes)) } else { Ok(value.clone()) };
+    }
     if value.carrier().is_none() && value.holds_values() && value.carried() {
-        let items = value.elements().map(|e| read_cells(&e, level, read)).collect::<Result<Vec<_>, _>>()?;
+        let items = value.elements().map(|e| widened(&e, level, frame)).collect::<Result<Vec<_>, _>>()?;
         return value.layout().collect(items, value.prototype()).described("invalid array");
     }
     Ok(value.clone())
-}
-
-/// `value` as code in batched run `level`, widened to `frame`, reads it: each batch of the run with fewer frame axes than `frame`, which a binding made before the widening holds, laid over `frame` (`laid_over`). An array that holds such batches lays each.
-pub(crate) fn widened(value: &Value, level: u64, frame: &Layout) -> Result<Value, Error> {
-    let axes = frame.shape().len();
-    read_cells(value, level, &|whole, frame_axes| {
-        Ok(if frame_axes < axes { (laid_over(whole, frame_axes, frame).described("invalid batch")?, axes) } else { (whole.clone(), frame_axes) })
-    })
 }
 
 /// The call of `op` as batched run `level` handles it (`transform::call`).
@@ -543,7 +528,7 @@ impl Arguments {
 /// An argument of a batched try: a batch of its cells, or a constant that applies to every cell.
 enum Side { Batched(Value), Constant(Value) }
 
-/// How a batched try's run takes its level: it begins a batched run, or it widens batched run `level`, whose frame is `outer`, for a map inside that run (`transform::Levels::case`). A widened run's frame is `outer` followed by the map's frame.
+/// How a batched try's run takes its level: it begins a batched run, or it widens batched run `level`, whose frame is `outer`, for a map inside that run (`transform::Levels::widen`). A widened run's frame is `outer` followed by the map's frame.
 enum Entry { Begin, Widen { level: u64, outer: Layout } }
 
 /// An argument whose cells have rank `rank`, as a side of a batched try that enters its run by `entry`, whose frame is `frame`, or `None` where the try can't batch it. An argument with no frame is a constant, which every cell reads whole. An argument with a frame, which its map laid over the map's frame, is a batch where it is compact. A batch has no names on its frame axes (`unnamed_frame`), as the run has none on its frame (`tried`). A widening lays each batch of the running run over `frame`, whether or not its cells have the map's frame (`laid_over`), and spreads a constant with a frame over the run's frame. It can't batch a value that carries another level's data.
@@ -578,7 +563,7 @@ fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &E
     };
     let (level, called) = match entry {
         Entry::Begin => session().with_level(crate::transform::Kind::batched(frame.clone()), |level| (level, call(level))),
-        Entry::Widen { level, .. } => (*level, session().widened(frame, span, || call(*level))),
+        Entry::Widen { level, .. } => (*level, session().widened(frame, || call(*level))),
     };
     match called {
         Ok(value) => whole_over(value, level, frame).ok_or(Ended::Fell("the result")),

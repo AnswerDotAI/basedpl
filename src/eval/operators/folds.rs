@@ -34,7 +34,8 @@ fn identity(p: Primitive, prototype: &Value, span: &Span) -> Result<Value, Error
 }
 
 pub(crate) fn fold(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let primitive = operand.dyadic_primitive();
+    let native = super::axes::native_primitive(operand, true);
+    let primitive = native.filter(|(_, axis)| axis.is_none()).map(|(p, _)| p);
     if left.is_none() {
         if crate::transform::carried(None, right) { if let Some(folded) = in_turn(operand, kind, axis, right, span)? { return Ok(folded); } }
         if primitive.is_none() && let Some(result) = crate::transform::call(crate::transform::Op::Fold(kind, axis), None, right, span) { return result; }
@@ -56,6 +57,8 @@ pub(crate) fn fold(operand: &Function, kind: FoldKind, axis: Option<&Value>, lef
     }
     let along = kind.axis(axis.as_ref(), right)?;
     let axis = axis.is_some().then_some(along);
+    if !kind.scan && left.is_none() && let Some((p, axis)) = native
+        && let Some(result) = crate::primitive::catenate_many(p, axis, right)? { return Ok(result); }
     match primitive {
         Some(p) => Operation::Fold(p, kind).call(Pairing::Axis(axis), left, right, span), None => fold_array(operand, kind, axis, left, right, span)
     }

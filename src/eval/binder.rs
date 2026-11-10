@@ -1,9 +1,7 @@
 //! The binder: the right-to-left reduction of a run's items by their categories, and the rewriting of dot access.
 
-use super::tree::{Facts, Recorder, Reduction};
 use super::{
-    ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, bindings::Place, dissect::Expression,
-    tree::Recording,
+    ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, dissect::Expression,
 };
 use crate::{
     At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript},
@@ -12,16 +10,68 @@ use crate::{
 use std::{borrow::Cow, sync::Arc};
 
 impl Session {
+    /// Lower selector sections and data-first operator tails before runs bind their operands.
+    fn sections<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
+        let dot = |n: &Node| matches!(n.kind, NodeKind::Operator(OperatorKind::Product));
+        let bracket = |n: &Node| n.span.source.text.as_bytes().get(n.span.range.start) == Some(&b'[');
+        let contains = |test: &dyn Fn(&Node) -> bool| nodes.iter().any(|n| match &n.kind {
+            NodeKind::Run(inner) => inner.iter().any(test), _ => test(n)
+        });
+        if !contains(&dot) || !contains(&bracket) { return Cow::Borrowed(nodes); }
+        let flat: Vec<_> = nodes.iter().flat_map(|n| match &n.kind { NodeKind::Run(inner) => &inner[..], _ => std::slice::from_ref(n) }).cloned().collect();
+        let group = |nodes: Vec<Node>| Node { span: crate::syntax::cover(&nodes), kind: NodeKind::Group(nodes) };
+        let (mut out, mut i, mut changed) = (Vec::with_capacity(flat.len()), 0, false);
+        while i < flat.len() {
+            let Some(head) = flat.get(i + 1).filter(|_| dot(&flat[i])) else { out.push(flat[i].clone()); i += 1; continue; };
+            let immediate = bracket(head);
+            let explicit = !crate::syntax::touching(&flat[i], head)
+                || matches!(head.kind, NodeKind::Operator(_) | NodeKind::Script(ScriptKind::Super, _));
+            if !immediate && !(explicit && self.starts_with_operator(&flat[i + 1..])) {
+                out.push(flat[i].clone()); i += 1; continue;
+            }
+            let Some(end) = flat[i + 1..].iter().take_while(|n| !matches!(n.kind, NodeKind::Assign)).position(bracket).map(|j| i + 1 + j) else {
+                out.push(flat[i].clone()); i += 1; continue;
+            };
+            let prefix = self.members_with(&out);
+            let subject = prefix.len().checked_sub(1).and_then(|mut start| {
+                if matches!(prefix[start].kind, NodeKind::Assign) { return None; }
+                while start > 0 && self.static_category(&prefix[start]) == Category::Operator
+                    && crate::syntax::touching(&prefix[start - 1], &prefix[start]) { start -= 1; }
+                self.trailing_operand(&prefix[start..], prefix.len() - start).ok()
+                    .filter(|(_, c)| matches!(c, Category::Value | Category::Function)).map(|(_, c)| (start, c))
+            });
+            if immediate && subject.is_some() { out.push(flat[i].clone()); i += 1; continue; }
+            out = prefix.into_owned();
+            let root = subject.map(|(start, category)| (group(out.split_off(start)), category));
+            let identity = Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Identity(false))), span: flat[i].span.clone() };
+            let selector = group(vec![identity, flat[i].clone(), flat[end].clone()]);
+            let modified = group(crate::syntax::runs(std::iter::once(selector).chain(flat[i + 1..end].iter().cloned()).collect()));
+            let mut lowered = vec![modified];
+            if let Some((root, category)) = root {
+                if category == Category::Function { lowered.push(Node { kind: NodeKind::Operator(OperatorKind::Atop), span: flat[i].span.clone() }); }
+                lowered.push(root);
+            }
+            crate::syntax::reorder_reads(&mut lowered);
+            out.push(group(lowered));
+            (i, changed) = (end + 1, true);
+        }
+        if changed { Cow::Owned(crate::syntax::runs(out)) } else { Cow::Borrowed(nodes) }
+    }
+
+
     fn has_members(nodes: &[Node]) -> bool {
         nodes.iter().any(|n| matches!(n.kind, NodeKind::Script(ScriptKind::Sub, _) | NodeKind::Joiner(_))) || nodes.windows(2).any(|w| {
             matches!(w[0].kind, NodeKind::Operator(OperatorKind::Product))
-                && matches!(w[1].kind, NodeKind::Name(_, _) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. })
+                && matches!(w[1].kind, NodeKind::Name(_, _) | NodeKind::Group(_) | NodeKind::ArrayLiteral(_))
         })
     }
 
     /// Rewrite a writable target's dot reads and numeric subscripts to selection calls.
     pub(super) fn selection_members<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
-        let members = self.members_with(nodes, &mut None);
+        let members = match self.sections(nodes) {
+            Cow::Borrowed(nodes) => self.members_with(nodes),
+            Cow::Owned(nodes) => Cow::Owned(self.members_with(&nodes).into_owned()),
+        };
         let Some(last) = members.last() else { return members };
         match &last.kind {
             NodeKind::Group(inner) | NodeKind::Run(inner) => {
@@ -34,7 +84,7 @@ impl Session {
             }
             NodeKind::Script(ScriptKind::Sub, index) => {
                 let index = Node { kind: NodeKind::Literal(index.clone()), span: last.span.clone() };
-                let Ok((start, _)) = self.trailing_operand(&members, members.len() - 1, &mut None) else { return members };
+                let Ok((start, _)) = self.trailing_operand(&members, members.len() - 1) else { return members };
                 let mut out = members.into_owned();
                 let subscript = out.pop().unwrap();
                 let inner = out.split_off(start);
@@ -50,8 +100,8 @@ impl Session {
             _ => members,
         }
     }
-    /// Rewrite dot reads, logging in `log` what names hold (`tree::Fact`).
-    pub(super) fn members_with<'a>(&self, nodes: &'a [Node], log: &mut Facts) -> Cow<'a, [Node]> {
+    /// Rewrite dot reads.
+    pub(super) fn members_with<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
         if !Self::has_members(nodes) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         // Whether the last node in `out` is the right operand of a `.` after a function.
@@ -60,7 +110,7 @@ impl Session {
             if (matches!(nodes[i].kind, NodeKind::Script(ScriptKind::Sub, _)) && on_function
                 || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Product))
                     && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Script(ScriptKind::Sub, _))))
-                && let Ok((start, _)) = self.trailing_operand(&out, out.len(), log) {
+                && let Ok((start, _)) = self.trailing_operand(&out, out.len()) {
                     let inner = out.split_off(start);
                     let span = crate::syntax::cover(&inner);
                     out.push(Node { kind: NodeKind::Group(inner), span });
@@ -69,16 +119,16 @@ impl Session {
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.last().filter(|root| {
                     !on_function && match &root.kind {
-                        NodeKind::Name(_, _) | NodeKind::Group(_) => self.holds_array(root, log),
-                        NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false
+                        NodeKind::Name(_, _) | NodeKind::Group(_) => self.holds_array(root),
+                        NodeKind::Literal(_) | NodeKind::ArrayLiteral(_) | NodeKind::Scope(..) => true, _ => false
                     }
                 });
                 // `.name` reads a field and `.[I]` selects, after an array or a function. After a function, a name that starts a dot path to a function is an inner product's operand instead, as in `+.ops.mul`.
                 let read = match &next.kind {
-                    NodeKind::Name(name, _) if root.is_some() || !self.path_function(&nodes[i + 1..], log) => {
+                    NodeKind::Name(name, _) if root.is_some() || !self.path_function(&nodes[i + 1..]) => {
                         Some((Node { kind: NodeKind::Literal(crate::keyed::text(name.text())), span: next.span.clone() }, Primitive::Mix))
                     }
-                    NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some((next.clone(), Primitive::Bracket)),
+                    NodeKind::ArrayLiteral(literal) if matches!(literal.form, ListForm::Items | ListForm::Cells) => Some((next.clone(), Primitive::Bracket)),
                     _ => None,
                 };
                 if let Some(root) = root {
@@ -86,7 +136,7 @@ impl Session {
                         (Some((key, function)), _) => Some(NodeKind::Group(vec![
                             key, Node { kind: NodeKind::Function(Builtin::Primitive(function)), span: nodes[i].span.clone() }, root.clone(),
                         ])),
-                        (None, NodeKind::Group(_) | NodeKind::ArrayLiteral { form: ListForm::Rows, .. }) => {
+                        (None, kind) if matches!(kind, NodeKind::Group(_)) || matches!(kind, NodeKind::ArrayLiteral(literal) if literal.form == ListForm::Rows) => {
                             Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone())))
                         }
                         _ => None,
@@ -120,7 +170,7 @@ impl Session {
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
                 if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1])
-                    || !self.holds_array(&left, log) || !self.holds_array(&out[i + 1], log) { i += 1; continue; }
+                    || !self.holds_array(&left) || !self.holds_array(&out[i + 1]) { i += 1; continue; }
                 let joined = joined_term(left, joiner, &out[i].span, out[i + 1].clone());
                 out.splice(start..i + 2, [joined]);
                 i = start + 1;
@@ -136,47 +186,41 @@ impl Session {
     }
 
     /// Whether a run ends in a dyadic operator, which then takes the next run as its right operand.
-    pub(super) fn ends_in_dyadic_operator(&self, nodes: &[Node], log: &mut Facts) -> bool {
-        self.members_with(nodes, log).last().is_some_and(|n| self.static_category(n, log).valence() == Some(true))
+    pub(super) fn ends_in_dyadic_operator(&self, nodes: &[Node]) -> bool {
+        self.members_with(nodes).last().is_some_and(|n| self.static_category(n).valence() == Some(true))
     }
 
     /// Whether a run starts with an operator, which then takes the whole run before it as its left operand.
-    pub(super) fn starts_with_operator(&self, nodes: &[Node], log: &mut Facts) -> bool {
-        self.members_with(nodes, log).first().is_some_and(|n| self.static_category(n, log).valence().is_some())
+    pub(super) fn starts_with_operator(&self, nodes: &[Node]) -> bool {
+        self.members_with(nodes).first().is_some_and(|n| self.static_category(n).valence().is_some())
     }
 
-    /// Join each run that starts with an operator to the node before it, as the run's first token: `≢⊢ ⌸x` reads as `(≢⊢)⌸x`. A run before it joins as a group. A joined run that still starts with an operator joins again: `+ / ¨x` reads as `+/¨x`. No join reaches across `←`. `log` keeps what each test read about what names hold (`tree::Fact`).
-    fn joined<'a>(&self, nodes: &'a [Node], log: &mut Facts) -> Cow<'a, [Node]> {
-        let starts = |node: &Node, log: &mut Facts| matches!(&node.kind, NodeKind::Run(inner) if self.starts_with_operator(inner, log));
-        // Every run but the first is tested, so that `log` keeps what each test read.
-        if !nodes.iter().skip(1).fold(false, |any, node| starts(node, log) || any) { return Cow::Borrowed(nodes); }
+    /// Join each run that starts with an operator to the node before it, as the run's first token: `≢⊢ ⌸x` reads as `(≢⊢)⌸x`. A run before it joins as a group. A joined run that still starts with an operator joins again: `+ / ¨x` reads as `+/¨x`. No join reaches across `←`.
+    fn joined<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
+        let starts = |node: &Node| matches!(&node.kind, NodeKind::Run(inner) if self.starts_with_operator(inner));
+        if !nodes.iter().skip(1).any(starts) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
-        let mut unlogged = None;
         for node in nodes {
             let mut node = node.clone();
-            // The test above read each node as written. A run that takes in the node before it is a new run, whose test logs what it reads.
-            let mut merged = false;
-            while out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign)) && starts(&node, if merged { &mut *log } else { &mut unlogged }) {
+            while out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign)) && starts(&node) {
                 let before = out.pop().expect("a node is before this run");
                 let span = Span { source: before.span.source.clone(), range: before.span.range.start..node.span.range.end };
                 let before = match before.kind { NodeKind::Run(run) => Node { kind: NodeKind::Group(run), span: before.span }, _ => before };
                 let NodeKind::Run(inner) = node.kind else { unreachable!() };
                 node = Node { kind: NodeKind::Run(std::iter::once(before).chain(inner).collect()), span };
-                merged = true;
             }
             out.push(node);
         }
-        // A run that is the whole expression needs no wrapper, as in the parser.
         if let [Node { kind: NodeKind::Run(inner), .. }] = out.as_mut_slice() { return Cow::Owned(std::mem::take(inner)); }
         Cow::Owned(out)
     }
     /// Whether the dot path that starts `nodes`, such as `mul` or `ops.mul`, names a function or operator, read without evaluating anything (`path_category`).
-    fn path_function(&self, nodes: &[Node], log: &mut Facts) -> bool {
+    fn path_function(&self, nodes: &[Node]) -> bool {
         let Some(NodeKind::Name(name, _)) = nodes.first().map(|n| &n.kind) else { return false };
         let keys: Vec<Arc<str>> = nodes[1..].chunks_exact(2).map_while(|pair| match pair {
             [Node { kind: NodeKind::Operator(OperatorKind::Product), .. }, Node { kind: NodeKind::Name(key, _), .. }] => Some(key.text().into()), _ => None
         }).collect();
-        self.path_category(*name, &keys, log) != Category::Value
+        self.path_category(*name, &keys) != Category::Value
     }
 }
 
@@ -191,10 +235,6 @@ pub(super) enum Term {
     Left(Value, Function),
     /// Arrays side by side, one item each. They become a vector when used.
     Strand(Vec<Value>),
-    /// A group's train, held as its tines until something needs its function. A compiled call of the group calls the tines in place (`tree.rs`'s `Op::CallTines`).
-    Tines(Vec<Tine>),
-    /// A keyed bracket item's entries, which only its literal reads, in a compiled statement.
-    Entries(Vec<crate::keyed::Entry>),
 }
 #[derive(Clone, Debug)]
 pub(super) enum Tine { Array(Value), Function(Function) }
@@ -218,11 +258,6 @@ pub(super) struct Entity {
     role: Category,
     pub(super) expression: Option<Box<Expression>>,
 }
-/// The binder's state where a recording's check failed (`tree.rs`): its stack, its pending stack and its cursor, with the entity it had just resolved, whether it had just pushed a call's result, and the `←` of an assignment it was making.
-pub(super) struct Resume {
-    pub(super) stack: Vec<Entity>, pub(super) pending: Vec<Entity>, pub(super) cursor: usize, pub(super) next: Option<Entity>, pub(super) after_call: bool,
-    pub(super) assignment: Option<usize>
-}
 const _: () = assert!(std::mem::size_of::<Entity>() <= 64);
 
 /// `range` as `u32` offsets, clamped for a source longer than 4 GiB.
@@ -241,38 +276,31 @@ impl Entity {
     #[inline(always)]
     pub(super) fn new(term: Term, range: std::ops::Range<u32>, shy: bool, expression: Option<Box<Expression>>) -> Self {
         let category = match term {
-            Term::Binding(ref value) => Category::bound(value), Term::Strand(_) | Term::Entries(_) => Category::Value, Term::Train(_) => Category::Train,
-            Term::Left(..) => Category::Left, Term::Tines(_) => Category::Function
+            Term::Binding(ref value) => Category::bound(value), Term::Strand(_) => Category::Value, Term::Train(_) => Category::Train,
+            Term::Left(..) => Category::Left
         };
         Self { term, range, shy, category, role: category, expression }
     }
-    /// An entity that holds `value`, with no captured expression.
-    #[inline(always)]
-    pub(super) fn of(value: Binding, range: std::ops::Range<u32>, shy: bool) -> Self { Self::new(Term::Binding(value), range, shy, None) }
     /// An entity that holds `bound`'s value and binds as it does (`Bound::category`).
     #[inline(always)]
     pub(super) fn held(bound: Bound, range: std::ops::Range<u32>) -> Self {
         let category = bound.category();
         Self { term: Term::Binding(bound.value), range, shy: bound.shy, category, role: category, expression: bound.expression }
     }
-    /// The entity's own category.
-    #[inline(always)]
-    pub(super) fn category(&self) -> Category { self.category }
     /// The entity's value: its binding, or what its unfinished term builds (`Entity::built`).
     #[inline(always)]
     pub(super) fn value(self, source: &Arc<Source>) -> Result<Binding, Error> {
         match self.term { Term::Binding(value) => Ok(value), term => (Self { term, ..self }).built(source) }
     }
     /// What an unfinished term builds: a train's function, a bound left argument's function or a strand's vector.
-    // Out of line, so that the conversions that every compiled operand goes through stay small enough to inline.
+    // Out of line, so that the conversions that every operand goes through stay small enough to inline.
     #[inline(never)]
     fn built(self, source: &Arc<Source>) -> Result<Binding, Error> {
         let span = || span_of(source, &self.range);
         Ok(match self.term {
-            Term::Binding(value) => value, Term::Train(tines) | Term::Tines(tines) => Binding::Function(self::Function::train(tines, &span())?),
+            Term::Binding(value) => value, Term::Train(tines) => Binding::Function(self::Function::train(tines, &span())?),
             Term::Left(a, f) => Binding::Function(before(a, f, &span())?),
             Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| Error::new(k, "invalid strand").at(&span()))?),
-            Term::Entries(_) => unreachable!("a keyed item's entries go only into its literal")
         })
     }
     #[inline(always)]
@@ -282,9 +310,9 @@ impl Entity {
     }
     #[inline(always)]
     pub(super) fn array(self, source: &Arc<Source>) -> Result<Value, Error> { match self.value(source)? { Binding::Value(a) => Ok(a), _ => unreachable!() } }
-    /// The entity's value, with whether it displays, the expression it captured and the category it binds with: its own, except that a train, tines or a left argument with its function builds a function, which binds as a function.
+    /// The entity's value, with whether it displays, the expression it captured and the category it binds with: its own, except that a train or a left argument with its function builds a function, which binds as a function.
     pub(super) fn bound(mut self, source: &Arc<Source>) -> Result<Bound, Error> {
-        let category = (!matches!(self.term, Term::Train(_) | Term::Tines(_) | Term::Left(..))).then_some(self.category);
+        let category = (!matches!(self.term, Term::Train(_) | Term::Left(..))).then_some(self.category);
         let (shy, expression) = (self.shy, self.expression.take());
         Ok(Bound { value: self.value(source)?, shy, expression, category })
     }
@@ -313,39 +341,18 @@ pub(super) fn strand(left: Entity, right: Entity, source: &Arc<Source>) -> Resul
     Ok((joined, from_left, range))
 }
 
-/// `entity` as an argument: its array, which stays borrowed where a borrowed entity holds one, as a recording's constant does (`tree.rs`).
-#[inline(always)]
-pub(super) fn array_of<'p>(entity: Cow<'p, Entity>, source: &Arc<Source>) -> Result<Cow<'p, Value>, Error> {
-    match entity {
-        Cow::Borrowed(Entity { term: Term::Binding(Binding::Value(v)), .. }) => Ok(Cow::Borrowed(v)),
-        entity => entity.into_owned().array(source).map(Cow::Owned),
-    }
-}
-
-/// `entity` as a called function, which stays borrowed where a borrowed entity holds one.
-#[inline(always)]
-pub(super) fn function_of<'p>(entity: Cow<'p, Entity>, source: &Arc<Source>) -> Result<Cow<'p, Function>, Error> {
-    match entity {
-        Cow::Borrowed(Entity { term: Term::Binding(Binding::Function(f)), .. }) => Ok(Cow::Borrowed(f)),
-        entity => entity.into_owned().function(source).map(Cow::Owned),
-    }
-}
-
-/// `left` bound as `right`'s left argument: `left` as an argument, then `right` as a function. The pair takes `right`'s text range, because a call belongs to its function's text.
+/// Bind `left` to `right`; the call's source range belongs to the function, not the bound argument.
 #[inline]
-pub(super) fn attached<'p>(
-    left: Cow<'p, Entity>, right: Cow<'p, Entity>, source: &Arc<Source>) -> Result<(Cow<'p, Value>, Cow<'p, Function>, std::ops::Range<u32>), Error> {
+fn attached(left: Entity, right: Entity, source: &Arc<Source>) -> Result<(Value, Function, std::ops::Range<u32>), Error> {
     let range = right.range.clone();
-    let x = array_of(left, source)?;
-    Ok((x, function_of(right, source)?, range))
+    Ok((left.array(source)?, right.function(source)?, range))
 }
 
-/// A call's left argument and function, from the entity before its right argument: a bound left argument's parts, or no left argument and the entity as a function.
+/// Separate a call's function and optional bound left argument from the entity before its right argument.
 #[inline]
-pub(super) fn split_call<'p>(left: Cow<'p, Entity>, source: &Arc<Source>) -> Result<(Option<Cow<'p, Value>>, Cow<'p, Function>), Error> {
+fn split_call(left: Entity, source: &Arc<Source>) -> Result<(Option<Value>, Function), Error> {
     Ok(match left {
-        Cow::Owned(Entity { term: Term::Left(x, f), .. }) => (Some(Cow::Owned(x)), Cow::Owned(f)),
-        Cow::Borrowed(Entity { term: Term::Left(x, f), .. }) => (Some(Cow::Borrowed(x)), Cow::Borrowed(f)), left => (None, function_of(left, source)?)
+        Entity { term: Term::Left(x, f), .. } => (Some(x), f), left => (None, left.function(source)?)
     })
 }
 
@@ -394,12 +401,12 @@ pub(super) fn bound_right(operator: Binding, operand: Binding) -> self::Operator
     self::OperatorNode::Bound(Arc::new(operator), Operand::from_value(operand))
 }
 
-/// The tines of `left` and then of `right`, which join in a train (`Rule::Train`). The tines go into a train's own list where either side brings one, and otherwise into a new list with room for `TINES`, so a statement that builds a train at each call allocates once for it.
+/// The tines of `left` and then `right`, reusing either unfinished train's list.
 #[inline]
-pub(super) fn train(left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<Source>) -> Result<Vec<Tine>, Error> {
+fn train(left: Entity, right: Entity, source: &Arc<Source>) -> Result<Vec<Tine>, Error> {
     Ok(match (left, right) {
-        (Cow::Owned(Entity { term: Term::Train(mut tines), .. }), right) => { push_tines(right, &mut tines, source)?; tines }
-        (left, Cow::Owned(Entity { term: Term::Train(mut tines), .. })) => {
+        (Entity { term: Term::Train(mut tines), .. }, right) => { push_tines(right, &mut tines, source)?; tines }
+        (left, Entity { term: Term::Train(mut tines), .. }) => {
             let n = tines.len();
             push_tines(left, &mut tines, source)?;
             let pushed = tines.len() - n;
@@ -407,7 +414,7 @@ pub(super) fn train(left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<
             tines
         }
         (left, right) => {
-            let mut tines = Vec::with_capacity(TINES);
+            let mut tines = Vec::with_capacity(4);
             push_tines(left, &mut tines, source)?;
             push_tines(right, &mut tines, source)?;
             tines
@@ -415,19 +422,14 @@ pub(super) fn train(left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<
     })
 }
 
-/// The tines in a train's new list that a statement such as `(g ⍵-1)+g ⍵-2` fills without growing it.
-const TINES: usize = 4;
-
-/// Appends `entity`'s parts to `tines` as tines of a train: a train's tines, a bound left argument's array and function, or the entity as one array or function. Where `entity` is borrowed, as a recording's constant is (`tree.rs`), each tine copies only its own array or function.
+/// Append a train's tines, flattening unfinished trains and preserving a bound left argument before its function.
 #[inline]
-fn push_tines(entity: Cow<'_, Entity>, tines: &mut Vec<Tine>, source: &Arc<Source>) -> Result<(), Error> {
+fn push_tines(entity: Entity, tines: &mut Vec<Tine>, source: &Arc<Source>) -> Result<(), Error> {
     match entity {
-        Cow::Owned(Entity { term: Term::Train(owned), .. }) => tines.extend(owned),
-        Cow::Borrowed(Entity { term: Term::Train(borrowed), .. }) => tines.extend_from_slice(borrowed),
-        Cow::Owned(Entity { term: Term::Left(a, f), .. }) => tines.extend([Tine::Array(a), Tine::Function(f)]),
-        Cow::Borrowed(Entity { term: Term::Left(a, f), .. }) => tines.extend([Tine::Array(a.clone()), Tine::Function(f.clone())]),
-        entity if matches!(entity.category, Category::Value | Category::Callable) => tines.push(Tine::Array(array_of(entity, source)?.into_owned())),
-        entity => tines.push(Tine::Function(function_of(entity, source)?.into_owned())),
+        Entity { term: Term::Train(owned), .. } => tines.extend(owned),
+        Entity { term: Term::Left(a, f), .. } => tines.extend([Tine::Array(a), Tine::Function(f)]),
+        entity if matches!(entity.category, Category::Value | Category::Callable) => tines.push(Tine::Array(entity.array(source)?)),
+        entity => tines.push(Tine::Function(entity.function(source)?)),
     }
     Ok(())
 }
@@ -460,7 +462,7 @@ impl Category {
     /// The category of an array: `Callable` where it holds a function as an item, and otherwise `Value`.
     #[inline]
     pub(super) fn array(a: &Value) -> Self { if a.holds_functions() { Self::Callable } else { Self::Value } }
-    /// The category that the binder and its recordings give `value`. Unlike `of`, it tells an array that holds a function from other arrays (`array`).
+    /// The category that the binder gives `value`. Unlike `of`, it tells an array that holds a function from other arrays (`array`).
     #[inline]
     pub(super) fn bound(value: &Binding) -> Self { match value { Binding::Value(a) => Self::array(a), value => Self::of(value) } }
     /// How an item of this category binds before the item to its right, which binds as `right`, or with nothing to its right where `right` is `None`. An array that holds a function binds as a function before a subject or an absent `⍺`, and as an array otherwise. Every other category binds as itself.
@@ -505,33 +507,19 @@ impl Rule {
 pub(super) struct Binder { stack: Vec<Entity> }
 impl Binder {
     pub(super) fn evaluate(nodes: &[Node], session: &Session, tail: bool) -> Result<Step, Error> {
-        Self::reduced(nodes, session, tail, None, None, None)?.step(&nodes[0].span.source)
+        Self::reduced(nodes, session, tail, None)?.step(&nodes[0].span.source)
     }
     /// `nodes` evaluated with `seed` already on the binder's stack, as the entity to the right of them all.
-    pub(super) fn evaluate_seeded(nodes: &[Node], session: &Session, seed: Entity) -> Result<Bound, Error> { Self::seeded_with(nodes, session, seed, None) }
-    /// `evaluate_seeded`, with `rec` recording the run's reductions. `rec` records the run as a level whose stack starts with the seed (`Recorder::seeded_starts`).
-    pub(super) fn seeded_with(nodes: &[Node], session: &Session, seed: Entity, rec: Option<&mut Recorder>) -> Result<Bound, Error> {
-        let Step::Done(bound) = Self::reduced(nodes, session, false, Some(seed), rec, None)?.step(&nodes[0].span.source)? else {
+    pub(super) fn evaluate_seeded(nodes: &[Node], session: &Session, seed: Entity) -> Result<Bound, Error> {
+        let Step::Done(bound) = Self::reduced(nodes, session, false, Some(seed))?.step(&nodes[0].span.source)? else {
             unreachable!("a run with no tail call gives its value")
         };
         Ok(bound)
     }
-    /// `nodes` evaluated as `evaluate` evaluates them, with the recording of the binder's steps when they stay within the subset that recordings cover (`tree.rs`).
-    pub(super) fn recorded(nodes: &[Node], session: &Session, tail: bool) -> Result<(Step, Option<Recording>), Error> {
-        let mut recorder = Recorder::default();
-        let reduced = Self::reduced(nodes, session, tail, None, Some(&mut recorder), None)?;
-        Ok((reduced.step(&nodes[0].span.source)?, recorder.finish()))
-    }
-    /// `nodes` evaluated from `resume`, the state where a recording's check failed.
-    pub(super) fn resumed(nodes: &[Node], session: &Session, tail: bool, resume: Resume) -> Result<Step, Error> {
-        Self::reduced(nodes, session, tail, None, None, Some(resume))?.step(&nodes[0].span.source)
-    }
     /// The run or parenthesised group `node`, as the run around it binds it. A run reduces to one value: an array, a function, or an operator that a dot path such as `m.op` names. The group binds as its last entity did, except a field read from a name (`Entity::grouped`).
-    pub(super) fn nested(node: &Node, session: &Session) -> Result<Entity, Error> { Self::nested_with(node, session, None) }
-    /// `nested`, with `rec` recording the group's reductions.
-    fn nested_with(node: &Node, session: &Session, rec: Option<&mut Recorder>) -> Result<Entity, Error> {
+    pub(super) fn nested(node: &Node, session: &Session) -> Result<Entity, Error> {
         let (NodeKind::Group(nodes) | NodeKind::Run(nodes)) = &node.kind else { unreachable!() };
-        let Reduced::Entity(entity) = session.nested(nodes, |session| Self::reduced(nodes, session, false, None, rec, None))? else { unreachable!() };
+        let Reduced::Entity(entity) = session.nested(nodes, |session| Self::reduced(nodes, session, false, None))? else { unreachable!() };
         let bound = Self::group_bound(node, session, entity.bound(&nodes[0].span.source)?)?;
         Ok(Entity::held(Bound { shy: false, ..bound }, narrow(&node.span.range)).grouped(node))
     }
@@ -539,38 +527,16 @@ impl Binder {
     pub(super) fn group_bound(node: &Node, session: &Session, bound: Bound) -> Result<Bound, Error> {
         let (NodeKind::Group(nodes) | NodeKind::Run(nodes)) = &node.kind else { unreachable!() };
         if matches!(node.kind, NodeKind::Run(_)) && matches!(bound.value, Binding::Operator(_))
-            && !matches!(&session.members_with(nodes, &mut None)[..], [Node { kind: NodeKind::Group(_), .. }]) {
+            && !matches!(&session.members_with(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]) {
                 return Err(Error::new(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph").at(&node.span));
             }
         Ok(bound)
-    }
-    /// The bracket literal `node`, at `cursor` among the nodes being walked, evaluated as `Session::resolve` evaluates it, each item as a statement of its own, while `rc` records each of its pieces as a level (`Recorder::piece`).
-    fn literal(node: &Node, cursor: usize, session: &Session, rc: &mut Recorder) -> Result<Bound, Error> {
-        rc.literal_starts(cursor);
-        let value = session.bracket(node, |nodes, cell, at, within| {
-            rc.piece_starts(cell, at);
-            let Step::Done(bound) =
-                session.nested(nodes, |session| Self::reduced(nodes, session, false, None, Some(&mut *rc), None)?.step(&nodes[0].span.source))?
-            else { unreachable!("an item isn't in tail position") };
-            let span = &nodes[0].span;
-            let value = match within { super::session::Within::Key => Some(bound.array(span)?), _ => super::session::listed(bound.value, span)? };
-            rc.piece(within, value.clone(), narrow(&crate::syntax::cover(nodes).range));
-            Ok(value)
-        })?;
-        rc.literal(node, &value, session)?;
-        Ok(Bound::new(value))
     }
     /// Pushes `entity`, working out the category it binds with against the entity below it (`Category::before`). Reductions take the top of the stack, so that entity stays below it while it's there.
     #[inline]
     fn push(&mut self, mut entity: Entity) {
         entity.role = entity.category.before(self.stack.last().map(|below| below.role));
         self.stack.push(entity);
-    }
-    /// A binder holding the `stack` that a recording resumes it with, with each entity's role worked out as `push` works it out.
-    fn restacked(stack: Vec<Entity>) -> Self {
-        let mut binder = Self { stack: Vec::with_capacity(stack.len()) };
-        for entity in stack { binder.push(entity); }
-        binder
     }
     /// Whether `left` goes onto `stack` now, rather than after the top of `stack` reduces.
     fn shifts(left: &Entity, stack: &[Entity]) -> bool {
@@ -594,151 +560,97 @@ impl Binder {
             },
         }
     }
-    fn reduced(
-        nodes: &[Node], session: &Session, tail: bool, seed: Option<Entity>, mut rec: Option<&mut Recorder>, resume: Option<Resume>) -> Result<Reduced, Error> {
-        // A recording resumes the binder on the rewritten nodes it walked, whose positions its cursor counts.
-        let rewriting = resume.is_none();
-        let joined = if rewriting { session.joined(nodes, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(nodes) };
-        let members = if rewriting { session.members_with(&joined, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&joined[..]) };
-        // Fast combinations replace their spellings before the binder walks the nodes (`rewrite::expression`).
-        let combined =
-            if rewriting { super::rewrite::expression(session, &members, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&members[..]) };
+    fn reduced(nodes: &[Node], session: &Session, tail: bool, seed: Option<Entity>) -> Result<Reduced, Error> {
+        let sections = session.sections(nodes);
+        let joined = session.joined(&sections);
+        let members = session.members_with(&joined);
+        let combined = super::rewrite::expression(session, &members);
         let nodes = &combined[..];
         let source = &nodes[0].span.source;
-        if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) || matches!(combined, Cow::Owned(_)) {
-            log(&mut rec, |rc| rc.rewritten(nodes.to_vec()));
-        }
-        let (mut binder, mut pending, mut cursor, mut held, mut after_call, mut assignment) = match resume {
-            Some(r) => (Self::restacked(r.stack), r.pending, r.cursor, r.next, r.after_call, r.assignment),
-            None => {
-                let mut stacks = session.stacks.borrow_mut();
-                (Self { stack: stacks.pop().unwrap_or_default() }, stacks.pop().unwrap_or_default(), nodes.len(), None, false, None)
-            }
+        let (mut binder, mut pending) = {
+            let mut stacks = session.stacks.borrow_mut();
+            (Self { stack: stacks.pop().unwrap_or_default() }, stacks.pop().unwrap_or_default())
         };
+        let (mut cursor, mut assignment) = (nodes.len(), None);
         if let Some(seed) = seed { binder.push(seed); }
         loop {
-            if !after_call {
-                crate::cancel::check().at(&nodes[0].span)?;
-                let next = if let Some(entity) = held.take() { Some(entity) }
-                else if pending.is_empty() && assignment.is_none() && cursor > 0 {
-                    cursor -= 1;
-                    let i = cursor;
-                    let node = &nodes[i];
-                    if matches!(node.kind, NodeKind::Assign) {
-                        assignment = Some(i);
-                        log(&mut rec, |rc| rc.assigning(i));
-                        None
+            crate::cancel::check().at(&nodes[0].span)?;
+            let next = if pending.is_empty() && assignment.is_none() && cursor > 0 {
+                cursor -= 1;
+                let i = cursor;
+                let node = &nodes[i];
+                if matches!(node.kind, NodeKind::Assign) {
+                    assignment = Some(i);
+                    None
+                } else {
+                    let range = narrow(&node.span.range);
+                    // Each run acts as one token; a trailing dyadic operator takes the next run as its right operand.
+                    let entity = if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
+                        let NodeKind::Run(inner) = &node.kind else { unreachable!() };
+                        let Some(right) = binder.stack.pop() else {
+                            return Err(Error::new(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it").at(&node.span));
+                        };
+                        // The run counts toward the depth limit, like a parenthesized group.
+                        Entity::held(Bound { shy: false, ..session.nested(inner, |session| Self::evaluate_seeded(inner, session, right))? }, range)
+                    } else if matches!(node.kind, NodeKind::Group(_) | NodeKind::Run(_)) {
+                        Self::nested(node, session)?
                     } else {
-                        let range = narrow(&node.span.range);
-                        let entity = if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner, &mut rec.as_deref_mut().map(Recorder::facts)))
-                        {
-                            // A run that ends in a dyadic operator takes the next run as its right operand, because each run acts as one token.
-                            let NodeKind::Run(inner) = &node.kind else { unreachable!() };
-                            let Some(right) = binder.stack.pop() else {
-                                return Err(Error::new(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it").at(&node.span));
-                            };
-                            // The run counts toward the depth limit, as a group does.
-                            match rec.as_deref_mut() {
-                                Some(rc) => {
-                                    rc.seeded_starts(i);
-                                    let bound = session.nested(inner, |session| Self::seeded_with(inner, session, right, Some(&mut *rc)))?;
-                                    let entity = Entity::held(Bound { shy: false, ..bound }, range);
-                                    rc.group(node, &entity);
-                                    entity
-                                }
-                                None => {
-                                    Entity::held(Bound { shy: false, ..session.nested(inner, |session| Self::evaluate_seeded(inner, session, right))? }, range)
-                                }
-                            }
-                        } else if matches!(node.kind, NodeKind::Group(_) | NodeKind::Run(_)) {
-                            match rec.as_deref_mut() {
-                                Some(rc) => {
-                                    rc.group_starts(i);
-                                    let entity = Self::nested_with(node, session, Some(&mut *rc))?;
-                                    rc.group(node, &entity);
-                                    entity
-                                }
-                                None => Self::nested(node, session)?,
-                            }
-                        } else if let (NodeKind::ArrayLiteral { .. }, Some(rc)) = (&node.kind, rec.as_deref_mut()) {
-                            Entity::held(Self::literal(node, i, session, rc)?, range)
-                        } else {
-                            let entity = Entity::held(Bound { shy: false, ..session.resolve(node)? }, range);
-                            log(&mut rec, |rc| rc.leaf(node, i, &entity, session));
-                            entity
-                        };
-                        Some(entity)
-                    }
-                } else { None };
-                if let Some(left) = pending.last() {
-                    if Self::shifts(left, &binder.stack) {
-                        binder.push(pending.pop().unwrap());
-                        log(&mut rec, |rc| rc.unpend());
-                        continue;
-                    }
-                } else if let Some(left) = next {
-                    if Self::shifts(&left, &binder.stack) {
-                        binder.push(left);
-                        log(&mut rec, |rc| rc.next(true));
-                        continue;
-                    }
-                    pending.push(left);
-                    log(&mut rec, |rc| rc.next(false));
-                } else if binder.stack.len() < 2 {
-                    if let Some(i) = assignment.take() {
-                        let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
-                        if begin == i { return Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(&nodes[i].span)); }
-                        let range = narrow(&nodes[i].span.range);
-                        // With nothing after `←`, `a(f)←` sets `a` to `f a` and gives no result.
-                        let value = match binder.stack.pop() {
-                            None => None,
-                            Some(entity) => {
-                                let value = entity.value(source)?;
-                                if matches!(value, Binding::NoResult) {
-                                    return Err(Error::new(ErrorKind::Value, "assignment requires a value").at(&nodes[i].span));
-                                }
-                                if matches!(value, Binding::Absent) { return Err(Error::new(ErrorKind::Value, ABSENT).at(&nodes[i].span)); }
-                                Some(value)
-                            }
-                        };
-                        let monadic = value.is_none();
-                        cursor = begin + session.assignment_start(&nodes[begin..i])?;
-                        let value = session.assigned(&nodes[cursor..i], value, None, &nodes[i].span)?;
-                        log(&mut rec, |rc| {
-                            let local = match &nodes[cursor..i] {
-                                [Node { kind: NodeKind::Name(name, _), .. }] if !monadic => match session.bindings.here(*name) {
-                                    Place::Slot(_, slot) => Some(slot), _ => None
-                                },
-                                _ => None,
-                            };
-                            rc.assigned(i - begin, cursor, monadic, local, range.clone())
-                        });
-                        pending.push(Entity::new(Term::Binding(value), range, true, None));
-                        continue;
-                    }
-                    break;
+                        Entity::held(Bound { shy: false, ..session.resolve(node)? }, range)
+                    };
+                    Some(entity)
                 }
+            } else { None };
+            if let Some(left) = pending.last() {
+                if Self::shifts(left, &binder.stack) {
+                    binder.push(pending.pop().unwrap());
+                    continue;
+                }
+            } else if let Some(left) = next {
+                if Self::shifts(&left, &binder.stack) {
+                    binder.push(left);
+                    continue;
+                }
+                pending.push(left);
+            } else if binder.stack.len() < 2 {
+                if let Some(i) = assignment.take() {
+                    let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
+                    if begin == i { return Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(&nodes[i].span)); }
+                    let range = narrow(&nodes[i].span.range);
+                    // With nothing after `←`, `a(f)←` sets `a` to `f a` and gives no result.
+                    let value = match binder.stack.pop() {
+                        None => None,
+                        Some(entity) => {
+                            let value = entity.value(source)?;
+                            if matches!(value, Binding::NoResult) {
+                                return Err(Error::new(ErrorKind::Value, "assignment requires a value").at(&nodes[i].span));
+                            }
+                            if matches!(value, Binding::Absent) { return Err(Error::new(ErrorKind::Value, ABSENT).at(&nodes[i].span)); }
+                            Some(value)
+                        }
+                    };
+                    cursor = begin + session.assignment_start(&nodes[begin..i])?;
+                    let value = session.assigned(&nodes[cursor..i], value, &nodes[i].span)?;
+                    pending.push(Entity::new(Term::Binding(value), range, true, None));
+                    continue;
+                }
+                break;
             }
             loop {
-                let call = if std::mem::take(&mut after_call) { None } else { binder.reduce(session.capture.get(), source, rec.as_deref_mut())? };
-                if let Some(call) = call {
-                    // The binder's last reduction, with nothing left to resolve or on either stack and no assignment in progress. A dfn's last statement returns such a call of a function that the user defined to the caller's loop.
+                if let Some(call) = binder.reduce(session.capture.get(), source)? {
+                    // A dfn's final user-defined call returns to the caller's loop instead of adding a Rust frame.
                     let last = assignment.is_none() && cursor == 0 && pending.is_empty() && binder.stack.is_empty();
                     if tail && last && tails(&call.function) {
-                        log(&mut rec, |rc| rc.called(call.span.clone(), Category::Value, true));
                         session.stacks.borrow_mut().extend([binder.stack, pending]);
                         return Ok(Reduced::Tail(call));
                     }
                     let bound = call.function.call_with(call.left.map(Cow::Owned), Cow::Owned(call.right), &call.span)?;
                     let entity = Entity::held(Bound { expression: call.expression, ..bound.given() }, narrow(&call.span.range));
-                    log(&mut rec, |rc| rc.called(call.span.clone(), entity.category, last));
                     binder.push(entity);
                 }
-                // Bound operators still need their left operand before rebinding on the right.
+                // A bound operator still needs its left operand before rebinding on the right.
                 let m = binder.stack.len();
                 if matches!(binder.stack[m - 1].category, Category::Operator) || Self::shifts(&binder.stack[m - 1], &binder.stack[..m - 1]) { break; }
                 pending.push(binder.stack.pop().unwrap());
-                log(&mut rec, |rc| rc.pend());
                 crate::cancel::check().at(&nodes[0].span)?;
             }
         }
@@ -748,25 +660,12 @@ impl Binder {
     }
     // A browser worker's small stack limits recursion. In wasm, inlining this into `reduced` would put its locals in the frame that `reduced` keeps across each call, at every level of recursion. V8's Liftoff gives each local a slot, whether or not its path runs.
     #[cfg_attr(target_arch = "wasm32", inline(never))]
-    fn reduce(&mut self, capture: bool, source: &Arc<Source>, mut rec: Option<&mut Recorder>) -> Result<Option<Application>, Error> {
+    fn reduce(&mut self, capture: bool, source: &Arc<Source>) -> Result<Option<Application>, Error> {
         let mut left = self.stack.pop().unwrap();
         let mut right = self.stack.pop().unwrap();
         let range = left.range.clone();
         let span = || span_of(source, &range);
         let rule = Rule::get(left.role, right.role);
-        if let Some(rc) = rec.as_deref_mut() {
-            match rule {
-                Rule::Drop => rc.reduce(Reduction::Drop),
-                Rule::DropRight => rc.reduce(Reduction::DropRight),
-                Rule::Adjacent => rc.reduce(Reduction::Strand),
-                Rule::Attach => rc.reduce(Reduction::Attach),
-                Rule::Call if !matches!(right.term, Term::Binding(Binding::Absent)) => rc.call = true,
-                // A derive or a bind logs once its result is known.
-                Rule::Derive | Rule::BindRight => {}
-                Rule::Train => rc.reduce(Reduction::Train),
-                _ => rc.fail(),
-            }
-        }
         let left_expression = left.expression.take();
         let right_expression = right.expression.take();
         let mut expression = None;
@@ -795,14 +694,9 @@ impl Binder {
             }
             Rule::Derive => match derived(left.value(source)?, right.value(source)?, &span())? {
                 Derived::Term(binding) => {
-                    log(&mut rec, |rc| {
-                        rc.reduce(Reduction::Derive { span: span(), range: range.clone(), result: Category::bound(&binding), value: binding.clone() })
-                    });
                     Term::Binding(binding)
                 }
-                // The call logs the derive once the binder has made it (`Recorder::called`).
                 Derived::Call(function, x, y) => {
-                    if let Some(rc) = rec.as_deref_mut() { (rc.call, rc.derive) = (true, true); }
                     let expression = capture.then(|| {
                         let operand = left_expression.map_or_else(|| Expression::array(x.as_ref().unwrap_or(&y)), |e| *e);
                         Box::new(if x.is_some() { Expression::call(&function, Some(operand), Expression::array(&y)) }
@@ -813,26 +707,25 @@ impl Binder {
             },
             Rule::BindRight => {
                 let bound = bound_right(left.value(source)?, right.value(source)?);
-                log(&mut rec, |rc| rc.reduce(Reduction::BindRight(bound.clone())));
                 Term::Binding(Binding::Operator(bound))
             }
             Rule::Attach => {
-                let (x, f, range) = attached(Cow::Owned(left), Cow::Owned(right), source)?;
-                self.push(Entity::new(Term::Left(x.into_owned(), f.into_owned()), range, false, left_expression));
+                let (x, f, range) = attached(left, right, source)?;
+                self.push(Entity::new(Term::Left(x, f), range, false, left_expression));
                 return Ok(None);
             }
             Rule::Call if matches!(right.term, Term::Binding(Binding::Absent)) => Term::Binding(Binding::Absent),
             Rule::Call => {
-                let (x, f) = split_call(Cow::Owned(left), source)?;
+                let (x, f) = split_call(left, source)?;
                 let y = right.array(source)?;
                 let expression = capture.then(|| {
                     Box::new(Expression::call(
                         &f, x.as_ref().map(|a| left_expression.map_or_else(|| Expression::array(a), |e| *e)),
                         right_expression.map_or_else(|| Expression::array(&y), |e| *e)))
                 });
-                return Ok(Some(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y, span: span(), unshy: false, expression }));
+                return Ok(Some(Application { function: f, left: x, right: y, span: span(), unshy: false, expression }));
             }
-            Rule::Train => Term::Train(train(Cow::Owned(left), Cow::Owned(right), source)?),
+            Rule::Train => Term::Train(train(left, right, source)?),
             _ => return Err(Error::new(ErrorKind::Syntax, "these grammatical categories do not bind").at(&span())),
         };
         self.push(Entity::new(term, range, false, expression));
@@ -847,6 +740,3 @@ pub(super) fn atop(f: Function, g: Function, span: &Span) -> Result<Function, Er
 pub(crate) fn before(a: Value, f: Function, span: &Span) -> Result<Function, Error> {
     Function::new(FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]), span)
 }
-
-/// `step` logged on `rec`, while it records.
-fn log(rec: &mut Option<&mut Recorder>, step: impl FnOnce(&mut Recorder)) { if let Some(rc) = rec.as_deref_mut() { step(rc) } }

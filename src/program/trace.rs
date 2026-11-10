@@ -8,6 +8,7 @@ use crate::{
     transform::{Carrier, Ended, Kind, Op, Pairing}
 };
 use rustymath::{agreement::Mapping, buffer::DType, domain::Range, structure::IndexPart};
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, atomic::{AtomicUsize, Ordering}};
 
 /// The node of a traced value that isn't in the program, such as an item that code with no rule for traces read (`Carrier::storage`). Any call on it stops the trace.
@@ -839,14 +840,15 @@ pub(crate) fn programmed(
     };
     let names = names?;
     let program = &recording.program;
-    let leaves = |value: &Value| {
+    fn leaves(value: &Value) -> Cow<'_, [Value]> {
+        if !crate::transform::nested(value) { return Cow::Borrowed(std::slice::from_ref(value)); }
         let mut all = Vec::new();
         crate::transform::visit(value, &mut |leaf| {
             all.push(leaf.clone());
             Ok(())
         }).expect("reading an argument's leaves never fails");
-        all
-    };
+        Cow::Owned(all)
+    }
     let (x, y) = (left.map(|l| leaves(l)).unwrap_or_default(), leaves(right));
     let inputs: Vec<&Value> = recording.inputs.iter().map(|input| match *input {
         Input::Left(k) => &x[k], Input::Right(k) => &y[k], Input::Name(i) => names[i].as_ref().expect("a free name that a program reads has a value")

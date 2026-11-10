@@ -3,11 +3,11 @@
 use super::{Binding, Category, MAX_FRAME_DEPTH};
 use crate::{Error, Span, Value, name::Name};
 use rustymath::{error::Kind, hashing::{HashMap, HashMapExt, HashSet, HashSetExt}};
-use std::{cell::{Cell, RefCell}, ops::Range, sync::atomic::{AtomicU64, Ordering::Relaxed}};
+use std::{cell::{Cell, RefCell}, ops::Range};
 
-/// Where a binding is, or where an assignment puts one: a frame's slot, by the frame's index and the slot's number among the frame's slots; a name that a frame binds without a slot, such as a key of a scope's record; or an entry in a module's names, by the module's number and the entry's.
+/// Where a binding is, or where an assignment puts one: a frame's slot, by the frame's index and the slot's number among the frame's slots; a name that a frame binds without a slot, such as a key of a scope's record; or a module name, by the module number and interned name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Place { Slot(usize, u32), Other(usize, Name), Entry(usize, u32) }
+pub(crate) enum Place { Slot(usize, u32), Other(usize, Name), Entry(usize, Name) }
 
 impl Place {
     /// The frame that holds the binding, or `None` for a module's names, which outlive every frame. A binding can't hold a value that refers to a later frame.
@@ -18,7 +18,7 @@ impl Place {
 const IMPLICIT: usize = 6;
 
 /// What a frame binds without slots: names that `⍎` binds where the frame's definition has no slot for them, `$e`, a scope's assignments, and a scope's record, whose keys on its first axis name its items or major cells (`Frame::key`). A key's text never becomes a `Name`, so a record's keys never add to the process's names.
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct Unslotted { names: HashMap<Name, Binding>, record: Option<Value> }
 
 /// The frame of a running call or scope. Its slots on the slot stack hold the six names that a call binds itself, then the names that its definition gives slots. It also has what it binds without slots, the frame it sees names through after its own (`parent`), and the module whose names it sees after its frames.
@@ -90,17 +90,6 @@ impl Frame {
     }
 }
 
-/// A copy of a frame's bindings, which a guard case reads at its cells and then swaps in (`Session::restricted`).
-pub(super) struct FrameBindings { slots: Vec<Option<Binding>>, unslotted: Option<Box<Unslotted>> }
-
-impl FrameBindings {
-    /// Each array that the frame binds, and a scope's record, for a guard case to read at its cells.
-    pub(super) fn values_mut(&mut self) -> impl Iterator<Item = &mut Value> {
-        let (names, record) = match self.unslotted.as_deref_mut() { Some(Unslotted { names, record }) => (Some(names), record.as_mut()), None => (None, None) };
-        let bindings = self.slots.iter_mut().flatten().chain(names.into_iter().flat_map(|names| names.values_mut()));
-        bindings.filter_map(|binding| match binding { Binding::Value(v) => Some(v), _ => None }).chain(record)
-    }
-}
 
 /// The frames of running calls and scopes, innermost last, and the slot stack, which holds each frame's slots after those of the frames below it. A call pushes its slots there and allocates nothing for its names.
 #[derive(Default)]
@@ -120,57 +109,13 @@ impl<'f> Iterator for Chain<'f> {
     }
 }
 
-/// A module's names. `index` gives each name's entry, which holds its binding. Deleting a name empties its entry, which keeps its place, so the entry number in a compiled load (`Free`) stays the name's. Every reader of a module's names skips empty entries.
-struct Module {
-    /// A number that no other module in the process has. A recording that holds a module's entry numbers can run in another session, where the module of the same number is a different one.
-    id: u64,
-    entries: Vec<Option<Binding>>,
-    index: HashMap<Name, u32>,
-}
 
-/// The `id` that the next module takes.
-static MODULE_IDS: AtomicU64 = AtomicU64::new(0);
-
-impl Module {
-    fn new() -> Self { Self { id: MODULE_IDS.fetch_add(1, Relaxed), entries: Vec::new(), index: HashMap::new() } }
-    /// The binding of `name`, with its entry number.
-    #[inline]
-    fn get(&self, name: Name) -> Option<(u32, &Binding)> { let at = *self.index.get(&name)?; Some((at, self.entries[at as usize].as_ref()?)) }
-    /// `name`'s entry number, which a new empty entry takes where the module has none.
-    fn entry(&mut self, name: Name) -> u32 {
-        let Self { entries, index, .. } = self;
-        *index.entry(name).or_insert_with(|| { entries.push(None); entries.len() as u32 - 1 })
-    }
-    /// Each name that the module binds, with its binding.
-    fn bound(&self) -> impl Iterator<Item = (Name, &Binding)> { self.index.iter().filter_map(|(&name, &at)| Some((name, self.entries[at as usize].as_ref()?))) }
-}
-
-/// Where a compiled load reads a name (`Bindings::load`), worked out when the binder records the read (`Bindings::address`).
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum Address {
-    /// One of the six names that a call binds itself, by its slot (`Name::implicit`).
-    Implicit(usize),
-    Free(Box<Free>),
-}
-
-/// Where a load finds any other name: the slots on the lexical chain that can hold it, nearest first, then the running module's entry for it.
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct Free {
-    name: Name,
-    /// Each frame on the chain whose definition gives `name` a slot, as its depth on the chain and the slot's number among its slots.
-    slots: Box<[(u32, u32)]>,
-    /// The running module's number, and its `id`.
-    module: usize,
-    id: u64,
-    /// `name`'s entry in the module, where the module had one when the read was recorded.
-    entry: Option<u32>,
-}
 
 /// Every binding, and where code is running: the frames of running calls and scopes with their slots, each module's names, the current frame, and the module whose top level is running.
 pub(super) struct Bindings {
     stack: RefCell<Stack>,
     /// The names of each module, by module number. Module 0 holds the session's own names, and each loaded file adds a module.
-    modules: RefCell<Vec<Module>>,
+    modules: RefCell<Vec<HashMap<Name, Binding>>>,
     /// The frame that code is running in, or `None` at a module's top level.
     current: Cell<Option<usize>>,
     /// The module whose top level is running.
@@ -179,7 +124,7 @@ pub(super) struct Bindings {
 
 impl Default for Bindings {
     fn default() -> Self {
-        Self { stack: RefCell::default(), modules: RefCell::new(vec![Module::new()]), current: Cell::default(), module: Cell::default() }
+        Self { stack: RefCell::default(), modules: RefCell::new(vec![HashMap::new()]), current: Cell::default(), module: Cell::default() }
     }
 }
 
@@ -214,7 +159,7 @@ impl Bindings {
     pub(super) fn here(&self, name: Name) -> Place {
         match self.current.get() {
             Some(i) => self.stack.borrow().frames[i].slot(name).map_or(Place::Other(i, name), |s| Place::Slot(i, s)),
-            None => { let m = self.module.get(); Place::Entry(m, self.modules.borrow_mut()[m].entry(name)) }
+            None => Place::Entry(self.module.get(), name),
         }
     }
 
@@ -245,7 +190,7 @@ impl Bindings {
         }
         let module = self.running_module(frames);
         drop(stack);
-        self.modules.borrow()[module].get(name).map(|(at, value)| f(Place::Entry(module, at), value))
+        self.modules.borrow()[module].get(&name).map(|value| f(Place::Entry(module, name), value))
     }
 
     /// The binding at `place`, copied. `None` where nothing is bound there, or `place` is in a frame that has ended.
@@ -258,7 +203,7 @@ impl Bindings {
                 let frame = stack.frames.get(i)?;
                 frame.other(name).cloned().or_else(|| frame.key(name))
             }
-            Place::Entry(m, at) => self.modules.borrow()[m].entries[at as usize].clone(),
+            Place::Entry(m, name) => self.modules.borrow()[m].get(&name).cloned(),
         }
     }
 
@@ -272,11 +217,11 @@ impl Bindings {
                 stack.slots[at] = Some(value);
             }
             Place::Other(i, name) => { self.stack.borrow_mut().frames[i].unslotted.get_or_insert_default().names.insert(name, value); }
-            Place::Entry(m, at) => self.modules.borrow_mut()[m].entries[at as usize] = Some(value),
+            Place::Entry(m, name) => { self.modules.borrow_mut()[m].insert(name, value); }
         }
     }
 
-    /// Removes the binding at `place`, and gives it back. A slot or entry stays, empty.
+    /// Removes the binding at `place`, and gives it back. A frame slot stays empty.
     pub(super) fn remove(&self, place: Place) -> Option<Binding> {
         match place {
             Place::Slot(i, s) => {
@@ -285,25 +230,10 @@ impl Bindings {
                 stack.slots[at].take()
             }
             Place::Other(i, name) => self.stack.borrow_mut().frames[i].unslotted.as_mut()?.names.remove(&name),
-            Place::Entry(m, at) => self.modules.borrow_mut()[m].entries[at as usize].take(),
+            Place::Entry(m, name) => self.modules.borrow_mut()[m].remove(&name),
         }
     }
 
-    /// The address of `name` for a compiled load, read from the frames and module that code runs in now. A dfn's lexical chain is the same on every call, because a closure's environment is a frame of the definition around its literal, so the address holds while no frame on the chain binds names without slots (`load`).
-    pub(super) fn address(&self, name: Name) -> Address {
-        if let Some(k) = name.implicit() { return Address::Implicit(k); }
-        let stack = self.stack.borrow();
-        let slots = self.chain(&stack.frames).enumerate().filter_map(|(depth, (_, frame))| Some((depth as u32, frame.slot(name)?))).collect();
-        let module = self.running_module(&stack.frames);
-        let modules = self.modules.borrow();
-        Address::Free(Box::new(Free { name, slots, module, id: modules[module].id, entry: modules[module].index.get(&name).copied() }))
-    }
-
-    /// The binding at `address`, copied, as `lookup` finds it. `None` where nothing binds the name.
-    #[inline(always)]
-    pub(super) fn load(&self, address: &Address) -> Option<Binding> {
-        self.read_at(address, Binding::clone).unwrap_or_else(|| self.unaddressed(address, Binding::clone))
-    }
 
     /// The binding of `name` in the current frame's slot, taken out, with its place, for a dfn's last read of a local, `⍵` or `⍺` (`syntax::release`). `None` where that slot holds nothing.
     pub(super) fn take(&self, name: Name) -> Option<(Place, Binding)> {
@@ -311,12 +241,6 @@ impl Bindings {
         self.take_slot(s)
     }
 
-    /// `take` for a compiled read at `address`. `None` where the address's first slot isn't in the current frame, or that slot holds nothing.
-    #[inline]
-    pub(super) fn take_at(&self, address: &Address) -> Option<Binding> {
-        let s = match address { Address::Implicit(k) => *k as u32, Address::Free(free) => match free.slots.first() { Some(&(0, s)) => s, _ => return None } };
-        self.take_slot(s).map(|(_, binding)| binding)
-    }
 
     /// The binding in slot `s` of the current frame, taken out, leaving `Binding::Released`. Lookup then stops at the slot, so a later read by text fails there and never finds an outer binding of the name.
     fn take_slot(&self, s: u32) -> Option<(Place, Binding)> {
@@ -328,53 +252,13 @@ impl Bindings {
         slot.replace(Binding::Released).map(|binding| (Place::Slot(i, s), binding))
     }
 
-    /// Where the name at `address` is bound, found by name, as a trace finds a free name's place (`Session::read_binding`). `None` for a name that a call binds itself, and for a name that nothing binds.
-    pub(super) fn place_of(&self, address: &Address) -> Option<Place> {
-        match address { Address::Implicit(_) => None, Address::Free(free) => self.find(free.name, |place, _| place) }
-    }
-
-    /// The category of the binding at `address`, as `category` gives it, for a recording's check of a fact.
-    pub(super) fn category_at(&self, address: &Address) -> Option<Category> {
-        self.read_at(address, Category::of).unwrap_or_else(|| self.unaddressed(address, Category::of))
-    }
-
-    /// `read` on the binding at `address`, as `find` finds it, or `Some(None)` where nothing binds the name. `None` where the address can't tell: a frame on the chain binds names without slots, as `⍎` and scopes bind them, the running module isn't the recorded one, or the module had no entry for the name when the address was worked out.
-    #[inline(always)]
-    fn read_at<R>(&self, address: &Address, read: impl Fn(&Binding) -> R) -> Option<Option<R>> {
-        let stack = self.stack.borrow();
-        let Stack { frames, slots } = &*stack;
-        let free = match address {
-            Address::Implicit(k) => return Some(self.implicit(frames, slots, *k).map(|(_, value)| read(value))), Address::Free(free) => free
-        };
-        let mut shadows = free.slots.iter().peekable();
-        for (depth, (_, frame)) in self.chain(frames).enumerate() {
-            if frame.unslotted() { return None; }
-            if let Some(&&(at, s)) = shadows.peek() && at as usize == depth {
-                shadows.next();
-                if let Some(value) = &slots[frame.base + s as usize] { return Some(Some(read(value))); }
-            }
-        }
-        if self.running_module(frames) != free.module { return None; }
-        let modules = self.modules.borrow();
-        let module = &modules[free.module];
-        if module.id != free.id { return None; }
-        Some(module.entries[free.entry? as usize].as_ref().map(read))
-    }
-
-    /// `read` on the binding of the name at `address`, looked up by `find`, where the address can't tell (`read_at`). Out of line, so that a compiled load stays small.
-    #[cold]
-    #[inline(never)]
-    fn unaddressed<R>(&self, address: &Address, read: impl Fn(&Binding) -> R) -> Option<R> {
-        let Address::Free(free) = address else { unreachable!("the address of a name that a call binds itself always tells") };
-        self.find(free.name, |_, value| read(value))
-    }
 
     /// The text of each name that code sees here, once each, sorted: the names of the current frame and of each frame that it sees names through, then the running module's. The six names that a call binds itself, and empty slots, aren't listed.
     pub(super) fn names(&self) -> Vec<String> {
         let stack = self.stack.borrow();
         let mut names = HashSet::new();
         for (_, frame) in self.chain(&stack.frames) { names.extend(frame.names(&stack.slots)); }
-        names.extend(self.modules.borrow()[self.running_module(&stack.frames)].bound().map(|(name, _)| name.text()));
+        names.extend(self.modules.borrow()[self.running_module(&stack.frames)].keys().map(|name| name.text()));
         let mut names: Vec<_> = names.into_iter().map(str::to_owned).collect();
         names.sort_unstable();
         names
@@ -383,13 +267,13 @@ impl Bindings {
     /// Adds a module with no names, and gives its number.
     pub(super) fn new_module(&self) -> usize {
         let mut modules = self.modules.borrow_mut();
-        modules.push(Module::new());
+        modules.push(HashMap::new());
         modules.len() - 1
     }
 
     /// Each name in module `module`, with its binding, sorted by the names' text.
     pub(super) fn module_names(&self, module: usize) -> Vec<(Name, Binding)> {
-        let mut names: Vec<_> = self.modules.borrow()[module].bound().map(|(name, value)| (name, value.clone())).collect();
+        let mut names: Vec<_> = self.modules.borrow()[module].iter().map(|(&name, value)| (name, value.clone())).collect();
         names.sort_by_cached_key(|(name, _)| name.text());
         names
     }
@@ -438,22 +322,4 @@ impl Bindings {
         self.current.set(current);
     }
 
-    /// A copy of frame `i`'s bindings, for a guard case to read at its cells and then `swap` in.
-    pub(super) fn frame_bindings(&self, i: usize) -> FrameBindings {
-        let stack = self.stack.borrow();
-        let frame = &stack.frames[i];
-        FrameBindings { slots: stack.slots[frame.slots()].to_vec(), unslotted: frame.unslotted.clone() }
-    }
-
-    /// Puts each frame's bindings in, and gives back the bindings they replace.
-    pub(super) fn swap(&self, bindings: Vec<(usize, FrameBindings)>) -> Vec<(usize, FrameBindings)> {
-        let mut stack = self.stack.borrow_mut();
-        let Stack { frames, slots } = &mut *stack;
-        bindings.into_iter().map(|(i, mut copy)| {
-            let frame = &mut frames[i];
-            slots[frame.slots()].swap_with_slice(&mut copy.slots);
-            std::mem::swap(&mut frame.unslotted, &mut copy.unslotted);
-            (i, copy)
-        }).collect()
-    }
 }

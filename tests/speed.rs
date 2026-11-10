@@ -1,8 +1,8 @@
-//! The speed cases in `speed/*.bpl`, checked against their budgets for this machine's platform, which `rustymath_timing::NATIVE_COLUMN` picks: macOS or Linux. Each file has two tests. `timed_<file>` times its cases. `counts_<file>` counts the instructions and allocated bytes that each case takes for each item. `speed/README.md` describes the cases, their budgets and counts, and the data they use. `tests/wasm-speed.mjs` times the same cases in the browser build, against their wasm budgets.
+//! The speed cases in `speed/*.bpl`, checked against their budgets for this machine's platform, which `rustymath_timing::NATIVE_COLUMN` picks: macOS or Linux. Each file has a count test for instructions and allocated bytes per item. Files with wall-time budgets also have a timing test. `speed/README.md` describes the cases, their budgets and counts, and the data they use. `tests/wasm-speed.mjs` times the same cases in the browser build, against their wasm budgets.
 //!
-//! A timed test takes rustymath's shared timing hold on one thread and times each case in copies (`basedpl_testkit::timing::measured`), after a warm-up run that checks the case's required routes at full size. A cost over its budget is timed once more under the exclusive hold, where no build holds the lock, and fails if it's still over. Where builds hold the lock, the case is printed as `unconfirmed` and doesn't fail. The test fails on budgets only on the CPU they were set for, as `rustymath_timing::checks_budgets` decides. On any other CPU, and with `BASEDPL_COSTS` set, as in `BASEDPL_COSTS=1 cargo nextest run --cargo-profile release --test speed --no-capture`, the test calibrates: it holds the lock exclusively, writes every case's cost to stderr in the form that `basedpl.bpltests.logged_costs` reads, and retries each case over its budget after each pause in `rustymath_timing::RETRY_PAUSES`. Each line goes straight to stderr, so it appears even when the test passes. Counting copies corrects for a machine's overall speed but not for differences in caches and memory.
+//! A timed test takes rustymath's shared timing hold on one thread and times each case in copies (`basedpl_testkit::timing::measured`), after warming its execution; annotated cases also check their required routes at full size. A cost over its budget is timed once more under the exclusive hold, where no build holds the lock, and fails if it's still over. Where builds hold the lock, the case is printed as `unconfirmed` and doesn't fail. The test fails on budgets only on the CPU they were set for, as `rustymath_timing::checks_budgets` decides. On any other CPU, and with `BASEDPL_COSTS` set, as in `BASEDPL_COSTS=1 cargo nextest run --cargo-profile release --test speed --no-capture`, the test calibrates: it holds the lock exclusively, writes every case's cost to stderr in the form that `basedpl.bpltests.logged_costs` reads, and retries each case over its budget after each pause in `rustymath_timing::RETRY_PAUSES`. Each line goes straight to stderr, so it appears even when the test passes. Counting copies corrects for a machine's overall speed but not for differences in caches and memory.
 //!
-//! A count test runs each case on one thread with compiling off (`basedpl_testkit::timing::counts`), so it checks the path that first runs and the browser build take, which timings of compiled stages hide. Counts don't vary with load, so it takes no timing hold. It fails on a count only where `checks_budgets` holds, since another CPU of the same platform can dispatch to other kernels. With `BASEDPL_COSTS` set, it writes each case's counts to stderr for `basedpl.bpltests.set_counts`. On macOS the counter counts the whole process, so counts need nextest's process for each test.
+//! A count test runs each case on one thread with compiling off (`basedpl_testkit::timing::counts`), so it checks the path that first runs and the browser build take, which timings of compiled stages hide. It confirms continued retention of large allocations only when a warmed measurement increases the guard's held count. Counts don't vary with load, so it takes no timing hold. It fails on a count only where `checks_budgets` holds, since another CPU of the same platform can dispatch to other kernels. With `BASEDPL_COSTS` set, it writes each case's counts to stderr for `basedpl.bpltests.set_counts`. On macOS the counter counts the whole process, so counts need nextest's process for each test.
 //!
 //! Like `bpl` and the Python extensions, this binary registers rustymath's memory guard as its global allocator, so each case allocates as a user's process does, including the guard's request for huge pages on large blocks on Linux. `rustymath_timing::Counting` wraps the guard to count allocated bytes. `BASEDPL_SPEED_BATCH` selects rows of one file, as `bpl-tests prerelease` does, and the tests of other files then check nothing. `tests/reference.rs` checks that every case has its macOS, Linux and wasm budgets.
 use basedpl::InterruptHandle;
@@ -50,36 +50,35 @@ fn counts(name: &str) {
 }
 
 macro_rules! speed_tests {
-    ($($timed:ident $counts:ident $file:literal),* $(,)?) => {
+    ($($file:literal $counts:ident $($timed:ident)?),* $(,)?) => {
         /// The speed files that have tests.
         const FILES: &[&str] = &[$($file),*];
         $(
             #[test]
-            #[cfg_attr(debug_assertions, ignore = "debug assertions change the costs it times")]
-            fn $timed() { timed($file) }
-            #[test]
             #[cfg_attr(debug_assertions, ignore = "debug assertions change the counts")]
             fn $counts() { counts($file) }
+            $(
+                #[test]
+                #[cfg_attr(debug_assertions, ignore = "debug assertions change the costs it times")]
+                fn $timed() { timed($file) }
+            )?
         )*
     };
 }
 
 speed_tests!(
-    timed_bodies counts_bodies "bodies.bpl",
-    timed_arrays counts_arrays "arrays.bpl", timed_calls counts_calls "calls.bpl", timed_growth counts_growth "growth.bpl", timed_images counts_images "images.bpl", timed_maps counts_maps "maps.bpl",
-    timed_models counts_models "models.bpl", timed_moving counts_moving "moving.bpl", timed_steps counts_steps "steps.bpl", timed_structure counts_structure "structure.bpl", timed_tables counts_tables "tables.bpl",
+    "arrays.bpl" counts_arrays timed_arrays, "bodies.bpl" counts_bodies timed_bodies, "calls.bpl" counts_calls timed_calls,
+    "comparisons_mathish.bpl" counts_comparisons_mathish, "growth.bpl" counts_growth,
+    "images.bpl" counts_images timed_images, "keyed.bpl" counts_keyed timed_keyed, "maps.bpl" counts_maps timed_maps, "models.bpl" counts_models timed_models,
+    "moving.bpl" counts_moving timed_moving, "steps.bpl" counts_steps,
+    "structure.bpl" counts_structure timed_structure, "tables.bpl" counts_tables timed_tables,
 );
 
-const MATHISH_COMPARISONS: &str = "comparisons_mathish.bpl";
-#[test]
-#[cfg_attr(debug_assertions, ignore = "debug assertions change the counts")]
-fn counts_comparisons_mathish() { counts(MATHISH_COMPARISONS) }
 
 #[test]
 fn every_speed_file_has_tests() {
     let names: Vec<_> = reference::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap().into_iter().map(|f| f.name).collect();
     let mut registered = FILES.to_vec();
-    registered.push(MATHISH_COMPARISONS);
     registered.sort_unstable();
     assert_eq!(names, registered);
 }

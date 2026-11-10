@@ -100,13 +100,13 @@ fn every_speed_case_has_its_three_budgets() {
     assert!(missing.is_empty(), "each case needs a macOS, a Linux and a wasm budget: {missing:#?}");
 }
 
-/// The variable that makes a run of `reference_cases` a child. A child reads items from standard input, one a line, and checks each: a case's position in the suite's order, a timed speed case (`SPEED`), or a documentation page's path.
+/// The variable that makes a run of `reference_cases` a child. A child reads items from standard input, one a line, and checks each: a case's position in the suite's order, an annotated speed case (`SPEED`), or a documentation page's path.
 const CHILD: &str = "BASEDPL_CHILD";
 /// The start of each line on which a child prints a case's position and result, as JSON.
 const RESULT: &str = "reference result: ";
 /// The start of the line on which a child prints a page's path and its failures, as a JSON list of messages.
 const PAGE: &str = "reference page: ";
-/// The start of an item that names a timed speed case, as `speed:FILE:LINE`, which a child checks at the fixture's small size (`reference::speed_route`).
+/// The start of an item that names an annotated speed case, as `speed:FILE:LINE`, which a child checks at the fixture's small size (`reference::speed_route`).
 const SPEED: &str = "speed:";
 /// The variable that makes `reference_cases` print its slowest items: how many to print, each with the seconds that all its runs took together.
 const TIMES: &str = "BASEDPL_TIMES";
@@ -190,7 +190,7 @@ struct Served {
     times: Vec<(String, bool, f64, String)>,
     /// Each page's failures, each page whose child stopped, and each child that stopped after its last item.
     failures: Vec<String>,
-    /// Each timed speed case's route check (`reference::speed_route`).
+    /// Each annotated speed case's route check (`reference::speed_route`).
     routes: Vec<Value>,
 }
 
@@ -242,7 +242,7 @@ fn cost_key(item: &str, cases: &[(&reference::File, &Value)]) -> String {
     format!("{}.bpl:{id}", case["file"].as_str().unwrap())
 }
 
-/// The suite (`reference::suite`), the route checks of the timed speed cases (`SPEED`) and the documentation pages (`pages`), checked in child processes, one per core. Each child checks one item at a time, and the next item goes to whichever child finishes first. Items go longest first, by the seconds that each took in the last run (`COSTS`), after the items that it didn't check. A case that misses its deadline reruns once (`serve`), and fails only if it misses again. Prints the counts by mode (`reference::accounting`) and how many cases hold obligations, and fails on each case that fails a run (`reference::fails`), each page that fails (`page_failures`) and each child that stops.
+/// The suite (`reference::suite`), the route checks of annotated speed cases (`SPEED`) and the documentation pages (`pages`), checked in child processes, one per core. Each child checks one item at a time, and the next item goes to whichever child finishes first. Items go longest first, by the seconds that each took in the last run (`COSTS`), after the items that it didn't check. A case that misses its deadline reruns once (`serve`), and fails only if it misses again. Prints the counts by mode (`reference::accounting`) and how many cases hold obligations, and fails on each case that fails a run (`reference::fails`), each page that fails (`page_failures`) and each child that stops.
 #[test]
 fn reference_cases() {
     let suite = reference::suite().unwrap();
@@ -295,7 +295,7 @@ fn reference_cases() {
     let costs: HashMap<String, f64> = std::fs::read_to_string(COSTS).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default();
     let speed = speed();
     let speed_items =
-        speed.iter().flat_map(|f| f.cases.iter().filter(|c| basedpl_testkit::timing::timed(c)).map(move |c| format!("{SPEED}{}:{}", f.name, c["line"])));
+        speed.iter().flat_map(|f| f.cases.iter().filter(|c| reference::routed(c)).map(move |c| format!("{SPEED}{}:{}", f.name, c["line"])));
     let mut items: Vec<(f64, String)> = pages().into_iter().chain(speed_items).chain((0..count).map(|i| i.to_string()))
         .map(|item| (costs.get(&cost_key(&item, &cases)).copied().unwrap_or(f64::INFINITY), item)).collect();
     items.sort_by(|a, b| b.0.total_cmp(&a.0));

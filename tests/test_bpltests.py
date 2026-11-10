@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
 from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, set_counts, check_file, SpeedCosts, _speed_batches
+from basedpl.bpltests import logged_costs
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,16 @@ def test_cost_records_keep_values_and_route_reports():
     assert costs[1][3] == 2 and costs.holds == {} and costs.footprints == {}
     assert costs.obligations == {('copies', 'v+w'): [violation]}
     assert f'route obligation [copies] v+w: {violation}' in repr(costs)
+
+    costs = logged_costs(r'''
+    copy of 16384 8-byte items: 0.1 ns an item, measured on native
+    copies ⍷b: 3.47, budget 2, 0.416 ns: over
+2026-11-10T00:00:00Z # copies +\\v: 1, budget 2 held from 1.5, 0.2 ns: stale
+        "copies false: 99, budget 1, 1 ns: over",
+''')
+    assert costs == [('copies', '⍷b', 3.47, 2., 0.416), ('copies', r'+\v', 1., 2., 0.2)]
+    assert costs.cpu == 'native' and costs.copies == [(16384, 8, 0.1, False)]
+    assert costs.holds == {('copies', r'+\v'): ('held', 1.5, True)}
 
 
 

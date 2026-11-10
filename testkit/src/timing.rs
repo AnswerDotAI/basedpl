@@ -2,7 +2,7 @@
 use crate::{DEFAULT_PREFS, reference::{self, File}, timing_lock};
 use basedpl::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, protocol::response};
 use rustymath::hashing::HashMap;
-use rustymath_timing::{Budget, COUNT_MARGIN, Cause, CopyTime, Count, Footprint, Held, MEASURES, NATIVE_COLUMN, copy_time, footprint};
+use rustymath_timing::{Budget, COUNT_MARGIN, Cause, CopyTime, Count, Footprint, Held, MEASURES, NATIVE_COLUMN, Sampling, copy_time, footprint};
 pub use rustymath_timing::{RETRY_PAUSES, checks_budgets, name_cpu};
 use serde_json::{Value as JsonValue, json};
 
@@ -48,13 +48,13 @@ fn runner(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<
 
 /// Parse once, time the first fully forced evaluation, then take the fastest warm evaluation. Gives the warm time, peak bytes held during warm runs, bytes left held, and first-evaluation time. Parsing and setup are outside both timings.
 pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize, f64), Evaluation> {
-    timed_runs(session, code, interrupt, true)
+    timed_runs(session, code, interrupt, true, Sampling::Measure)
 }
 
 /// The least time that a case's timed evaluations take together: 5 ms. A case that runs in microseconds then gives the fastest of hundreds of evaluations, which varies less between test runs than the fastest of `rustymath_timing::RUNS`.
 const LEAST: std::time::Duration = std::time::Duration::from_millis(5);
 
-fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool) -> Result<(f64, usize, usize, f64), Evaluation> {
+fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup: bool, sampling: Sampling) -> Result<(f64, usize, usize, f64), Evaluation> {
     let (mut run, mut failed) = (runner(session, code, interrupt)?, None);
     let cold_seconds = if warmup {
         let first = rustymath::parallel::Instant::now();
@@ -63,7 +63,7 @@ fn timed_runs(session: &Session, code: &str, interrupt: &InterruptHandle, warmup
     } else { 0.0 };
     let mut start = 0;
     let (seconds, held) = rustymath::memory::peak_held(|| {
-        rustymath_timing::fastest(LEAST, |k| { run(&mut failed); if k == 0 { start = rustymath::memory::held(); } })
+        sampling.fastest(LEAST, |k| { run(&mut failed); if k == 0 { start = rustymath::memory::held(); } })
     });
     let left = rustymath::memory::held().saturating_sub(start);
     failed.map_or(Ok((seconds, held, left, cold_seconds)), Err)
@@ -173,15 +173,16 @@ pub fn speed_case(case: &JsonValue) -> bool { case["budgets"].is_array() }
 pub fn timed(case: &JsonValue) -> bool { case["budgets"].as_array().is_some_and(|b| b.iter().any(|b| b != "-")) }
 
 /// Time selected records in copies, or as widths/exact ratios, within the timing hold that the caller takes. With `footprints`, a case whose footprint passes one core's cache also times a copy of its footprint (`rustymath_timing::footprint`).
-pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, footprints: bool, interrupt: &InterruptHandle) -> Result<Vec<Case>, String> {
+pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, footprints: bool, interrupt: &InterruptHandle, sampling: Sampling) -> Result<Vec<Case>, String> {
     let mut result = Vec::new();
     each_case(files, only, prefs, Size::Full, timed, |group, file, case| {
         let (section, code) = (case["section"].as_str().unwrap(), case["code"].as_str().unwrap());
         let n = group.n;
         let copy = (section != "widths").then(|| copy_time::<f64>(n));
         let session = group.session(section)?;
-        let obligations = route(session, case, interrupt)?.violations();
-        let (total, held, left, _) = timed_runs(session, code, interrupt, false).map_err(|failed| failure(code, failed))?;
+        let routed = reference::routed(case);
+        let obligations = if routed { route(session, case, interrupt)?.violations() } else { Vec::new() };
+        let (total, held, left, _) = timed_runs(session, code, interrupt, !routed, sampling).map_err(|failed| failure(code, failed))?;
         if rustymath::memory::checks() && left > 0 {
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
@@ -205,7 +206,7 @@ pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, footprint
         let session = group.session("exact")?;
         for i in widths {
             let code = &result[i].code;
-            let exact = time(session, code, interrupt).map_err(|failed| failure(code, failed))?.0;
+            let exact = timed_runs(session, code, interrupt, true, sampling).map_err(|failed| failure(code, failed))?.0;
             result[i].cost /= exact;
         }
     }
@@ -231,8 +232,9 @@ impl Counted {
     pub fn line(&self) -> String { format!("{} {}: {}", self.section, self.label, rustymath_timing::counted(self.measured)) }
 }
 
-/// Counts each selected speed case at its fixture's counted size (`Size::Counted`), on one thread with compiling off. Each case runs once to warm, then once more, or `n` times in a `steps` section, each run forcing its value. Those runs' instructions and allocated bytes, divided by the fixture's `n`, give the case's measures for each item, or for each step. Counts don't vary with load, so this takes no timing hold. Allocated bytes are 0 in a binary that doesn't register `rustymath_timing::Counting`.
+/// Counts each selected speed case at its fixture's counted size, on one thread with compiling off. One warm run precedes the measured run, or `n` measured runs in a `steps` section. Instructions and allocated bytes are divided by fixture `n`. A successful measurement retaining a large allocation repeats once to distinguish cache preparation from continued retention, using the reference runner's policy. This takes no timing hold. Allocated bytes are 0 without the `rustymath_timing::Counting` allocator.
 pub fn counts(files: &[File], only: Option<Selection<'_>>, interrupt: &InterruptHandle) -> Result<Vec<Counted>, String> {
+    rustymath::memory::set_checks(true);
     let mut result = Vec::new();
     each_case(files, only, "", Size::Counted, speed_case, |group, file, case| {
         let (section, code) = (case["section"].as_str().unwrap(), case["code"].as_str().unwrap());
@@ -241,10 +243,15 @@ pub fn counts(files: &[File], only: Option<Selection<'_>>, interrupt: &Interrupt
         basedpl::settings::set_compiles(basedpl::settings::Compiles::Never);
         let (mut run, mut failed) = (runner(session, code, interrupt).map_err(|failed| failure(code, failed))?, None);
         run(&mut failed);
-        let (((), bytes), instructions) = rustymath_timing::instructions(|| {
-            rustymath_timing::bytes(|| { for _ in 0..runs { run(&mut failed) } })
-        });
-        if let Some(failed) = failed { return Err(failure(code, failed)); }
+        if let Some(failed) = failed.take() { return Err(failure(code, failed)); }
+        let (measured, left) = crate::held_back(|| {
+            let (((), bytes), instructions) = rustymath_timing::instructions(|| {
+                rustymath_timing::bytes(|| { for _ in 0..runs { run(&mut failed) } })
+            });
+            failed.take().map_or(Ok((bytes, instructions)), |failed| Err(failure(code, failed)))
+        }, Result::is_ok);
+        let (bytes, instructions) = measured?;
+        if left > 0 { return Err(format!("{code}: each of two runs left {left} or more bytes held in large allocations")); }
         let mut counts = Vec::new();
         for field in case["counts"].as_array().into_iter().flatten() {
             rustymath_timing::count(field.as_str().unwrap(), &mut counts).expect("`reference::file` checks each field");
@@ -355,10 +362,11 @@ pub fn measured(files: &[File], only: Option<Selection<'_>>, calibrate: bool, mu
     let interrupt = InterruptHandle::default();
     let retime = |cases: &[Case]| {
         let rows: Vec<JsonValue> = cases.iter().map(|c| json!([c.file, c.section, c.code])).collect();
-        costs(files, Some(Selection::Rows(&rows)), "", true, &interrupt)
+        costs(files, Some(Selection::Rows(&rows)), "", true, &interrupt, Sampling::Measure)
     };
     let hold = if calibrate { exclusive() } else { shared().map(Hold::on_one_thread) }.map_err(|e| e.to_string())?;
-    let mut first = costs(files, only, "", calibrate, &interrupt)?;
+    let sampling = if calibrate { Sampling::Measure } else { Sampling::Check };
+    let mut first = costs(files, only, "", calibrate, &interrupt, sampling)?;
     for c in &first { for obligation in &c.obligations { print(&format!("{}: route obligation: {obligation}", c.label)); } }
     if calibrate {
         let mut copies: Vec<String> = Vec::new();
@@ -465,6 +473,6 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
     };
     let files = reference::sources(&spec["files"])?;
     let _lock = timing_lock()?;
-    let costs = costs(&files, only.as_deref().map(Selection::Codes), spec["prefs"].as_str().unwrap_or_default(), true, interrupt)?;
+    let costs = costs(&files, only.as_deref().map(Selection::Codes), spec["prefs"].as_str().unwrap_or_default(), true, interrupt, Sampling::Measure)?;
     Ok(json!({"costs":rows(&costs, NATIVE_COLUMN), "error":null}))
 }

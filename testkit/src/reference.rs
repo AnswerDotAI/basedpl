@@ -761,14 +761,8 @@ fn unwound<T>(check: impl FnOnce() -> Result<T, JsonValue>) -> Result<T, JsonVal
 
 /// What `check` gives, or a leak where `rustymath::memory::set_checks` is on and a case that passes leaves the guard's count higher than it found it on each of two runs. One run that leaves it higher can be filling a cache that lasts.
 fn held_back(check: impl Fn() -> JsonValue) -> JsonValue {
-    use rustymath::memory::{checks, held};
-    let start = held();
-    let result = check();
-    if !checks() || result["status"] != "pass" || held() <= start { return result; }
-    let again = held();
-    let mut result = check();
-    let left = held().saturating_sub(again);
-    if result["status"] != "pass" || left == 0 { return result; }
+    let (mut result, left) = crate::held_back(check, |result| result["status"] == "pass");
+    if left == 0 { return result; }
     result["status"] = json!("leak");
     result["message"] = json!(format!("each of two runs left {left} or more bytes held in large allocations"));
     result

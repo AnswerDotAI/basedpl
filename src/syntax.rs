@@ -5,7 +5,7 @@ use crate::{
     primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::canonical
 };
 use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
-use std::{iter::Peekable, str::CharIndices, sync::{Arc, atomic::{AtomicU64, Ordering::Relaxed}}};
+use std::{iter::Peekable, str::CharIndices, sync::{Arc, OnceLock, atomic::{AtomicU64, Ordering::Relaxed}}};
 
 /// The two numeric postfix scripts share digit strands and binding, then use Index/Axis or Power/Rank.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub(crate) enum NodeKind {
     /// `T.(expr)`, which dot access builds: the second node evaluated with the keys of the first as names.
     Scope(Box<Node>, Box<Node>),
     /// An array literal. `record`: at least one item is `key:value`, and the items build one keyed vector.
-    ArrayLiteral { cells: Vec<Vec<Node>>, form: ListForm, record: bool },
+    ArrayLiteral(Arc<ArrayLiteral>),
     Dfn(Arc<Definition>),
 }
 
@@ -55,6 +55,11 @@ pub(crate) enum ListForm {
     Cells,
     /// `(4⋄4 5)`: each cell is a row, and each row is one item.
     Rows,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ArrayLiteral {
+    pub cells: Vec<Vec<Node>>, pub form: ListForm, pub record: bool, pub constant: Option<OnceLock<(Numeric, Value)>>
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -122,16 +127,27 @@ fn locals(bodies: &[Vec<Statement>]) -> &'static [Name] {
     crate::name::kept(&names)
 }
 
-/// Calls `f` on each node in `nodes` and on each node inside them: in groups, runs and brackets, and in nested definitions. `f` also gets whether the node is in an assignment's target, which is before an `←`, or anywhere in `nodes` where `target` says that they are one. And `f` gets whether the node is inside a nested definition, which `nested` says of `nodes` themselves.
+macro_rules! child_nodes {
+    ($kind:expr, $single:path, $literal:ident => $cells:expr, $visit:expr) => {{
+        let mut visit = $visit;
+        match $kind {
+            NodeKind::Group(nodes) | NodeKind::Run(nodes) => visit(nodes, false),
+            NodeKind::ArrayLiteral($literal) => { for nodes in $cells { visit(nodes, false); } }
+            NodeKind::Scope(root, body) => { visit($single(root), false); visit($single(body), true); }
+            _ => {}
+        }
+    }};
+}
+
+/// Calls `f` on each node, preserving assignment targets and marking nested definitions and keyed scope bodies as nested contexts.
 fn visit(nodes: &[Node], target: bool, nested: bool, f: &mut dyn FnMut(&Node, bool, bool)) {
     let end = nodes.iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).unwrap_or(0);
     for (i, node) in nodes.iter().enumerate() {
         let target = target || i < end;
         f(node, target, nested);
-        match &node.kind {
-            NodeKind::Group(nodes) | NodeKind::Run(nodes) => visit(nodes, target, nested, f),
-            NodeKind::ArrayLiteral { cells, .. } => { for nodes in cells { visit(nodes, target, nested, f); } }
-            NodeKind::Dfn(definition) => { for statement in definition.bodies.iter().flatten() { visit(&statement.nodes, false, true, f); } } _ => {}
+        child_nodes!(&node.kind, std::slice::from_ref, literal => &literal.cells, |inner: &[Node], scoped| visit(inner, target, nested || scoped, f));
+        if let NodeKind::Dfn(definition) = &node.kind {
+            for statement in definition.bodies.iter().flatten() { visit(&statement.nodes, false, true, f); }
         }
     }
 }
@@ -183,10 +199,27 @@ fn mark_last(nodes: &mut [Node], name: Name) -> Result<bool, ()> {
     if nodes[i + 1..end].iter().any(reads) { return Err(()); }
     match &mut nodes[i].kind {
         NodeKind::Name(_, last) => { *last = true; Ok(true) } NodeKind::Group(nodes) | NodeKind::Run(nodes) => mark_last(nodes, name),
-        NodeKind::ArrayLiteral { cells, .. } => { for cell in cells.iter_mut().rev() { if mark_last(cell, name)? { return Ok(true); } } Ok(false) }
+        NodeKind::ArrayLiteral(literal) => { for cell in Arc::make_mut(literal).cells.iter_mut().rev() { if mark_last(cell, name)? { return Ok(true); } } Ok(false) }
+        NodeKind::Scope(root, body) => {
+            if reads(body) { Err(()) } else { mark_last(std::slice::from_mut(root.as_mut()), name) }
+        }
         _ => Ok(false)
     }
 }
+
+/// Retarget existing final reads after a syntax rewrite changes evaluation order.
+pub(crate) fn reorder_reads(nodes: &mut [Node]) {
+    fn clear(nodes: &mut [Node], names: &mut Vec<Name>) {
+        for node in nodes {
+            if let NodeKind::Name(name, last) = &mut node.kind && *last { names.push(*name); *last = false; }
+            child_nodes!(&mut node.kind, std::slice::from_mut, literal => &mut Arc::make_mut(literal).cells, |inner: &mut [Node], _| clear(inner, names));
+        }
+    }
+    let mut names = Vec::new();
+    clear(nodes, &mut names);
+    for name in names { let _ = mark_last(nodes, name); }
+}
+
 
 #[derive(Clone, Debug)]
 pub(crate) struct Node { pub kind: NodeKind, pub span: Span }
@@ -196,8 +229,7 @@ pub(crate) struct Node { pub kind: NodeKind, pub span: Span }
 pub struct Parsed { pub(crate) statements: Vec<Statement> }
 
 #[derive(Clone, Debug)]
-/// A statement. A dfn's statement compiles its binder steps into `recording` on its first evaluation (`eval::Recording`), and later evaluations run them.
-pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind, pub(crate) recording: std::sync::OnceLock<Option<crate::eval::Recording>> }
+pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind }
 
 #[derive(Clone, Copy, Debug)]
 /// A predicate ends with `?`. When it fails, the dfn moves on to its next body.
@@ -217,7 +249,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     } else if matches!(nodes[0].kind, NodeKind::Name(Name::ALPHA, _)) && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
         StatementKind::DefaultArgument
     } else { StatementKind::Expression };
-    Ok(Statement { nodes, kind, recording: Default::default() })
+    Ok(Statement { nodes, kind })
 }
 
 #[derive(Debug)]
@@ -541,8 +573,8 @@ pub(crate) fn prefs_record(nodes: &[Node]) -> Option<&Node> {
     let nodes = match nodes { [Node { kind: NodeKind::Run(inner), .. }] => inner.as_slice(), _ => nodes };
     match nodes {
         [Node { kind: NodeKind::Function(Builtin::System(crate::system::Entry::PREFS)), .. },
-            record @ Node { kind: NodeKind::ArrayLiteral { record: true, .. }, .. },
-        ] if non_literal(std::slice::from_ref(record), &|_| false).is_none() => Some(record), _ => None
+            record @ Node { kind: NodeKind::ArrayLiteral(literal), .. },
+        ] if literal.record && non_literal(std::slice::from_ref(record), &|_| false).is_none() => Some(record), _ => None
     }
 }
 
@@ -556,7 +588,8 @@ fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     let Ok(statements) = (Parser { tokens, pos: 0 }).pieces(None).and_then(statements) else { return false };
     let [nodes] = statements.as_slice() else { return false };
     let Some(record) = prefs_record(nodes) else { return false };
-    let NodeKind::ArrayLiteral { cells, .. } = &record.kind else { unreachable!() };
+    let NodeKind::ArrayLiteral(literal) = &record.kind else { unreachable!() };
+    let cells = &literal.cells;
     let (mut numeric, mut float_set) = (Numeric::current(), crate::settings::float_set());
     for nodes in cells {
         let [
@@ -989,17 +1022,23 @@ fn diamond_rows(mut parts: Vec<Vec<Node>>, span: &Span) -> Result<Vec<Vec<Node>>
     Ok(parts)
 }
 
+fn array_literal(cells: Vec<Vec<Node>>, form: ListForm) -> NodeKind {
+    let constant = cells.iter().all(|nodes| non_literal(nodes, &|_| false).is_none()).then(OnceLock::new);
+    NodeKind::ArrayLiteral(Arc::new(ArrayLiteral { record: form == ListForm::Items && cells.iter().any(|c| key_colon(c).is_some()), cells, form, constant }))
+}
+
+
 /// One row read as a bracketed list of its items.
 fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
     let span = cover(&nodes);
     let cells = items(nodes)?;
-    Ok(Node { kind: NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items }, span })
+    Ok(Node { kind: array_literal(cells, ListForm::Items), span })
 }
 
 /// `(4⋄4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
 fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let cells = diamond_rows(split(pieces, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, ParseFailure>>()?;
-    Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Rows, record: false })
+    Ok(array_literal(cells, ListForm::Rows))
 }
 
 /// Whether only token separators, if anything, come between two nodes in the source.
@@ -1017,21 +1056,21 @@ fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
         // A row that is a single item is that item's major cell.
         let cells = diamond_rows(parts, span)?.into_iter().map(|nodes| {
             let row = row(nodes)?;
-            Ok(match row.kind { NodeKind::ArrayLiteral { mut cells, .. } if cells.len() == 1 => cells.pop().unwrap(), _ => vec![row] })
+            Ok(match row.kind { NodeKind::ArrayLiteral(mut literal) if literal.cells.len() == 1 => Arc::make_mut(&mut literal).cells.pop().unwrap(), _ => vec![row] })
         }).collect::<Result<_, ParseFailure>>()?;
-        return Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Cells, record: false });
+        return Ok(array_literal(cells, ListForm::Cells));
     }
     let cells = if semicolon {
         if parts.last().is_some_and(Vec::is_empty) { return Err(invalid(span, "a trailing ; leaves an empty item: [x] is already a one-item vector")); }
         if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty item between semicolons")); }
         parts.into_iter().map(expression).collect::<Result<Vec<_>, _>>()?
     } else { items(parts.pop().unwrap())? };
-    Ok(NodeKind::ArrayLiteral { record: cells.iter().any(|c| key_colon(c).is_some()), cells, form: ListForm::Items })
+    Ok(array_literal(cells, ListForm::Items))
 }
 
 /// `[…]` or `(…)` with a number marker, whose numbers the lexer has already read as the marker says. Every item must be a literal, and an empty `[]` is the empty vector of the marked numbers.
 fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, ParseFailure> {
-    if matches!(&kind, NodeKind::ArrayLiteral { cells, .. } if cells.is_empty()) { return Ok(NodeKind::Literal(zilde(mark.zero()))); }
+    if matches!(&kind, NodeKind::ArrayLiteral(literal) if literal.cells.is_empty()) { return Ok(NodeKind::Literal(zilde(mark.zero()))); }
     let node = Node { kind, span: span.clone() };
     if let Some(item) = non_literal(std::slice::from_ref(&node), &|_| false) {
         return Err(invalid(&item.span, &format!("{} needs every item to be a literal", mark.marker())));
@@ -1043,7 +1082,7 @@ fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, P
 pub(crate) fn non_literal<'a>(nodes: &'a [Node], allowed: &impl Fn(&NodeKind) -> bool) -> Option<&'a Node> {
     nodes.iter().find_map(|node| match &node.kind {
         NodeKind::Literal(_) | NodeKind::Function(Builtin::Primitive(Primitive::Keys)) => None,
-        NodeKind::ArrayLiteral { cells, .. } => cells.iter().find_map(|cell| non_literal(cell, allowed)),
+        NodeKind::ArrayLiteral(literal) => literal.cells.iter().find_map(|cell| non_literal(cell, allowed)),
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => non_literal(nodes, allowed), kind if allowed(kind) => None, _ => Some(node)
     })
 }
@@ -1099,7 +1138,7 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
 }
 
 /// Spaces separate runs, and so do error guards. The run holding an assignment's target takes in the `←` and its value, which runs to the next error guard. A target that touches its `←` stays flat within that run, because assignment chooses its own target there.
-fn runs(nodes: Vec<Node>) -> Vec<Node> {
+pub(crate) fn runs(nodes: Vec<Node>) -> Vec<Node> {
     let (mut result, mut part) = (Vec::with_capacity(nodes.len()), Vec::new());
     for node in nodes {
         if matches!(node.kind, NodeKind::ErrorGuard) {
@@ -1184,7 +1223,7 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 }
 
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
-pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }) }
+pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral(_)) }
 
 /// The program in `source`, with numbers that have no marker read as floats of the current settings' default width. The current settings also give literals their kinds. They're the session's within an evaluation or `Session::parse`, and the defaults elsewhere, as in a check of structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus { parse_with_aliases(source, false) }
@@ -1193,7 +1232,7 @@ pub(crate) fn parse_with_aliases(source: Arc<Source>, aliases: bool) -> ParseSta
     let tokens = match lex(&source, aliases, None) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
     match (Parser { tokens: &tokens, pos: 0 }).pieces(None).and_then(statements) {
         Ok(statements) => ParseStatus::Complete(Parsed {
-            statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression, recording: Default::default() }).collect() }),
+            statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() }),
         Err(failure) => failure.into()
     }
 }
@@ -1267,7 +1306,7 @@ fn syntax_node(node: &Node) -> SyntaxNode {
     let children = match &node.kind {
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => nodes.iter().map(syntax_node).collect(),
         NodeKind::Scope(target, body) => vec![syntax_node(target), syntax_node(body)],
-        NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|c| list_node("Cell", c)).collect(),
+        NodeKind::ArrayLiteral(literal) => literal.cells.iter().map(|c| list_node("Cell", c)).collect(),
         NodeKind::Dfn(definition) => definition.bodies.iter().map(|body| body_node(body, &definition.span)).collect(), _ => Vec::new()
     };
     SyntaxNode::new(node.kind.name(), node.span.range.clone(), children)
@@ -1300,7 +1339,7 @@ impl NodeKind {
         match self {
             Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(..) => "Name",
             Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
-            Self::Run(_) => "Run", Self::Script(..) => "Script", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral", Self::Dfn(_) => "Dfn",
+            Self::Run(_) => "Run", Self::Script(..) => "Script", Self::Scope(..) => "Scope", Self::ArrayLiteral(_) => "ArrayLiteral", Self::Dfn(_) => "Dfn",
             Self::Joiner(_) => "Joiner"
         }
     }

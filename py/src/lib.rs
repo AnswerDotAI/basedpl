@@ -3,10 +3,10 @@ use basedpl::{
 };
 use num_bigint::BigInt;
 use pyo3::{
-    IntoPyObjectExt, exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
+    IntoPyObjectExt, exceptions::{PyBufferError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
     types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}
 };
-use rustymath::{layout::Keys, structure::IndexPart};
+use rustymath::{layout::Keys, structure::{IndexPart, SliceBound}};
 use rustymath_buffer::walk::{Collect, walked, within};
 use std::{ffi::c_int, sync::{Arc, Mutex, atomic::{AtomicPtr, Ordering}}};
 
@@ -192,55 +192,28 @@ impl PyArray {
     }
 }
 
-enum IndexSelection { Planned(rustymath::structure::Plan, bool), Rich(Vec<IndexPart<Value>>) }
-
 /// The Python exception for an indexing error: `KeyError` for a missing key, and otherwise the exception for the error's kind, with BPL's message.
 fn index_error(error: basedpl::Error) -> PyErr {
     let basedpl::ErrorKind::Array(e) = &error.kind else { return PyValueError::new_err(error.to_string()) };
     let text = if error.message.is_empty() { e.to_string() } else { error.message.clone() };
-    if let Some(key) = text.strip_prefix("missing key: ") { return PyKeyError::new_err(key.to_owned()); }
-    rustymath_buffer::py_err(rustymath::error::Error::new(e.kind, text))
+    rustymath_buffer::selection::error(rustymath::error::Error::new(e.kind, text))
 }
 
-/// A Python index's written parts, and the array that `convert` makes of each axis part that Python's own kinds don't cover, which decodes as `⌷` decodes it, Booleans as positions. Slices, keys, integers and lists of keys hold `None`: they decode without converting.
-struct Decoded<'py> { parts: Vec<IndexPart<Bound<'py, PyAny>>>, values: Vec<IndexPart<Option<Value>>> }
-
-fn decoded<'py>(index: &Bound<'py, PyAny>, convert: &Bound<'py, PyAny>) -> PyResult<Decoded<'py>> {
-    let parts = rustymath_buffer::selection::parts(index)?;
-    let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p, convert).map(Some) }))
-        .collect::<PyResult<Vec<_>>>()?;
-    Ok(Decoded { parts, values })
+fn selectors(index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Vec<IndexPart<Value>>> {
+    rustymath_buffer::selection::parts(index)?.into_iter().map(|p| p.try_map(|p| converted(&p, convert))).collect()
 }
 
 /// `obj` as the array that `convert` makes of it, with its items computed.
 fn converted(obj: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Value> {
+    if !obj.is_instance_of::<PyString>() && let Some(names) = rustymath_buffer::selection::key_names(obj) {
+        let values = names.iter().map(|name| keyed::text(name)).collect::<Vec<_>>();
+        return Value::from_parts(vec![values.len()], values, keyed::text("")).map_err(value_error);
+    }
     let value = convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?.clone();
     forced(obj.py(), &value)?;
     Ok(value)
 }
 
-/// Plans a decoded Python index of `value` through `⌷`'s planner, for reads and writes. A position that reaches no item reads the fill, as in `⌷`, and so does a missing key, except a plain integer out of range, which raises `IndexError` so that Python's iteration protocol ends. Pick paths allow positions, keys, full slices, None and ... as suffixes, but not partial slices.
-fn selection(value: &Value, index: Decoded<'_>, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
-    let Decoded { parts, values } = index;
-    if let Some(IndexPart::Axis(Some(first))) = values.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All))
-        && value.picks_paths(first).map_err(index_error)? {
-            let paths = parts.iter().zip(values).map(|(p, v)| {
-                v.try_map(|v| match (p.axis(), v) {
-                    (_, Some(v)) => Ok(v), (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p, convert),
-                    _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices"))
-                })
-            }).collect::<PyResult<Vec<_>>>()?;
-            return Ok(IndexSelection::Rich(paths));
-        }
-    let layout = value.core_layout();
-    value.planned(&values, |i, axis| {
-        let (IndexPart::Axis(p), IndexPart::Axis(v)) = (&parts[i], &values[i]) else { unreachable!("planned decodes axis parts") };
-        match v {
-            None => Some(rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("a native selector decodes without converting"))),
-            Some(_) => None,
-        }
-    }, index_error).map(|(plan, atom)| IndexSelection::Planned(plan, atom))
-}
 
 /// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way, and only the source is computed. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
 fn lendable(py: Python<'_>, value: &Value) -> PyResult<Option<(Value, usize, Option<Vec<isize>>)>> {
@@ -296,6 +269,7 @@ impl Owned {
 #[pymethods]
 impl PyArray {
     fn copy(&self) -> PyResult<Self> { Ok(self.value()?.clone().into()) }
+    fn force(&self, py: Python<'_>) -> PyResult<()> { forced(py, self.value()?) }
     #[getter]
     fn shape(&self) -> PyResult<Vec<usize>> { Ok(self.value()?.shape().to_vec()) }
     #[getter]
@@ -391,29 +365,20 @@ impl PyArray {
         Ok(cells.into_iter().map(Self::from).collect())
     }
     fn select(&self, py: Python<'_>, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Py<PyDict>> {
-        let (value, selection) = (self.stored(py)?.clone(), selection(self.value()?, decoded(index, convert)?, convert)?);
+        let (value, parts) = (self.stored(py)?.clone(), selectors(index, convert)?);
         let value = py.detach(move || {
             let _turn = Session::current();
-            match selection { IndexSelection::Planned(plan, atom) => value.selected(plan, atom), IndexSelection::Rich(parts) => value.select(&parts) }
+            value.select(&parts)
         }).map_err(index_error)?;
         let mut result = Evaluation::default();
         result.value = Some(value);
         response(py, result)
     }
     fn assign(&self, py: Python<'_>, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let (value, values, Decoded { parts, values: written }) = (self.stored(py)?.clone(), values.stored(py)?.clone(), decoded(index, convert)?);
-        // A write adds the keys that it names and the value lacks before it plans, as BPL's assignment does.
-        let native: Vec<_> = parts.iter().map(|p| p.axis().and_then(rustymath_buffer::selection::key_names).unwrap_or_default()).collect();
-        let (value, written) = py.detach(move || {
-            let _turn = Session::current();
-            value.with_missing_keys(&written, |i| native[i].clone()).map(|value| (value, written))
-        }).map_err(index_error)?;
-        let selection = selection(&value, Decoded { parts, values: written }, convert)?;
+        let (value, values, parts) = (self.stored(py)?.clone(), values.stored(py)?.clone(), selectors(index, convert)?);
         py.detach(move || {
             let _turn = Session::current();
-            match selection {
-                IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values)
-            }
+            value.with_missing_keys(&parts)?.assigned_parts(&parts, &values)
         }).map(Self::from).map_err(index_error)
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
@@ -456,6 +421,24 @@ impl PyFunction {
     fn build(kind: &str, values: Vec<Bound<'_, PyAny>>) -> PyResult<Self> {
         let operands = values.iter().map(operand).collect::<PyResult<Vec<_>>>()?;
         Function::build(kind, operands).map(|inner| Self { inner }).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+    #[staticmethod]
+    fn selection(index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self { inner: Function::selector(selectors(index, convert)?) })
+    }
+    fn selectors(&self, py: Python<'_>) -> PyResult<Option<Vec<Py<PyAny>>>> {
+        let bound = |v: &Option<SliceBound>| -> PyResult<Py<PyAny>> {
+            match v {
+                None => Ok(py.None()), Some(SliceBound::Position(n)) => n.into_py_any(py),
+                Some(SliceBound::Key(k)) => k.as_ref().into_py_any(py),
+            }
+        };
+        self.inner.selectors().map(|parts| parts.iter().map(|part| match part {
+            IndexPart::Axis(v) => Py::new(py, PyArray::from(v.clone())).map(|a| a.into_any()),
+            IndexPart::Slice(s) => Ok(py.get_type::<PySlice>().call1((bound(&s.start)?, bound(&s.stop)?, s.step))?.unbind()),
+            IndexPart::All => Ok(py.get_type::<PySlice>().call1((py.None(), py.None(), py.None()))?.unbind()),
+            IndexPart::NewAxis => Ok(py.None()), IndexPart::Rest => Ok(py.Ellipsis()),
+        }).collect()).transpose()
     }
     fn __repr__(&self) -> String { self.inner.bpl() }
     /// This function with `g` attached as its inverse, as BPL's `f⁻←g` attaches it.

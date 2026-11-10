@@ -4,7 +4,7 @@ use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{
-    Binary as _, Float as _, buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, View, Width}, error::Kind,
+    Float as _, buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, View, Width}, error::Kind,
     tolerant::{Tolerance, Tolerant, TolerantComplex}, with_float_width
 };
 use std::{borrow::Cow, cmp::Ordering, fmt};
@@ -404,12 +404,10 @@ impl Domain {
 
     /// The domain and float width that `arrays` compute in for a function whose results are approximate, such as `⌹`: as `of_arrays` gives them, except that machine integers and Booleans compute as floats (`plan::Kind::approximate`). Exact fractions and unbounded integers (`ᵣ`) stay exact.
     pub(crate) fn approximate(arrays: &[&Value]) -> Option<(Self, FloatWidth)> {
-        Some(Self::approximated(Self::of_arrays(arrays)?, arrays.iter().map(|a| crate::plan::Kind::value(a))))
-    }
-    /// `(domain, width)`, as `of` or `of_arrays` gives it for operands of `kinds`, with machine integers and Booleans as floats (`plan::Kind::approximate`).
-    fn approximated((domain, width): (Self, FloatWidth), kinds: impl IntoIterator<Item = crate::plan::Kind, IntoIter: Clone>) -> (Self, FloatWidth) {
-        if domain != Self::Exact { return (domain, width); }
-        crate::plan::Kind::approximate(kinds, Numeric::current()).map_or((domain, width), |w| (Self::Exact.inexact(w), w))
+        let joined @ (domain, _) = Self::of_arrays(arrays)?;
+        if domain != Self::Exact { return Some(joined); }
+        let kinds = arrays.iter().map(|a| crate::plan::Kind::value(a));
+        Some(crate::plan::Kind::approximate(kinds, Numeric::current()).map_or(joined, |w| (Self::Exact.inexact(w), w)))
     }
 }
 
@@ -454,7 +452,7 @@ macro_rules! real_fields {
             fn number(self, width: FloatWidth) -> Number { Number::float(self.into(), width) }
             fn compact(a: &Value) -> Option<Cow<'_, [Self]>> { read_as(a) }
             fn array(x: Vec<Self>, layout: impl Into<Layout>, width: FloatWidth) -> Result<Value, ErrorKind> { Value::floats(layout, width, x.into_iter().map(Into::into)) }
-            fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self { rustymath::tolerant::Residue(t.tolerance_at(width)).one(*self, *y) }
+            fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self { rustymath::facts::formula_at(&rustymath::tolerant::Residue(t.tolerance_at(width)), [*self, *y]) }
         }
     )+};
 }
@@ -467,7 +465,7 @@ impl Field for Complex64 {
     fn array(x: Vec<Self>, layout: impl Into<Layout>, width: FloatWidth) -> Result<Value, ErrorKind> {
         Value::complex(layout, ComplexBuf::collect(width.into(), x.into_iter()))
     }
-    fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self { rustymath::tolerant::Residue(t.tolerance_at(width)).one(*self, *y) }
+    fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self { t.tolerance_at(width).complex_residue(*self, *y) }
 }
 
 /// Runs `$body` with the type `$t` standing for the [`Field`] of `$domain`, which is one of the domains listed. Only the listed domains' bodies compile. The second form takes the domain of the numbers `$numbers`, an iterator of `&Number`s, and binds `$width` to the float width of their results.

@@ -136,6 +136,16 @@ fn array_literal_completeness() {
     }
 }
 
+
+#[test]
+fn retained_literals_keep_values_and_preferences() {
+    let s = Session::new();
+    equiv_in(&s, "f←{[1ₓ;2ₓ]} ⋄ a←f 0 ⋄ a.[0]←9ₓ ⋄ f 0", "[1 2]ₓ");
+    equiv_in(&s, r#"v←7 ⋄ live←{["a":v]} ⋄ live 0 ⋄ v←8 ⋄ (live 0).a"#, "8");
+    equiv_in(&s, r#"•prefs ["float":64] ⋄ empty←{[]} ⋄ (•storage empty 0).kind"#, r#""float64""#);
+    equiv_in(&s, r#"•prefs ["float":32] ⋄ (•storage empty 0).kind"#, r#""float32""#);
+}
+
 #[test]
 fn shy_results_and_signal_messages() {
     let s = Session::new();
@@ -363,6 +373,27 @@ fn derivative_replay_tracks_input_layouts() {
     equiv_in(&s, r#"(•explain "h∂1 2 3 4").programs.event"#, r#"["replayed"]"#);
     equiv_in(&s, "rows←3 ⋄ h∂1 2 3 4", "2 2 1 1");
     equiv_in(&s, r#"0<≢(•explain "{+/, [⍵₀ 2]⍴⍵}∂2 3 4 5").stopped"#, "$t");
+}
+
+#[test]
+fn native_selection_functions_share_array_routes() {
+    use rustymath::structure::{IndexPart, SliceBound, SliceSpec};
+    let s = Session::new();
+    let slice = SliceSpec { start: Some(SliceBound::Position(1)), stop: None, step: 2 };
+    let selected = basedpl::Function::builtin("⊢").unwrap().selected(vec![IndexPart::Slice(Arc::new(slice))]).unwrap();
+    s.set_function("selected", selected).unwrap();
+    equiv_in(&s, "selected 10 20 30 40", "20 40");
+    equiv_in(&s, "selected ⍳7", "1 3 5");
+    equiv_in(&s, "(10×)@selected 1 2 3 4", "1 20 3 40");
+    equiv_in(&s, "selected¨[1 2 3 4;5 6 7 8]", "[2 4;6 8]");
+    equiv_in(&s, "loss←{+/selected ⍵} ⋄ loss∂1 2 3 4", "0 1 0 1");
+    equiv_in(&s, "loss∂⍳6", "0 1 0 1 0 1");
+    equiv_in(&s, "h←{+/⊢.[⍺] ⍵} ⋄ [2 0]h∂10 20 30", "1 0 1");
+    equiv_in(&s, "[1 1]h∂10 20 30", "0 2 0");
+    equiv_in(&s, "g←+/∘(⊢.[[2 0]]) ⋄ g∂10 20 30", "1 0 1");
+    equiv_in(&s, r#"(•explain "g∂10 20 30").programs.event"#, r#"["replayed"]"#);
+    equiv_in(&s, "g←+/∘(⊢.[[1 1]]) ⋄ g∂10 20 30", "0 2 0");
+    equiv_in(&s, r#"(•explain "g∂10 20 30").programs.event"#, r#"["replayed"]"#);
 }
 
 #[test]

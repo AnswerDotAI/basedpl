@@ -1,9 +1,8 @@
 //! Assignment: plain, destructuring, modified and selective.
 
-use super::tree::{Fact, Facts};
 use super::{
     ArrayBinding, Binding, Function, INVALID_SELECTION, NO_TARGET, OperatorNode, STRAND_TARGET, Session,
-    binder::{Binder, Category, Entity, Rule, Term, atop, narrow}, bindings::Place, fusion_report, undefined
+    binder::{Binder, Category, Entity, Rule, Term, atop, narrow}, fusion_report, undefined
 };
 use crate::{
     At, Described, Error, ErrorKind, Span, Value, array::Frame as ResultFrame, name::Name,
@@ -24,8 +23,8 @@ impl Session {
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
             // Inside brackets every name is a target, whatever it holds. A pattern's cells each have a key, which `targets` checks.
-            NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => cells.iter().all(|c| {
-                if *record { crate::syntax::key_colon(c).is_some() }
+            NodeKind::ArrayLiteral(literal) if matches!(literal.form, ListForm::Items | ListForm::Rows) => literal.cells.iter().all(|c| {
+                if literal.record { crate::syntax::key_colon(c).is_some() }
                 else { matches!(&c[..], [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(c) }
             }),
             _ => false,
@@ -33,51 +32,46 @@ impl Session {
     }
 
     /// Whether `node` holds an array (`static_category`).
-    pub(super) fn holds_array(&self, node: &Node, log: &mut Facts) -> bool { self.static_category(node, log) == Category::Value }
+    pub(super) fn holds_array(&self, node: &Node) -> bool { self.static_category(node) == Category::Value }
 
-    /// The category of what `node` holds, read without evaluating anything. A name has its binding's category, and a dot path such as `m.f` has its field's (`path_category`). Any other group or run has its expression's category, as the operand grammar reads it (`trailing_operand`): `(M←-)` and `(⌽@ 1⌷)` are functions. While a statement records, `log` keeps each name and dot path read (`tree::Fact`).
-    pub(super) fn static_category(&self, node: &Node, log: &mut Facts) -> Category {
+    /// The category of what `node` holds, read without evaluating anything. A name has its binding's category, and a dot path such as `m.f` has its field's (`path_category`). Any other group or run has its expression's category, as the operand grammar reads it (`trailing_operand`): `(M←-)` and `(⌽@ 1⌷)` are functions.
+    pub(super) fn static_category(&self, node: &Node) -> Category {
         use Category::*;
         match &node.kind {
             NodeKind::Function(_) | NodeKind::System(_) => Function,
             NodeKind::Operator(op) => Category::of_operator(&self::OperatorNode::Primitive(*op)),
             NodeKind::Script(..) => Operator,
-            NodeKind::Name(name, _) => self.path_category(*name, &[], log),
+            NodeKind::Name(name, _) => self.path_category(*name, &[]),
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
             },
-            NodeKind::Group(_) | NodeKind::Run(_) => self.trailing_operand(std::slice::from_ref(node), 1, log).map_or(NoResult, |(_, c)| c),
+            NodeKind::Group(_) | NodeKind::Run(_) => self.trailing_operand(std::slice::from_ref(node), 1).map_or(NoResult, |(_, c)| c),
             _ => Value,
         }
     }
 
-    /// The category of `name`'s binding, or of the field that `keys` reach from the array it holds (`Category::field`), read without evaluating anything. While a statement records, `log` keeps what it read (`tree::Fact`).
-    pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>], log: &mut Facts) -> Category {
-        let category =
-            if keys.is_empty() { Category::named(self.bindings.category(name)) } else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) };
-        if let Some(log) = log {
-            let fact = Fact { address: self.bindings.address(name), keys: keys.into(), category };
-            if !log.contains(&fact) { log.push(fact); }
-        }
-        category
+    /// The category of a name or of a field reached from its value, without evaluating it.
+    pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>]) -> Category {
+        if keys.is_empty() { Category::named(self.bindings.category(name)) }
+        else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) }
     }
 
-    pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize, log: &mut Facts) -> Result<(usize, Category), Error> {
+    pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize) -> Result<(usize, Category), Error> {
         use Category::*;
         if end == 0 { return Err(Error::new(ErrorKind::Syntax, "missing assignment operand").at(&nodes[0].span)); }
         let mut start = end - 1;
         let mut category = match &nodes[start].kind {
             NodeKind::Group(inner) | NodeKind::Run(inner) => match dot_path(&nodes[start]) {
-                Some((name, keys)) => self.path_category(name, &keys, log),
+                Some((name, keys)) => self.path_category(name, &keys),
                 None if inner.is_empty() => return Err(Error::new(ErrorKind::Syntax, "empty assignment operand").at(&nodes[start].span)),
                 // Rewrite the group's own dot access first, so that `(x.a).b` reads `(x.a)` as the field it names.
-                None => { let inner = self.members_with(inner, log); self.trailing_operand(&inner, inner.len(), log)?.1 }
+                None => { let inner = self.members_with(inner); self.trailing_operand(&inner, inner.len())?.1 }
             },
-            _ => self.static_category(&nodes[start], log),
+            _ => self.static_category(&nodes[start]),
         };
         if matches!(category, Operator) && start > 0 {
             let superscript = match &nodes[start].kind { NodeKind::Operator(OperatorKind::Super(s)) => Some(*s), _ => None };
-            let (operand, operand_category) = self.trailing_operand(nodes, start, log)?;
+            let (operand, operand_category) = self.trailing_operand(nodes, start)?;
             start = operand;
             // `ᵘ` always gives an array, and the other superscripts give one on an array.
             category = match superscript {
@@ -85,13 +79,13 @@ impl Session {
                 _ if matches!(operand_category, Value) && (superscript.is_some() || matches!(nodes[end - 1].kind, NodeKind::Script(..))) => Value, _ => Function
             };
         }
-        if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner, log)) {
+        if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner)) {
             // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽@ 1⌷)`.
             start -= 1;
             category = Function;
-        } else if start > 0 && matches!(Rule::get(self.static_category(&nodes[start - 1], log), category), Rule::BindRight) {
-            start = self.trailing_operand(nodes, start - 1, log)?.0;
-            category = Function;
+        } else if start > 0 && matches!(Rule::get(self.static_category(&nodes[start - 1]), category), Rule::BindRight) {
+            if start == 1 { start = 0; category = Operator; }
+            else { start = self.trailing_operand(nodes, start - 1)?.0; category = Function; }
         }
         Ok((start, category))
     }
@@ -100,12 +94,12 @@ impl Session {
     pub(super) fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
         if self.rule_target(nodes).is_some() { return Ok(0); }
         let end = nodes.len();
-        let (operand, category) = self.trailing_operand(nodes, end, &mut None)?;
+        let (operand, category) = self.trailing_operand(nodes, end)?;
         // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
         let modified = operand > 0 && matches!(category, Category::Function)
-            && (self.holds_array(&nodes[operand - 1], &mut None) || !self.assignment_names(&nodes[operand..]));
-        let start = if modified { self.trailing_operand(nodes, operand, &mut None)?.0 } else { operand };
-        if start > 0 && self.holds_array(&nodes[start], &mut None) && self.holds_array(&nodes[start - 1], &mut None) {
+            && (self.holds_array(&nodes[operand - 1]) || !self.assignment_names(&nodes[operand..]));
+        let start = if modified { self.trailing_operand(nodes, operand)?.0 } else { operand };
+        if start > 0 && self.holds_array(&nodes[start]) && self.holds_array(&nodes[start - 1]) {
             let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
             return Err(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span));
         }
@@ -135,18 +129,13 @@ impl Session {
         Ok(())
     }
 
-    /// The step after the binder, or a recording, finds where an assignment's target starts: `value` assigned to `target`, or with no value, `a(f)←`'s update (`modify_monadic`). A target that is a plain name with slot `local` in the current frame stores there, because storing a name computes nothing for `assign` to report. Gives the assignment's value, which is no result for an update. `span` is `←`'s.
+    /// Assigns `value` to `target`, or applies a monadic modified assignment when no value follows `←`.
     #[inline]
-    pub(super) fn assigned(&self, target: &[Node], value: Option<Binding>, local: Option<u32>, span: &Span) -> Result<Binding, Error> {
+    pub(super) fn assigned(&self, target: &[Node], value: Option<Binding>, span: &Span) -> Result<Binding, Error> {
         let Some(value) = value else {
             return if self.modify_monadic(target)? { Ok(Binding::NoResult) } else { Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) };
         };
-        match local {
-            Some(k) => {
-                self.bindings.insert(Place::Slot(self.bindings.current().expect("a compiled statement runs in its dfn's frame"), k), value.clone().stored())
-            }
-            None => self.assign(target, &value)?,
-        }
+        self.assign(target, &value)?;
         Ok(value)
     }
 
@@ -189,9 +178,9 @@ impl Session {
                     if self.assignment_names(nodes) { return self.assign_to(nodes, value); }
                     return self.assign_selected(nodes, None, value);
                 }
-                NodeKind::ArrayLiteral { cells, record, .. } if self.assignment_names(std::slice::from_ref(target)) => {
+                NodeKind::ArrayLiteral(literal) if self.assignment_names(std::slice::from_ref(target)) => {
                     let right = value.clone().into_value(span)?;
-                    let pairs = Self::destructure(self.targets(cells, *record)?, &right, span)?;
+                    let pairs = Self::destructure(self.targets(&literal.cells, literal.record)?, &right, span)?;
                     for (cell, item) in pairs.into_iter().rev() { self.assign_to(cell, &Binding::from_element(item))?; }
                     return Ok(());
                 }
@@ -224,7 +213,7 @@ impl Session {
 
     /// Splits a modified assignment's target into its array part and its function, as `a` and `f` in `a(f)←`.
     fn modified_target<'a>(&self, target: &'a [Node]) -> Result<Option<(&'a [Node], Function)>, Error> {
-        let (operand, category) = self.trailing_operand(target, target.len(), &mut None)?;
+        let (operand, category) = self.trailing_operand(target, target.len())?;
         if operand == 0 || !matches!(category, Category::Function) { return Ok(None); }
         Ok(self.modifier(&target[operand..])?.map(|f| (&target[..operand], f)))
     }
@@ -263,8 +252,8 @@ impl Session {
                 let updated = modifier.call_array(Some(&binding.value), right, &node.span)?;
                 self.update_array(&binding, updated, &node.span)
             }
-            NodeKind::ArrayLiteral { cells, record, .. } => {
-                for (cell, item) in Self::destructure(self.targets(cells, *record)?, right, &node.span)? { self.modify_names(cell, &item, modifier)?; }
+            NodeKind::ArrayLiteral(literal) => {
+                for (cell, item) in Self::destructure(self.targets(&literal.cells, literal.record)?, right, &node.span)? { self.modify_names(cell, &item, modifier)?; }
                 Ok(())
             }
             _ => unreachable!(),
@@ -418,7 +407,7 @@ impl Session {
         match nodes {
             [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner),
             [left, Node { kind: NodeKind::Function(Builtin::Primitive(p @ (Primitive::Index | Primitive::Bracket | Primitive::Mix))), .. }, rest @ ..]
-                if !rest.is_empty() && self.holds_array(left, &mut None) =>
+                if !rest.is_empty() && self.holds_array(left) =>
             {
                 let Some((binding, path)) = self.direct_item(rest)? else { return Ok(None) };
                 let left = self.evaluate_once(left)?;
@@ -466,7 +455,7 @@ impl Session {
                 (binding, labels, selected)
             }
             NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner, level)?,
-            _ if root > 0 && self.holds_array(&nodes[root - 1], &mut None) && self.holds_array(&nodes[root], &mut None) => {
+            _ if root > 0 && self.holds_array(&nodes[root - 1]) && self.holds_array(&nodes[root]) => {
                 let span = Span { source: span.source.clone(), range: nodes[root - 1].span.range.start..span.range.end };
                 return Err(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span));
             }

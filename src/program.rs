@@ -312,7 +312,7 @@ impl Selector {
     /// The parts as text: each read named by `read`, and each marker by its glyph.
     fn listing(&self, read: impl Fn(&Read) -> String) -> String {
         self.parts.iter().map(|part| match part {
-            IndexPart::Axis(r) => read(r), IndexPart::All => ":".into(), IndexPart::Rest => "∞".into(), IndexPart::NewAxis => "¯∞".into()
+            IndexPart::Axis(r) => read(r), IndexPart::Slice(slice) => slice.to_string(), IndexPart::All => ":".into(), IndexPart::Rest => "∞".into(), IndexPart::NewAxis => "¯∞".into()
         }).collect::<Vec<_>>().join(" ")
     }
 }

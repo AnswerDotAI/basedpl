@@ -1,4 +1,7 @@
 ⍝⍝ Mathish complex arithmetic and numerical convergence
+⍝ april:587 — Tolerant real LCM of decimal inputs
+3.2∧1.9   ⍝ 60.8
+
 ⍝ april:589 —
 ⌈1000×1.3j2.6∧4.5j8.9   ⍝ ¯172900j232700
 
@@ -52,6 +55,10 @@ phinary42   ⍝ "10100010.00100001"
 
 ⍝ april:410 — Commuted division follows the Mathish zero rule
 ÷⍨0   ⍝ 0
+
+⍝ april/libraries/dfns/numeric/demo.lisp:209 — Negative approximate continued fractions
+[cfract:]←•load "lib/numeric.bpl"
+cfract¯2.3   ⍝ [¯3 1 2 3]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:211 — Real rational recovery uses the first continued-fraction convergent within relative error 1e-14. Pi recovers 5419351/1725033, whose canonical continued fraction ends in 4. April's 14-column float-round-trip expectation is retained separately; 0+ makes coefficients approximate
 [cfract: rational:]←•load "lib/numeric.bpl"

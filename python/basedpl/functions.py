@@ -18,7 +18,7 @@ class _Combinators(_Operators):
     @property
     def left(self): return _build('↣', _HOLE, self, valence=1)
     def __pow__(self, counts): return _build('⍣', self, counts)
-    def __getitem__(self, axis): return _build('⍠', self, axis, valence=self._valence)
+    def __getitem__(self, index): return _build('∘', Function(_Function.selection(index, _array)), self, valence=self._valence)
     def __lshift__(self, g): return _build('∘', self, g)
     def __rshift__(self, g): return _build('∘', g, self)
     def __matmul__(self, g):
@@ -89,7 +89,9 @@ class Operator:
 def fork(f, g, h):
     f, h = (o if isinstance(o, _Combinators) else _build('⍨', o) for o in (f, h))
     return _build('fork', f, g, h)
-def atop(f, g): return _build('∘', f, g)
+def atop(f, g, *rest):
+    for h in (g, *rest): f = _build('∘', f, h)
+    return f
 
 def _python_name(name):
     name = normalize('NFKC', name.replace('-', '_'))
@@ -97,7 +99,7 @@ def _python_name(name):
 
 # Every documented name of an operator is a property, in Python spelling. Its glyph name gives the derived function with both
 # valences, and each name for what it does gives the valences that name covers. A dyadic operator's property waits for its right
-# operand. `f[axis]` spells `⍠`, `f.undo` spells `⁻`, and number-marker properties use their native word names.
+# operand. `f.axis(axes)` spells `⍠`, `f.undo` spells `⁻`, and number-marker properties use their native word names.
 # `f.undo(g)` and `f.derivative(g)` attach `g` as an inverse or derivative.
 _marks = dict(_number_marks)
 _operators = {'undo': ('⁻', False, 0)} | {name: (glyph, False, 0) for glyph, name in _marks.items()}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
@@ -114,7 +116,7 @@ _ATTACHING = dict(undo='with_inverse', derivative='with_derivative')
 def _operator(name, glyph, dyadic, valence):
     if name in _ATTACHING:
         return property(lambda self: _Attaching(glyph, self, _ATTACHING[name], valence) if isinstance(self, Function) else _build(glyph, self, valence=valence))
-    if dyadic: return property(lambda self: _build(glyph, self, _HOLE, valence=valence))
+    if dyadic: return property(lambda self: _build(glyph, self, _HOLE, valence=self._valence if glyph == '⍠' else valence))
     return property(lambda self: _build(glyph, self, valence=valence))
 for _name, _spec in _operators.items(): setattr(_Combinators, _name, _operator(_name, *_spec))
 for _name in _marks.values():

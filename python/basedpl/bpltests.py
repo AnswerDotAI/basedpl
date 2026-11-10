@@ -1002,8 +1002,8 @@ def speed_costs(
     return SpeedCosts.from_records(rows, platform=None if wasm else _platform())
 
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+|-)(?: (?P<hold>held|busy) from (?P<rule>[\d.]+))?(?:, (?P<ns>[\d.]+) ns(?:, footprint (?P<mib>[\d.]+) MiB copied at (?P<copy>[\d.]+) ns)?(?:, (?P<counts>(?:instructions|allocated) [\d.]+(?:, allocated [\d.]+)?))?)?(?P<stale>: stale)?$')
-_COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored for|measured on) (?P<cpu>[^\r\n]+?)(?:: add it to rustymath_timing::COPIES)?[ \t]*$', re.M)
+_LOGGED = re.compile(r'^[ \t]*(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+|-)(?: (?P<hold>held|busy) from (?P<rule>[\d.]+))?(?:, (?P<ns>[\d.]+) ns(?:, footprint (?P<mib>[\d.]+) MiB copied at (?P<copy>[\d.]+) ns)?(?:, (?P<counts>(?:instructions|allocated) [\d.]+(?:, allocated [\d.]+)?))?)?(?:(?P<stale>: stale)|: over)?[ \t]*$')
+_COPY = re.compile(r'^[ \t]*(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored for|measured on) (?P<cpu>[^\r\n]+?)(?:: add it to rustymath_timing::COPIES)?[ \t]*$', re.M)
 
 def logged_costs(
     log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow, or the path of a file that holds it, as a `Path` or a one-line str
@@ -1498,7 +1498,7 @@ def _steps(out, node, profile):
     return [
         _Step(dev, develop_cmd, B, (rdev,), timeout=None),
         _Step(rdev, develop_cmd, R, timeout=None),
-        *(_Step(f'{r.name}: checked tests', _cargo_test(r, '--profile', 'checked', '--target-dir', str(r/'target'/'prerelease'), profiles=_UNTIMED), r, timeout=None) for r in (B, R)),
+        *(_Step(f'{r.name}: checked tests', _cargo_test(r, '--profile', 'checked', profiles=_UNTIMED), r, timeout=None) for r in (B, R)),
         _Step('target builds', ['bpl-tests', 'target_builds', wasm, '--profile', profile], B, (dev,), timeout=None),
         _Step('basedpl: pytest', ['pytest', '-q'], B, (dev,), timeout=1200, timing=True),
         _Step('rustymath: pytest', ['pytest', '-q'], R, (rdev,), timeout=1200, timing=True),

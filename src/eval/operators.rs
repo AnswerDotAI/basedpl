@@ -11,7 +11,7 @@ mod rank;
 pub(super) use {agenda::*, axes::*, each::*, key::*, power::*};
 pub(crate) use {folds::*, products::*, rank::*};
 
-use super::{Argument, Binding, Bound, Function, FunctionNode, Operand, Rules, binder::{Tine, before}, session};
+use super::{Argument, Binding, Bound, Function, FunctionNode, Operand, Rules, binder::before, session};
 use crate::transform::Pairing;
 use crate::{
     At, Described, Error, ErrorKind, Span, Value, agreement::{Agree, Agreement}, array::{Frame as ResultFrame, Gather, Lanes, generated_len}, cancel::check,
@@ -148,56 +148,6 @@ pub(super) fn fork_call<L: Argument, R: Argument>(tines: &[Function; 3], left: O
     tines[1].call_with(Some(x), y, span)
 }
 
-/// A part of a train, as `train_call` calls it: a function tine, or an array tine bound as the left argument of the function after it (`a↣f`).
-enum TrainPart<'t> { Function(&'t Function), Bound(&'t Value, &'t Function) }
-
-impl TrainPart<'_> {
-    fn call(&self, left: Option<impl Argument>, right: impl Argument, span: &Span) -> Result<Bound, Error> {
-        match self { Self::Function(f) => f.call_with(left, right, span), Self::Bound(a, f) => bound_call(a, f, left.is_some(), right, span) }
-    }
-}
-
-/// Whether `train_call` can call the train with tines `tines` by its tines. It can't in three cases, where the caller builds the train and calls it. The first is while a transformation or `•explain` runs, because each must see the train's own call. The second is an array tine that doesn't bind a function. The third is a train that may hold a fast combination (`rewrite::may_combine`), which only the train's function computes.
-pub(super) fn calls_tines(tines: &[Tine]) -> bool {
-    !session().transforming() && !crate::explain::reporting() && matches!(tines.last(), Some(Tine::Function(_))) && !super::rewrite::may_combine(tines)
-        && !tines.windows(2).any(|w| matches!(w, [Tine::Array(_), Tine::Array(_)]))
-}
-
-/// How many tines of the train with tines `tines` read its arguments: its last part, and the left tine of each fork (`Function::train_shape`).
-pub(super) fn train_readers(tines: &[Tine]) -> usize {
-    Function::train_shape(Function::train_parts(tines, |_| (), |_, ()| ()), &mut (), |_, ()| Ok(1), |_, (), (), n| Ok(n + 1), |_, (), n| Ok(n)).unwrap_or(1)
-}
-
-/// The call of the train with tines `tines`, which `calls_tines` accepts, on `left` and `right`, made as the train's function would make it, without building the function (`Function::train_shape`). A compiled statement calls a group's train this way (`tree.rs`). The train reads its arguments in its last part, then in the left tine of each fork: `readers` reads in all, as `train_readers` counts them. Each read borrows the arguments, apart from the last, which takes them.
-pub(super) fn train_call<L: Argument, R: Argument>(tines: &[Tine], readers: usize, left: Option<L>, right: R, span: &Span) -> Result<Bound, Error> {
-    let parts = Function::train_parts(tines, TrainPart::Function, |a, part| match part {
-        TrainPart::Function(f) => TrainPart::Bound(a, f), TrainPart::Bound(..) => unreachable!("calls_tines declines array tines side by side")
-    });
-    // The call counts toward the depth limit, as the train's function's own call would.
-    session().descend(span)?;
-    let result = if readers == 1 {
-        // The last part is the only reader.
-        Function::train_shape(
-            parts, &mut (), |_, part| part.call(left, right, span), |_, _, _, _| unreachable!("a train with one reader has no fork"),
-            |_, f, inner| f.call(None::<&Value>, inner.array(span)?, span))
-    } else {
-        // The reads still to come, and the arguments, which the last read takes.
-        let mut context = (readers, Some((left, right)));
-        let read = |(readers, arguments): &mut (usize, Option<(Option<L>, R)>), part: TrainPart| {
-            *readers -= 1;
-            if *readers == 0 { let (x, y) = arguments.take().expect("the last read takes the arguments once"); return part.call(x, y, span); }
-            let (x, y) = arguments.as_ref().expect("the last read comes last");
-            part.call(x.as_ref().map(L::value), y.value(), span)
-        };
-        Function::train_shape(parts, &mut context, read, |context, g, f, inner| {
-            let y = inner.array(span)?;
-            let x = read(context, g)?.array(span)?;
-            f.call(Some(x), y, span)
-        }, |_, f, inner| f.call(None::<&Value>, inner.array(span)?, span))
-    };
-    session().ascend();
-    result
-}
 
 /// `operand` called on prototypes, as Each calls it for a frame with no cells. A call that fails gives 0, the prototype of the empty result, as in J. Inside a batched run, a call that fails stops the run, as a guard does (`session::Catch`).
 fn on_prototypes(operand: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {

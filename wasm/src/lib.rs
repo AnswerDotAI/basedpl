@@ -60,7 +60,7 @@ pub fn warm() { rustymath_timing::warm() }
 #[wasm_bindgen]
 pub fn checks_budgets() -> bool { basedpl_testkit::timing::checks_budgets() }
 
-/// Time named BPL source files, supplied as `[{name, text}]`. Results retain full code and single-line log labels.
+/// Time named BPL source files, supplied as `[{name, text}]`. Uses the full measurement window, as the native costs export does. Results retain full code and single-line log labels.
 #[wasm_bindgen]
 pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) -> Result<JsValue, JsValue> {
     let only: Option<Vec<&str>> = cases.as_ref().map(|c| c.iter().map(String::as_str).collect());
@@ -68,7 +68,7 @@ pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) 
     let files = serde_json::from_str(&js_sys::JSON::stringify(&files)?.as_string().unwrap()).map_err(|e| fail(e.to_string()))?;
     let files = basedpl_testkit::reference::sources(&files).map_err(fail)?;
     let cases = basedpl_testkit::timing::costs(
-        &files, only.as_deref().map(basedpl_testkit::timing::Selection::Codes), prefs.as_deref().unwrap_or_default(), false, &Default::default())
+        &files, only.as_deref().map(basedpl_testkit::timing::Selection::Codes), prefs.as_deref().unwrap_or_default(), false, &Default::default(), rustymath_timing::Sampling::Measure)
     .map_err(fail)?;
     Ok(js_sys::JSON::parse(&basedpl_testkit::timing::rows(&cases, Some(basedpl_testkit::timing::WASM_COLUMN)).to_string())?)
 }

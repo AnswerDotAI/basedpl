@@ -2,8 +2,8 @@
 
 use super::{
     Argument, Binding, Bound, Closure, Evaluation, FUNCTION_CLASS, Function, FunctionNode, MAX_CALL_DEPTH, OPERATOR_CLASS, Operator, OperatorNode,
-    STACK_SEGMENT, SUBJECT_CLASS, Session, Step, Turn, binder::{Binder, Category, before}, bindings::{Frame, FrameBindings, Place}, depth_error,
-    dissect::Expression, operators::Guarded, released, room, session, undefined
+    STACK_SEGMENT, SUBJECT_CLASS, Session, Step, Turn, binder::{Binder, Category, before}, bindings::{Frame, Place}, depth_error,
+    dissect::Expression, released, room, undefined
 };
 use crate::syntax::Statement;
 use crate::{
@@ -462,22 +462,13 @@ impl Session {
         }
         failed(ErrorKind::Syntax, "unknown user command".into())
     }
-    pub(super) fn bind(&self, nodes: &[Node]) -> Result<Bound, Error> { self.bound(nodes, None) }
-    /// `nodes` evaluated as one statement through `slot`, as `statement_step` uses it, one level deeper. A compiled statement runs at once: one loop runs its steps, so it needs only the depth count. The binder evaluates any other statement with an interrupt check and a stack that grows as needed (`nested`).
-    pub(super) fn bound(&self, nodes: &[Node], slot: Option<&std::sync::OnceLock<Option<super::Recording>>>) -> Result<Bound, Error> {
-        let done = |step: Step| {
-            let Step::Done(result) = step else { unreachable!("a statement that isn't a dfn's last gives its value") };
-            result
-        };
-        match super::tree::compiled(slot) {
-            Some(recording) => {
-                self.descend(&nodes[0].span)?;
-                let result = recording.evaluate(nodes, self, false).map(done);
-                self.ascend();
-                result
-            }
-            None => self.nested(nodes, |session| session.statement_step(slot, nodes, false).map(done)),
-        }
+    pub(super) fn bind(&self, nodes: &[Node]) -> Result<Bound, Error> {
+        self.nested(nodes, |session| {
+            let Step::Done(bound) = Binder::evaluate(nodes, session, false)? else {
+                unreachable!("a statement that isn't a dfn's last gives its value")
+            };
+            Ok(bound)
+        })
     }
     /// `f` evaluating `nodes` one level deeper, after an interrupt check, within the depth limit and on a stack that grows as needed.
     pub(super) fn nested<T>(&self, nodes: &[Node], f: impl FnOnce(&Self) -> Result<T, Error>) -> Result<T, Error> {
@@ -626,9 +617,7 @@ impl Session {
                 let record = self.resolve(root)?.array(&root.span)?;
                 return self.scoped(&record, &node.span, |session| session.resolve(body)).map(Bound::given);
             }
-            NodeKind::ArrayLiteral { .. } => self.bracket(node, |nodes, _, _, within| match within {
-                Within::Key => self.array_result(nodes).map(Some), _ => self.item_result(nodes)
-            })?,
+            NodeKind::ArrayLiteral(_) => self.bracket(node)?,
             NodeKind::Dfn(definition) => {
                 let closure = Closure { definition: definition.clone(), environment: self.bindings.current(), module: self.bindings.module() };
                 match definition.kind {
@@ -648,37 +637,48 @@ impl Session {
         }))
     }
 
-    /// The bracket literal `node`, built from what `part` gives for each of its items and keys. `part` gets them in the order that they evaluate: left to right, with an item's value before its key. It gets a part's nodes, the cell that holds them, their range in that cell and what they are (`Within`), and gives `None` for an absent `⍺`, which drops out. A keyed item's key applies as soon as the key is ready (`Session::keyed`), before the next item evaluates. The key of an item whose value is absent isn't evaluated. A key with no value is a name, which gives both: `[a:]` is `["a":a]`.
-    pub(super) fn bracket(
-        &self, node: &Node, mut part: impl FnMut(&[Node], usize, std::ops::Range<usize>, Within) -> Result<Option<Value>, Error>) -> Result<Binding, Error> {
-        let NodeKind::ArrayLiteral { cells, record, .. } = &node.kind else { unreachable!("a bracket literal") };
+    /// A bracket literal, evaluated left to right with each value before its key. An absent value skips its key.
+    /// `[a:]` means `["a":a]`. Evaluate the value separately before the key so an absent value never evaluates its key.
+    fn bracket(&self, node: &Node) -> Result<Binding, Error> {
+        let NodeKind::ArrayLiteral(literal) = &node.kind else { unreachable!("a bracket literal") };
+        let constant = &literal.constant;
+        let numeric = crate::number::Numeric::current();
+        if let Some((kept, value)) = constant.as_ref().and_then(|c| c.get()) && *kept == numeric { return Ok(Binding::Value(value.clone())); }
+        let result = self.bracket_value(node)?;
+        if let (Some(constant), Binding::Value(value)) = (constant, &result) { let _ = constant.set((numeric, value.clone())); }
+        Ok(result)
+    }
+
+    fn bracket_value(&self, node: &Node) -> Result<Binding, Error> {
+        let NodeKind::ArrayLiteral(literal) = &node.kind else { unreachable!("a bracket literal") };
+        let crate::syntax::ArrayLiteral { cells, record, .. } = literal.as_ref();
         if !*record {
             let mut arrays = Vec::with_capacity(cells.len());
-            for (k, nodes) in cells.iter().enumerate() { arrays.extend(part(nodes, k, 0..nodes.len(), Within::Item)?); }
+            for nodes in cells { arrays.extend(self.item_result(nodes)?); }
             return Self::list_literal(node, arrays);
         }
         let mut entries = Vec::new();
         for (k, nodes) in cells.iter().enumerate() {
             let Some(colon) = crate::syntax::key_colon(nodes) else {
-                entries.extend(part(nodes, k, 0..nodes.len(), Within::Item)?.map(|item| (None, item)));
+                entries.extend(self.item_result(nodes)?.map(|item| (None, item)));
                 continue;
             };
-            // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train.
             let named = match &nodes[..colon] {
                 _ if colon + 1 < nodes.len() => None, [Node { kind: NodeKind::Name(name, _), .. }] => Some(crate::keyed::text(name.text())),
                 _ => return Err(Error::new(ErrorKind::Syntax, "a key with no value is a name, as in [a:]").at(&nodes[colon].span))
             };
             let at = if named.is_some() { 0..colon } else { colon + 1..nodes.len() };
-            let Some(value) = part(&nodes[at.clone()], k, at, Within::Value { colon, named: named.clone() })? else { continue };
-            let key = match named { Some(key) => key, None => part(&nodes[..colon], k, 0..colon, Within::Key)?.expect("a key gives an array") };
+            let Some(value) = self.item_result(&nodes[at])? else { continue };
+            let key = match named { Some(key) => key, None => self.array_result(&nodes[..colon])? };
             entries.extend(self.keyed(node, k, colon, &key, &value)?);
         }
         Self::record_literal(node, entries)
     }
 
-    /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. `bracket` and a compiled item's end both call it as soon as the item's value is ready, so an item that fails stops the items after it.
+    /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. `bracket` applies each key before evaluating the next item.
     pub(super) fn keyed(&self, node: &Node, cell: usize, colon: usize, key: &Value, value: &Value) -> Result<Vec<crate::keyed::Entry>, Error> {
-        let NodeKind::ArrayLiteral { cells, .. } = &node.kind else { unreachable!("a bracket literal") };
+        let NodeKind::ArrayLiteral(literal) = &node.kind else { unreachable!("a bracket literal") };
+        let cells = &literal.cells;
         if let Some(name) = crate::keyed::name(key) && value.carrier().and_then(crate::transform::Carrier::batch).is_some_and(|b| b.rank() == 0) {
             return Ok(vec![(Some(name), value.clone())]);
         }
@@ -694,9 +694,10 @@ impl Session {
 
     /// The list literal `node`, from its items' arrays in order, which assemble by its form.
     pub(super) fn list_literal(node: &Node, arrays: Vec<Value>) -> Result<Binding, Error> {
-        let NodeKind::ArrayLiteral { form, .. } = &node.kind else { unreachable!("a bracket literal") };
+        let NodeKind::ArrayLiteral(literal) = &node.kind else { unreachable!("a bracket literal") };
+        let form = literal.form;
         if arrays.is_empty() { return Ok(Binding::from_element(crate::syntax::zilde(crate::Number::float(0.0, crate::settings::float_width())))); }
-        let result = if *form == ListForm::Cells {
+        let result = if form == ListForm::Cells {
             // Each row is a major cell, so unit rows give a vector: `[1⋄2]` is `1 2`.
             Value::assemble(&[arrays.len()], &arrays, &arrays[0])
         } else { Value::new(vec![arrays.len()], arrays) };
@@ -722,7 +723,7 @@ impl Session {
                 Some(Binding::Function(function.clone())), operand.map(|_| Binding::Operator(OperatorNode::Defined(closure.clone()))),
             ];
             if let Err(error) = self.bindings.enter(frame, implicit, &closure.definition.span) { break Err(error); }
-            match self.run_definition(&closure.definition, (0, 0), true) {
+            match self.run_definition(&closure.definition) {
                 Ok(Step::Done(bound)) => break Ok(bound),
                 Err(error) => break Err(error),
                 Ok(Step::Tail(call)) => {
@@ -766,34 +767,33 @@ impl Session {
     /// An item of a bracket list, or `None` for an absent `⍺`, which drops out of the list.
     fn item_result(&self, nodes: &[Node]) -> Result<Option<Value>, Error> { listed(self.bind(nodes)?.value, &nodes[0].span) }
 
-    /// A body's last statement, or an error handler's expression, as the dfn's result. `slot` holds a statement's recording of its binder steps (`tree.rs`).
-    fn return_expression(&self, mut nodes: &[Node], tail: bool, slot: Option<&std::sync::OnceLock<Option<super::Recording>>>) -> Result<Step, Error> {
+    /// A body's last statement, or an error handler's expression, as the dfn's result.
+    fn return_expression(&self, mut nodes: &[Node], tail: bool) -> Result<Step, Error> {
         if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
         while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
             nodes = inner;
             unshy = true;
         }
-        let step = self.statement_step(slot, nodes, tail)?;
+        let step = Binder::evaluate(nodes, self, tail)?;
         match step {
             Step::Done(mut bound) => { if unshy { bound.shy = false; } bound.result(&nodes[0].span).map(Step::Done) }
             Step::Tail(mut call) => { call.unshy = unshy; Ok(Step::Tail(call)) }
         }
     }
 
-    /// Runs `definition`'s bodies in the current frame, from statement `start.1` of body `start.0`. With `tail`, a last statement that calls a function gives the call to the caller's loop (`Step::Tail`), unless an error guard is active.
-    fn run_definition(&self, definition: &Definition, start: (usize, usize), tail: bool) -> Result<Step, Error> {
-        let frame = self.bindings.current().unwrap();
+    /// Runs the selected body. Its final call returns to the caller unless active error handlers need this frame.
+    fn run_definition(&self, definition: &Definition) -> Result<Step, Error> {
         let mut handlers = Vec::new();
         let result = (|| {
-            'bodies: for (b, body) in definition.bodies.iter().enumerate().skip(start.0) {
-                for (position, statement) in body.iter().enumerate().skip(if b == start.0 { start.1 } else { 0 }) {
+            'bodies: for body in &definition.bodies {
+                for (position, statement) in body.iter().enumerate() {
                     let nodes = &statement.nodes;
                     match statement.kind {
                         StatementKind::DefaultArgument => {
                             if nodes.len() == 2 { return Err(Error::new(ErrorKind::Syntax, "default argument needs a value").at(&nodes[1].span)); }
                             if self.bindings.category(Name::ALPHA) == Some(Category::Absent) {
-                                let value = self.bound(&nodes[2..], Some(&statement.recording))?.value;
+                                let value = self.bind(&nodes[2..])?.value;
                                 if matches!(value, Binding::NoResult | Binding::Absent) {
                                     return Err(Error::new(ErrorKind::Value, "default argument requires a value").at(&nodes[0].span));
                                 }
@@ -801,26 +801,17 @@ impl Session {
                             }
                         }
                         StatementKind::ErrorGuard { index: i } => {
-                            let catch = Catch::new(&self.bound(&nodes[..i], Some(&statement.recording))?.array(&nodes[0].span)?, &nodes[i].span)?;
+                            let catch = Catch::new(&self.bind(&nodes[..i])?.array(&nodes[0].span)?, &nodes[i].span)?;
                             handlers.push((&nodes[i + 1..], catch));
                         }
                         StatementKind::Predicate => {
                             let span = crate::syntax::cover(nodes);
-                            let value = self.bound(nodes, Some(&statement.recording))?.array(&nodes[0].span)?;
-                            let level = if self.transforming() { self.batch_level() } else { None };
-                            let holds = match level.and_then(|level| crate::batch::truths(&value, level).map(|truths| (level, truths))) {
-                                None => value.boolean().described(PREDICATE).at(&span)?,
-                                Some((level, truths)) => {
-                                    match self.guard(definition, frame, (b, position), &truths.described(PREDICATE).at(&span)?, level, &span)? {
-                                        Guarded::Unanimous(holds) => holds, Guarded::Joined(value) => return Ok(Step::Done(Bound::from(value)))
-                                    }
-                                }
-                            };
+                            let holds = self.bind(nodes)?.array(&nodes[0].span)?.boolean().described(PREDICATE).at(&span)?;
                             if !holds { continue 'bodies; }
                         }
                         StatementKind::Expression => {
-                            if position + 1 == body.len() { return self.return_expression(nodes, tail && handlers.is_empty(), Some(&statement.recording)); }
-                            self.bound(nodes, Some(&statement.recording))?;
+                            if position + 1 == body.len() { return self.return_expression(nodes, handlers.is_empty()); }
+                            self.bind(nodes)?;
                         }
                     }
                 }
@@ -835,49 +826,17 @@ impl Session {
             if let Err(stop) = self.effect(crate::transform::Effect::Catches) { result = Err(stop.into()); break; }
             if matches!(error.kind, ErrorKind::Interrupt) { crate::cancel::clear_interrupt(); }
             self.bindings.insert(self.bindings.here(Name::ERROR), Binding::Value(caught(error)));
-            result = self.return_expression(handler, false, None);
+            result = self.return_expression(handler, false);
         }
         result
     }
 
-    /// A guard on predicate `truths`, which gives each cell of batched run `level` a Boolean of its own, at statement `at.1` of body `at.0` of `definition`, running in frame `frame` (`operators::guard`). Each side runs as a guard case on its own cells (`transform::Levels::case`): the rest of the body where the predicate holds, and the bodies after it elsewhere. A case reads each batched value at its cells (`restricted`), and runs its last call before it returns, to give a value.
-    #[cold]
-    #[inline(never)]
-    fn guard(&self, definition: &Definition, frame: usize, at: (usize, usize), truths: &Value, level: u64, span: &Span) -> Result<Guarded, Error> {
-        let key = definition as *const Definition as usize;
-        super::operators::guard(truths, level, |holds, rows, cells| {
-            let (_, first) = session().levels.borrow_mut().case(Some(key), frame, cells.clone()).at(span)?;
-            let restricted = session().restricted(frame, first, level, truths.len(), rows);
-            let result = restricted.and_then(|bindings| {
-                let saved = session().bindings.swap(bindings);
-                let step = session().run_definition(definition, if holds { (at.0, at.1 + 1) } else { (at.0 + 1, 0) }, false);
-                session().bindings.swap(saved);
-                step
-            });
-            session().levels.borrow_mut().end_case();
-            match result? { Step::Done(bound) => bound.array(span), Step::Tail(_) => unreachable!("a case runs its last call") }
-        })
-    }
 
-    /// The bindings of each frame from `first` to `frame`, with each batched value of run `level` read at a guard case's cells, the cells at positions `rows` of the run's `cells` cells (`batch::read_cells`), for `Bindings::swap`. These frames are the calls that started during the run. A closure that a case calls reads its defining frame, which can be any of them, whether or not it lies on `frame`'s lexical chain. Frames before `first` started before the run and hold none of its batches. A batch made before the run widened has fewer cells than the run, one for each run of cells that the widening's inner frame repeats it over (`read_binding`), so the case reads it at the cells that hold its rows.
-    fn restricted(&self, frame: usize, first: usize, level: u64, cells: usize, rows: &[u32]) -> Result<Vec<(usize, FrameBindings)>, Error> {
-        let read = |whole: &Value, axes: usize| {
-            let repeats = (cells / crate::array::count(&whole.shape()[..axes])) as u32;
-            let rows: std::borrow::Cow<[u32]> = if repeats == 1 { rows.into() } else { rows.iter().map(|r| r / repeats).collect() };
-            Ok((super::operators::cells_at(whole, axes, &rows)?, 1))
-        };
-        (first..=frame).map(|i| {
-            let mut copy = self.bindings.frame_bindings(i);
-            for value in copy.values_mut() { *value = crate::batch::read_cells(value, level, &read)?; }
-            Ok((i, copy))
-        }).collect()
-    }
-
-    /// Runs `run` in the batched run widened to `frame`, the run's frame followed by the frame of a map inside the run (`batch::tried`). Until it returns, a write to a binding in a frame that started before the widening stops the run (`transform::Levels::case`), and code reads each batch of the run that such a frame holds laid over `frame` (`read_binding`).
-    pub(crate) fn widened<T>(&self, frame: &crate::array::Layout, span: &Span, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
-        self.levels.borrow_mut().case(None, self.bindings.depth(), frame.clone()).at(span)?;
+    /// Runs `run` in the batched run widened to `frame`, the run's frame followed by the frame of a map inside the run (`batch::tried`). Until it returns, a write to a binding in a frame that started before the widening stops the run (`transform::Levels::widen`), and code reads each batch of the run that such a frame holds laid over `frame` (`read_binding`).
+    pub(crate) fn widened<T>(&self, frame: &crate::array::Layout, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+        self.levels.borrow_mut().widen(self.bindings.depth(), frame.clone());
         let result = run();
-        self.levels.borrow_mut().end_case();
+        self.levels.borrow_mut().end_widening();
         result
     }
 
@@ -936,6 +895,3 @@ fn caught(error: &Error) -> Value {
 pub(super) fn listed(value: Binding, span: &Span) -> Result<Option<Value>, Error> {
     if matches!(value, Binding::Absent) { Ok(None) } else { value.into_value(span).map(Some) }
 }
-
-/// What `Session::bracket` asks its `part` for: an item without a key, the value of a keyed item, with the position of its `:` and the key where the item's name gives it, or a key.
-pub(super) enum Within { Item, Value { colon: usize, named: Option<Value> }, Key }

@@ -22,6 +22,8 @@ A name accepts characters not reserved for syntax, glyphs, numbers or whitespace
 
 After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
 
+After a dot, a named or parenthesized operator head needs a space: `T. op[I]` and `T. (op)[I]` modify the selector function `.[I]` with that operator. Tight `T.op[I]` and `T.(expr)[I]` retain their field and scope meanings. Glyph operators and numeric superscripts can touch the dot, as in `T.¨[I]` and `T.¹ ²[I]`. The first bracket at the current level starts selectors; parenthesized operands and dfns stay whole. See [Dot](glyphs/dot.qmd).
+
 ```bpl
 f←- ⋄ f2                       ⍝ ¯2
 x_1←10 ⋄ x_12←20 ⋄ x_1+x_12   ⍝ 30

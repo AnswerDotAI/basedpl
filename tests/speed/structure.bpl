@@ -17,6 +17,7 @@ patches←8 size 2 ⋄ pixels←224 size 32
 images←["b":patches "h":pixels "w":pixels "c":3]⍴¿(patches×pixels²×3)⍴0
 split←{["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉⍵}
 rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
+join_cells←64⍴⊂¿(n÷64)⍴0
 ⍝⍝ structure
 ⍝ A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
 ⍝ Expected: `2×⌽sv+1` 1.25 copies: one fused pass, with an 8-byte read and write an item, and a block buffer for the reversal; `2×1⌽sv+1` and `2× 10↓sv + 1` 1 copy: one fused pass, with an 8-byte read and write an item; `+/ ⌽sv × sv` 1 copy: two 8-byte reads of `sv` an item, folded.
@@ -63,6 +64,12 @@ rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
 ⍝ `sm,sm` measures 1.4 on macOS since a join writes each row whole, a lane from each argument in turn, straight into the result (`gather::interleave`, 22 October 2026), down from 4.3 to 4.6, which a fill and a strided pass for each argument cost. CI measured 1.31 to 1.42 on Linux in most runs from 56 to 62.
 sm,sm
 ⍝⍝: 4	4.1	4.1	instructions macos 4.088 linux 2.941	allocated macos 16.03 linux 16.03
+
+⍝ A homogeneous 64-piece join reads each piece once into the final buffer, with O(64) layout/setup work and no growing intermediates.
+⍝ Expected: 1 copy: n float reads and writes.
+⍝⍝⍝ route bulk catenate
+,/join_cells
+⍝⍝: 2	2	2	instructions linux 4.236	allocated linux 8.549
 
 ⍝ A join of 8-bit integers to floats converts the integers in one pass first, then joins as `sm,sm` does. `ism` holds exact positions, which take a byte each.
 ⍝ Expected: 2.6 copies: a pass that converts `ism`'s bytes into floats, about 0.6 copies with 1-byte reads and 8-byte writes, then the join's 2 copies, as for `sm,sm`.

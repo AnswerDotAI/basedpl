@@ -3,9 +3,8 @@
 //! The rewriter reads what a function computes, and what an expression computes, as one tree of calls (`Form`). It replaces each subtree that a rule matches, inner subtrees first, with a call of the rule's function. `Function::new` rewrites a function's monadic and dyadic forms (`function`), and `dispatch` calls the results in the function's place. The binder rewrites each list of nodes before it walks it, after dot access and joins (`expression`). So `⍟1+x`, `⍟ 1+x`, `⍟(x+1)`, the train `⍟1+` and `⍟∘(1+)` all compute through `log1p`, from the first call on. An expression is read as far as its functions are constant and its arguments are arrays, as `Session::static_category` reads them, which keeps what it read about names in the recording's facts.
 //!
 //! A combination's function gives the combination's results. Where its algorithm doesn't suit the arguments, or a running level carries one, it calls the functions it combines (`combined`), which the level then sees. `•explain` reports each combination that its own algorithm computes.
-use super::tree::Facts;
 use super::{
-    Binding, Bound, Function, FunctionNode, Operand, Session, Step, binder::{Binder, Category, Tine}, operators::{grouped, primitive_expansion}, session
+    Binding, Bound, Function, FunctionNode, Operand, Session, Step, binder::{Binder, Category}, operators::{grouped, primitive_expansion}, session
 };
 use crate::primitive::{Folding, Order, Pick, Special};
 use crate::syntax::{Node, NodeKind, cover};
@@ -59,7 +58,7 @@ impl Rule {
     fn read(text: &str, with: Special) -> Self {
         let parsed = crate::syntax::parse(crate::error::Source::new("<rule>", text)).complete().expect("a rule parses");
         let nodes = &parsed.statements[0].nodes;
-        let mut reader = Reader { session: session(), facts: None, lists: vec![nodes], holes: Vec::new() };
+        let mut reader = Reader { session: session(), pattern: true, lists: vec![nodes], holes: Vec::new() };
         let Some((pattern, 0)) = reader.read(0, nodes.len()) else { panic!("rule {text} doesn't read as calls on ⍵") };
         assert!(reader.holes.len() <= 2, "rule {text} captures at most two arguments");
         let left = if reads(&pattern, true) { Some(Kind::Arg(true)) } else if reader.holes.is_empty() { None } else { Some(Kind::Hole(0)) };
@@ -268,40 +267,30 @@ pub(super) fn direct(f: &Function) -> Option<(Special, Option<&Value>)> {
     }
 }
 
-/// Whether a train with `tines` may hold a combination that a rule matches, so that the caller builds the train's function, which `function` rewrites, instead of calling its tines (`operators::calls_tines`).
-pub(super) fn may_combine(tines: &[Tine]) -> bool {
-    let Some(rules) = rules() else { return false };
-    possible(&rules.masks, rules.keys[0], tines.iter().fold(0, |m, t| match t { Tine::Function(f) => m | f.node.needs, _ => m }))
-}
 
-/// `nodes` with each combination in them that a rule whose pattern spans more than one call matches (`Rules::spanning`) replaced by a group that calls the rule's function, or `nodes` as they are. Only a combination that lies in `nodes` itself is replaced here: one inside a group is replaced when the binder walks the group. `facts` keeps what a reading that found a combination read about what names hold.
-pub(super) fn expression<'a>(session: &Session, nodes: &'a [Node], facts: &mut Facts) -> Cow<'a, [Node]> {
+/// `nodes` with each combination in them that a rule whose pattern spans more than one call matches (`Rules::spanning`) replaced by a group that calls the rule's function, or `nodes` as they are. Only a combination that lies in `nodes` itself is replaced here: one inside a group is replaced when the binder walks the group.
+pub(super) fn expression<'a>(session: &Session, nodes: &'a [Node]) -> Cow<'a, [Node]> {
     let Some(Rules { all, masks, keys, spanning }) = rules() else { return Cow::Borrowed(nodes) };
     let rules = &all[..*spanning];
     if !possible(&masks[..*spanning], keys[1], nodes.iter().fold(0, |m, n| m | written(n))) { return Cow::Borrowed(nodes); }
     let mut out = Cow::Borrowed(nodes);
     loop {
-        let mut read = Vec::new();
         let found = {
-            let mut logged: Facts = facts.is_some().then_some(&mut read);
-            let mut reader = Reader { session, facts: Some(&mut logged), lists: vec![&out[..]], holes: Vec::new() };
+            let mut reader = Reader { session, pattern: false, lists: vec![&out[..]], holes: Vec::new() };
             reader.read(0, out.len()).and_then(|(form, _)| reader.first(&form, rules))
         };
         let Some((range, node)) = found else { return out };
-        if let Some(facts) = facts { read.into_iter().for_each(|f| { if !facts.contains(&f) { facts.push(f) } }) }
         out.to_mut().splice(range, [node]);
     }
 }
 
-/// Reads forms from lists of nodes, right to left, as the binder groups them. A pattern's reader, with `facts` of `None`, reads `⍵` and `⍺` as arguments and any other name as a capture.
-struct Reader<'a, 'f, 'r> { session: &'a Session, facts: Option<&'f mut Facts<'r>>, lists: Vec<&'a [Node]>, holes: Vec<Name> }
+/// Reads forms from lists of nodes, right to left, as the binder groups them. A pattern's reader, with `pattern` set, reads `⍵` and `⍺` as arguments and any other name as a capture.
+struct Reader<'a> { session: &'a Session, pattern: bool, lists: Vec<&'a [Node]>, holes: Vec<Name> }
 
-impl<'a> Reader<'a, '_, '_> {
-    fn category(&mut self, node: &Node) -> Category {
-        match (&mut self.facts, &node.kind) {
-            (None, NodeKind::Name(..)) => Category::Value, (Some(facts), _) => self.session.static_category(node, facts),
-            (None, _) => self.session.static_category(node, &mut None)
-        }
+impl<'a> Reader<'a> {
+    fn category(&self, node: &Node) -> Category {
+        if self.pattern && matches!(node.kind, NodeKind::Name(..)) { Category::Value }
+        else { self.session.static_category(node) }
     }
 
     /// The form of the longest run of calls that ends at `end` in list `list` and starts from an array, with where it starts.
@@ -326,7 +315,7 @@ impl<'a> Reader<'a, '_, '_> {
         if i > 0 && self.category(&nodes[i - 1]).valence() == Some(true) { return None; }
         let kind = match &nodes[i].kind {
             NodeKind::Literal(v) => Kind::Value(v.clone()),
-            NodeKind::Name(name, _) if self.facts.is_none() => match *name {
+            NodeKind::Name(name, _) if self.pattern => match *name {
                 Name::OMEGA => Kind::Arg(false),
                 Name::ALPHA => Kind::Arg(true),
                 _ => Kind::Hole(self.holes.iter().position(|h| h == name).unwrap_or_else(|| {

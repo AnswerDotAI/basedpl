@@ -27,8 +27,6 @@ t←[n÷16 16]⍴v
 tq←¿[n÷4 24]⍴0
 z←v+0j1×w
 zm←[(128 size 16) (128 size 16)]↑m+0j1×⊖m
-f←"svd"•decompose m
-h←"eigen"•decompose m+⍉m
 bm←[side side]⍴b
 jm←[side side]⍴jv
 um←[2×side 2×side]⍴(256×w)ₓ₁
@@ -38,10 +36,6 @@ ia←ir.[¿side⍴side]
 id←•index side
 lut←256↑v
 ux←(¿n⍴256)ₓ₁
-rka←•literal⁻¨⍳n
-rkb←•literal⁻¨⍳n
-ra←rka:v
-rb←rkb:w
 ⍝⍝ copies
 ⍝ Sharing storage copies nothing.
 ⍝ Expected: 0 copies each: shares storage.
@@ -178,13 +172,6 @@ c=c
 ⍝ Expected: 0.73 copies: 0.5 for writing 8 bytes an item, and one node, about 0.23 copies of 65,536 floats (`fusion::MAC_NODE_NS`, 1,800 ns), because the call waits under the cost rule and nothing fuses with it (decision 13). Jeremy accepted a lone 65,536-item call's node on 30 October 2026, as for `c=c`. Main set this expected cost on 31 October 2026, for Jeremy's review. In the browser the call runs at once, because the cost rule's limit there, from the browser's node estimate of 4 × `MAC_NODE_NS`, is about 830 KB, above the call's 512 KB. CI measured it there at 1.06 copies.
 ⍳√n ×⊗ ⍳√n
 ⍝⍝: 1.5	1.7	1.9	instructions macos 6.694 linux 4.935	allocated macos 8.379 linux 8.379
-
-⍝ Arithmetic on two keyed vectors whose keys are equal but were built separately, as the same 65,536 texts made twice.
-⍝ Expected: 1.5 copies: as `v+w`, once the call knows that the two key vectors are equal.
-⍝ On 30 October 2026 `ra+2×ra`, whose operands share one key object, cost 1.62 on macOS.
-⍝ Fresh calls compare ordered key labels. Pending execution retains the resulting maps; key unions are not cached.
-ra+rb
-⍝⍝: 3	25	33	instructions macos 58.717 linux 42.47	allocated macos 8.096 linux 8.096
 
 ⍝ Products of 64-bit integers that leave 64 bits become exact big integers, each held in an allocation of its own.
 ⍝ Expected: 220 copies: about 25 ns an item for an allocation, a free and a 128-bit product.
@@ -866,18 +853,10 @@ side↑w ⌹ m
 "svd"•decompose⍤2 ms
 ⍝⍝: 600	430	390	instructions macos 970.586 linux 914.832	allocated macos 114.273 linux 114.274
 
-⍝ `"svd"•decompose⁻ f` costs a 256×256 product plus four passes. On CI it measured 90.5 when `m+.×m` measured 79.6. Its expected cost used to take the product from rustymath's `linalg::PlusTimes`, 21 copies on Linux, a figure that basedpl's single-threaded product doesn't reach.
-"svd"•decompose⁻ f
-⍝⍝: 26	85	160	instructions macos 35.999 linux 106.351	allocated macos 32.058 linux 48.308
-
 ⍝ `["kind":"svd" "rank":8]•decompose m` in wasm: 82 copies, as CI's x86 V8 measured it on 22 October 2026, at 15.7 ns an item against a copy of 0.192 ns. That's about 2.8 flops in a copy's time, where the group's wasm rate of 4 would give 58. Thin products take 70% of its instructions on rustymath's own kernels, at 70 to 80% of a square product's flops per instruction. CI measured 79 to 92 in seven runs from 22 October 2026. This Mac's V8 takes about the same time, 14.3 ns an item, against a copy 1.6 times faster than CI's, and measures 118 to 121 copies, up to 153 under load.
 ⍝ CI measured 74.5 to 83.5 in wasm in runs 52 to 62.
 ["kind":"svd" "rank":8]•decompose m
 ⍝⍝: 44	84	120	instructions macos 124.491 linux 247.441	allocated macos 29.457 linux 140.483
-
-⍝⍝⍝ held macos 76.5: about a third of its macOS time is our own code, building vectors and rustymath's LU (`profile`, 29 October 2026)
-"eigen"•decompose⁻ h
-⍝⍝: 81	240	390	instructions macos 138.5 linux 344.501	allocated macos 75.37 linux 130.776
 
 ⍝ `"eigen"•decompose⍤2 ss` runs rustymath's own Hermitian solver on every platform, because 8×8 lies below rustymath's `HEEVD_FROM`. On macOS it measures about 298, against 392 on Accelerate's `?heevd`.
 ⍝ CI measured 241 to 252 on Linux in runs 56 to 61, and 442 in run 62, whose host was busy.

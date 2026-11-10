@@ -19,3 +19,14 @@ pub(crate) fn timing_lock() -> Result<rustymath_timing::Hold, String> {
 /// The browser build takes no timing lock. `basedpl.bpltests` takes it around the module's timings.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) fn timing_lock() -> Result<(), String> { Ok(()) }
+
+pub(crate) fn held_back<T>(mut check: impl FnMut() -> T, passed: impl Fn(&T) -> bool) -> (T, usize) {
+    use rustymath::memory::{checks, held};
+    let start = held();
+    let result = check();
+    if !checks() || !passed(&result) || held() <= start { return (result, 0); }
+    let again = held();
+    let result = check();
+    let left = if passed(&result) { held().saturating_sub(again) } else { 0 };
+    (result, left)
+}

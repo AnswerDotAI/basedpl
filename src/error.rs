@@ -163,8 +163,6 @@ pub(crate) enum Cause {
     Memory = 4,
     /// A guard or a call on prototypes that would catch an error (`Effect::Catches`).
     Caught = 5,
-    /// A guard on a batched value in a dfn whose guard already splits the run's cells, as a recursive call makes (`Levels::case`).
-    Recursion = 6,
 }
 
 /// How long a dfn operand remembers a stop of its batched run (`batch::tried`).
@@ -182,21 +180,21 @@ impl Cause {
     /// How long a dfn operand remembers a stop for this cause.
     pub(crate) fn kept(self) -> Kept {
         match self {
-            Cause::Effect | Cause::Write | Cause::Observed | Cause::Recursion => Kept::Always, Cause::Rule => Kept::Arguments { frame: false },
+            Cause::Effect | Cause::Write | Cause::Observed => Kept::Always, Cause::Rule => Kept::Arguments { frame: false },
             Cause::Memory => Kept::Arguments { frame: true }, Cause::Caught => Kept::Never
         }
     }
     /// The cause that `bits` encode, as a stop and a dfn operand's memory of a stop hold it.
     pub(crate) fn from_bits(bits: u64) -> Cause {
         match bits {
-            0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, 5 => Cause::Caught, _ => Cause::Recursion
+            0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, _ => Cause::Caught
         }
     }
     /// What `•explain` reports in `fallbacks` for a stop for this cause.
     pub(crate) fn reason(self) -> &'static str {
         match self {
             Cause::Effect => "an effect", Cause::Write => "a write", Cause::Observed => "a cell's value", Cause::Rule => "no batch rule",
-            Cause::Memory => "too many items", Cause::Caught => "a caught error", Cause::Recursion => "a recursive call"
+            Cause::Memory => "too many items", Cause::Caught => "a caught error"
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::{
 use num_complex::{Complex32, Complex64};
 use rustymath::{
     agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, Element, Fill, FloatBuf, FloatWidth, Floats, IntBuf, View, Width}, domain::Range, error::Kind,
-    gather::Writes, with_width
+    gather::Writes, structure::{Count, take_steps}, with_width
 };
 use std::{borrow::Cow, fmt, sync::Arc};
 
@@ -1041,21 +1041,19 @@ impl Value {
         let cell_len = element_count(cell_shape)?;
         let mut data = Gather::with_widening(&cells.iter().collect::<Vec<_>>(), len, widening);
         for cell in cells {
-            if cell.shape() == cell_shape { data.extend(cell, 0..cell_len); continue; }
-            let pad = rank - cell.shape().len();
+            if cell.shape() == cell_shape || cell_len == 0 { data.extend(cell, 0..cell_len); continue; }
+            let source_shape = [vec![1; rank - cell.shape().len()], cell.shape().to_vec()].concat();
+            let counts: Vec<_> = cell_shape.iter().enumerate().map(|(axis, &magnitude)| (axis, Count { negative: false, magnitude })).collect();
+            let map = Mapping::from(take_steps(&source_shape, &counts, true)?);
             let fill = cell.fill_item(chosen);
-            for i in 0..cell_len {
-                let (mut rest, mut source, mut stride, mut inside) = (i, 0, 1, true);
-                for axis in (0..rank).rev() {
-                    let coord = rest % cell_shape[axis];
-                    rest /= cell_shape[axis];
-                    let size = if axis < pad { 1 } else { cell.shape()[axis - pad] };
-                    inside &= coord < size;
-                    if inside { source += coord * stride; }
-                    stride = stride.saturating_mul(size);
+            map.spans(0..cell_len, cell.len(), &mut |_, len, run| {
+                match run {
+                    Some((first, 1)) => data.extend(cell, first..first + len),
+                    Some((first, stride)) => for j in 0..len { data.push(cell, first.wrapping_add_signed(stride * j as isize)); },
+                    None => data.fill(&fill, len),
                 }
-                if inside { data.push(cell, source) } else { data.fill(&fill, 1) }
-            }
+                true
+            });
         }
         data.finish(frame.concat(&cell_layout), || cells[0].prototype())
     }

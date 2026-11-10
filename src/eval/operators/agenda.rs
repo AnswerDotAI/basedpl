@@ -1,4 +1,4 @@
-//! Agenda (`⍚`), Under (`@`), and guards on batched predicates.
+//! Agenda (`⍚`) and Under (`@`).
 use super::*;
 
 /// The case that the unit `index` picks from `len` cases (`cases_picked`). A selector that isn't a number is DOMAIN.
@@ -301,37 +301,6 @@ impl Cells {
     }
 }
 
-/// What a guard on a batched predicate gives (`guard`): the side that every cell takes, or the batch that joins the two sides' results.
-pub(in crate::eval) enum Guarded { Unanimous(bool), Joined(Value) }
-
-/// A guard whose predicate gives each cell of batched run `level` a Boolean of its own, run as `⍚` runs a selector for each cell (`Cells`). `truths` holds the Booleans, laid out as the run's frame (`batch::truths`). Where the cells take both sides, `side` runs each side once, on the cells that take it, given whether the predicate holds there, the cells' positions in the frame and their layout as a list. It gives a batch over those cells or a constant (`batch::whole_over`), and the two results join into one batch over the frame. A side whose cells differ in layout from the other side's stops the run, because a batch's cells share one layout.
-pub(in crate::eval) fn guard(
-    truths: &Value, level: u64, mut side: impl FnMut(bool, &[u32], &crate::array::Layout) -> Result<Value, Error>) -> Result<Guarded, Error> {
-    use crate::error::{Cause, Stop};
-    let cells = Cells::new(truths, None, truths)?;
-    let groups = cells.picked(truths, 2)?;
-    let picked: Vec<&[u32]> = groups.each().collect();
-    if let Some(k) = (0..2).find(|&k| picked[k].is_empty()) { return Ok(Guarded::Unanimous(k == 0)); }
-    let mut made = Vec::new();
-    for k in [0, 1] {
-        let frame = listed(&cells.framed.frame(), picked[k], &Default::default())?;
-        let result = side(k == 1, picked[k], &frame)?;
-        // A constant atom fills its cells, as a constant case of `⍚` does, so a weak number takes the other side's width (`Gather`).
-        if result.is_atom() && crate::batch::constant(&result, level) { made.push((k, Made::Fill(result))); continue; }
-        let whole = crate::batch::whole_over(result, level, &frame).ok_or_else(|| Error::from(Stop::new(level, Cause::Rule)))?;
-        made.push((k, Made::Cells(whole)));
-    }
-    let cell = |m: &Made| m.value().layout().axes(1..m.value().shape().len());
-    if cell(&made[0].1) != cell(&made[1].1) { return Err(Stop::new(level, Cause::Rule).into()); }
-    let fill = made[0].1.value().prototype();
-    let whole = cells.assembled(&picked, &[], &made, fill, None)?;
-    crate::batch::result(level, whole, truths.shape().len(), || true, Stop::new(level, Cause::Rule)).map(Guarded::Joined)
-}
-
-/// The cells at frame positions `rows` of `array`, whose first `frame` axes are its frame, as a list, as a guard case reads a batch's whole (`batch::read_cells`).
-pub(in crate::eval) fn cells_at(array: &Value, frame: usize, rows: &[u32]) -> Result<Value, Error> {
-    Framed::new(array.layout(), &(0..frame).collect::<Vec<_>>())?.read(array, rows)
-}
 
 /// The cells of an array along its frame axes. `layout` and `steps` put the frame's axes first and then a cell's, as `⍉` would, but no item moves. The first `rank` steps reach each cell's start; the rest read its items.
 struct Framed { layout: crate::array::Layout, rank: usize, steps: Vec<rustymath::gather::Steps> }

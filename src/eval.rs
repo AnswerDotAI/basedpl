@@ -4,7 +4,7 @@ use crate::{
     primitive::{Builtin, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Superscript}, symbols::Notation,
     syntax::{Definition, DefinitionKind, Node, NodeKind, ScriptKind}
 };
-use rustymath::error::Kind;
+use rustymath::{error::Kind, structure::IndexPart};
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
 
@@ -15,12 +15,10 @@ mod dissect;
 mod operators;
 mod rewrite;
 mod session;
-mod tree;
 pub(crate) use binder::before;
 pub(crate) use bindings::Place;
 pub(crate) use operators::{cell_constant, fold, folded_along, folded_cells, matrices, primitive_expansion, primitive_fold, primitive_product, whole_cells};
 pub(crate) use rewrite::combined;
-pub(crate) use tree::Recording;
 use {binder::*, bindings::Bindings, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
@@ -36,6 +34,26 @@ fn same_values(x: &Value, y: &Value, _: bool) -> Result<bool, Infallible> { Ok(x
 /// Whether two operator applications' operands match, with `values` comparing the values in them.
 fn operands_equal<E>(a: &Operand, b: &Option<Operand>, x: &Operand, y: &Option<Operand>, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
     Ok(a.equal_by(x, values)? && match (b, y) { (Some(b), Some(y)) => b.equal_by(y, values)?, (b, y) => b.is_none() && y.is_none() })
+}
+
+fn selections_equal<E>(x: &[IndexPart<Value>], y: &[IndexPart<Value>], values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+    if x.len() != y.len() { return Ok(false); }
+    for (x, y) in x.iter().zip(y) {
+        let same = match (x, y) {
+            (IndexPart::Axis(a), IndexPart::Axis(b)) => OperandRef::Value(a).equal_by(&OperandRef::Value(b), values)?,
+            _ => x.as_ref().map(|_| ()) == y.as_ref().map(|_| ())
+        };
+        if !same { return Ok(false); }
+    }
+    Ok(true)
+}
+
+fn selection_text(parts: &[IndexPart<Value>], el: Elide) -> String {
+    let parts = parts.iter().map(|part| match part {
+        IndexPart::Axis(v) => v.operand(el), IndexPart::All => ":".into(), IndexPart::Rest => "∞".into(), IndexPart::NewAxis => "¯∞".into(),
+        IndexPart::Slice(slice) => format!("<{slice}>")
+    }).collect::<Vec<_>>().join(" ");
+    format!("[{parts}]")
 }
 
 /// Whether a program takes datum `a` as an input, as it takes a free name that holds an array: where a program can hold it (`plan::Desc::describes`). A datum is an operator's array operand, such as the rank in `f⍤k`, or the array that a function binds as its left argument (`a↣f`) or its right (`f↢a`). A train binds each array tine this way, so `w×⊢` is `(w↣×)∘⊢`. A program holds any other datum, and an array that acts as a function, as part of the function's structure.
@@ -77,6 +95,7 @@ impl Function {
             (N::Ruled(f, r), N::Ruled(g, s)) => f.equal_by(g, values)? && r.equal_by(s, values)?,
             (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
             (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
+            (N::Selection(x), N::Selection(y)) => selections_equal(x, y, values)?,
             (N::Array(a), N::Array(b)) => values(a, b, false)?,
             (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?, _ => false
         })
@@ -177,6 +196,7 @@ const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 enum FunctionNode {
     Primitive(Primitive),
     System(crate::system::SystemFunction),
+    Selection(Vec<IndexPart<Value>>),
     LateBound(Arc<Parsed>, Span),
     Fold(Function, FoldKind),
     Inverse(Function),
@@ -227,6 +247,7 @@ impl FunctionNode {
         match self {
             Self::Primitive(_) | Self::System(_) | Self::LateBound(..) | Self::Defined(_) => {} Self::Fold(f, _) | Self::Inverse(f) => visit(R::Function(f)),
             Self::Modified(_, a) => visit(a.into()), Self::Array(a) => visit(R::Value(a)),
+            Self::Selection(parts) => parts.iter().filter_map(IndexPart::axis).for_each(|a| visit(R::Value(a))),
             Self::Composed(_, operands) => operands.iter().for_each(|a| visit(a.into())), Self::Fork(fs) => fs.iter().for_each(|f| visit(R::Function(f))),
             Self::Derived(_, a, b) => std::iter::once(a).chain(b).for_each(|a| visit(a.into())),
             Self::Ruled(f, rules) => std::iter::once(f).chain(rules.functions()).for_each(|f| visit(R::Function(f)))
@@ -247,7 +268,7 @@ impl FunctionNode {
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(), Self::Fold(_, h) => el.notation.glyph(h.glyph()).into(),
             Self::Inverse(_) => "⁻".into(), Self::Modified(OperatorKind::Super(Superscript::Mark(mark)), _) => mark.marker().into(),
             Self::Array(a) => a.source(el), Self::Modified(op, _) | Self::Composed(op, _) => el.notation.glyph(op.glyph()).into(),
-            Self::Fork(_) => "fork".into()
+            Self::Fork(_) => "fork".into(), Self::Selection(_) => "select".into()
         }
     }
 }
@@ -302,9 +323,10 @@ impl Function {
     /// `f` and the text after the dot of a function built from `f.name` or `f.[I]`: the field name, or the selectors.
     fn dotted(&self, el: Elide) -> Option<(&Function, String)> {
         let FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(s), Operand::Function(f)]) = self.node() else { return None };
+        if let FunctionNode::Selection(parts) = s.node() { return Some((f, selection_text(parts, el))); }
         let FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(b)]) = s.node() else { return None };
         match b.as_primitive()? {
-            Primitive::Mix => crate::keyed::name(a).map(|name| (f, name.to_string())), Primitive::Bracket => Some((f, a.operand(el))), _ => None
+            Primitive::Mix => crate::keyed::name(a).map(|name| (f, name.to_string())), _ => None
         }
     }
     pub(crate) fn environment(&self) -> Option<usize> { self.node.environment }
@@ -340,6 +362,7 @@ impl Function {
         if let Some((parts, _)) = self.called_parts(dyadic) { return parts.iter().any(|&(f, v)| f.discards(v)); }
         match self.node() {
             N::Primitive(p) => p.discards(dyadic), N::Fold(f, _) => f.discards(true) || matches!(f.node(), N::Primitive(Primitive::Identity(_))),
+            N::Selection(_) => true,
             N::Ruled(_, Rules { inverse: Some(_), .. }) => false, N::Inverse(f) if f.transposes() => false,
             N::Inverse(f) | N::Ruled(f, _) | N::Modified(Each, F(f)) | N::Composed(Power | Rank | Axis, [F(f), V(_)]) => f.discards(dyadic),
             N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
@@ -361,6 +384,7 @@ impl Function {
         *budget -= 1;
         if let Some((f, key)) = self.dotted(el) { return format!("{}.{}", f.left_text(el, budget), key); }
         match self.node() {
+            FunctionNode::Selection(parts) => format!(".{}", selection_text(parts, el)),
             FunctionNode::Primitive(_) | FunctionNode::System(_) | FunctionNode::Array(_) => self.node().label(el),
             FunctionNode::LateBound(_, span) => span.source.text.clone(),
             FunctionNode::Defined(c) => c.text().into(),
@@ -412,35 +436,27 @@ impl Function {
         };
         if token { text } else { format!("({text})") }
     }
-    /// A train. Each subject first binds the part after it, so `2×` is `2↣×` (`train_parts`). The train then builds from its last part leftwards (`train_shape`). So `32+1.8×` is `(32↣+)∘(1.8↣×)`, `⊢-2×⊢` is `⊢-(2↣×)∘⊢`, and `2|#⊢` is `(2↣|)#⊢`.
+    /// Builds a train from right to left. Array tines bind the function after them; unbound pairs make forks.
+    /// For example, `32+1.8×` becomes `(32↣+)∘(1.8↣×)`, not a fork.
     fn train(tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
-        let parts = Self::train_parts(&tines, |f| Ok(f.clone()), |a, f: Result<Self, Error>| before(a.clone(), f?, span));
-        Self::train_shape(
-            parts, &mut (), |_, f| f, |_, g, f, result| Self::new(FunctionNode::Fork([g?, f?, result]), span), |_, f, result| atop(f?, result, span))
-    }
-    /// A train's parts, last part first, each with whether it's bound. Each function tine makes a part (`function`), and each subject binds the part after it as its left argument (`bind`). `train` builds a train's function from these parts, and `operators::train_call` calls them.
-    fn train_parts<'t, P>(tines: &'t [Tine], function: impl Fn(&'t Function) -> P, bind: impl Fn(&'t Value, P) -> P) -> impl Iterator<Item = (P, bool)> {
         let mut i = tines.len();
-        std::iter::from_fn(move || {
+        let mut parts = std::iter::from_fn(|| {
             i = i.checked_sub(1)?;
             let Tine::Function(f) = &tines[i] else { unreachable!("a train ends in a function") };
-            let mut part = (function(f), false);
+            let mut part = (Ok(f.clone()), false);
             while let Some(Tine::Array(a)) = i.checked_sub(1).map(|j| &tines[j]) {
                 i -= 1;
-                part = (bind(a, part.0), true);
+                part = (part.0.and_then(|f| before(a.clone(), f, span)), true);
             }
             Some(part)
-        })
-    }
-    /// A train's structure, from its parts, last part first, each with whether it's bound, as `2↣×` is. A bound part takes one argument, so it makes an atop with what's built (`atop(f, result)`). Any other part makes a fork with the part before it (`fork(g, f, result)`), or an atop when it comes first. Each call gets `context`, which `train_call` uses for the train's arguments. `train` builds a train's function by this structure, and `operators::train_call` calls a train's tines by it.
-    fn train_shape<C, P, R>(
-        mut parts: impl Iterator<Item = (P, bool)>, context: &mut C, last: impl FnOnce(&mut C, P) -> Result<R, Error>,
-        mut fork: impl FnMut(&mut C, P, P, R) -> Result<R, Error>, mut atop: impl FnMut(&mut C, P, R) -> Result<R, Error>) -> Result<R, Error> {
-        let (part, _) = parts.next().expect("a train ends in a function");
-        let mut result = last(context, part)?;
+        });
+        let (last, _) = parts.next().expect("a train ends in a function");
+        let mut result = last?;
         while let Some((f, bound)) = parts.next() {
-            let g = if bound { None } else { parts.next() };
-            result = match g { Some((g, _)) => fork(context, g, f, result)?, None => atop(context, f, result)? };
+            result = match if bound { None } else { parts.next() } {
+                Some((g, _)) => Self::new(FunctionNode::Fork([g?, f?, result]), span)?,
+                None => atop(f?, result, span)?,
+            };
         }
         Ok(result)
     }
@@ -453,6 +469,19 @@ impl Function {
     /// The array that a function from `constant` returns, or `None` for any other function.
     fn as_constant(&self) -> Option<&Value> { match self.node() { FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Some(a), _ => None } }
     pub(crate) fn system(f: crate::system::SystemFunction) -> Self { Self::of(FunctionNode::System(f)) }
+    /// Native bracket selection, with structural slices resolved against the argument's layout.
+    pub fn selector(parts: Vec<IndexPart<Value>>) -> Self { Self::of(FunctionNode::Selection(parts)) }
+    /// The selectors of a native bracket operation, without resolving its layout.
+    pub fn selectors(&self) -> Option<&[IndexPart<Value>]> {
+        match self.node() { FunctionNode::Selection(parts) => Some(parts), FunctionNode::Ruled(f, _) => f.selectors(), _ => None }
+    }
+    /// This function followed by native bracket selection. Bounds resolve when the function's result is available.
+    pub fn selected(&self, parts: Vec<IndexPart<Value>>) -> Result<Self, Error> {
+        let span = Span::whole(Source::new("<function>", "[]"));
+        let selection = Self::selector(parts);
+        Self::new(FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(selection), Operand::Function(self.clone())]), &span)
+    }
+
     /// The function of `node`, with its operands checked and what they give it, and no rewrite. `rewrite::original` builds the function that a combination replaces this way, so a call of it doesn't come back to the combination.
     fn unrewritten(node: FunctionNode, span: &Span) -> Result<Self, Error> {
         use OperatorKind::*;
@@ -473,8 +502,8 @@ impl Function {
             }
             // An array has no meaning as an inner product's right operand. After a function, as after an array, text reads a field of the result and other arrays select from it.
             FunctionNode::Composed(Product, [Operand::Function(f), Operand::Value(a)]) => {
-                let read = if crate::keyed::name(&a).is_some() { Primitive::Mix } else { Primitive::Bracket };
-                let select = Self::new(FunctionNode::Composed(Before, [Operand::Value(a), Operand::Function(Self::primitive(read))]), span)?;
+                if crate::keyed::name(&a).is_none() { return f.selected(crate::primitive::squad_parts(&a)?).at(span); }
+                let select = Self::new(FunctionNode::Composed(Before, [Operand::Value(a), Operand::Function(Self::primitive(Primitive::Mix))]), span)?;
                 FunctionNode::Composed(Atop, [Operand::Function(select), Operand::Function(f)])
             }
             FunctionNode::Composed(op, [a, b]) => {
@@ -661,6 +690,7 @@ impl Function {
         let node = match self.node() {
             N::Fold(f, h) => N::Fold(rebuild.function(f)?, *h),
             N::Inverse(f) => N::Inverse(rebuild.function(f)?),
+            N::Selection(parts) => N::Selection(parts.iter().map(|p| p.as_ref().try_map(|v| rebuild.datum(v))).collect::<Result<_, _>>()?),
             N::Derived(c, a, b) => N::Derived(c.clone(), operand(a, rebuild)?, b.as_ref().map(|b| operand(b, rebuild)).transpose()?),
             N::Ruled(f, rules) => {
                 let f = rebuild.function(f)?;
@@ -721,6 +751,7 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
             FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, span),
             FunctionNode::Modified(..) => unreachable!(),
+            FunctionNode::Selection(parts) => crate::primitive::select(right, parts, None, true, None, span),
             FunctionNode::Primitive(p) => p.call(left, right, span),
             FunctionNode::System(f) => {
                 if let (true, Some(prototype)) = (session().prototype.get(), f.prototype) { return Ok(Bound::from(prototype(span))); }
@@ -760,7 +791,7 @@ impl Function {
     pub fn parts(&self) -> Option<(String, Vec<Operand>)> {
         let node = self.node();
         let label = match node {
-            FunctionNode::Defined(_) | FunctionNode::Derived(..) | FunctionNode::LateBound(..) => return None,
+            FunctionNode::Defined(_) | FunctionNode::Derived(..) | FunctionNode::LateBound(..) | FunctionNode::Selection(_) => return None,
             FunctionNode::Ruled(f, _) => return f.parts(),
             // Python names these nodes with words.
             FunctionNode::Inverse(_) => "inverse".into(),
@@ -816,9 +847,7 @@ struct ArrayBinding { place: Place, value: Value }
 pub enum Operand { Value(Value), Function(Function) }
 impl Operand {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
-        match (self, other) {
-            (Self::Value(x), Self::Value(y)) => values(x, y, true), (Self::Function(f), Self::Function(g)) => f.equal_by(g, values), _ => Ok(false)
-        }
+        OperandRef::from(self).equal_by(&OperandRef::from(other), values)
     }
 }
 /// An operand that a node holds, borrowed (`FunctionNode::visit_operands`).
@@ -828,6 +857,11 @@ impl<'a> From<&'a Operand> for OperandRef<'a> {
     fn from(a: &'a Operand) -> Self { match a { Operand::Value(v) => Self::Value(v), Operand::Function(f) => Self::Function(f) } }
 }
 impl OperandRef<'_> {
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
+        match (self, other) {
+            (Self::Value(x), Self::Value(y)) => values(x, y, true), (Self::Function(f), Self::Function(g)) => f.equal_by(g, values), _ => Ok(false)
+        }
+    }
     fn owned(self) -> Operand { match self { Self::Value(v) => Operand::Value(v.clone()), Self::Function(f) => Operand::Function(f.clone()) } }
     fn environment(self) -> Option<usize> { match self { Self::Value(v) => v.environment(), Self::Function(f) => f.environment() } }
 }

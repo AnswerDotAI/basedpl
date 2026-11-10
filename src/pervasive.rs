@@ -442,10 +442,12 @@ pub(crate) fn computes(
     let exact = || table_kernel(p, dyadic, DType::Integer(int), stored, constants, numeric).is_some_and(|k| k.variant().dtype.is_integral());
     let kind = numeric.kind(kind);
     if matches!(kind, DType::Integer(_)) && exact() { return Some(total(p, dyadic, stored, kind, ranges, numeric)); }
+    let mut found = None;
     let at = kind.computes_in(int, numeric.exact_width(kind), |d| match d {
-        DType::Integer(_) => exact(), DType::Boolean if !logical(p, dyadic) => false, d => table_kernel(p, dyadic, d, stored, constants, numeric).is_some()
+        DType::Integer(_) => exact(), DType::Boolean if !logical(p, dyadic) => false,
+        d => { found = table_kernel(p, dyadic, d, stored, constants, numeric); found.is_some() }
     })?;
-    Some(if matches!(at, DType::Integer(_)) { total(p, dyadic, stored, at, ranges, numeric) } else { (at, None) })
+    Some(if matches!(at, DType::Integer(_)) { total(p, dyadic, stored, at, ranges, numeric) } else { (at, found) })
 }
 
 /// Whether `p` computes on Booleans as Booleans: comparisons, `~`, `⊼`, `⊽`, bitwise functions, and dyadic `∧`, `∨`, `⌊` and `⌈`. Other functions read Booleans as the integers 0 and 1.

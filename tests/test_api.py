@@ -38,16 +38,24 @@ def test_builtin_attributes():
 
 
 def test_python_printer():
-    from basedpl import to_python
+    from basedpl import to_python, same
     for code, expected in {
         '×': 'times', '×↢2': 'multiply(2.)', '2↣-': 'subtract.left(2.)', '2-': 'subtract.left(2.)',
         '×↢2ₓ': 'multiply(2)', '÷↢1r2': 'divide(Fraction(1, 2))',
         '+/÷≢': 'add.reduce / equal_underbar_slash', '+.×': 'add @ multiply', '×⊗': 'multiply.outer_product',
-        '+/⍠1': 'add.reduce[1.]', '1↣+⍣[≡]': 'add.left(1.).power([match])', '+⌿': 'add.reduce_first', '-⍨': 'subtract.tilde_diaeresis',
+        '+/⍠1': 'add.reduce.axis(1.)', '1↣+⍣[≡]': 'add.left(1.).power([match])', '+⌿': 'add.reduce_first', '-⍨': 'subtract.tilde_diaeresis',
         '+∘×': 'conjugate.atop(times)', '+⍥×': 'plus.over(sign)', '-↣+': 'negate.before(add)', '+↢-': 'add.after(negate)', '-⊘+': 'negate.valences(add)',
         '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2⋄3 4]↣+': 'add.left(bpl("[1 2⋄3 4]"))',
-        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻': 'multiply(2.).undo',
+        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻': 'multiply(2.).undo', '⌽⍠0': 'circle_stile.axis(0.)',
     }.items(): teq(to_python(bpl(code)), expected)
+    teq(eval(to_python(bpl('+/⍠1')))([[1, 2], [3, 4]]).py, [3, 7])
+    selected = same[None, ..., ::-1]
+    teq(eval(to_python(selected))([[1, 2], [3, 4]]).py, [[[2, 1], [4, 3]]])
+    selected = same[['bb', 'aa']]
+    teq(to_python(selected), "same[['bb', 'aa']]")
+    teq(eval(to_python(selected))({'aa': 1, 'bb': 2}).py, {'bb': 2, 'aa': 1})
+    assert '<slice(1, None, 2)>' in repr(same[1::2])
+    assert '<slice("a", "b", 1)>' in repr(same['a':'b'])
     teq(to_python(bpl('×'), dyad=True), 'multiply')
     teq(to_python(bpl('-⍨'), dyad=True), 'subtract.commute')
     teq(to_python(bpl('+∘×'), dyad=True), 'conjugate.atop(multiply)')
@@ -216,7 +224,7 @@ def test_array_surface():
     np.testing.assert_array_equal(a[:, True], [2, 5])
     np.testing.assert_array_equal(bpl('[mask]⌷v', mask=[False, True, True], v=[10, 20, 30]), [10, 20, 20])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
-    with pytest.raises(IndexError): a[2, 0]
+    teq(a[2, 0].py, 0)
     np.testing.assert_array_equal(a[:, np.array([0, 3])], [[1, 0], [4, 0]])
     k = bpl('["aa":1 "bb":2]')
     np.testing.assert_array_equal(k[Array(['bb', 'aa'])], [2, 1])
@@ -226,9 +234,19 @@ def test_array_surface():
         written = bpl('["aa":1 "bb":2]')
         written[key] = 3
         assert written.py == want
+    short = Array({'a': 1, 'b': 2, 'ba': 3, '': 4})
+    names = ['b', 'a']
+    teq(short[names].py, {'b': 2, 'a': 1})
+    teq(basedpl.same[names](short).py, short[names].py)
+    teq(short['ba'].py, 3)
+    teq(short[['']].py, {'': 4})
+    assert short[[]].shape == (0,)
+    short[names] = 9
+    teq(short.py, {'a': 9, 'b': 9, 'ba': 3, '': 4})
     nested, paths = bpl('[2 3⍴⍳6ₓ;2 2⍴⍳4ₓ]'), bpl('[[0 1] [1 0]]')
     np.testing.assert_array_equal(nested[paths, 0], [3, 0])
-    with pytest.raises(TypeError, match='partial slices'): nested[paths, 1:]
+    with pytest.raises(ValueError, match='paths select cells of different shapes'): nested[paths, 1:]
+    teq(bpl('[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]')[paths, 1:].py, [[5, 6], [8, 9]])
     np.testing.assert_array_equal(a[1:2, :], [[4, 5, 6]])
     np.testing.assert_array_equal(a[:, ::-1], [[3, 2, 1], [6, 5, 4]])
     np.testing.assert_array_equal(a[:, -2:], [[2, 3], [5, 6]])
@@ -254,11 +272,17 @@ def test_array_surface():
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
 def test_pending_indexing():
+    selected = add.left(1)[1::2]
     for n in (4, 7, 3):
         a = Array(list(range(n))) + 1
         teq(a[1::2].py, list(range(2, n+1, 2)))
+        teq(selected(Array(list(range(n)))).py, a[1::2].py)
         a[1::2] = 0
         teq(a.py, [i+1 if i%2 == 0 else 0 for i in range(n)])
+    a = bpl(r'["x":[0.5×⍳100000]]')
+    assert bpl(r'(•storage x.x₀).pending', x=a).py
+    assert a.force() is a
+    assert not bpl(r'(•storage x.x₀).pending', x=a).py
 
 
 
@@ -277,7 +301,8 @@ def test_python_array_value_semantics():
     teq(f(0).np, held.np)
     assert held.keys == (('a', 'b'), None) and held.names == ('row', 'col')
     assert a.keys == (None, None) and a.names == (None, None)
-    expanded = held[None, ...]
+    expanded = basedpl.same[None, ...](held)
+    teq(expanded.py, held[None, ...].py)
     assert expanded.keys == (None, ('a', 'b'), None) and expanded.names == (None, 'row', 'col')
     for inf in (-np.inf, np.inf):
         teq(held[:, inf].np, [0, 0])
@@ -424,7 +449,10 @@ def test_words_binding_and_operators():
     assert type(tally('abc').py) is int and shape(Array([1., 2.])).bpl == '[2]ₓ'
     assert (Array('abc') + 1).py == 'bcd'
     np.testing.assert_array_equal(add.reduce_first(Array([[1, 2], [3, 4]])), [4, 6])
-    np.testing.assert_array_equal(add.reduce[1, 2](np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
+    np.testing.assert_array_equal(add.reduce.axis([1, 2])(np.arange(1, 9).reshape(2, 2, 2)), [10, 26])
+    teq(subtract.axis(0)([10, 20])([1, 2]).py, [-9, -18])
+    teq(subtract[0]([10, 20])([1, 2]).py, -9)
+    teq(add.rank[1:](1)([[1, 2], [3, 4]]).py, [[3, 4]])
     np.testing.assert_array_equal(multiply.outer_product([1, 2], [3, 4]), [[3, 4], [6, 8]])
     assert (add @ multiply)([1, 2], [3, 4]).py == 11 == add.inner_product(multiply)([1, 2], [3, 4]).py
     assert subtract.determinant(multiply)([[1, 2], [3, 4]]).py == -2
@@ -434,7 +462,7 @@ def test_words_binding_and_operators():
     assert (floor << multiply(10.))(1.25).py == 12
     assert (multiply(10.) >> floor)(1.25).py == 12
     for value in ([1.25, 2.75], Array([1.25, 2.75]), np.array([1.25, 2.75])): teq((value >> (multiply(10.) >> floor)).py, [12, 27])
-    assert atop(floor, multiply(10.))(1.25).py == 12
+    assert atop(floor, multiply(10.), add(1.))(1.25).py == 22
     assert add.under(natural_log)(2., 3.).py == pytest.approx(6.)
     np.testing.assert_array_equal(reverse.rank(1)(Array([[1, 2], [3, 4]])), [[2, 1], [4, 3]])
     np.testing.assert_array_equal(multiply(2).under([1, 3])([1, 2, 3, 4]), [1, 4, 3, 8])
@@ -449,6 +477,27 @@ def test_words_binding_and_operators():
     teq(add.power.reduce_first(1)([[1, 2], [3, 4]]).py, [4, 6])
     teq((subtract.left.each + 10)(2)([3, 4]).py, [9, 8])
     teq((sign.valences(add)(-3).py, sign.valences(add)(2, 3).py), (-1, 5))
+
+
+def test_bulk_catenate_reduction():
+    cat = basedpl.catenate
+    pieces = [Array([1, 2]), Array([3]), Array([4, 5])]
+    for copies in (1, 32): teq(cat.reduce(pieces*copies).py, [1, 2, 3, 4, 5]*copies)
+    teq(cat.reduce([pieces[0][:0], *pieces, pieces[0][:0]]).py, [1, 2, 3, 4, 5])
+    teq((cat.reduce([]).py, cat.reduce([pieces[0]]).py), ([], [1, 2]))
+    matrices = [Array([[1], [2]]), Array([[3], [4]]), Array([[5], [6]])]
+    teq(cat.axis(1).reduce(matrices).py, [[1, 3, 5], [2, 4, 6]])
+    teq(basedpl.catenate_first.reduce(matrices).py, [[i] for i in range(1, 7)])
+    teq(cat.reduce([matrices[0], Array([3, 4]), matrices[2]]).py, [[1, 3, 5], [2, 4, 6]])
+    with pytest.raises(BplError, match='LENGTH'): cat.axis(1).reduce([matrices[0], Array([[1], [2], [3]])])
+    named = [Array([i], names=(name,)) for i,name in enumerate(('x', 'y', 'z'))]
+    assert cat.reduce(named).names == ('x',)
+    keyed = [Array([[1, 2]], keys=[None, ['a', 'b']]), Array([[30, 40]], keys=[None, ['b', 'a']]), Array([[5, 6]], keys=[None, ['a', 'b']])]
+    joined = cat.axis(0).reduce(keyed)
+    teq(joined.np.tolist(), [[1, 2], [40, 30], [5, 6]])
+    assert joined.keys == (None, ('a', 'b'))
+    converted = [Array(np.array([0.], np.float64)), Array(np.array([16777217], np.int64)), Array(np.array([1.], np.float32))]
+    teq(cat.reduce(converted).py, [0., 16777216., 1.])
 
 
 def test_math_construction():
@@ -496,8 +545,8 @@ def test_names():
     product = Array(np.arange(12).reshape(4, 3), names=('product', None))
     teq((a + product).names, ('city', None, 'product'))
     teq((a + product).np, data[:, :, None] + product.np.T[None, :, :])
-    teq(add.reduce['month'](m).names, ('city',))
-    teq(add.reduce['month'](m).np, [3, 12])
+    teq(add.reduce.axis('month')(m).names, ('city',))
+    teq(add.reduce.axis('month')(m).np, [3, 12])
     keyed = Array(m, keys=(('Paris', 'London'), ('Jan', 'Feb', 'Mar')))
     other = Array([30, 20, 10], names=('month',), keys=(('Mar', 'Feb', 'Jan'),))
     teq((keyed + other).np, data + [10, 20, 30])
@@ -584,7 +633,7 @@ def test_retained_and_late_bound_functions(capsys):
     assert composed(3).py == 9
     assert late.reduce([]).py == 0
     assert (bpl.fn('+') @ bpl.fn('×'))([], []).py == 0
-    np.testing.assert_array_equal(bpl.fn('⌽')[0]([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
+    np.testing.assert_array_equal(bpl.fn('⌽').axis(0)([[1, 2], [3, 4]]), [[3, 4], [1, 2]])
     bpl('scale←2×')
     assert (bpl.fn('scale') ** -1)(6).py == 3
     bpl(fold=late.reduce)

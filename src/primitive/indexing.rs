@@ -84,11 +84,11 @@ pub(crate) fn paired_select(p: Primitive, x: &Value, xk: usize, y: &Value, yk: u
         return selected.relaid(frame.concat(&selected.layout().axes(frame.shape().len()..selected.shape().len())).into()).ok();
     }
     let plan = framed_plan(&parts, y.layout(), fy > 0, paired, &frame, span)?;
-    y.selected(plan, false).ok()
+    planned_read(y, plan, false, None).ok()
 }
 
 /// Written BPL selectors. Structural markers stay distinct until the applicable source or ending-cell frame is known.
-fn squad_parts(left: &Value) -> Result<Vec<IndexPart<Value>>, Error> {
+pub(crate) fn squad_parts(left: &Value) -> Result<Vec<IndexPart<Value>>, Error> {
     if left.shape().len() > 1 { return Err(Error::new(Kind::Rank, "squad indices must be a unit or vector")); }
     coordinate_fields(left).map(|value| {
             // A batch holds each cell's positions, and a traced value positions that the program computes (`traced_positions`), which `select` reads on the whole.
@@ -288,11 +288,6 @@ fn extend_keys(array: &mut Value, wanted: &[(usize, Vec<std::sync::Arc<str>>)], 
     let missing = added.iter().any(|keys| !keys.is_empty());
     if missing && write { crate::keyed::extend(array, added, descend).described("invalid named axis extension")?; }
     Ok(missing)
-}
-
-/// The claims that address a frontend's written `parts` (`structure::addressed_parts`): a value's one axis name and the axes it covers, and one axis for a part that the frontend decodes.
-fn claims(parts: &[IndexPart<Option<Value>>]) -> Vec<IndexPart<(Option<&str>, usize)>> {
-    parts.iter().map(|p| p.as_ref().map(|v| v.as_ref().map_or((None, 1), |v| (rustymath::structure::sole_name(v.layout()), v.index_width())))).collect()
 }
 
 /// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a value outside the axis, one that isn't a whole number within the comparison tolerance in force (which only Mathish makes nonzero) or a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
@@ -597,47 +592,23 @@ static INDEX: std::sync::LazyLock<Span> = std::sync::LazyLock::new(|| Span { sou
 impl Value {
     /// Source axes consumed by one numeric, key or coordinate-array selector.
     pub fn index_width(&self) -> usize { coordinate_width(self).unwrap_or(1) }
-    /// Plans a frontend's selection of this value by written `parts`, as `⌷` plans one, with index arrays paired by broadcasting. `frontend(i, axis)` decodes the parts that hold no value, as Python decodes its own slices, integers and keys. It gives `None` to leave a part to `⌷`'s decoding. Also gives whether the selection reads one item. `err` converts BPL errors to the frontend's.
-    pub fn planned<E>(
-        &self, parts: &[IndexPart<Option<Value>>], mut frontend: impl FnMut(usize, usize) -> Option<Result<(AxisSelector, bool), E>>, err: impl Fn(Error) -> E
-    ) -> Result<(Plan, bool), E> {
-        let layout = self.core_layout();
-        let claims = claims(parts);
-        rustymath::structure::plan_parts(layout, &claims, None, true, |i, axis| {
-            if let Some(decoded) = frontend(i, axis) { return decoded; }
-            let IndexPart::Axis(Some(value)) = &parts[i] else { unreachable!("the frontend decodes the parts that hold no value") };
-            axis_part(value, layout, axis).map_err(&err)
-        }, |e| err(Error::new(e, "")))
-    }
-    /// This value with the keys that a write by a frontend's written `parts` names and it lacks added, as assignment adds them before it plans (`extend_keys`). `native(i)` gives the keys that a part holding no value names, as Python's own strings and lists of strings do. Pick paths add no keys.
-    pub fn with_missing_keys(&self, parts: &[IndexPart<Option<Value>>], native: impl Fn(usize) -> Vec<String>) -> Result<Value, Error> {
-        if let Some(IndexPart::Axis(Some(first))) = parts.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All)) && self.picks_paths(first)? {
+    /// Add keys named by an assignment before resolving its selection. Pick paths add no keys.
+    pub fn with_missing_keys(&self, parts: &[IndexPart<Value>]) -> Result<Value, Error> {
+        if paths_part(self.core_layout(), parts)?.is_some() {
             return Ok(self.clone());
         }
         let mut wanted = Vec::new();
-        for (axis, part) in rustymath::structure::addressed_parts(self.core_layout(), &claims(parts), None)? {
+        for (axis, part) in rustymath::structure::addressed_parts(self.core_layout(), &source_claims(parts), None)? {
             let IndexPart::Axis(i) = part else { continue };
-            let names = match &parts[i] {
-                IndexPart::Axis(Some(value)) => crate::keyed::selected_keys(value).described("invalid axis selector")?,
-                _ => native(i).into_iter().map(std::sync::Arc::<str>::from).collect(),
-            };
-            wanted.push((axis, names));
+            let IndexPart::Axis(value) = &parts[i] else { unreachable!("an addressed axis has a selector") };
+            wanted.push((axis, crate::keyed::selected_keys(value).described("invalid axis selector")?));
         }
         let mut value = self.clone();
         extend_keys(&mut value, &wanted, false, true)?;
         Ok(value)
     }
-    /// Whether `part`, the first written axis part of an index of this value, selects pick paths, which `select` reads.
-    pub fn picks_paths(&self, part: &Value) -> Result<bool, Error> {
-        if coordinate_width(part).is_none() { return Ok(false); }
-        Ok(paths_part(self.core_layout(), &[IndexPart::Axis(part.clone())])?.is_some())
-    }
     /// Reads written bracket selectors, preserving structural markers until their frame is known.
     pub fn select(&self, parts: &[IndexPart<Value>]) -> Result<Value, Error> { select(self, parts, None, true, None, &INDEX) }
-    /// Reads a checked structural selection. `atom` distinguishes a direct item from a rank-zero array.
-    pub fn selected(&self, plan: Plan, atom: bool) -> Result<Value, Error> { planned_read(self, plan, atom, None) }
-    /// Replaces a checked structural selection without changing the original value.
-    pub fn assigned(&self, plan: Plan, atom: bool, values: &Value) -> Result<Value, Error> { planned_selection(plan, atom).assign(self, values, &INDEX) }
     /// Replaces rich BPL selectors with the same broadcasting as a planned frontend assignment.
     pub fn assigned_parts(&self, parts: &[IndexPart<Value>], values: &Value) -> Result<Value, Error> {
         selection(self, parts, true, &INDEX)?.assign(self, values, &INDEX)
@@ -716,7 +687,7 @@ enum Positions { Plan(Plan, bool), Paths(Selection) }
 
 /// The part of `parts` that selects pick paths into an array with `layout`, if one does: the first part that selects positions, where it addresses the first axis and its coordinates are longer than the rank, differ in length or go inside items.
 fn paths_part(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>]) -> Result<Option<usize>, Error> {
-    let Some(first) = parts.iter().position(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All)) else { return Ok(None) };
+    let Some(first) = parts.iter().position(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All | IndexPart::Slice(_))) else { return Ok(None) };
     let IndexPart::Axis(path) = &parts[first] else { return Ok(None) };
     let Some(k) = coordinate_width(path) else { return Ok(None) };
     let paths = k > layout.shape().len() || coordinate_parts(path, k).is_none();

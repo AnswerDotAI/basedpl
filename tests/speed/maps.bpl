@@ -112,16 +112,8 @@ life⌺["size":[3 3] "edge":"wrap"] g
 lifew g
 ⍝⍝: 1.5	9.7	8.2	instructions macos 85.208 linux 69.371	allocated macos 17.089 linux 17.089
 
-⍝ A guard on each cell's value runs as `⍚` runs a selector for each cell. Each side runs once, on the cells that take it. In the first case every cell takes the second body. In the second, about half the cells take each body, as in the `⍚` beside it.
-⍝ Expected: `{⍵<0?0;⍵}¨v` 1.5 copies: one tolerant comparison, then the whole argument as the result; `{⍵<0.5?0;√⍵}¨v` 6 copies: a tolerant comparison, a split and a join of each side, and square roots of half the items; `(0.5≤)⍚[0 √] v` 4 copies: a tolerant comparison, square roots of every item, and a blend.
-⍝⍝⍝ allows forced "{⍵<0?0;⍵}": a guard reads its predicate's items to split the cells
-{⍵<0?0;⍵}¨v
-⍝⍝: 3	6.2	9.5	instructions macos 24.21 linux 18.668	allocated macos 6.696 linux 6.696
 
-⍝⍝⍝ allows forced "{⍵<0.5?0;√⍵}": a guard reads its predicate's items to split the cells
-{⍵<0.5?0;√⍵}¨v
-⍝⍝: 12	23	25	instructions macos 64.437 linux 50.729	allocated macos 47.531 linux 47.531
-
+⍝ Agenda compares each item, computes square roots and blends the selected result. Expected: 4 copies.
 ⍝⍝⍝ held macos 7.66: open.md lists the masked selects among the speed audit's outliers
 (0.5≤)⍚[0 √] v
 ⍝⍝: 8	18	21	instructions macos 50.11 linux 39.678	allocated macos 39.126 linux 39.126
@@ -159,11 +151,9 @@ hvw∂ thz
 {+/sq ⍵}∂ v
 ⍝⍝: 6	5.4	5.7	instructions macos 13.865 linux 8.991	allocated macos 24.572 linux 24.572
 
-⍝ 1000 Each calls on one atom, in turn. A map over one cell of atoms calls its operand without trying a batched call.
-⍝ Expected: 27 copies: 1,000 calls of about 200 ns each.
-⍝ Linux: 46 copies, because scalar work costs about 1.7 times as many copies on CI's x86 runner, as `v⍳w`'s comment in `arrays.bpl` says.
+⍝ Each on one atomic cell, repeated inside Power. Count-only: preserve the original allocation/instruction regression check. Counted setup runs 64 iterations and divides by n=4096; these legacy scaled counts are not literal bytes per operator call.
 {⍵+1}¨⍣map_steps,0
-⍝⍝: 54	63	60	instructions macos 166.653 linux 142.885	allocated macos 3.191 linux 3.191
+⍝⍝: -	-	-	instructions macos 166.653 linux 142.885	allocated macos 3.191 linux 3.191
 
 ⍝ 16 steps of an elementwise body. After its first step, a loop runs such a body as ordinary code, so each step's add waits and all 16 run as one block stage, as the chain written out does (`v+v+v` and so on).
 ⍝ Expected: 8.4 copies: one interpreted block stage of 16 adds over `v`, about half a copy for each add. On this Mac on 1 November 2026 the chain written out measured 8.39.

@@ -29,15 +29,13 @@ pub(crate) enum Kind {
     Trace(std::sync::Arc<crate::program::trace::Tracer>),
 }
 
-/// A batched run's frame, the cases running inside the run, innermost last (`Levels::case`), and the fresh names drawn during the run, which its cells share (`Levels::keep_fresh`).
-pub(crate) struct Batched { frame: crate::array::Layout, cases: Vec<Case>, fresh: Vec<std::sync::Arc<str>> }
+/// A batched run's current frame, saved outer frames for nested maps, and fresh names shared by its cells (`Levels::keep_fresh`).
+pub(crate) struct Batched { frame: crate::array::Layout, outer: Vec<(usize, crate::array::Layout)>, fresh: Vec<std::sync::Arc<str>> }
 
-/// A case of a batched run: a guard case, which runs on some of the run's cells, or a widening, which runs a map inside the run on the run's cells and the map's together (`batch::tried`). It holds the definition whose guard split the cells, or `None` for a widening, the frame it runs in, and the frame boundary and frame that the case replaced, which its end restores.
-struct Case { definition: Option<usize>, at: usize, frames: usize, frame: crate::array::Layout }
 
 impl Kind {
     /// A batched run of a map on the cells that `frame` lays out, as `batch::tried` begins it.
-    pub(crate) fn batched(frame: crate::array::Layout) -> Self { Kind::Batched(Batched { frame, cases: Vec::new(), fresh: Vec::new() }) }
+    pub(crate) fn batched(frame: crate::array::Layout) -> Self { Kind::Batched(Batched { frame, outer: Vec::new(), fresh: Vec::new() }) }
     /// The rule this kind's exit applies to each binding outside its frames that it wrote, given the binding's value and the level's id. A `∂` call strips its tag, and a label level its labels. Other kinds have no rule, and record no writes.
     pub(crate) fn exit(&self) -> Option<fn(&Value, u64) -> Value> {
         match self {
@@ -82,29 +80,25 @@ impl Levels {
     }
     /// Ends the innermost level and returns it.
     pub(crate) fn end(&mut self) -> Level { self.stack.pop().expect("a running level") }
-    /// The id and frame of the batched run, if one is running. Only one can run, because a map inside a batched run widens it instead of beginning another (`case`).
+    /// The id and frame of the batched run, if one is running. Only one can run, because a map inside a batched run widens it instead of beginning another (`widen`).
     pub(crate) fn batched(&self) -> Option<(u64, &crate::array::Layout)> { self.running().map(|(id, b)| (id, &b.frame)) }
     /// Whether a batched run may begin: every running level allows one (`Kind::admits_batch`).
     pub(crate) fn admits_batch(&self) -> bool { self.stack.iter().all(|l| l.kind.admits_batch()) }
     /// Whether a map's batched try widens the batched run instead of beginning one: the run is the innermost level, so no `∂` call or label level wraps the map's values.
     pub(crate) fn widens(&self) -> bool { matches!(self.stack.last(), Some(Level { kind: Kind::Batched(_), .. })) }
-    /// The id and frame of the batched run while a map inside it has widened it (`case`), for code that reads a binding made before the widening (`Session::read_binding`).
+    /// The id and frame of the batched run while a map inside it has widened it (`widen`), for code that reads a binding made before the widening (`Session::read_binding`).
     pub(crate) fn widened(&self) -> Option<(u64, &crate::array::Layout)> {
-        self.running().filter(|(_, b)| b.cases.iter().any(|c| c.definition.is_none())).map(|(id, b)| (id, &b.frame))
+        self.running().filter(|(_, b)| !b.outer.is_empty()).map(|(id, b)| (id, &b.frame))
     }
-    /// Starts a case of the batched run in frame `frame`, on the cells that `cells` lays out: a guard of `definition`, or a widening where `definition` is `None`. Until `end_case`, those cells are the run's frame, and a write to a binding in a frame before `frame` stops the run, because those frames outlive the case. Gives the run's id and the first frame of the run, or the stop of a recursive call, where a guard of `definition` already splits the run's cells in another frame. A later guard in the same call splits a case's cells again.
-    pub(crate) fn case(&mut self, definition: Option<usize>, frame: usize, cells: crate::array::Layout) -> Result<(u64, usize), Stop> {
-        let (id, frames, batched) = self.running_mut().expect("a batched run");
-        if definition.is_some() && batched.cases.iter().any(|c| c.definition == definition && c.at != frame) { return Err(Stop::new(id, Cause::Recursion)); }
-        let first = batched.cases.first().map_or(*frames, |c| c.frames);
-        batched.cases.push(Case { definition, at: frame, frames: std::mem::replace(frames, frame), frame: std::mem::replace(&mut batched.frame, cells) });
-        Ok((id, first))
-    }
-    /// Ends the innermost case (`case`), restoring the run's frame and the frames that its writes stay inside.
-    pub(crate) fn end_case(&mut self) {
+    /// Widens the run to a nested map's frame. Writes stay inside that map's call frames until `end_widening` restores the outer frame.
+    pub(crate) fn widen(&mut self, frame: usize, cells: crate::array::Layout) {
         let (_, frames, batched) = self.running_mut().expect("a batched run");
-        let case = batched.cases.pop().expect("a running case");
-        (*frames, batched.frame) = (case.frames, case.frame);
+        batched.outer.push((std::mem::replace(frames, frame), std::mem::replace(&mut batched.frame, cells)));
+    }
+    /// Restores the outer map's frame after a nested map.
+    pub(crate) fn end_widening(&mut self) {
+        let (_, frames, batched) = self.running_mut().expect("a batched run");
+        (*frames, batched.frame) = batched.outer.pop().expect("a widened run");
     }
     /// The batched run, as its id and its batched state (`batched`).
     fn running(&self) -> Option<(u64, &Batched)> {
@@ -112,7 +106,7 @@ impl Levels {
             Kind::Batched(b) => Some((l.id, b)), Kind::Derivative | Kind::Tape | Kind::Label | Kind::Trace(_) => None
         })
     }
-    /// The batched run, for a guard case or a fresh name to change: its id, the frames that writes must stay inside, and its batched state.
+    /// The batched run, for widening or a fresh name to change: its id, the frames that writes must stay inside, and its batched state.
     fn running_mut(&mut self) -> Option<(u64, &mut usize, &mut Batched)> {
         self.stack.iter_mut().find_map(|l| match &mut l.kind {
             Kind::Batched(b) => Some((l.id, &mut l.frames, b)), Kind::Derivative | Kind::Tape | Kind::Label | Kind::Trace(_) => None

@@ -133,8 +133,8 @@ fn stages(steps: usize, closed: bool, copies: bool) -> bool { steps + usize::fro
 /// Whether a block stage holds items of `dtype`: Booleans, integers, or floats of 32 or 64 bits.
 pub(crate) fn readable(dtype: DType) -> bool { matches!(dtype, DType::Boolean | DType::Integer(_) | DType::Float(FloatWidth::F32 | FloatWidth::F64)) }
 
-/// Whether node `i` is an array that a block stage reads as an input.
-fn input(program: &Program, i: usize) -> bool { !program.nodes[i].desc.atom && readable(program.nodes[i].desc.dtype()) }
+/// Whether node `i` holds items that a block stage reads as an input.
+fn input(program: &Program, i: usize) -> bool { readable(program.nodes[i].desc.dtype()) }
 
 /// Whether node `j` is a conversion that only inner products read, each of which reads its operand through it (`pervasive::reads_widened`). A replay leaves it pending for them (`Unit::Pending`), so that its converted items are never stored.
 fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {

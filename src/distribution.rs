@@ -1,12 +1,12 @@
 use crate::cancel::check;
 use crate::{
-    Described, Error, Number, Span, Value, array::generated_len, element::{Stored, read_as}, keyed, number::Numeric, primitive::{numeric, pervade, real},
+    Described, Error, Number, Span, Value, array::generated_len, element::read_as, keyed, number::Numeric, primitive::{numeric, pervade, real},
     session, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
 use rand::rngs::ChaCha8Rng;
 pub(crate) use rustymath::distribution::Distribution;
 use rustymath::random::{Counter, Items, Key};
-use rustymath::{Arg, Float as _, Unary as _, buffer::FloatWidth, distribution::{Cdf, Invalid, Pdf, Quantile, standard}, error::Kind, with_float_width};
+use rustymath::{Float as _, buffer::{Element as _, FloatWidth}, distribution::{Cdf, Invalid, Pdf, Quantile, standard}, error::Kind, with_float_width};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -94,18 +94,23 @@ fn samples(d: &Distribution, shape: &[usize], len: usize, stream: &mut Stream) -
     made.described("invalid distribution sample")
 }
 
+fn kernel(d: &Distribution, op: Operation, width: FloatWidth) -> rustymath::operation::Kernel {
+    let variant = rustymath::domain::Variant { dtype: rustymath::buffer::DType::Float(width), checked: false, wrapping: false };
+    match op { Operation::Density => rustymath::operation::Kernel::new(Pdf(*d), variant), Operation::Cdf => rustymath::operation::Kernel::new(Cdf(*d), variant),
+        _ => rustymath::operation::Kernel::new(Quantile(*d), variant) }
+}
+
 /// The density, cdf or quantile of `d` at each number in `right`, computed at the width of `right`'s floats, or the session's float width for other numbers. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
 fn evaluate(d: &Distribution, op: Operation, right: &Value) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if !right.is_atom() && !(quantile && d.is_discrete()) {
         let width = right.float_width().unwrap_or(Numeric::current().width);
         let computed = with_float_width!(width, F => read_as::<F>(right).map(|x| {
-            let mut out = Vec::with_capacity(x.len());
-            match op {
-                Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
-                _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
-            };
-            F::build(right.layout().clone(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")
+            let input = rustymath::array::ArrayView::compact(right.layout(), F::view(&x));
+            let kernel = kernel(d, op, width);
+            let mut out = rustymath::buffer::Buffer::with_capacity(kernel.result_dtype(), x.len());
+            kernel.map(&[input.read()], 0..x.len(), Numeric::current().settings_for(kernel.result_dtype()), &mut out).described("invalid distribution argument")?;
+            Value::from_buffer(right.layout().clone(), out).described("distribution result exceeds array limits")
         }));
         if let Some(result) = computed { return result; }
     }
@@ -119,7 +124,11 @@ fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Value {
         let y = d.quantile(x);
         return if y.is_finite() { Value::integer(y as i64) } else { Value::Number(Number::float(y, width)) };
     }
-    let y = with_float_width!(width, F => { let x = F::narrow(x); match op { Operation::Density => Pdf(*d).one(x), Operation::Cdf => Cdf(*d).one(x), _ => Quantile(*d).one(x) }.wide() });
+    let y = with_float_width!(width, F => {
+        let x = [F::narrow(x)];
+        match op { Operation::Density => rustymath::facts::formula_at(&Pdf(*d), x), Operation::Cdf => rustymath::facts::formula_at(&Cdf(*d), x),
+            _ => rustymath::facts::formula_at(&Quantile(*d), x) }.wide()
+    });
     Value::Number(Number::float(y, width))
 }
 

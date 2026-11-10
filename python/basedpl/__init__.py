@@ -211,6 +211,10 @@ class Array(_Operators):
     def np(self):
         result = _numpy(self._inner)
         return _value(self._inner.parts(), as_array=True) if result is None else result
+    def force(self):
+        "Compute pending items recursively and return this array."
+        self._inner.force()
+        return self
     def own(self):
         "The NumPy array that `.np` gives, with the items moved where nothing else holds them, and copied otherwise. The array holds nothing afterwards, and using it raises `ValueError`."
         result = None if self._inner.exports else self.np
@@ -234,7 +238,7 @@ class Array(_Operators):
     def __iter__(self): return (Array(a) for a in self._inner.cells())
     def __contains__(self, item): return self._inner.contains(item if isinstance(item, str) else _array(item))
     def __getitem__(self, index):
-        "Select by positions, keys or slices, as `⌷` does: Booleans read as positions, and index arrays pair. `None` inserts an axis and `...` keeps omitted axes."
+        "Select by positions, keys or slices, as `⌷` does: Booleans read as positions, and index arrays pair. Out-of-range positions read the fill. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
     def __getattr__(self, name):
         "Read keyed fields when no Python attribute has that name."

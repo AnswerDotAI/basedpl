@@ -337,6 +337,29 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let p = if first { Primitive::CatenateFirst } else { Primitive::Ravel };
     crate::fusion::copy(&Form::Call { p, axis, inverse: false, fill: false }, &[], &[left, right], None)
 }
+/// One bulk join where binary catenation has no rank extension, conversion or metadata alignment to preserve.
+pub(crate) fn catenate_many(p: Primitive, axis: Option<&Value>, right: &Value) -> Result<Option<Value>, Error> {
+    let first = match p { Primitive::Ravel => false, Primitive::CatenateFirst => true, _ => return Ok(None) };
+    if right.shape().len() != 1 || right.pending().is_some() || right.carrier().is_some() || !right.holds_values() { return Ok(None); }
+    let crate::array::Items::Values(parts) = right.as_items() else { return Ok(None) };
+    if parts.len() < 2 { return Ok(None); }
+    let views: Option<Vec<_>> = parts.iter().map(|part| {
+        if part.shape().is_empty() || !part.layout().plain() || part.pending().is_some() || part.carrier().is_some() { return None; }
+        part.view().map(|view| rustymath::array::ArrayView::compact(part.core_layout(), view))
+    }).collect();
+    let Some(views) = views else { return Ok(None) };
+    let (source, rank) = (&parts[0], parts[0].shape().len());
+    let fixed = source.fixed_width();
+    if parts.iter().zip(&views).any(|(part, view)| part.shape().len() != rank || part.fixed_width() != fixed || view.dtype() != views[0].dtype()) {
+        return Ok(None);
+    }
+    let axis = match axis {
+        Some(axis) => super::single_axis(&p.resolved_axes(None, source, axis)?, rank)?, None => if first { 0 } else { rank - 1 },
+    };
+    let (layout, buffer) = rustymath::array::Array::concatenate(&views, axis)?.into_compact();
+    crate::events::taken(crate::events::routes::BulkCatenate, buffer.len());
+    Value::from_buffer_at(layout, buffer, fixed).map(Some).described("invalid catenate result")
+}
 
 /// Catenate's plan: the joined layout, and a read of `left`'s items, source 0, then `right`'s, source 1. A unit becomes one cell, an argument with one axis fewer gains `axis` with one position, and `right`'s keyed axes other than `axis` take `left`'s order.
 fn catenated(left: &CoreLayout, right: &CoreLayout, axis: Option<usize>, first: bool) -> Result<(CoreLayout, ReadPlan), Error> {

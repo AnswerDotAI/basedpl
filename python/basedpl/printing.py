@@ -2,7 +2,7 @@
 from fractions import Fraction
 from itertools import repeat
 from json import dumps
-from . import _Array, _Function, _raw, symbols
+from . import _Array, _Function, _raw, _text, symbols
 from .functions import Function, _builtins, _python_name, _operator_names, _marks
 
 _names = {s['glyph']: (s['name'], s['monad'], s['dyad']) for s in symbols if s['kind'] == 'function'}
@@ -30,14 +30,17 @@ def _atom(o):
     return repr(o)
 
 def _literal(a):
-    raw = _raw(a.parts())
+    raw = a.parts()
+    if (text := _text(raw)) is not None: return repr(text)
+    raw = _raw(raw)
     if 'atom' in raw:
         o = raw['atom']
         return _apl(o) if isinstance(o, _Function) else _atom(o)
     if len(raw['shape']) == 1 and raw['data'] and not any(k in raw for k in ('axis_keys', 'axis_names')):
-        if all(isinstance(o, str) for o in raw['data']): return repr(''.join(raw['data']))
         if all(isinstance(o, (int, float, complex, tuple)) for o in raw['data']):
             return '[' + ', '.join(_atom(o) for o in raw['data']) + ']'
+        texts = [_text(o) if isinstance(o, (dict, _Array)) else None for o in raw['data']]
+        if all(s is not None for s in texts): return repr(texts)
     return f'bpl({dumps(a.literal(), ensure_ascii=False)})'
 
 class _Printer:
@@ -47,8 +50,20 @@ class _Printer:
         if not next(self.budget, False): return '…'
         text, precedence = self.expression(f, dyad)
         return f'({text})' if precedence < context else text
+    def selection(self, f):
+        parts = f.selectors()
+        if parts is None: return None
+        def part(p):
+            if isinstance(p, _Array): return self.render(p)
+            if isinstance(p, slice):
+                bounds = (p.start, p.stop) if p.step in (None, 1) else (p.start, p.stop, p.step)
+                return ':'.join('' if b is None else repr(b) for b in bounds)
+            return '...' if p is Ellipsis else repr(p)
+        return ', '.join(part(p) for p in parts) or '()'
+
 
     def expression(self, f, dyad):
+        if (selectors := self.selection(f)) is not None: return f'right_tack[{selectors}]', 100
         parts = f.parts()
         if parts is None: return _apl(f), 100
         kind, args = parts
@@ -59,11 +74,13 @@ class _Printer:
             if _builtins.get(name, (None,))[0] == kind: return name, 100
             return _apl(f), 100
         a = args[0]
+        if kind == '∘' and isinstance(a, _Function) and (selectors := self.selection(a)) is not None:
+            return f'{r(args[1], dyad, 100)}[{selectors}]', 100
         if kind == 'fn': return f'{_literal(a)}.fn', 100
         if kind in ('/', '⌿', '\\', '⍀'):
-            axis = f'[{r(args[1])}]' if len(args) == 2 else ''
+            axis = f'.axis({r(args[1])})' if len(args) == 2 else ''
             return f'{r(a, True, 100)}.{_method(kind, dyad)}{axis}', 100
-        if kind == '⍠': return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
+        if kind == '⍠': return f'{r(a, dyad, 100)}.axis({r(args[1])})', 100
         if kind == 'inverse': return f'{r(a, dyad, 100)}.undo', 100
         if kind in _marks: return f'{r(a, dyad, 100)}.{_marks[kind]}', 100
         if kind == 'fork' and len(args) == 3:

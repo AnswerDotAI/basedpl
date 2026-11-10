@@ -65,6 +65,8 @@ Each and Rank try to apply a function once to a batch of cells. A cell is the pa
 
 Ordinary nested and ragged arrays keep their existing representation. Uniform whole-array work can batch; an unsupported layout or result takes the normal per-cell path. Per-cell program replay and one-pass ragged batching are different optimizations. Neither requires a segmented storage format merely to preserve existing values.
 
+A guard that reads a cell's data stops batching and runs normally per cell. Constant and shape guards can remain batched. Guarded-dfn throughput has no budget or optimization requirement; Agenda and Under express intentional whole-array branching. Ordinary unguarded per-cell analytical work remains a performance target.
+
 Transformation tags select the newest active level among a call's arguments. A batch can contain a dual, and a derivative can encounter earlier derivative levels. Calls made by a rule enter normal dispatch again, preserving these nesting relationships. Each level has a scoped lifetime: normal returns and errors perform its semantic exits; a panic restores the outer transformation state without running language work. Code reading actual items asks the transformation boundary to observe them. Item kernels should consume the buffer, slice or storage view they operate on rather than require unrelated callers to pass a proof wrapper.
 
 [JAX's interpreter stack, lifting and batching](https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-1-transformations-as-interpreters-standard-evaluation-jvp-and-vmap) provides the model for composing transformations around primitive calls. BPL controls its evaluator and function values, including ordinary fallback when a transformation stops.
@@ -95,7 +97,7 @@ Lowering retains immutable read recipes. Basedpl binds values and slots, schedul
 
 Pending items are observed at the storage/read boundary. A read can force pending work under the settings captured by its calls. Language shape, kind, name and host-operation checks remain with their owners. Recording stops are internal control flow, distinct from user errors. Glyph pages define individual operations' results and errors; this page adds no new exceptional-input guarantees.
 
-Default fills, explicit fills, an empty result's prototype and write destinations are different facts. They can share lower-level operations without becoming interchangeable. Reads and writes should consume established selection geometry instead of reconstructing it from a stored result. A copied value does not by itself retain the relationship needed for assignment.
+Default fills, explicit fills, an empty result's prototype and write destinations are different facts. They can share lower-level operations without becoming interchangeable. Reads and writes should consume established selection geometry instead of reconstructing it from a stored result. A copied value does not by itself retain the relationship needed for assignment. Python array brackets and function-result selection share native selector operations whose slice bounds resolve against the selected array's actual layout.
 
 Keep hot numerical bodies inlinable, and dispatch once per block or whole call where appropriate. Retain a simple native path for the browser, which has no BPL JIT. Share the mathematical algorithm instead of creating a BPL-specific numerical implementation or a blanket vector-call ABI.
 

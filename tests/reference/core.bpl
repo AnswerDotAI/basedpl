@@ -447,8 +447,9 @@ x←2 3 1 ⋄ n←{(⍵+2÷⍵)÷2} ⋄ a←{z←⍕⍵ ⋄ ⌈/⍵}∂ x ⋄ b�
 ⍝ program-item — `∂` runs from a program where a dfn reads one item of a traced array, as `↑`, `⊃`, subscripts and selection do. No trace stops
 v←1 2 3 4 ⋄ f←{(↑⍵)×+/⍵} ⋄ g←{(1⊃⍵)+⍵₃} ⋄ h←{+/⍵×⍵.[2]} ⋄ e←•explain "[f∂v ; g∂v ; h∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[11 1 1 1] [0 1 0 1] [3 3 13 3] 3ₓ 0ₓ]
 
-⍝ pending-fill-scalar-read — A small read of deferred filled arithmetic preserves atom, vector and scalar-box selection shapes
-a←128⍴0.5 ⋄ r←a×a ⋄ [r₁ ; ⍴r.[[1]] ; ⍴(⊂1)⌷r ; ↑r]   ⍝ [0.25 [1]ₓ ⍬ₓ 0.25]
+⍝ pending-fill-scalar-read — A small read of deferred filled arithmetic preserves selection shapes, fills, out-of-range reads and explicit width conversions
+a←128⍴0.5 ⋄ r←a×a ⋄ b←1+128↑0.5 ⋄ c←0.5+64•float 32•float 128⍴16777217.0
+[r₁ ; ⍴r.[[1]] ; ⍴(⊂1)⌷r ; ↑r ; b.[[0 1 127 128]] ; ↑c]   ⍝ [0.25 [1]ₓ ⍬ₓ 0.25 [1.5 1 1 0] 16777216.5]
 
 ⍝ pending-fill-static-floor — A scalar-box Copy keeps its planned float storage before a static floor reads it
 •prefs ["kinds":"static" "float":32] ⋄ a←128⍴0.5 ⋄ r←⌊a ⋄ [r₁ ; (•storage r).kind ; ⍴3↑r]   ⍝ [0 "float32" [3]ₓ]
@@ -3112,6 +3113,76 @@ v←10 20 30 40 ⋄ [⊢.[[1 3]] v;1 2 3 4 +.[[0 2]] v;(10×)@ ⊢.[[1 3]] v]   
 
 ⍝ — After a function, `.name` reads a field of the function's result, and a path goes on from there. A name or path that holds a function gives an inner product
 T←["a":1 "x":[10 20 30]] ⋄ ops←["mul":×] ⋄ [⊢.a T;1 +.a T;⊢.x.[[2 0]] T;(10×)@ ⊢.a T;1 2 3 +.ops.mul 4 5 6]   ⍝ [1;2;30 10;["a":10 "x":[10 20 30]];32]
+
+⍝ dot-section — A selector section uses ordinary indexing, including a vector of positions
+v←10 20 30
+[.[1] v;.[[2 0]] v]   ⍝ [20;30 10]
+
+⍝ dot-section-operators — Each, superscript Rank, Rank operands and Over use ordinary operator derivation
+m←2 3⍴⍳6ₓ
+v←10 20 30
+[m.¹[1];m.¹ ²[1];m.⍤(1 2)[1];m. (⍤1)[1];v.⍥⌽[0]]
+⍝ =>
+[[1 4]ₓ;[3 4 5]ₓ;[3 4 5]ₓ;[1 4]ₓ;30]
+
+⍝ dot-section-named — Named, grouped and record-held operators follow a spaced dot
+op←¨
+ops←["map":¨]
+T←[[10 20] [30 40]]
+[T. op[1];T. (op)[1];T. ops.map[1]]
+⍝ =>
+[20 40;20 40;20 40]
+
+⍝ dot-section-fields — Tight names and groups remain field calls and scopes beside an outside operator
+op←¨
+T←["op":+ "x":1]
+[T.op[2];T.(x)[2]]   ⍝ [[2];[1 [2]]]
+
+⍝ dot-section-function-head — A spaced function head remains an inner product's right operand
+T←2
+op←+
+f←T. op[3]
+[f]≡[(2⍨).([3]⍨)]   ⍝ $t
+
+⍝ dot-section-function-result — Modifiers read the function's result, calling it once and retaining its dyadic call
+calls←0
+f←{calls+←1 ⋄ ⍵}
+g←f.¨[1]
+r←g [[10 20] [30 40]]
+h←+.¹[1]
+T←[[10 20] [30 40]]
+m←2 3⍴⍳6
+[r;calls;1 h [1 2 3⋄4 5 6];
+ (10×)@ ⊢.¨[1] T;
+ ≢∘ ⊢.¨[1] T;≢∘ ⊢¨.¨[1] T;
+ ≢(⊼).¹[0] m;≢(([0]⌷)¹((⊼)m));≢(⊼).[0] m]
+⍝ =>
+[20 40;1;3 6;[[10 200] [30 400]];2ₓ;2ₓ;2ₓ;2ₓ;3ₓ]
+
+⍝ dot-section-order — The subject runs first and the selector runs once outside Each
+s←{⎕←"subject" ⋄ ⍵}
+i←{⎕←"selector" ⋄ 1}
+f←{n←1 ⋄ T←⍵ ⋄ T.(x+n).¨[T.i]}
+a←["x":[[10 20] [30 40]] "i":1]
+[(s a.x).¨[i(0)];f a;f ["x":[[10 20] [30 40]] "i":1 "n":2]]
+⍝ =>
+[[20 40] [21 41] [22 42]]
+⍝ ⎕: "subject"\n"selector"
+
+⍝ dot-section-under — A captured key selects aligned nested records through Under
+key←"b"
+pick←.[key]¨
+key←"a"
+T←["r":["a":10 "b":20] "s":["b":30 "a":40]]
+(10×)@pick T
+⍝ =>
+["r":["a":10 "b":200] "s":["b":300 "a":40]]
+
+⍝ dot-section-target — Data-first modified selection is also a selective assignment target
+T←[[10 20] [30 40]]
+T.¨[1]←0
+T   ⍝ [[10 0] [30 0]]
+
 
 ⍝ — Arrays of positions that step evenly select what the positions listed one by one select: a whole axis, every second item, a reversal, an array of positions, and one that steps back along its second axis
 v←10×⍳6 ⋄ s←3 2⍴⍳6 ⋄ b←2 2⍴1 0 ⋄ [v.[⍳6] ; v.[2×⍳3] ; v.[⌽⍳6] ; v.[s] ; v.[b]]   ⍝ [0 10 20 30 40 50 ; 0 20 40 ; 50 40 30 20 10 0 ; [0 10⋄20 30⋄40 50] ; [10 0⋄10 0]]
@@ -7489,19 +7560,19 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — A guard calls only the selected body for each cell, so √ sees no negative cell and the kind stays real
 {⍵<0?0;√⍵}¨¯4 9 ¯1 16   ⍝ 0 3 0 4
 
-⍝ — A later guard in the same call splits a side's cells again
+⍝ — Later guards select the remaining cells' bodies
 {⍵<0?0;⍵>10?10;⍵}¨¯5 3 20 7 ¯1   ⍝ 0 3 10 7 0
 
-⍝ — Locals assigned before a batched guard reach both sides, each at its own cells
+⍝ — Locals assigned before a guard reach the selected body for each cell
 {x←⍵×2 ⋄ x>3?x;x+100}¨⍳6ₓ   ⍝ 100 102 4 6 8 10
 
-⍝ — A batched predicate may give the numbers 0 and 1
+⍝ — A predicate may give the numbers 0 and 1
 {2|⍵?⍵×3;⍵÷2}¨⍳8ₓ   ⍝ 0 3 1 9 2 15 3 21
 
-⍝ — A guard in a dfn that the operand calls splits the batched run's cells
+⍝ — A called dfn's guard selects its body for each cell
 {g←{⍵>2?⍵×10;⍵} ⋄ g ⍵}¨⍳5   ⍝ 0 1 2 30 40
 
-⍝ — A batched guard in Rank
+⍝ — A guard in Rank
 ({(+/⍵)>4?+/⍵;0}⍤1)[3 2]⍴⍳6   ⍝ 0 5 9
 
 ⍝ — A search against each cell's own haystack runs as one call on the batch. The haystack's bytes and the needle's wider integer search at one width
@@ -7516,16 +7587,16 @@ m←[4 3]⍴2ₓ 5ₓ 2ₓ 7ₓ 1ₓ 5ₓ 3ₓ 3ₓ 9ₓ 5ₓ 5ₓ 0ₓ ⋄ {(5�
 ⍝ — A search against each cell's own haystack makes no fallback [batched]
 m←[4 3]⍴2ₓ 5ₓ 2ₓ 7ₓ 1ₓ 5ₓ 3ₓ 3ₓ 9ₓ 5ₓ 5ₓ 0ₓ ⋄ (•explain "{⍵⍳5ₓ}⍤1 m").fallbacks.reason   ⍝ 0⍴⊂""
 
-⍝ — A batched guard in an outer product
+⍝ — A guard in an outer product
 +/(⍳3ₓ){⍺>⍵?⍺;⍵×10}⊗⍳3ₓ   ⍝ 30 31 24
 
-⍝ — A batched guard in a stencil
+⍝ — A guard in a stencil
 ({(+/⍵)>6?1;0}⌺3)⍳6ₓ   ⍝ 0 0 0 1 1 1
 
 ⍝ — A stencil over a keyed axis makes a batched try, because its windows have no keys [batched]
 V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•time 0 ⋄ +/⍵}⌺3 V").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — A batched guard in an Each over keys
+⍝ — A guard in an Each over keys
 {⍵>20?⍵;-⍵}¨["a":10 "b":30 "c":5]   ⍝ ["a":¯10 "b":30 "c":¯5]
 
 ⍝ — Sides whose cells differ in kind fall back, with each cell's own result
@@ -7537,17 +7608,17 @@ V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•time 0 ⋄ +/⍵}⌺3 V").fall
 ⍝ — A constant scalar that isn't an atom stays a scalar in each cell
 {⍬⍴5}¨⍳3ₓ   ⍝ [⊂5 ⊂5 ⊂5]
 
-⍝ — A batched guard in a recursive call falls back [batched]
-(•explain "{⍵<2?⍵;(∇⍵-1)+∇⍵-2}¨⍳8ₓ").fallbacks.reason   ⍝ ["a recursive call"]
+⍝ — A guard stops batching before per-cell recursion [batched]
+(•explain "{⍵<2?⍵;(∇⍵-1)+∇⍵-2}¨⍳8ₓ").fallbacks.reason   ⍝ ["a cell's value"]
 
 ⍝ — A side that writes to a binding of an enclosing frame gives each cell's own result
 {n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ   ⍝ 0 0 0 1 1
 
-⍝ — A side that writes to a binding of an enclosing frame falls back, because the frame outlives the side [batched]
-(•explain "{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ").fallbacks.reason   ⍝ ["a write"]
+⍝ — A guard observes its cell before the selected body updates its enclosing binding [batched]
+(•explain "{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ").fallbacks.reason   ⍝ ["a cell's value"]
 
-⍝ — A random draw in a side draws for the cells that take it [batched]
-e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [0ₓ=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
+⍝ — A guarded draw falls back and draws only for cells taking that body [batched]
+e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [1ₓ=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
 
 ⍝ — A dfn whose guard caught an error in some cells of a batched run batches again on later calls, because the stop depended on the cells' data [batched]
 f←{"DOMAIN"::¯1 ⋄ ⍵○0.5} ⋄ r←f¨1 2 13
@@ -8850,8 +8921,8 @@ conv 0   ⍝ 3⍴$t
 ⍝ — No automatic promotion: integer `*` with a negative exponent floors, as integer `÷` does
 2ₓ*¯3ₓ   ⍝ 0ₓ
 
-⍝ — A batched guard makes no fallback [batched]
-(•explain "{⍵<0?0;√⍵}¨¯4 9 ¯1 16").fallbacks.reason   ⍝ 0⍴⊂""
+⍝ — A guard observing a cell's value stops batching [batched]
+(•explain "{⍵<0?0;√⍵}¨¯4 9 ¯1 16").fallbacks.reason   ⍝ ["a cell's value"]
 
 ⍝ — A dfn whose batched run stopped on a count from its cell skips the batched try on later calls [batched]
 f←{2(×⍣⍵)1} ⋄ r←f¨⍳5ₓ
@@ -8869,7 +8940,12 @@ f←{∪⍵} ⋄ r←f⍤1⁝2 3⍴⍳6ₓ
 s←2 3 4⍴⍳24 ⋄ img←3 6 6⍴⍳108 ⋄ w←3 3⍴1
 unbatched←{•prefs ["batch":$f] ⋄ r←⍎⍵ ⋄ •prefs ["batch":$t] ⋄ r}
 widens←{e←•explain ⍵ ⋄ ∧/[e.value≡unbatched ⍵ ; 0ₓ=≢e.fallbacks.reason ; ~(⊂"batching")∊e.declined.route]}
-widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1 s" "{{+/,⍵×w}⌺[3 3] ⍵}⍤2 img" "{{{⍵+1}¨⍵}⍤1 ⍵}⍤2 s"   ⍝ $t $t $t $t
+widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{{+/,⍵×w}⌺[3 3] ⍵}⍤2 img" "{{{⍵+1}¨⍵}⍤1 ⍵}⍤2 s"   ⍝ $t $t $t
+
+⍝ — A nested guard reads the outer row's captured sum after falling back to per-cell calls
+s←2 3 4⍴⍳24 ⋄ f←{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1
+r←f s ⋄ •prefs ["batch":$f]
+r≡f s   ⍝ $t
 
 ⍝ — A system function that doesn't act runs once for each cell inside a batched run [batched]
 ⍝⍝⍝ route batching

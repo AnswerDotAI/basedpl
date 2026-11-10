@@ -19,6 +19,7 @@ pub(crate) mod routes {
         Ranks: "ranks", true, true, false;
         GroupCounts: "group counts", true, false, false;
         GroupFolds: "group folds", true, true, false;
+        BulkCatenate: "bulk catenate", true, false, false;
         Determinant: "determinant", true, true, false;
         Permanent: "permanent", true, true, false;
         MaskedSelect: "masked select", true, false, false;

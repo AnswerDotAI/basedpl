@@ -347,7 +347,7 @@ impl Blocks {
         if members.contains(&i) {
             return map.in_order(program.nodes[i].desc.layout.count(), frame).then(|| self.steps.iter().rposition(|s| s.j == i)).flatten().map(Operand::Step);
         }
-        if program.nodes[i].desc.atom {
+        if program.nodes[i].desc.atom && map == Mapping::Single {
             let k = self.constants.iter().position(|&c| c == i).unwrap_or_else(|| {
                 self.constants.push(i);
                 self.constants.len() - 1
@@ -663,6 +663,7 @@ impl Blocks {
     /// Run the stage block by block, splitting compiled runs at input repeats. Native steps bind RM reads; compiled parts prepare ABI spans. Stored steps copy to their outputs. The last step writes directly to its final output or the fold's buffer.
     fn range(&self, range: Range<usize>, run: &Run<'_>, outs: &[Option<Shared>], last: &mut Last<'_, '_>) -> bool {
         let (block, tally) = (run.block, run.tally);
+        let capacity = block.min(range.len());
         let mut scratch = Scratch::default();
         if self.one_operation() && !run.compiled && !range.is_empty() {
             tally.block();
@@ -672,7 +673,7 @@ impl Blocks {
             return ok;
         }
         let mut bufs: Vec<Buffer> = Vec::new();
-        let mut held = matches!(last, Last::Fold(_)).then(|| Buffer::with_capacity(self.steps[self.steps.len() - 1].made(), block));
+        let mut held = matches!(last, Last::Fold(_)).then(|| Buffer::with_capacity(self.steps[self.steps.len() - 1].made(), capacity));
         #[cfg(not(web))]
         let mut copies: Vec<Buffer> = if run.compiled { run.inputs.iter().map(|d| Buffer::with_capacity(d.view.dtype(), 0)).collect() } else { Vec::new() };
         let mut ok = true;
@@ -693,7 +694,7 @@ impl Blocks {
                 tally.run();
                 #[cfg(not(web))]
                 let got = if run.compiled { self.prepared(run, &mut copies, from, n) } else { None };
-                if bufs.len() < self.kinds.len() { bufs = self.kinds.iter().map(|&k| Buffer::with_capacity(k, block)).collect(); }
+                if bufs.len() < self.kinds.len() { bufs = self.kinds.iter().map(|&k| Buffer::with_capacity(k, capacity)).collect(); }
                 for part in &self.parts {
                     #[cfg(not(web))]
                     if part.lowered.as_ref().is_some_and(|lowered| got.as_ref()

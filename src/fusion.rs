@@ -280,12 +280,11 @@ pub(crate) fn defer(plan: &crate::plan::Pervasive, x: Option<&Value>, y: &Value,
                 .is_some_and(|d| readable(d) && (compiles || matches!(d, DType::Float(_)) || Some(d) == at || v.pending().is_some_and(|p| p.computes())))
     }) { return declined(agreement, "an argument of another kind"); }
     let mapped = crate::plan::Mapped::new(plan.clone(), agreement, false, false).expect("a fusible plan fixes its result type");
-    let (layout, dtype, prototype) = (mapped.desc.layout.clone(), mapped.desc.dtype(), mapped.desc.zero());
     let mut nodes = Nodes::default();
     let left = x.map(|x| nodes.held(x, Desc::held(x)));
     let right = nodes.held(y, Desc::held(y));
     let result = nodes.mapped(mapped, left, right);
-    Ok(pending_program(Program::new(nodes, result), layout, dtype, prototype))
+    Ok(pending_program(Program::new(nodes, result)))
 }
 
 /// `agreement` back, after `defer` declines to fuse its call for `reason` (`crate::events`).
@@ -327,8 +326,7 @@ pub(crate) fn records_dense(program: &Program) -> bool {
 
 /// Publishes an admitted dense recording through eager fusion's holding and pending-work rules.
 pub(crate) fn recorded(program: &Program, inputs: &[&Value]) -> Option<Value> {
-    let desc = program.result.desc(&program.nodes);
-    if !defers(desc.layout.count()) || inputs.iter().any(|v| v.is_view() && v.pending().is_some()) { return None; }
+    if !defers(program.result.layout.count()) || inputs.iter().any(|v| v.is_view() && v.pending().is_some()) { return None; }
     let mut nodes = Nodes::default();
     let result = Program::new(program.nodes.iter().cloned().collect(), program.result.clone()).add_to(&mut nodes, |nodes, _, _, node| {
         let value = match &node.origin { Origin::Input(k) => inputs[*k], Origin::Held(value) => value, _ => return None };
@@ -337,14 +335,15 @@ pub(crate) fn recorded(program: &Program, inputs: &[&Value]) -> Option<Value> {
     let program = Program::new(nodes, result);
     // Rebinding a repeated dense input can add a Copy beyond the recipe's own step count.
     if own_steps(&program) > MAX_NODES { return None; }
-    Some(pending_program(program, desc.layout.clone(), desc.dtype(), desc.zero()))
+    Some(pending_program(program))
 }
 
-/// `program` as a pending array of `layout`, holding items of `dtype`, with `prototype` as its prototype. Where gathering it would take more than `MAX_NODES` programs, or it would keep alive more than `MAX_KEPT` times its largest array, the pending arrays it reads run first.
-fn pending_program(program: Program, layout: Layout, dtype: DType, prototype: Value) -> Value {
+/// Publishes `program`'s described result as a pending array. Where gathering it would take more than `MAX_NODES` programs, or it would keep alive more than `MAX_KEPT` times its largest array, the pending arrays it reads run first.
+fn pending_program(program: Program) -> Value {
+    let desc = &program.nodes[program.result.of].desc;
+    let (layout, dtype, prototype) = (program.result.layout.clone(), desc.dtype(), desc.zero());
     let own = own_steps(&program);
-    let gathered = |program: &Program| own + program.nodes.iter().filter_map(held_pending).map(|p| p.size).sum::<usize>();
-    let (mut size, mut kept) = (gathered(&program), kept_by(&program));
+    let (mut size, mut kept) = (own + program.nodes.iter().filter_map(held_pending).map(|p| p.size).sum::<usize>(), kept_by(&program));
     if size > MAX_NODES || keeps_too_much(&kept, layout.count(), dtype) {
         for pending in program.nodes.iter().filter_map(held_pending) { pending.storage(); }
         (size, kept) = (own, kept_by(&program));
@@ -366,9 +365,9 @@ pub(crate) fn select(mask: &Value, x: &Value, y: &Value, layout: &Layout, plan: 
     let yes = nodes.held(x, Desc::held(x));
     let no = nodes.held(y, Desc::held(y));
     let mask = nodes.held(mask, Desc::held(mask));
-    let (dtype, prototype) = (plan.desc.dtype(), plan.desc.zero());
-    let result = nodes.selected(plan, mask, yes, no);
-    pending_program(Program::new(nodes, result), layout.clone(), dtype, prototype)
+    let mut result = nodes.selected(plan, mask, yes, no);
+    result.layout = layout.clone();
+    pending_program(Program::new(nodes, result))
 }
 
 /// `value` with its numbers converted to `to` as one more pending call, which its program computes as a step (`Step::Convert`). `value` is an array of at least `Sizes::min_items` items: a pending array that a program computes, whose program then stores only the converted items, as for a size mark after a fused chain, or a compact array of a type that a block stage holds or of f16, which a later call reads through the conversion: a block stage that fuses it with its steps, or a product (`widened`). `numeric` gives the tolerance of a float's floor. `None` for any other value, such as complex numbers, where `value` already holds items of `to`, and for a type `to` that a block stage doesn't hold. The size test runs inline. The rest runs out of line, in `pending_conversion`.
@@ -387,9 +386,9 @@ fn pending_conversion(value: &Value, to: DType, numeric: Numeric) -> Option<Valu
     if desc.dtype() == to || !readable(to) { return None; }
     let mut nodes = Nodes::default();
     let of = nodes.held(value, desc);
-    let result = nodes.converted(of, to, numeric).ok()?;
-    let prototype = result.desc(&nodes).zero();
-    Some(pending_program(Program::new(nodes, result), value.layout().clone(), to, prototype))
+    let mut result = nodes.converted(of, to, numeric).ok()?;
+    result.layout = value.layout().clone();
+    Some(pending_program(Program::new(nodes, result)))
 }
 
 /// The array that `value`, a pending conversion of a whole array in order (`convert`), converts, and the type it converts to. A product reads the array through the conversion where `pervasive::reads_widened` accepts the pair, which computes the array where it's pending, and the conversion then never runs. `None` for any other value, and once the conversion has run.
@@ -415,12 +414,11 @@ pub(crate) fn copy(form: &Form, params: &[Value], inputs: &[&Value], fill: Optio
         if let [value] = inputs && source == 0 && map.in_order(value.len(), desc.shape()) {
             return value.relaid(desc.layout).described("a structural view");
         }
-        let (layout, dtype, prototype) = (desc.layout.clone(), desc.dtype(), desc.zero());
         let mut nodes = Nodes::default();
         let params = params.iter().map(|v| nodes.held(v, Desc::held(v))).collect();
         let inputs = inputs.iter().zip(descriptions).map(|(v, d)| nodes.held(v, d)).collect();
         let result = nodes.structured(form.clone(), params, inputs, None, desc, plan);
-        return Ok(pending_program(Program::new(nodes, result), layout, dtype, prototype));
+        return Ok(pending_program(Program::new(nodes, result)));
     }
     structural_value(&desc, &plan, inputs, fill, true)
 }
