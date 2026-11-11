@@ -67,17 +67,12 @@ macro_rules! speed_tests {
 }
 
 speed_tests!(
-    "arrays.bpl" counts_arrays timed_arrays, "bodies.bpl" counts_bodies timed_bodies, "calls.bpl" counts_calls timed_calls,
-    "cells.bpl" counts_cells,
-    "cohorts.bpl" counts_cohorts,
-    "comparisons_mathish.bpl" counts_comparisons_mathish, "growth.bpl" counts_growth,
+    "arrays.bpl" counts_arrays timed_arrays, "bodies.bpl" counts_bodies timed_bodies, "calls.bpl" counts_calls timed_calls, "cells.bpl" counts_cells,
+    "cohorts.bpl" counts_cohorts, "comparisons_mathish.bpl" counts_comparisons_mathish, "growth.bpl" counts_growth,
     "images.bpl" counts_images timed_images, "keyed.bpl" counts_keyed timed_keyed, "maps.bpl" counts_maps timed_maps, "models.bpl" counts_models timed_models,
-    "large_cells.bpl" counts_large_cells timed_large_cells,
-    "moving.bpl" counts_moving timed_moving, "steps.bpl" counts_steps,
-    "packing.bpl" counts_packing,
+    "large_cells.bpl" counts_large_cells timed_large_cells, "moving.bpl" counts_moving timed_moving, "steps.bpl" counts_steps, "packing.bpl" counts_packing,
     "structure.bpl" counts_structure timed_structure, "tables.bpl" counts_tables timed_tables,
 );
-
 
 #[test]
 fn every_speed_file_has_tests() {

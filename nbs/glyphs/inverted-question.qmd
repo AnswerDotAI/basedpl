@@ -2,13 +2,13 @@
 
 Function. Keys: `Alt-/`. Hanzi: `掷/抽` (`擲/抽`). Ranks: `0` monadic, `0 0` dyadic
 
-`¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
+`¿N`: uniform draw from `ιN`. `¿0`: U(0,1). Pervasive.
 
 ```bpl
-¿6 ∊ ⍳6ₓ           ⍝ $t
+¿6 ∊ ι6ₓ           ⍝ $t
 ```
 
-`M¿N`: `M` draws without replacement from `⍳N`.
+`M¿N`: `M` draws without replacement from `ιN`.
 
 ```bpl
 ≢3¿10             ⍝ 3ₓ
@@ -20,5 +20,5 @@ Bounds are nonnegative whole numbers; `M≤N`. Exact arguments give exact intege
 `¿` draws from the session's generator, which the operating system keys when the session starts. [`•prefs ["seed":n]`](../system/prefs.qmd) seeds it with the nonnegative whole number `n`. [`•rand`](../system/rand.qmd) makes a separate generator and describes how draws advance its stream, including in maps.
 
 ```bpl
-•prefs ["seed":42] ⋄ a←¿6 6 6 ⋄ •prefs ["seed":42] ⋄ a≡¿6 6 6    ⍝ $t
+•prefs ["seed":42] ◇ a←¿6 6 6 ◇ •prefs ["seed":42] ◇ a≡¿6 6 6    ⍝ $t
 ```

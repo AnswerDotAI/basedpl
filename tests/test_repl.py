@@ -42,7 +42,7 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
     try:
         read_until(b'\x1b[?2004h')
         enter('\x1b[A\r', '\r\n17\r\n')
-        enter('2 2⍴⍳4\r', '│2 3│\r\n└~──┘\r\n')
+        enter('2 2ρι4\r', '│2 3│\r\n└~──┘\r\n')
         enter('•prefs ["box":$f]\r', '\r\n')
         os.write(master, b'"\x1b\\')
         read_until('⍭:7g'.encode())
@@ -84,7 +84,7 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('4]\r', '\r\n')
         enter('h\r', '\r\n3 4\r\n')
         enter('2+3\r', '\r\n5\r\n')
-        os.write(master, '⎕←"go" ⋄ •delay ∞\r'.encode())
+        os.write(master, '⎕←"go" ◇ •delay ∞\r'.encode())
         read_until(b'"go"\r\n')  # the evaluation is running
         enter('\x03', 'INTERRUPT')  # Ctrl-C interrupts the running evaluation, and the session continues
         os.write(master, '⌽⎕\r'.encode())

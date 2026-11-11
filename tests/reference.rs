@@ -11,40 +11,40 @@ fn cases(text: &str) -> Vec<Value> { reference::file("", text).unwrap().cases }
 
 #[test]
 fn reference_format_and_comparison() {
-    let file = json!({"code":r#"testpath •nput "héllo" ⋄ •nget testpath"#, "expected_code":r#""héllo""#});
+    let file = json!({"code":r#"testpath •nput "héllo" ◇ •nget testpath"#, "expected_code":r#""héllo""#});
     for _ in 0..2 { assert_eq!(reference::check(&file, &InterruptHandle::default())["status"], "pass"); }
     let compact = cases(&format!("⍝ —\n{}", r#""a""⍝b" '⍝'   ⍝ "a""⍝b" '⍝'"#));
     assert_eq!(compact[0]["code"], r#""a""⍝b" '⍝'"#);
     assert_eq!(reference::check(&compact[0], &InterruptHandle::default())["status"], "pass");
-    for source in ["⍝ —\n1\n1", "⍝ —\n{\n⍵\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
+    for source in ["⍝ —\n1\n1", "⍝ —\n{\nω\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
         for ending in ["", "\n", "\n\n"] { assert_eq!(cases(&format!("{source}{ending}")), cases(&format!("{source}\n\n"))); }
     }
-    assert_eq!(cases("⍝ —\n{\n⍵\n}1   ⍝ 1"), cases("⍝ —\n{\n⍵\n}1\n⍝ =>\n1"));
-    let parsed_output = cases("⍝⍝ Output\n\n⍝ —\n⎕←9 ⋄ ⎕←2 ⋄ 7\n7\n⍝ ⎕: 9\\n2\n\n⍝ —\n3\n3\n⍝ ⎕:\n\n⍝ —\n⍎¨[⎕ ⎕]\n3 4\n⍝ input: 3\\n4\n⍝ ⎕:\n\n");
+    assert_eq!(cases("⍝ —\n{\nω\n}1   ⍝ 1"), cases("⍝ —\n{\nω\n}1\n⍝ =>\n1"));
+    let parsed_output = cases("⍝⍝ Output\n\n⍝ —\n⎕←9 ◇ ⎕←2 ◇ 7\n7\n⍝ ⎕: 9\\n2\n\n⍝ —\n3\n3\n⍝ ⎕:\n\n⍝ —\n⍎¨[⎕ ⎕]\n3 4\n⍝ input: 3\\n4\n⍝ ⎕:\n\n");
     assert_eq!(parsed_output[0]["section"], "Output");
     assert_eq!(parsed_output[0]["expected_output"], "9\n2");
     assert_eq!(parsed_output[2]["input"], "3\n4");
     for case in parsed_output { assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass"); }
-    let mut output_error = json!({"code":"⎕←9 ⋄ 1÷'a'", "expected_error":"DOMAIN ERROR", "expected_output":"9"});
+    let mut output_error = json!({"code":"⎕←9 ◇ 1÷'a'", "expected_error":"DOMAIN ERROR", "expected_output":"9"});
     assert_eq!(reference::check(&output_error, &InterruptHandle::default())["status"], "pass");
     output_error["expected_output"] = json!("2");
     assert_eq!(reference::check(&output_error, &InterruptHandle::default())["status"], "mismatch");
     let exactness = json!({"code":"1", "expected_code":"1ₓ"});
     assert_eq!(reference::check(&exactness, &InterruptHandle::default())["status"], "mismatch");
     let kinds =
-        reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
+        reference::check(&json!({"code":r#"{ω?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
     assert_eq!(
         (kinds["status"].as_str(), kinds["message"].as_str()),
         (Some("mismatch"), Some("storage kind: bool with the batch pref off, float64 with the batch pref on"))
     );
     let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
     assert_eq!(reference::check(&captured, &InterruptHandle::default())["status"], "pass");
-    let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
-    assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");
+    let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\nω+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
+    assert_eq!(parsed[0]["code"], "f←{\n\nω+1\n}\nf 2");
     assert_eq!(parsed[1]["line"], 10);
     for case in parsed { assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass"); }
     let text =
-        "⍝⍝ setup\nv←1 2 3\n\n⍝⍝ copies •prefs [\"float\":32]\n⍝ mutate — expectation gets its own setup\nv←v+1 ⋄ v\n⍝ =>\nv+1\n⍝⍝: 2 3 4\n\n-v\n⍝⍝: 1 1 1\n";
+        "⍝⍝ setup\nv←1 2 3\n\n⍝⍝ copies •prefs [\"float\":32]\n⍝ mutate — expectation gets its own setup\nv←v+1 ◇ v\n⍝ =>\nv+1\n⍝⍝: 2 3 4\n\n-v\n⍝⍝: 1 1 1\n";
     let file = reference::file("sample.bpl", text).unwrap();
     assert_eq!(file.cases.len(), 2);
     assert_eq!(file.cases[0]["prefs"], "•prefs [\"float\":32]");
@@ -52,7 +52,7 @@ fn reference_format_and_comparison() {
     assert_eq!(&text[span[0].as_u64().unwrap() as usize..span[1].as_u64().unwrap() as usize], "⍝⍝: 2 3 4");
     assert!(reference::failures(file.cases.iter().filter(|c| reference::checked(c)), &file.setup, false, &InterruptHandle::default()).is_empty());
     reference::check_once(&file.cases[0], &file.setup, &InterruptHandle::default()).unwrap();
-    let text = "⍝ route-format —\n⍝⍝⍝ route vector kernel\n⍝⍝⍝ gap stopped \"a read of a traced value\": guard on differentiated data\n{0<+/⍵?+/⍵×⍵;0}∂1 2";
+    let text = "⍝ route-format —\n⍝⍝⍝ route vector kernel\n⍝⍝⍝ gap stopped \"a read of a traced value\": guard on differentiated data\n{0<+/ω?+/ω×ω;0}∂1 2";
     for ending in ["   ⍝ 2 4", "\n2 4"] {
         let mut routed = cases(&format!("{text}{ending}")).remove(0);
         assert_eq!(routed["route"], json!(["vector kernel"]));
@@ -65,9 +65,9 @@ fn reference_format_and_comparison() {
     }
     for (code, expect, status) in [
         ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
-        ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
-        (r#""aa":1"#, r#""bb":1"#, "mismatch"), (r#""aa":1"#, ",1", "mismatch"), (r#"["row":1]⍴1"#, r#"["col":1]⍴1"#, "mismatch"),
-        ("3", "÷'a'", "invalid"), ("32•float 1+3×2*¯23", "32•float 1", "pass"), ("1+1E¯8", "32•float 1+1E¯8", "mismatch"),
+        ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0ρ⊂1 2", "0ρ⊂1", "mismatch"),
+        (r#""aa":1"#, r#""bb":1"#, "mismatch"), (r#""aa":1"#, ",1", "mismatch"), (r#"["row":1]ρ1"#, r#"["col":1]ρ1"#, "mismatch"), ("3", "÷'a'", "invalid"),
+        ("32•float 1+3×2*¯23", "32•float 1", "pass"), ("1+1E¯8", "32•float 1+1E¯8", "mismatch"),
     ] {
         let case = json!({"code":code, "expected_code":expect});
         assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], status, "{code} vs {expect}");
@@ -196,10 +196,14 @@ fn reference_cases() {
     }, Some(std::path::Path::new(COSTS)), None);
     let mut replies = replies.into_iter().map(|reply| reply.expect("each job has a result or a crash")).zip(&jobs);
     for (reply, job) in replies.by_ref().take(page_count) {
-        match reply { Ok(result) => others.extend(serde_json::from_value::<Vec<String>>(result).unwrap()), Err(reason) => others.push(format!("{}: {reason}", job.place)) }
+        match reply {
+            Ok(result) => others.extend(serde_json::from_value::<Vec<String>>(result).unwrap()), Err(reason) => others.push(format!("{}: {reason}", job.place))
+        }
     }
-    let routes: Vec<_> = replies.by_ref().take(route_count).filter_map(|(reply, job)| reply.map_err(|reason| others.push(format!("{}: {reason}", job.place))).ok()).collect();
-    let results: Vec<_> = cases.into_iter().zip(replies).map(|((_, case), (reply, _))| reply.unwrap_or_else(|reason| reference::crashed(case, &reason))).collect();
+    let routes: Vec<_> =
+        replies.by_ref().take(route_count).filter_map(|(reply, job)| reply.map_err(|reason| others.push(format!("{}: {reason}", job.place))).ok()).collect();
+    let results: Vec<_> =
+        cases.into_iter().zip(replies).map(|((_, case), (reply, _))| reply.unwrap_or_else(|reason| reference::crashed(case, &reason))).collect();
     if let Ok(path) = std::env::var(RESULTS) { std::fs::write(&path, serde_json::to_string(&results).unwrap()).unwrap(); }
     // Route contracts and rustymath's route inventory (`reference::coverage`) are release-2 obligations, which fail no run. The test prints them, with the case that exercised each route and the gaps that route directives tolerate.
     let routed: Vec<Value> = results.iter().chain(&routes).cloned().collect();

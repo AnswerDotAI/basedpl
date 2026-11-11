@@ -5,7 +5,7 @@
 `-e` evaluates one expression. Quote it to protect spaces and glyphs from the shell.
 
 ```bash
-bpl -e '+/⍳10'       # 45
+bpl -e '+/ι10'       # 45
 ```
 
 Pass a UTF-8 BPL file to run it as one source. Names persist throughout the file.
@@ -23,13 +23,13 @@ To run a file as a script, start it with `#!/usr/bin/env bpl`. `bpl` ignores a f
 With no arguments, piped input behaves like the REPL without prompts. Names persist between expressions.
 
 ```bash
-printf 'v←⍳10\n+/v\n' | bpl
+printf 'v←ι10\n+/v\n' | bpl
 ```
 
 `-` reads all stdin as one source before evaluation.
 
 ```bash
-printf 'v←⍳10\n+/v\n' | bpl -
+printf 'v←ι10\n+/v\n' | bpl -
 ```
 
 When the program that reads the output closes the pipe, `bpl` stops the evaluation and exits with status 0.

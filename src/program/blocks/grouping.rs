@@ -156,9 +156,7 @@ fn alternates(p: Primitive, dtype: DType) -> bool {
 }
 
 /// Whether a stage's fold by `p` of items of `items` takes a seed of type `seed` into a result of type `result`, combining the seed with each total at the end (`Blocks::folded`): a fold of floats with a float seed, whose result keeps the items' width, of integers with an integer seed, by `⌈` or `⌊`, or by `+` into a result of the items' width, and a count of Booleans by `+` with an integer seed. A sum of integers into a wider integer folds after the stage, because a compiled part sums integers at the items' width.
-fn seeds(p: Primitive, items: DType, seed: DType, result: DType) -> bool {
-    reduction(p, items).is_some_and(|f| f.seeds(items, seed, result))
-}
+fn seeds(p: Primitive, items: DType, seed: DType, result: DType) -> bool { reduction(p, items).is_some_and(|f| f.seeds(items, seed, result)) }
 
 /// The reduction by which a stage folds items of `dtype` by `p`: the fold of `p`'s kernel there (`Kernel::fold`), which for Booleans is the one their truth table names.
 pub(super) fn reduction(p: Primitive, dtype: DType) -> Option<Reduce> { pervasive::kernel_at(p, None, dtype, 2, Numeric::current())?.fold() }

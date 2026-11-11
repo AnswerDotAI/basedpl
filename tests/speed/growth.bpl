@@ -1,8 +1,8 @@
 ⍝⍝ setup
 ⍝ Cases whose counts check that their costs grow linearly and that they allocate what their results need, with no time budgets. A cost that stops growing linearly counts far more for each item at 65,536 items: a quadratic one thousands of times as much. Pervasive and structural functions write their result once. A reshape that keeps the number of items shares its argument's storage. Indexing builds a table of its positions. Search builds a table of the items it searches. Format builds each number's text once, then converts it to characters. `arrays.bpl` counts the other functions of this kind.
 n←65536 size 512
-v←¿n⍴0 ⋄ w←¿n⍴0 ⋄ iv←⍳nₓ ⋄ b←0=3|iv ⋄ i←¿n⍴nₓ ⋄ m←[n÷2 2]⍴v ⋄ q←iv÷7
-rows←1024 size 8 ⋄ pairs←[rows 2]⍴v
+v←¿nρ0 ◇ w←¿nρ0 ◇ iv←ιnₓ ◇ b←0=3|iv ◇ i←¿nρnₓ ◇ m←[n÷2 2]ρv ◇ q←iv÷7
+rows←1024 size 8 ◇ pairs←[rows 2]ρv
 ⍝⍝ growth
 *v
 ⍝⍝: -	-	-	instructions macos 25.801 linux 12.258	allocated macos 8.119 linux 8.119
@@ -25,13 +25,13 @@ v×iv
 ((≢v)÷2)↓v
 ⍝⍝: -	-	-	instructions macos 5.99 linux 3.311	allocated macos 4.218 linux 4.218
 
-(⍴m)⍴v
+(ρm)ρv
 ⍝⍝: -	-	-	instructions macos 3.42 linux 1.903	allocated macos 0.149 linux 0.149
 
 b⊂iv
 ⍝⍝: -	-	-	instructions macos 628.117 linux 510.434	allocated macos 58.752 linux 58.752
 
-iv⍳i
+ivιi
 ⍝⍝: -	-	-	instructions macos 32.791 linux 32.512	allocated macos 10.063 linux 10.063
 
 i∊iv
@@ -49,17 +49,17 @@ i∊iv
 ⍕q
 ⍝⍝: -	-	-	instructions macos 1624.526 linux 1752.256	allocated macos 107.537 linux 107.537
 
-{⍵+1}¨iv
+{ω+1}¨iv
 ⍝⍝: -	-	-	instructions macos 10 linux 6.152	allocated macos 12.29 linux 12.29
 
 ⍝ A loop of single-item updates, linear in its count.
-x←0×iv ⋄ {x.[⍵]←1}¨iv
+x←0×iv ◇ {x.[ω]←1}¨iv
 ⍝⍝: -	-	-	instructions macos 32970.353 linux 27208.884	allocated macos 3031.356 linux 3031.356
 
 ⍝ A loop of appends, linear in its count.
-r←⍬ ⋄ {r,←⍵}¨iv
+r←⍬ ◇ {r,←ω}¨iv
 ⍝⍝: -	-	-	instructions macos 10849.049 linux 10683.663	allocated macos 153.548 linux 153.548
 
 ⍝ A gradient through a split into rows that a mix puts back together, where each row reads a few items of one record and of one shared cotangent. Batching declines the split's rows under `∂` ("an argument that isn't compact": they're carried cells, `batch.rs`), and the per-item fallback stops the trace ("a function called on each item", `program/trace.rs`), so each row runs on its own. Its count for each item shows that cost until batching takes carried cells. It records nodes and values for each row.
-{y←{⍵×⍵}¨↓⍵ ⋄ z←⊃₀y ⋄ +/,z}∂ pairs
+{y←{ω×ω}¨↓ω ◇ z←⊃₀y ◇ +/,z}∂ pairs
 ⍝⍝: -	-	-	instructions macos 4453.965 linux 3790.572	allocated macos 738.229 linux 738.261

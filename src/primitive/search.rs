@@ -151,7 +151,7 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, mark: Mark) -> Val
     generated_items(vec![data.len()], data.into_iter(), shape.iter().max().map_or(1, |&n| n as u64), mark).unwrap()
 }
 
-/// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
+/// A negative length counts down, as J's `i.` does: `ι¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `ι["i":3]` is `0 1 2` along an axis named `i`.
 pub(super) fn iota(right: &Value) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
     let lengths = right.as_items().integers().described("invalid iota dimension")?;
@@ -435,7 +435,7 @@ pub(crate) fn matched_cells(x: &Value, xk: usize, y: &Value, yk: usize, frame: &
     Value::booleans(frame.clone(), matched.collect::<Option<_>>()?).ok()
 }
 
-/// What `p`, one of `⍳`, `∊` and `⍸`, gives each pair of cells of `x` and `y`, of ranks `xk` and `yk`, where each cell of the haystack, on the left where `haystack_left`, is a vector of compact items: a search of each cell's needles in its own haystack, by rustymath's kernels on slices of the whole arguments, as one value laid out by `frame` and the needles' cell axes. An argument with no axes besides its cell's is the same in every cell. `None` where a pair needs the search's own code: haystack cells that aren't vectors, keys on them, an empty argument, or items whose kinds rustymath's kernels don't search.
+/// What `p`, one of `ι`, `∊` and `⍸`, gives each pair of cells of `x` and `y`, of ranks `xk` and `yk`, where each cell of the haystack, on the left where `haystack_left`, is a vector of compact items: a search of each cell's needles in its own haystack, by rustymath's kernels on slices of the whole arguments, as one value laid out by `frame` and the needles' cell axes. An argument with no axes besides its cell's is the same in every cell. `None` where a pair needs the search's own code: haystack cells that aren't vectors, keys on them, an empty argument, or items whose kinds rustymath's kernels don't search.
 pub(crate) fn searched_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, frame: &Layout, haystack_left: bool) -> Option<Value> {
     use rustymath::buffer::{Buffer, DType};
     let ((h, hk), (e, ek)) = if haystack_left { ((x, xk), (y, yk)) } else { ((y, yk), (x, xk)) };

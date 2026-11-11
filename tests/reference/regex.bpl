@@ -8,7 +8,7 @@ m←"abc123def45" •r "[0-9]+"
 
 ⍝ regex:groups — Captures exclude the whole match; absent captures are empty strings
 "abbb b" •r "(a)?(b+)"
-["text":["abbb" "b"] "position":[0 5]ₓ "groups":("a" "bbb"⋄"" "b")]
+["text":["abbb" "b"] "position":[0 5]ₓ "groups":("a" "bbb"◇"" "b")]
 
 ⍝ regex:unicode — Positions count characters, not UTF-8 bytes
 m←"aé🐈🐈z" •r "é|🐈+"
@@ -22,7 +22,7 @@ m←"aé🐈🐈z" •r "é|🐈+"
 m←"abc" •r "(z)"
 [m.text;m.position;m.groups;"abc" •replace ["(z)" "x"]]
 ⍝ =>
-[0⍴⊂"" ⍬ₓ 0⍴⊂,⊂"" "abc"]
+[0ρ⊂"" ⍬ₓ 0ρ⊂,⊂"" "abc"]
 
 ⍝ regex:replacement — Capture expansion and literal dollar
 "ab12 cd3" •replace ["(?P<word>[a-z]+)([0-9]+)" "${word}:$2:$$"]

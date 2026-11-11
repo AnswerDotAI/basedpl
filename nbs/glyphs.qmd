@@ -24,7 +24,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `⌈` [upstile](glyphs/upstile.qmd) | Alt-s | ceiling | maximum | `⌈/⍬` is `¯∞` |
 | `\|` [stile](glyphs/stile.qmd) | | magnitude | residue | |
 | `*` [star](glyphs/star.qmd) | | exponential | exponent | |
-| `⍟` [circle-star](glyphs/circle-star.qmd) | Alt-o 8 | natural-log | logarithm | |
+| `⊛` [circle-star](glyphs/circle-star.qmd) | Alt-o 8 | natural-log | logarithm | |
 | `○` [circle](glyphs/circle.qmd) | Alt-o | cis | circular | Pi-times is `π`. Codes 0 to 8, inverted by `k○⁻` |
 | `π` [pi](glyphs/pi.qmd) | Alt-p | pi-times | pi-ratio | |
 | `√` [radical](glyphs/radical.qmd) | Alt-3 | sqrt | root | As BQN's `√` |
@@ -46,7 +46,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `≥` [greater-than-or-equal](glyphs/greater-than-or-equal.qmd) | Alt-> | increment | greater-equal | Monad as J's `>:` |
 | `≡` [equal-underbar](glyphs/equal-underbar.qmd) | Alt-= | depth | match | Unsigned depth, as APL2/BQN |
 | `≢` [equal-underbar-slash](glyphs/equal-underbar-slash.qmd) | Alt-? | tally | not-match | |
-| `⍴` [rho](glyphs/rho.qmd) | Alt-r | shape | reshape | Rank-0 reshape encloses |
+| `ρ` [rho](glyphs/rho.qmd) | Alt-r | shape | reshape | Rank-0 reshape encloses |
 | `,` [comma](glyphs/comma.qmd) | | ravel | catenate | |
 | `⍪` [comma-bar](glyphs/comma-bar.qmd) | Alt-Minus , | table | catenate-first | |
 | `⌽` [circle-stile](glyphs/circle-stile.qmd) | Alt-2 | reverse | rotate | |
@@ -59,7 +59,7 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `⊆` [left-shoe-underbar](glyphs/left-shoe-underbar.qmd) | Alt-Minus z | nest | partition | Partitions first axis |
 | `⊃` [right-shoe](glyphs/right-shoe.qmd) | Alt-x | mix | pick | Monad as Dyalog `⎕ML≥2`; pick cells or keys |
 | `⌷` [squad](glyphs/squad.qmd) | Alt-q Backslash | materialise | index | Negative indices; `:` keeps one axis, `∞` the rest; `¯∞` inserts one |
-| `⍳` [iota](glyphs/iota.qmd) | Alt-i | indices | index-of | Axis selectors; negative lengths count down |
+| `ι` [iota](glyphs/iota.qmd) | Alt-i | indices | index-of | Axis selectors; negative lengths count down |
 | `↦` [right-arrow-from-bar](glyphs/right-arrow-from-bar.qmd) | Alt-l | range | to | Counts up or down from `1`, `¯1` or `X` to `Y`; not Dyalog's branch |
 | `:` [colon](glyphs/colon.qmd) | | unkey | keyed | [Axis keys](keyed.ipynb) |
 | `⍸` [iota-underbar](glyphs/iota-underbar.qmd) | Alt-Minus i | where | interval-index | Dyad as BQN's `⍋` |
@@ -95,7 +95,7 @@ A monadic operator takes one operand, on its left, as in `+/`. Monad and Dyad na
 | `⊗` [circle-times](glyphs/circle-times.qmd) | Alt-o m | outer-product | | `g⊗`, as BQN's `⌜` |
 | `⌸` [quad-equal](glyphs/quad-equal.qmd) | Alt-q = | key | | `f⌸` |
 | `⇄` [right-left-arrows](glyphs/right-left-arrows.qmd) | Alt-4 | optimize | | `f⇄` searches for the point where `f` is least, or with `"solve":$t`, where its residuals are zero. A left argument holds options |
-| `∂` [partial](glyphs/partial.qmd) | Alt-f | derivative | | `f∂` gives the Jacobian. The dyad differentiates `⍺ f ⍵` with respect to `⍵` |
+| `∂` [partial](glyphs/partial.qmd) | Alt-f | derivative | | `f∂` gives the Jacobian. The dyad differentiates `α f ω` with respect to `ω` |
 
 ## Dyadic operators
 
@@ -121,15 +121,15 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | Glyph | Key | Name | Note |
 |---|---|---|---|
 | `←` [left-arrow](glyphs/left-arrow.qmd) | Alt-h | assign | Includes modified and selective assignment |
-| `(…)` [parentheses](glyphs/parentheses.qmd) | | | Grouping. With `⋄`, a vector of rows: `(4⋄4 5)` is `[[4] [4 5]]` |
-| `[…]` [brackets](glyphs/brackets.qmd) | | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2⋄3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
+| `(…)` [parentheses](glyphs/parentheses.qmd) | | | Grouping. With `◇`, a vector of rows: `(4◇4 5)` is `[[4] [4 5]]` |
+| `[…]` [brackets](glyphs/brackets.qmd) | | | Vectors and arrays: `[a b c]`, `[a;b c]`, `[1 2◇3 4]`. One item makes a one-item vector: `[x]` is `,⊂x` |
 | `{…}` [braces](glyphs/braces.qmd) | | | Defined function or operator. `;` separates its bodies |
-| `⍺` [alpha](glyphs/alpha.qmd), `⍵` [omega](glyphs/omega.qmd) | Alt-a, Alt-w | left-argument, right-argument | |
+| `α` [alpha](glyphs/alpha.qmd), `ω` [omega](glyphs/omega.qmd) | Alt-a, Alt-w | left-argument, right-argument | |
 | `⍶` [alpha-underbar](glyphs/alpha-underbar.qmd), `⍹` [omega-underbar](glyphs/omega-underbar.qmd) | Alt-Minus a, Alt-Minus w | left-operand, right-operand | |
 | `∇` [del](glyphs/del.qmd), `⍢` [del-diaeresis](glyphs/del-diaeresis.qmd) | Alt-g, Alt-1 g | recursion, operator-recursion | A dfn's own function or operator |
 | `?` [question](glyphs/question.qmd) | | predicate | Inside dfns |
 | `::` [error-guard](glyphs/error-guard.qmd) | | | Error guard inside dfns |
-| `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | separator | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
+| `◇` [diamond](glyphs/diamond.qmd) | Alt-Backtick | separator | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
 | `⁝` [tricolon](glyphs/tricolon.qmd) | Alt-: | token-separator | Separates tokens without ending the run or continuing a literal strand |
 | `⍝` [lamp](glyphs/lamp.qmd) | Alt-o c | comment | |
 | `⎕←` [quad](glyphs/quad.qmd) | Alt-q | io | Explicit output. Read alone, the next line of input |
@@ -151,14 +151,14 @@ System names start with `•`. [System functions](system-functions.qmd) lists th
 
 ## Language-wide differences from Dyalog APL
 
-- [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2⋄3)` is the vector of rows `[[1 2] [3]]`.
+- [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2◇3)` is the vector of rows `[[1 2] [3]]`.
 - [Runs](syntax.qmd#runs): outside brackets, spaces group an expression into runs, and each run acts as one token. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. An operator takes the token next to it, so after a run that ends in a dyadic operator, the next run is its right operand: in `⌊@ 10× x`, it is `10×`.
 - [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Positions and axes count from 0. Negative positions and axes count from the end. Index selects: `0⌷v` is the first item of `v`.
 - [Atoms](arrays.ipynb): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `⊂3 ≡ 3` is `$f`.
 - [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ᵣ÷3ᵣ` is `1ᵣ3`, while `1ₓ÷3ₓ` floors to `0ₓ`. Predicates, positions, tally and shape are exact. See [Mathish mode](numbers.qmd#mathish-mode) for comparison and zero-division conventions.
-- [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `2 3⍴⍳6 + 10 20` is `[10 11 12⋄23 24 25]`.
+- [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `2 3ρι6 + 10 20` is `[10 11 12◇23 24 25]`.
 - [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.
 - [Dfns](dfns.ipynb): BPL has dfns, with no tradfns and no colon control structures such as `:If`.
-- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use numeric subscripts or [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x⋄y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻`.
+- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use numeric subscripts or [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x◇y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻`.

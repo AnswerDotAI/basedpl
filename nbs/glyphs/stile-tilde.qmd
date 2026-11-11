@@ -7,8 +7,8 @@ Function. Keys: `Alt-Backslash`. Hanzi: `素`. Ranks: `0` monadic, `0 0` dyadic
 `⍭⁻N`: the number of primes below `N`, which is the index of a prime `N`.
 
 ```bpl
-⍭⍳8ₓ               ⍝ [2 3 5 7 11 13 17 19]ₓ
-⍭⁻⍭⍳4ₓ            ⍝ [0 1 2 3]ₓ
+⍭ι8ₓ               ⍝ [2 3 5 7 11 13 17 19]ₓ
+⍭⁻⍭ι4ₓ            ⍝ [0 1 2 3]ₓ
 ⍭⁻1 2 3 4 5 6     ⍝ [0 0 1 2 2 3]ₓ
 ```
 
@@ -31,7 +31,7 @@ Function. Keys: `Alt-Backslash`. Hanzi: `素`. Ranks: `0` monadic, `0 0` dyadic
 Euler's totient of `N` is `N` times the product of `1-÷p` over the distinct prime factors `p` of `N`. For one whole `N`, `3⍭N` gives the same result as `N××/1ᵣ-÷∪⨸N` in the `ᵣ` domain. Machine integers would floor each `÷p` to 0.
 
 ```bpl
-N←700ᵣ ⋄ N××/1ᵣ-÷∪⨸N     ⍝ 240ᵣ
+N←700ᵣ ◇ N××/1ᵣ-÷∪⨸N     ⍝ 240ᵣ
 3⍭700ᵣ                   ⍝ 240ᵣ
 ```
 

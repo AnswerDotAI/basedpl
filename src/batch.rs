@@ -210,7 +210,6 @@ pub(crate) fn constant(value: &Value, level: u64) -> bool {
     value.older_than(level) && value.template_dtype().is_some() && (value.is_atom() || !value.shape().is_empty())
 }
 
-
 /// A binding's batches laid over the current run frame. Nested arrays widen each batch they hold.
 pub(crate) fn widened(value: &Value, level: u64, frame: &Layout) -> Result<Value, Error> {
     if let Some(b) = value.carrier_at(level).and_then(Carrier::batch) {
@@ -231,7 +230,7 @@ pub(crate) fn widened(value: &Value, level: u64, frame: &Layout) -> Result<Value
 /// - `⌷` and bracket indexing whose selector lists hold batches run their own code, which reads each cell's positions on the batch's whole (`bracketed`).
 /// - `¿` runs its own code, which draws from the generator's one stream: a roll once on the batch's whole, and a deal for each cell in cell order (`primitive::drawn_value`).
 /// - `⍕` runs its own code, whose effect check stops the run, as it does for a batch inside a nested argument (`transform::formats`).
-/// - Monadic `⍴` and `≢` give one constant, every cell's result, because a batch's cells share one shape.
+/// - Monadic `ρ` and `≢` give one constant, every cell's result, because a batch's cells share one shape.
 /// - `↕` with one window specification for every cell runs its own code, whose copy reads each cell's windows (`Batch::copied`). A specification that differs from cell to cell stops the run, because each cell's windows could have their own shape.
 /// - A fold or scan of each cell by a primitive runs by Rank's rule for folds (`eval::folded_cells`). A seed that is the same number in every cell seeds each lane in that rule. Any other seed, and a seed of a fold of atoms, leave the fold to its own loop over the batch's items. A fold of an atom with no seed is the atom. A fold along an axis that isn't one of the cell's stops the run, so that each cell's call gives its own result or error. A fold by `+`, `×`, `⌈` or `⌊` along several cell axes takes the same rule, as one fold of the whole along all of them, where `eval::folded_along` asks for it (`folded`).
 /// - A fold or scan by an operand that isn't a primitive runs its own loop, which calls the operand once for each stage, on item `j` of every cell as one batch of atoms (`Batch::at`). A fold of an atom is the atom, and a fold along several axes, or along an axis that isn't one of the cell's, stops the run.
@@ -563,11 +562,9 @@ pub(crate) fn stacked<'a>(frame: &Layout, items: impl ExactSizeIterator<Item = &
     Some((Value::stacked(frame, items)?.ok()?, first.shape().len()))
 }
 
-/// Run each repeated cell shape as a dense batch and return its cells in the original order.
-/// A reordered try with a draw restores the generators and leaves the caller to run in order.
+/// Run each repeated cell shape as a dense batch and return its cells in the original order. A reordered try with a draw restores the generators and leaves the caller to run in order.
 pub(crate) fn cohorts<K: Ord>(
-    operand: &Function, shapes: impl ExactSizeIterator<Item = K>,
-    arguments: impl Fn(&[usize], &Layout) -> Option<Arguments>, span: &Span,
+    operand: &Function, shapes: impl ExactSizeIterator<Item = K>, arguments: impl Fn(&[usize], &Layout) -> Option<Arguments>, span: &Span
 ) -> Option<Result<Vec<Value>, Error>> {
     // system() uses each_cell for every direct System operand; packing cannot remove any of that work.
     if operand.system_function().is_some() { return None; }
@@ -587,17 +584,15 @@ pub(crate) fn cohorts<K: Ord>(
             let whole = run(operand, x.as_ref(), &y, &frame, &Entry::Begin, false, span)?;
             let cells = whole.cells(whole.shape().len() - 1).map_err(|_| Ended::Fell("a cohort's result"))?;
             for (i, position) in positions.into_iter().enumerate() {
-                values[position] = if cells.shape().is_empty() { whole.element(i) }
-                    else { cells.get(i).map_err(|_| Ended::Fell("a cohort's result"))? };
+                values[position] = if cells.shape().is_empty() { whole.element(i) } else { cells.get(i).map_err(|_| Ended::Fell("a cohort's result"))? };
             }
         }
         Ok(values)
     })();
     let drew = crate::distribution::settle(&session().drawn, true);
     match attempt {
-        Ok(values) if !drew => { crate::events::taken(crate::events::routes::Batching, count); Some(Ok(values)) }
-        Err(Ended::Passed(error)) => Some(Err(error)),
-        _ => None,
+        Ok(values) if !drew => { crate::events::taken(crate::events::routes::Batching, count); Some(Ok(values)) } Err(Ended::Passed(error)) => Some(Err(error)),
+        _ => None
     }
 }
 
@@ -609,8 +604,7 @@ fn ragged(operand: &Function, arguments: Arguments, layout: &Layout, span: &Span
         Some(items)
     }
     let (x, y) = (arguments.left.as_ref().and_then(nested), nested(&arguments.right));
-    let varies = |cells: Option<&[Value]>| cells.is_some_and(|cells| cells.first().is_some_and(
-        |first| cells.iter().any(|cell| cell.shape() != first.shape())));
+    let varies = |cells: Option<&[Value]>| cells.is_some_and(|cells| cells.first().is_some_and(|first| cells.iter().any(|cell| cell.shape() != first.shape())));
     if !varies(x) && !varies(y) { return None; }
     if [x, y].into_iter().flatten().flatten().any(|item| item.shape().is_empty() || !item.layout().plain() || item.dtype().is_none()) { return None; }
     let packed = |(value, rank): &(Value, usize), cells: Option<&[Value]>, positions: &[usize], frame: &Layout| {
@@ -623,10 +617,12 @@ fn ragged(operand: &Function, arguments: Arguments, layout: &Layout, span: &Span
         Some(Arguments { left, right: packed(&arguments.right, y, positions, frame)? })
     };
     let shapes = (0..layout.count()).map(|i| (x.map_or(&[][..], |v| v[i].shape()), y.map_or(&[][..], |v| v[i].shape())));
-    cohorts(operand, shapes, pack, span).map(|result| result.and_then(|values| {
-        let prototype = values[0].prototype();
-        layout.collect(values, prototype).described("invalid result")
-    }))
+    cohorts(operand, shapes, pack, span).map(|result| {
+        result.and_then(|values| {
+            let prototype = values[0].prototype();
+            layout.collect(values, prototype).described("invalid result")
+        })
+    })
 }
 /// One batched run of `operand` on the cells that `frame` lays out, entered by `entry`, with a batch of the cells of each batched side, and each constant as it is. It gives the whole of the cells' results (`whole_over`).
 fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &Entry, itemwise: bool, span: &Span) -> Result<Value, Ended> {
@@ -700,8 +696,8 @@ pub(crate) fn tried(
     let Some(arguments) = arguments() else { return declined("an argument too large to lay over the frame") };
     if !mixed && !session().transforming()
         && arguments.left.iter().chain(std::iter::once(&arguments.right)).any(|(v, rank)| v.shape().len() > *rank && v.holds_values()) {
-        return ragged(operand, arguments, layout, span).or_else(|| declined("an argument that isn't compact"));
-    }
+            return ragged(operand, arguments, layout, span).or_else(|| declined("an argument that isn't compact"));
+        }
     let Arguments { left, right } = arguments;
     let entry = session().batched().map_or(Entry::Begin, |(level, outer)| Entry::Widen { level, outer });
     // The run's frame has no axis names. Every argument is laid over the frame already, so names stay on cell axes, which pair by name as separate calls on cells pair them. The result gets the frame's names back.

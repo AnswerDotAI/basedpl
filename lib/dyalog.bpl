@@ -5,99 +5,99 @@
 
 _array←•load "./array.bpl"
 ⍝ From https://dfns.dyalog.com/c_segs.htm
-segs←{~⍵∊⍺ ⊆ ⍵}  ⍝ Separator-delimited segments.
+segs←{~ω∊α ⊆ ω}  ⍝ Separator-delimited segments.
 
 ⍝ From https://dfns.dyalog.com/c_m91.htm
-m_91←{⍵>100ₓ?⍵-10ₓ;∇ ∇ ⍵+11ₓ}  ⍝ McCarthy's M91 function.
+m_91←{ω>100ₓ?ω-10ₓ;∇ ∇ ω+11ₓ}  ⍝ McCarthy's M91 function.
 
 ⍝ From https://dfns.dyalog.com/c_life.htm
-life←{[$t ⍵]∨.∧3ₓ 4ₓ=¨⊂+/,¯1 0 1⊖⊗¯1 0 1⌽⊗⊂⍵}
+life←{[$t ω]∨.∧3ₓ 4ₓ=¨⊂+/,¯1 0 1⊖⊗¯1 0 1⌽⊗⊂ω}
 
 ⍝ From https://dfns.dyalog.com/c_rmcm.htm
 rmcm←{  ⍝ Replace comments with blanks.
-  cm←∨\ ⍵='⍝' > ≠\⍵='''
-  ' '@ ⍸cm ⍵
+  cm←∨\ ω='⍝' > ≠\ω='''
+  ' '@ ⍸cm ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_ripple.htm
-ripple←{[(⍋⍒(⍴⍵)⍴0 1)]⌷⍵}  ⍝ Perfect ripple shuffle.
+ripple←{[(⍋⍒(ρω)ρ0 1)]⌷ω}  ⍝ Perfect ripple shuffle.
 
 ⍝ From https://dfns.dyalog.com/c_birthday.htm
-birthday←{  ⍝ Probability of a shared birthday among ⍵ people, with ⍺ possible dates.
-  1 - ×/ ⍺-⍳⍵ ÷ ⍺
+birthday←{  ⍝ Probability of a shared birthday among ω people, with α possible dates.
+  1 - ×/ α-ιω ÷ α
 }
 
 ⍝ From https://dfns.dyalog.com/c_lsys.htm
 lsys←{  ⍝ Lindenmayer L-system expansion.
-  2ₓ≥≡⍺?⊂,⍺ ∇ ⍵;
-  [fms tos]←↓⍉⊃,⍺
-  ∊[(fms,⍵)⍳⍵]⌷tos,⍵
+  2ₓ≥≡α?⊂,α ∇ ω;
+  [fms tos]←↓⍉⊃,α
+  ∊[(fms,ω)ιω]⌷tos,ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_rr.htm
 rr←{  ⍝ Round-robin tournament.
-  v←⍳n←0ₓ⌈≤⍵
-  ≥(⍵÷2)↑₋₁m{[⍺⋄⍵]}⍤1⌽m←0ₓ,v⌽≥[n n]⍴v
+  v←ιn←0ₓ⌈≤ω
+  ≥(ω÷2)↑₋₁m{[α◇ω]}⍤1⌽m←0ₓ,v⌽≥[n n]ρv
 }
 
 ⍝ From https://dfns.dyalog.com/c_easter.htm
 easter←{  ⍝ Easter Sunday, yyyymmdd.
-  G←≥19ₓ|⍵
-  C←≥⌊⍵÷100ₓ
+  G←≥19ₓ|ω
+  C←≥⌊ω÷100ₓ
   X←¯12ₓ+⌊C×3ₓ÷ₐ4ₓ
   Z←¯5ₓ + ⌊ 5ₓ+8ₓ×C ÷ₐ 25ₓ
-  S←(⌊ 5ₓ×⍵ ÷ₐ 4ₓ)-X+10ₓ
+  S←(⌊ 5ₓ×ω ÷ₐ 4ₓ)-X+10ₓ
   E←30ₓ | 11ₓ×G + 20ₓ+Z-X
   F←E + E=24ₓ ∨ E=25ₓ ∧ G>11ₓ
   N←30ₓ×F>23ₓ + 44ₓ-F
   N+←7ₓ-7ₓ|S+N
   M←3ₓ+N>31ₓ
   D←N-31ₓ×N>31ₓ
-  [10000 100 1]ₓ+.×[⍵ M D]
+  [10000 100 1]ₓ+.×[ω M D]
 }
 
 ⍝ From https://dfns.dyalog.com/c_dice.htm
 dice←{
-  ⍵≡[6 6]ₓ?"Box Cars";
-  ⍵≡[1 1]ₓ?"Snake Eyes";
-  =/⍵?"Pair";
-  7ₓ=+/⍵?"Seven";
+  ω≡[6 6]ₓ?"Box Cars";
+  ω≡[1 1]ₓ?"Snake Eyes";
+  =/ω?"Pair";
+  7ₓ=+/ω?"Seven";
   "Unlucky"
 }
 
 ⍝ From https://dfns.dyalog.com/c_packN.htm
 packN←{  ⍝ Null packing: shape, non-null mask, non-null items.
-  cmp←{mask←,⍵≠1↑0⍴⍵ ⋄ [⍴⍵ mask mask#,⍵]}
-  exp←{[shape mask items]←⍵ ⋄ shape⍴mask#⁻items}
-  ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
+  cmp←{mask←,ω≠1↑0ρω ◇ [ρω mask mask#,ω]}
+  exp←{[shape mask items]←ω ◇ shapeρmask#⁻items}
+  α←$t ◇ α?cmp ω;exp ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_packR.htm
 packR←{  ⍝ Run-length encoding: shape, counts, items.
   cmp←{
-    shape←⍴⍵ ⋄ vect←,⍵
+    shape←ρω ◇ vect←,ω
     runs←$t,≠/↕vect
     repls←-⍨/↕⍸runs,$t
     [shape repls runs#vect]
   }
-  exp←{[shape repls solos]←⍵ ⋄ shape⍴repls#solos}
-  ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
+  exp←{[shape repls solos]←ω ◇ shapeρrepls#solos}
+  α←$t ◇ α?cmp ω;exp ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_packU.htm
 packU←{  ⍝ Unique packing: shape, unique items, zero-based indices.
-  cmp←{u←∪,⍵ ⋄ [⍴⍵ u u⍳,⍵]}
-  exp←{[shape u i]←⍵ ⋄ shape⍴[i]⌷u}
-  ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
+  cmp←{u←∪,ω ◇ [ρω u uι,ω]}
+  exp←{[shape u i]←ω ◇ shapeρ[i]⌷u}
+  α←$t ◇ α?cmp ω;exp ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_date.htm
 date←{  ⍝ Timestamp from day number (Meeus).
-  ⍺←¯53799ₓ
-  qr←{⊂⍠ ⍳≢⍴⍵ (0ₓ,⍺)⊤⍵}
-  [Z F]←1ₓ qr ⍵+2415020ₓ
+  α←¯53799ₓ
+  qr←{⊂⍠ ι≢ρω (0ₓ,α)⊤ω}
+  [Z F]←1ₓ qr ω+2415020ₓ
   a←⌊ Z-1867216.25 ÷ 36524.25
-  A←Z + Z≥⍺+2415021ₓ × ≥a-⌊a÷4ₓ
+  A←Z + Z≥α+2415021ₓ × ≥a-⌊a÷4ₓ
   B←A+1524ₓ
   C←⌊ B-122.1 ÷ 365.25
   D←⌊C×365.25
@@ -111,269 +111,269 @@ date←{  ⍝ Timestamp from day number (Meeus).
 
 ⍝ From https://dfns.dyalog.com/c_days.htm
 days←{  ⍝ Days since 1899-12-31 (Meeus).
-  ⍺←17520902ₓ
-  1ₓ<≢⍴⍵?⍺ ∇⍤0 1 ⍵;
-  [yy mm dd h m s ms]←7↑⍵
+  α←17520902ₓ
+  1ₓ<≢ρω?α ∇⍤0 1 ω;
+  [yy mm dd h m s ms]←7↑ω
   D←dd + [0 60 60 1000]ₓ⊥[h m s ms] ÷ 86400000ₓ
   [Y M]←[yy mm]+[¯1 12]ₓ×mm≤2ₓ
   A←⌊Y÷100ₓ
-  B←⍺<[0 100 100]ₓ⊥[yy mm dd] × 2ₓ-A + ⌊A÷4ₓ
+  B←α<[0 100 100]ₓ⊥[yy mm dd] × 2ₓ-A + ⌊A÷4ₓ
   ¯2416544ₓ+D+B++/⌊365.25 30.6×[Y M]+[4716 1]ₓ
 }
 
 ⍝ From https://dfns.dyalog.com/c_draw.htm
 draw←{  ⍝ Box-drawing characters over a marker.
-  ⍺←"*"
-  rh←×/¯1↓⍴⍵ , ¯1↑1,⍴⍵
+  α←"*"
+  rh←×/¯1↓ρω , ¯1↑1,ρω
   ch←"│─┌─┐─┬││└├┘┤┴┼"
-  z←,' '⍪(' ' , rh⍴⍵ , ' ')⍪' '
-  bv←z∊⍺ ⋄ ix←⍸bv
-  in←{⊥[ix+⊗[-⍵ ¯1ₓ 1ₓ ⍵]]⌷bv}2ₓ+rh₁
+  z←,' '⍪(' ' , rhρω , ' ')⍪' '
+  bv←z∊α ◇ ix←⍸bv
+  in←{⊥[ix+⊗[-ω ¯1ₓ 1ₓ ω]]⌷bv}2ₓ+rh₁
   z.[(×in # ix)]←[≤in~[0ₓ]]⌷ch
-  ⍴⍵ ⍴ 1 1↓¯1 ¯1↓(rh+2)⍴z
+  ρω ρ 1 1↓¯1 ¯1↓(rh+2)ρz
 }
 
 ⍝ From https://dfns.dyalog.com/c_dots.htm
 dots←{  ⍝ Show indentation with white dots.
-  ⍺←'·'
-  kwds←":E" ":C" ":U"⍷¨⊂⍵
-  ends←⊃∨/kwds,⊂⍵='}'
-  spcs←∧\' '=⍵
+  α←'·'
+  kwds←":E" ":C" ":U"⍷¨⊂ω
+  ends←⊃∨/kwds,⊂ω='}'
+  spcs←∧\' '=ω
   xdents←ends∧$t,0 ¯1↓spcs
-  flood←⍪[1 2]ₓ {hits←⍺⍷⍵ ⋄ ~$t∊,hits?⍵;⍺ ∇ hits+⍵} spcs+⊽xdents
-  ⍺@ ⍸2ₓ=flood-xdents ⍵
+  flood←⍪[1 2]ₓ {hits←α⍷ω ◇ ~$t∊,hits?ω;α ∇ hits+ω} spcs+⊽xdents
+  α@ ⍸2ₓ=flood-xdents ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_logic.htm
-logic←{+/(⍵+⊽⍺ =⊗ [0 1 2 3]ₓ)×[2 2 2 2]ₓ⊤⍺⍶⍵}
+logic←{+/(ω+⊽α =⊗ [0 1 2 3]ₓ)×[2 2 2 2]ₓ⊤α⍶ω}
 
 ⍝ From https://dfns.dyalog.com/c_Depth.htm
 Depth←{  ⍝ Apply ⍶ at depths ⍹.
-  ⍺←⊣
-  depths←⌽3⍴⌽⍹
-  [m l r]←depths-⍨ ≡¨[⍵ ⍺ ⍵] × depths≥0ₓ
-  [max encl]←"¨⊂"⍴¨⍨l(⌈,↢|-)r
+  α←⊣
+  depths←⌽3ρ⌽⍹
+  [m l r]←depths-⍨ ≡¨[ω α ω] × depths≥0ₓ
+  [max encl]←"¨⊂"ρ¨⍨l(⌈,↢|-)r
   [el er]←$t $f=l≤r #¨ ⊂encl
-  ⍎'(',el,"⍺)⍶",max,er,'⍵'
+  ⍎'(',el,"α)⍶",max,er,'ω'
 }
 
 ⍝ From https://dfns.dyalog.com/c_case.htm
 case←{  ⍝ Select statement.
-  ~∨/b←<\⍺?⍵;
-  ¯1↑b?⍹ ⍵;
-  $t $f≡b?⍶ ⍵;
-  ¯1↓b ⍶ ⍵
+  ~∨/b←<\α?ω;
+  ¯1↑b?⍹ ω;
+  $t $f≡b?⍶ ω;
+  ¯1↓b ⍶ ω
 }
 ⍝ From https://dfns.dyalog.com/c_morse.htm
 morse←{  ⍝ Conversion to/from Morse code. A blank is the inter-word separator /.
-  [P M]←↓⍉['A' ".-"⋄'B' "-..."⋄'C' "-.-."⋄'D' "-.."⋄'E' "."⋄'F' "..-."⋄'G' "--."⋄'H' "...."
-    'I' ".."⋄'J' ".---"⋄'K' "-.-"⋄'L' ".-.."⋄'M' "--"⋄'N' "-."⋄'O' "---"⋄'P' ".--."
-    'Q' "--.-"⋄'R' ".-."⋄'S' "..."⋄'T' "-"⋄'U' "..-"⋄'V' "...-"⋄'W' ".--"⋄'X' "-..-"
-    'Y' "-.--"⋄'Z' "--.."
-    '0' "-----"⋄'1' ".----"⋄'2' "..---"⋄'3' "...--"⋄'4' "....-"
-    '5' "....."⋄'6' "-...."⋄'7' "--..."⋄'8' "---.."⋄'9' "----."
-    '.' ".-.-.-"⋄',' "--..--"⋄':' "---..."⋄'?' "..--.."⋄''' ".----."⋄'-' "-....-"
-    '/' "-..-."⋄'(' "-.--."⋄')' "-.--.-"⋄'"' ".-..-."⋄'@' ".--.-."⋄'=' "-...-"
+  [P M]←↓⍉['A' ".-"◇'B' "-..."◇'C' "-.-."◇'D' "-.."◇'E' "."◇'F' "..-."◇'G' "--."◇'H' "...."
+    'I' ".."◇'J' ".---"◇'K' "-.-"◇'L' ".-.."◇'M' "--"◇'N' "-."◇'O' "---"◇'P' ".--."
+    'Q' "--.-"◇'R' ".-."◇'S' "..."◇'T' "-"◇'U' "..-"◇'V' "...-"◇'W' ".--"◇'X' "-..-"
+    'Y' "-.--"◇'Z' "--.."
+    '0' "-----"◇'1' ".----"◇'2' "..---"◇'3' "...--"◇'4' "....-"
+    '5' "....."◇'6' "-...."◇'7' "--..."◇'8' "---.."◇'9' "----."
+    '.' ".-.-.-"◇',' "--..--"◇':' "---..."◇'?' "..--.."◇''' ".----."◇'-' "-....-"
+    '/' "-..-."◇'(' "-.--."◇')' "-.--.-"◇'"' ".-..-."◇'@' ".--.-."◇'=' "-...-"
     ' ' "/"]
-  1ₓ=≡,⍵?[P⍳⍵∩P]⌷M;  ⍝ plain text to Morse.
-  2ₓ=≡,⍵?[M⍳⍵∩M]⌷P  ⍝ Morse to plain text.
+  1ₓ=≡,ω?[Pιω∩P]⌷M;  ⍝ plain text to Morse.
+  2ₓ=≡,ω?[Mιω∩M]⌷P  ⍝ Morse to plain text.
 }
 
 ⍝ From https://dfns.dyalog.com/c_base64.htm
 base_64←{  ⍝ Base64 encoding/decoding of octet vectors.
   chars←"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-  bits←{, ⍺⍴2ₓ ⊤ ⍵}
-  part←{(⍴⍵ ⍴ ⍺↑$t)⊂⍵}
-  ' '=↑0⍴,⍵?2ₓ↣⊥∘(8↣↑)¨ 8 part {-8|⍴⍵ ↓ ⍵} 6 bits {⍵≠64ₓ # ⍵} chars⍳⍵;
+  bits←{, αρ2ₓ ⊤ ω}
+  part←{(ρω ρ α↑$t)⊂ω}
+  ' '=↑0ρ,ω?2ₓ↣⊥∘(8↣↑)¨ 8 part {-8|ρω ↓ ω} 6 bits {ω≠64ₓ # ω} charsιω;
   four←{
-    8ₓ=⍴⍵?"=="∇⍵,[0 0 0 0]ₓ;
-    16ₓ=⍴⍵?'='∇⍵,[0 0]ₓ;
-    chars.[(2ₓ↣⊥¨ 6 part ⍵)],⍺
+    8ₓ=ρω?"=="∇ω,[0 0 0 0]ₓ;
+    16ₓ=ρω?'='∇ω,[0 0]ₓ;
+    chars.[(2ₓ↣⊥¨ 6 part ω)],α
   }
-  cats←{"",/⍵}
-  cats ""↣four¨ 24 part 8 bits ⍵
+  cats←{"",/ω}
+  cats ""↣four¨ 24 part 8 bits ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_packB.htm
 packB←{  ⍝ Unique indices packed as run lengths and bits.
   cmp←{
-    u←∪,⍵
-    i←u⍳,⍵ ⋄ w←⌈2⍟⍴u
+    u←∪,ω
+    i←uι,ω ◇ w←⌈2⊛ρu
     b←$t,≠/↕i
-    j←0≠,⍉(w⍴2)⊤b#i
-    [(⍴⍴⍵),(⍴⍵),u b j]
+    j←0≠,⍉(wρ2)⊤b#i
+    [(ρρω),(ρω),u b j]
   }
   exp←{
-    [q b j]←⍵ ⋄ s←↑q
-    r←s⍴1↓q ⋄ u←≥s ↓ q
-    w←⌈2⍟⍴u
+    [q b j]←ω ◇ s←↑q
+    r←sρ1↓q ◇ u←≥s ↓ q
+    w←⌈2⊛ρu
     e←-⍨/↕⍸b,$t
-    i←⊥⍉w{⍺,⌊⍺÷⍨⍴⍵ ⍴ ⍵}j
-    r⍴[e#i]⌷u
+    i←⊥⍉w{α,⌊α÷⍨ρω ρ ω}j
+    rρ[e#i]⌷u
   }
-  ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
+  α←$t ◇ α?cmp ω;exp ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_packX.htm
 packX←{  ⍝ Text packed through pairs of unique items.
   cmp←{
-    u←∪,⍵
-    p←↓{2,⍨⌈0.5×⍴⍵ ⍴ ⍵},⍵
+    u←∪,ω
+    p←↓{2,⍨⌈0.5×ρω ρ ω},ω
     j←,u,⊗u
-    b←j∊p ⋄ g←b#j
-    i←g⍳p
-    w←⌈2⍟⍴g
-    q←0≠b,,⍉(w⍴2)⊤i
-    [u (⍴⍴⍵),⍴⍵ q]
+    b←j∊p ◇ g←b#j
+    i←gιp
+    w←⌈2⊛ρg
+    q←0≠b,,⍉(wρ2)⊤i
+    [u (ρρω),ρω q]
   }
   unc←{
-    [u d a]←⍵
-    s←↑d ⋄ r←s⍴1↓d
+    [u d a]←ω
+    s←↑d ◇ r←sρ1↓d
     j←,u,⊗u
-    p←(⍴j ↑ a)#j
-    q←⍴j ↓ a
-    w←⌈2⍟⍴p
-    i←⊥⍉w{⍺,⌊⍺÷⍨⍴⍵ ⍴ ⍵}q
-    r⍴∊[i]⌷p
+    p←(ρj ↑ a)#j
+    q←ρj ↓ a
+    w←⌈2⊛ρp
+    i←⊥⍉w{α,⌊α÷⍨ρω ρ ω}q
+    rρ∊[i]⌷p
   }
-  ⍺←$t ⋄ ⍺?cmp ⍵;unc ⍵
+  α←$t ◇ α?cmp ω;unc ω
 }
 
-byfreq ← {[⍒(≢⊢)⌸⍵]⌷∪⍵}  ⍝ Uniques of ⍵, most frequent first. Shared by packQ and packD.
+byfreq ← {[⍒(≢⊢)⌸ω]⌷∪ω}  ⍝ Uniques of ω, most frequent first. Shared by packQ and packD.
 
 ⍝ From https://dfns.dyalog.com/c_packQ.htm
 packQ←{  ⍝ Frequency-ranked uniques with variable-width keys.
-  key←,/{↓ ⍳⍵ >⊗ ⍳⍵}¨≥⍳23ₓ
+  key←,/{↓ ιω >⊗ ιω}¨≥ι23ₓ
   cmp←{
-    dt←,⍵
+    dt←,ω
     u←byfreq dt
-    k←$t,¨key ⋄ d←∊[u⍳dt]⌷k
-    [u (⍴⍴⍵),⍴⍵ d]
+    k←$t,¨key ◇ d←∊[uιdt]⌷k
+    [u (ρρω),ρω d]
   }
   unc←{
-    [u q d]←⍵
-    s←↑q ⍴ 1↓q
+    [u q d]←ω
+    s←↑q ρ 1↓q
     p←d≤¯1↓$f,d
-    s⍴[key⍳p⊆d]⌷u
+    sρ[keyιp⊆d]⌷u
   }
-  ⍺←$t ⋄ ⍺?cmp ⍵;unc ⍵
+  α←$t ◇ α?cmp ω;unc ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_packS.htm
 packS←{  ⍝ Shannon-Fano packing.
   cmp←{
-    u←∪,⍵ ⋄ b←≢⊢ ⌸,⍵ ⋄ i←⍒b ⋄ uv←[i]⌷u ⋄ b←[i]⌷b
-    bv←{⍵≠2 ⊆ ⍵}∊⍬{
-      1ₓ=≢⍵?2,⍺;a←⊂⍺ ,¨ 0 1
-      2ₓ=⍴⍵?a ∇¨ ⍵;
-      n←{1⌈+/$f=(+/⍵)<⊽+\⍵}⍵ ⋄ a ∇¨ [n↑⍵ n↓⍵]
+    u←∪,ω ◇ b←≢⊢ ⌸,ω ◇ i←⍒b ◇ uv←[i]⌷u ◇ b←[i]⌷b
+    bv←{ω≠2 ⊆ ω}∊⍬{
+      1ₓ=≢ω?2,α;a←⊂α ,¨ 0 1
+      2ₓ=ρω?a ∇¨ ω;
+      n←{1⌈+/$f=(+/ω)<⊽+\ω}ω ◇ a ∇¨ [n↑ω n↓ω]
     }b
-    z←[uv⍳,⍵]⌷bv
-    [⍴⍵ uv ∊⍴¨bv 0≠(∊bv),∊z]
+    z←[uvι,ω]⌷bv
+    [ρω uv ∊ρ¨bv 0≠(∊bv),∊z]
   }
   exp←{
-    [r uv lv d]←⍵
-    bv←lv#≥⍳⍴lv ⊆ +/lv ↑ d
-    r⍴""{
-      0ₓ∊⍴⍵?⍺;
-      i←0ₓ{q←⍺⊃bv ⋄ q ≡ ⍴q ↑ ⍵?⍺;≥⍺ ∇ ⍵}⍵
-      ⍺,i⊃uv ∇ ⍴i⊃bv ↓ ⍵
+    [r uv lv d]←ω
+    bv←lv#≥ιρlv ⊆ +/lv ↑ d
+    rρ""{
+      0ₓ∊ρω?α;
+      i←0ₓ{q←α⊃bv ◇ q ≡ ρq ↑ ω?α;≥α ∇ ω}ω
+      α,i⊃uv ∇ ρi⊃bv ↓ ω
     } +/lv ↓ d
   }
-  ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵
+  α←$t ◇ α?cmp ω;exp ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_cmat.htm
-cmat←{  ⍝ ⍺-combinations of ⍳⍵: include the first item, then omit it.
-  ⍺=0ₓ?1 0⍴0ₓ;
-  ⍺>⍵?[0 ⍺]⍴0ₓ;
-  ⍺=⍵?[1 ⍺]⍴⍳⍵;
-  (0ₓ,≥ ≤⍺ ∇ ≤⍵)⍪≥⍺∇≤⍵
+cmat←{  ⍝ α-combinations of ιω: include the first item, then omit it.
+  α=0ₓ?1 0ρ0ₓ;
+  α>ω?[0 α]ρ0ₓ;
+  α=ω?[1 α]ριω;
+  (0ₓ,≥ ≤α ∇ ≤ω)⍪≥α∇≤ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_mayan.htm
 mayan←{  ⍝ Mayan numbers; left 0 uses base 20, left 1 uses the calendar base.
-  ⍺←1
-  [snail dot bar]←"_@/" '⍟' '⌹'
-  n←≥⌈18⍟1⌈⍵
-  base←20ₓ-2⌽n↑⊽⍺
+  α←1
+  [snail dot bar]←"_@/" '⊛' '⌹'
+  n←≥⌈18⊛1⌈ω
+  base←20ₓ-2⌽n↑⊽α
   ⍪' '⍪↢{
-    ⍵=0ₓ?1 5⍴' ',snail,' ';
-    [comp part]←[0 5]ₓ⊤⍵
+    ω=0ₓ?1 5ρ' ',snail,' ';
+    [comp part]←[0 5]ₓ⊤ω
     top←dot{
-      ⍵=0ₓ?0 5⍴"";
-      ⍵=1ₓ?0 0 1 0 0#⁻⍺;
-      ⍵=2ₓ?0 1 0 1 0#⁻⍺;
-      ⍵=3ₓ?0 1 1 1 0#⁻⍺;
-      ⍵=4ₓ?1 1 1 1 0#⁻⍺
+      ω=0ₓ?0 5ρ"";
+      ω=1ₓ?0 0 1 0 0#⁻α;
+      ω=2ₓ?0 1 0 1 0#⁻α;
+      ω=3ₓ?0 1 1 1 0#⁻α;
+      ω=4ₓ?1 1 1 1 0#⁻α
     }part
-    top⍪[comp 5]⍴bar
-  }¨{-1⌈+/∨\⍵≠0ₓ ↑ ⍵}base⊤⍵
+    top⍪[comp 5]ρbar
+  }¨{-1⌈+/∨\ω≠0ₓ ↑ ω}base⊤ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_mac.htm
 mac←{  ⍝ Macro expansion over linked token lists.
   mexp←{
-    [dd [a [b uu]]]←⍵
-    a≡'\'?⍺ ∇ [[dd b] uu];
-    b≡'='?⍺ ∇ defn ⍵;
-    a∊↑⍺?⍺ ∇ dref ⍵;
-    a≡'('?⍺ ∇ ⍺ ∇ [dd [b uu]];
+    [dd [a [b uu]]]←ω
+    a≡'\'?α ∇ [[dd b] uu];
+    b≡'='?α ∇ defn ω;
+    a∊↑α?α ∇ dref ω;
+    a≡'('?α ∇ α ∇ [dd [b uu]];
     a≡')'?[dd [b uu]];
-    ⍺ ∇ [[dd a] [b uu]]
+    α ∇ [[dd a] [b uu]]
   }
   defn←{
-    [dd [name [eq uu]]]←⍵
-    [val uuu]←⍺ body ['(' uu]
-    ⍺,⍨↢⊂¨[name val] ⍶ [dd uuu]
+    [dd [name [eq uu]]]←ω
+    [val uuu]←α body ['(' uu]
+    α,⍨↢⊂¨[name val] ⍶ [dd uuu]
   }
   body←{
-    [dd [a [b uu]]]←⍵
-    a∊↑⍺?⍺ ∇ dref [dd [a [b uu]]];
+    [dd [a [b uu]]]←ω
+    a∊↑α?α ∇ dref [dd [a [b uu]]];
     a∊" )",•ucs13?[dd [b uu]];
-    a≡'\'?⍺ ∇ [[dd b] uu];
-    a≡'('?⍺ ∇ ⍺ mexp [dd [b uu]];
-    ⍺ ∇ [[dd a] [b uu]]
+    a≡'\'?α ∇ [[dd b] uu];
+    a≡'('?α ∇ α mexp [dd [b uu]];
+    α ∇ [[dd a] [b uu]]
   }
   dref←{
-    [names vals]←⍺
-    [dd [name uu]]←⍵
-    val←names⍳name ⊃ vals
+    [names vals]←α
+    [dd [name uu]]←ω
+    val←namesιname ⊃ vals
     [ddd n]←dd number 1ₓ
-    ⍺ ⍶ [ddd (val (n copy) uu)]
+    α ⍶ [ddd (val (n copy) uu)]
   }
   number←{
-    [dd d]←⍺
-    ~d∊$d?[⍺ 0ₓ];
-    [ddd n]←dd ∇ ⍵×10ₓ
-    [ddd n+⍵×$d⍳d]
+    [dd d]←α
+    ~d∊$d?[α 0ₓ];
+    [ddd n]←dd ∇ ω×10ₓ
+    [ddd n+ω×$dιd]
   }
   copy←{
-    ⍺≡'('?⍵;
-    [vv v]←⍺
-    v≡'/'?vv ∇ list [⍶ 1]#⍵;
-    vv ∇ [v ⍵]
+    α≡'('?ω;
+    [vv v]←α
+    v≡'/'?vv ∇ list [⍶ 1]#ω;
+    vv ∇ [v ω]
   }
-  list←{[⍺ ⍵]}/
-  1↓¯2↓∊["" ⍬]mexp['(' (list ⍵,')')]
+  list←{[α ω]}/
+  1↓¯2↓∊["" ⍬]mexp['(' (list ω,')')]
 }
 
 ⍝ From https://dfns.dyalog.com/c_baby.htm
 baby←{  ⍝ Manchester Small Scale Experimental Machine.
-  fetch←{, yshift⍵ # ⍺}
-  store←{⍶@ 1⍳⍨yshift⍹ ⍵}
-  decode←{(⍳≢⍵ ∊ [0 5 13 16]ₓ)⊂⍵}
-  yshift←0ₓ=⍳≢⍵ ↣{~$t∊⍵?⍺;¯1⌽⍺ ∇ dec ⍵}
-  addsub←{c←⍺ ⍶ ⍵ ⋄ ~$t∊c?⍺ ⍹ ⍵;⍺≠⍵ ∇ $f,¯1↓c}
+  fetch←{, yshiftω # α}
+  store←{⍶@ 1ι⍨yshift⍹ ω}
+  decode←{(ι≢ω ∊ [0 5 13 16]ₓ)⊂ω}
+  yshift←0ₓ=ι≢ω ↣{~$t∊ω?α;¯1⌽α ∇ dec ω}
+  addsub←{c←α ⍶ ω ◇ ~$t∊c?α ⍹ ω;α≠ω ∇ $f,¯1↓c}
   add←∧addsub∨
   sub←<addsub>
-  inc←{⍵≠¯1↓$t,∧\⍵}
-  dec←{⍵≠¯1↓$t,∧\~⍵}
-  neg←{⍵≠¯1↓$f,∨\⍵}
-  ⍺←$f∧2↑↓⍵
+  inc←{ω≠¯1↓$t,∧\ω}
+  dec←{ω≠¯1↓$t,∧\~ω}
+  neg←{ω≠¯1↓$f,∨\ω}
+  α←$f∧2↑↓ω
   $f{
-    [A CIo M]←⍵
-    CI←⍺ add inc CIo
+    [A CIo M]←ω
+    CI←α add inc CIo
     [S _ PI _]←decode M fetch CI
     $f $f $f≡PI?$f ∇ [A (M fetch S) M];
     $t $f $f≡PI?(M fetch S) ∇ [A CI M];
@@ -383,227 +383,227 @@ baby←{  ⍝ Manchester Small Scale Experimental Machine.
     $t $f $t≡PI?$f ∇ [(A sub M fetch S) CI M];
     $f $t $t≡PI?{$f}\⌽A ∇ [A CI M];
     $t $t $t≡PI?M
-  }⍺,⊂⍵
+  }α,⊂ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_quzzle.htm
 quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   extend←{
-    (≢Fin)=p←$t⍳⍨(Fin=0ₓ)∧NPath=⌊/(Fin=0ₓ)#NPath?0;
+    (≢Fin)=p←$tι⍨(Fin=0ₓ)∧NPath=⌊/(Fin=0ₓ)#NPath?0;
     (≢Target)=+/(p⌷NPath)≥(Fin>0ₓ)#NPath?0;
     n←¯1⊃p⊃Path
     ∇ delpath p , ,/ p next¨ ,/ n moves¨ Tiles
   }
   moves←{
-    m←(,1 ¯1×⊗1,≥Shape₁)(,'_'⍪'∣',Shape⍴⍺⌷State){∧/(⍵=⍺⌽⍶ # ⍶)∊⍵,' '}¨⍵
-    ⍵,¨m#"←↑→↓"
+    m←(,1 ¯1×⊗1,≥Shape₁)(,'_'⍪'∣',Shapeρα⌷State){∧/(ω=α⌽⍶ # ⍶)∊ω,' '}¨ω
+    ω,¨m#"←↑→↓"
   }
   next←{
-    ' '=t←↑⍵?¯1ₓ;
-    y←¯1⊃⍺⊃Path ⌷ State
+    ' '=t←↑ω?¯1ₓ;
+    y←¯1⊃α⊃Path ⌷ State
     x←' '@[=↢t] y
-    r←"←↑→↓"⍳⍵₁ ⌷ ,1 ¯1×⊗1,Shape₁
+    r←"←↑→↓"ιω₁ ⌷ ,1 ¯1×⊗1,Shape₁
     (r⌽,t=y # x)←t
-    (≢State)=n←$t⍳⍨State∧.=x?addnode⁝x addpath [⍺ ⍵] ⋄ ¯1ₓ;
-    ⍺∊i←⍸n∊¨Path?¯1ₓ;
-    0ₓ=≢i?n addpath [⍺ ⍵] ⋄ ¯1ₓ;
-    ⍺⌷NPath ≥ ≤⌊/Path.[i]⍳¨n?¯1ₓ;
-    (n addpath [⍺ ⍵])modpath¨i
+    (≢State)=n←$tι⍨State∧.=x?addnode⁝x addpath [α ω] ◇ ¯1ₓ;
+    α∊i←⍸n∊¨Path?¯1ₓ;
+    0ₓ=≢i?n addpath [α ω] ◇ ¯1ₓ;
+    α⌷NPath ≥ ≤⌊/Path.[i]ι¨n?¯1ₓ;
+    (n addpath [α ω])modpath¨i
   }
   addnode←{
-    State⍪←⍵
-    i←⍵.[[Target]⌷(≤i),(≢⍵)-(i←Shape₁),1]⍳↑Tiles
+    State⍪←ω
+    i←ω.[[Target]⌷(≤i),(≢ω)-(i←Shape₁),1]ι↑Tiles
     ENode,←≥i × i<≢Target
     NMoves,←∞
     ≤≢ENode
   }
   addpath←{
-    [p m]←⍵ ⋄ e←⍺⊃ENode ⋄ n←≢p⊃Path
-    e>0ₓ ∧ e∊Fin ∧ n ≥ Fin⍳e ⊃ NPath,0ₓ?¯1ₓ;
-    Path,←⊂(p⊃Path),⍺
+    [p m]←ω ◇ e←α⊃ENode ◇ n←≢p⊃Path
+    e>0ₓ ∧ e∊Fin ∧ n ≥ Finιe ⊃ NPath,0ₓ?¯1ₓ;
+    Path,←⊂(p⊃Path),α
     Moves,←⊂(p⊃Moves)⍪m
-    Fin,←⍺⊃ENode
+    Fin,←α⊃ENode
     NPath,←n
-    (⍺⌷NMoves)⌊←1×n
+    (α⌷NMoves)⌊←1×n
     ≤≢Path
   }
   modpath←{
-    ⍺=¯1ₓ?¯1ₓ;
-    (i←≥x⍳¯1⊃⍺⊃Path)=≢x←⍵⊃Path?⍺;
-    (⍵⊃Path)←⍺⊃Path , i↓x
-    (⍵⊃Moves)←⍺⊃Moves ⍪ i↓⍵⊃Moves
-    (⍵⊃NPath)←≤≢⍵⊃Path
+    α=¯1ₓ?¯1ₓ;
+    (i←≥xι¯1⊃α⊃Path)=≢x←ω⊃Path?α;
+    (ω⊃Path)←α⊃Path , i↓x
+    (ω⊃Moves)←α⊃Moves ⍪ i↓ω⊃Moves
+    (ω⊃NPath)←≤≢ω⊃Path
     ¯1ₓ
   }
   delpath←{
-    ~$f∊i←~(⍳≢Path)∊⍵?0;
+    ~$f∊i←~(ι≢Path)∊ω?0;
     (⍬⊃Path)←i#Path
     (⍬⊃Moves)←i#Moves
     (⍬⊃NPath)←i#NPath
     (⍬⊃Fin)←i#Fin
     0
   }
-  ⍺←⍳3ₓ ⋄ Target←,⍺
-  Tiles←∪,⍵ ~ " " ⋄ Shape←⍴⍵
-  Path←,⊂,0ₓ ⋄ Moves←,⊂1 2⍴' ' ⋄ NPath←,0ₓ ⋄ Fin←,0ₓ
-  State←1,≢,⍵ ⍴ ⍵ ⋄ NMoves←,0 ⋄ ENode←,0ₓ
+  α←ι3ₓ ◇ Target←,α
+  Tiles←∪,ω ~ " " ◇ Shape←ρω
+  Path←,⊂,0ₓ ◇ Moves←,⊂1 2ρ' ' ◇ NPath←,0ₓ ◇ Fin←,0ₓ
+  State←1,≢,ω ρ ω ◇ NMoves←,0 ◇ ENode←,0ₓ
   x←extend0
   ∧/Fin=0ₓ?"There are no solutions";
-  i←∨/{i#⁻n=⌊/n←(i←Fin=⍵)#NPath}¨≥⍳≢Target
+  i←∨/{i#⁻n=⌊/n←(i←Fin=ω)#NPath}¨≥ι≢Target
   x←[[≤i#Fin]⌷Target]⌷"Top-right" "Bottom-left" "Bottom-right"
-  x←[x⋄(⊂"in "),¨(0⍕¨i#NPath),¨⊂" moves"]
+  x←[x◇(⊂"in "),¨(0⍕¨i#NPath),¨⊂" moves"]
   x⍪i#Moves
 }
 
 ⍝ From https://dfns.dyalog.com/c_refmt.htm
 refmt←{  ⍝ Indent code and align comments.
-  ⍺←4 ⋄ [dent csep]←⍺
-  unqt←{~≠\⍵='''}
+  α←4 ◇ [dent csep]←α
+  unqt←{~≠\ω='''}
   [code coms]←⍉{
-    umsk←unqt ⍵ ⋄ cmsk←∨\umsk∧⍵='⍝'
-    [code coms]←$f $t=⊂cmsk #¨ ⊂⍵
-    rlb←{∨\' '≠⍵ # ⍵}
+    umsk←unqt ω ◇ cmsk←∨\umsk∧ω='⍝'
+    [code coms]←$f $t=⊂cmsk #¨ ⊂ω
+    rlb←{∨\' '≠ω # ω}
     clean←⌽ rlb ⌽ rlb code
     [clean coms]
-  }⍤1 ⊃⍵
+  }⍤1 ⊃ω
   dents←{
-    toks←unqt⍵ {⍺#⁻⍺#⍵} ⍵
+    toks←unqtω {α#⁻α#ω} ω
     dvec←-⌿0 1⌽+\"{}"=⊗toks
     lmask←toks='·'
     dent×lmask#dvec #¨ ' '
   },/'·',¨code
-  scoms←⊂csep⍴' ' ,¨ coms
+  scoms←⊂csepρ' ' ,¨ coms
   icode←↓⊃dents,¨code
-  rtb←⌽∘{∨\⍵≠' ' # ⍵}∘⌽
+  rtb←⌽∘{∨\ω≠' ' # ω}∘⌽
   qnr←icode,↢rtb¨scoms
-  ⊃⍣ 1ₓ=≡⍵ qnr
+  ⊃⍣ 1ₓ=≡ω qnr
 }
 
 ⍝ From https://dfns.dyalog.com/c_box.htm
 box←{  ⍝ Frame a text array, with optional internal row and column borders.
-  ⍺←⍬ ⍬ 0 ⋄ ar←{⍵,(≢⍵)↓⍬ ⍬ 0}{2ₓ>≡⍵?,⊂,⍵;⍵}⍺
-  ch←{⍵?"++++++++-|+";"┌┐└┘┬┤├┴─│┼"}1=ar₂
-  rh←×/¯1↓⍴⍵ , ¯1↑1,⍴⍵ ⋄ z←rh⍴⍵
-  0ₓ∊⍴∊2↑ar?q←ch₈⍪(ch₉,z,ch₉)⍪ch₈ ⋄ [0 ¯1;0 ¯1]⌷q ←2 2⍴ch ⋄ q;
-  [r c]←rh{∪⍺{⍵∊⍳≥⍺ # ⍵}⍵,(~¯1ₓ∊⍵)#0ₓ,⍺}¨,¨2↑ar
-  [rw cl]←rh{<⍵∪0ₓ,⍺}¨[r c]
+  α←⍬ ⍬ 0 ◇ ar←{ω,(≢ω)↓⍬ ⍬ 0}{2ₓ>≡ω?,⊂,ω;ω}α
+  ch←{ω?"++++++++-|+";"┌┐└┘┬┤├┴─│┼"}1=ar₂
+  rh←×/¯1↓ρω , ¯1↑1,ρω ◇ z←rhρω
+  0ₓ∊ρ∊2↑ar?q←ch₈⍪(ch₉,z,ch₉)⍪ch₈ ◇ [0 ¯1;0 ¯1]⌷q ←2 2ρch ◇ q;
+  [r c]←rh{∪α{ω∊ι≥α # ω}ω,(~¯1ₓ∊ω)#0ₓ,α}¨,¨2↑ar
+  [rw cl]←rh{<ω∪0ₓ,α}¨[r c]
   (~ 0ₓ,rh₁ ∊ c){
-    (↑⍺)↓₁(-⍺₁)↓₁[: ⍋(≥⍳rh₁),cl]⌷⍵
+    (↑α)↓₁(-α₁)↓₁[: ⍋(≥ιrh₁),cl]⌷ω
   }(~ 0ₓ,rh₀ ∊ r){
-    (↑⍺)↓₀(-⍺₁)↓₀[⍋(≥⍳rh₀),rw]⌷⍵
+    (↑α)↓₀(-α₁)↓₀[⍋(≥ιrh₀),rw]⌷ω
   }{
-    [h w]←≢rw , ≢cl ⋄ q←[h w]⍴ch₁₀
-    hz←h,rh₁ ⍴ ch₈
-    vr←rh₀,w ⍴ ch₉
-    ∨/0ₓ∊¨⍴¨[rw cl]?⍵⍪hz , vr⍪q;
-    q₀←ch₄ ⋄ q.[: ¯1]←ch₅ ⋄ q.[: 0]←ch₆ ⋄ q₋₁←ch₇
-    [0 ¯1;0 ¯1]⌷q ←2 2⍴ch ⋄ ⍵⍪hz , vr⍪q
+    [h w]←≢rw , ≢cl ◇ q←[h w]ρch₁₀
+    hz←h,rh₁ ρ ch₈
+    vr←rh₀,w ρ ch₉
+    ∨/0ₓ∊¨ρ¨[rw cl]?ω⍪hz , vr⍪q;
+    q₀←ch₄ ◇ q.[: ¯1]←ch₅ ◇ q.[: 0]←ch₆ ◇ q₋₁←ch₇
+    [0 ¯1;0 ¯1]⌷q ←2 2ρch ◇ ω⍪hz , vr⍪q
   }z
 }
 
 ⍝ From https://dfns.dyalog.com/c_sudoku.htm
-sudoku←{  ⍝ All solutions, with square or ⍺-shaped groups.
-  wid←≢⍵ ⋄ ⍺←√wid ⋄ grp←2⍴⍺ ⋄ set←≥⍳wid
-  inx←↓(,wid⊥¨grp↣×¨⍳⌽grp)+⊗,wid⊥¨⍳grp
-  inx,←{(↓⍵),↓⍵ᵀ}(⍴⍵)⍴⍳wid²
-  bas←≢,⍵ ⍴ ⊂set
-  ,⍵ ↣{q←[⍵]⌷⍺ ⋄ (q=0ₓ # q)←⊂set~,/q ⋄ bas.[⍵]∩←,¨q}¨inx
+sudoku←{  ⍝ All solutions, with square or α-shaped groups.
+  wid←≢ω ◇ α←√wid ◇ grp←2ρα ◇ set←≥ιwid
+  inx←↓(,wid⊥¨grp↣×¨ι⌽grp)+⊗,wid⊥¨ιgrp
+  inx,←{(↓ω),↓ωᵀ}(ρω)ριwid²
+  bas←≢,ω ρ ⊂set
+  ,ω ↣{q←[ω]⌷α ◇ (q=0ₓ # q)←⊂set~,/q ◇ bas.[ω]∩←,¨q}¨inx
   ∆sqz←{
-    0ₓ=≢⍵?⍺;i←↑⍵ ⋄ q←⍺
-    b←1ₓ<≢¨[i]⌷⍺ ⋄ ~∨/b?⍺ ∇ 1↓⍵;
-    q.[b#i]←{c←⍵⊃q ⋄ z←c~,/[i~[⍵]]⌷q ⋄ 1ₓ≠≢z?c;z}¨b#i
+    0ₓ=≢ω?α;i←↑ω ◇ q←α
+    b←1ₓ<≢¨[i]⌷α ◇ ~∨/b?α ∇ 1↓ω;
+    q.[b#i]←{c←ω⊃q ◇ z←c~,/[i~[ω]]⌷q ◇ 1ₓ≠≢z?c;z}¨b#i
     r←{
-      s←≢¨⍵ ⋄ 2ₓ>+/s=2ₓ?s;∧/s∊[1 2]ₓ?s;
-      k←s=2ₓ {↑ ⍸⍺ ~ ⍵⍳∪⍺#⍵} ⍵ ⋄ k=0ₓ?s;
-      c←~⍵∊[k⊃⍵] ⋄ q.[c#i]←c#⍵ ~¨ ⊂k⊃⍵ ⋄ ≢¨[i]⌷q
+      s←≢¨ω ◇ 2ₓ>+/s=2ₓ?s;∧/s∊[1 2]ₓ?s;
+      k←s=2ₓ {↑ ⍸α ~ ωι∪α#ω} ω ◇ k=0ₓ?s;
+      c←~ω∊[k⊃ω] ◇ q.[c#i]←c#ω ~¨ ⊂k⊃ω ◇ ≢¨[i]⌷q
     }[i]⌷q
-    0ₓ∊r?⍬;∧/r=1ₓ ≥ 1ₓ∊r?q ∇ 1↓⍵;
-    j←r>1ₓ # i ⋄ q.[j]←[j]⌷q ~¨ ⊂,/[i~j]⌷q
-    q ∇ 1↓⍵
+    0ₓ∊r?⍬;∧/r=1ₓ ≥ 1ₓ∊r?q ∇ 1↓ω;
+    j←r>1ₓ # i ◇ q.[j]←[j]⌷q ~¨ ⊂,/[i~j]⌷q
+    q ∇ 1↓ω
   }
-  ∆chk←{m←⍵ ∆sqz inx ⋄ 0ₓ=≢m?⍬;m≢⍵?∇ m;⍵}
+  ∆chk←{m←ω ∆sqz inx ◇ 0ₓ=≢m?⍬;m≢ω?∇ m;ω}
   ∆nxt←{
-    0ₓ=≢⍵?⍵;
-    r←≢¨⍵ ⋄ ∧/r=1ₓ?⊂⍵;
-    j←,/{[⍒{+/1ₓ=[⍵]⌷r}¨⍵]⌷⍵}wid↑inx
-    i←r.[j]⍳⌊/r~[1ₓ] ⊃ j
-    ⍵↣{m←⍺ ⋄ (i⊃m)←,⍵ ⋄ m}¨i⊃⍵
+    0ₓ=≢ω?ω;
+    r←≢¨ω ◇ ∧/r=1ₓ?⊂ω;
+    j←,/{[⍒{+/1ₓ=[ω]⌷r}¨ω]⌷ω}wid↑inx
+    i←r.[j]ι⌊/r~[1ₓ] ⊃ j
+    ω↣{m←α ◇ (i⊃m)←,ω ◇ m}¨i⊃ω
   }
   ⍬{
-    0ₓ=≢⍵?⍺;
-    m←∆chk↑⍵ ⋄ 0ₓ=≢m?⍺ ∇ 1↓⍵;
-    ∨/1ₓ<≢¨m?⍺ ∇ 1↓⍵,(∆nxt m);
-    ∨/ +/set ≠ {+/,/[⍵]⌷m}¨inx?⍺ ∇ 1↓⍵;
-    (⍺,⊂ 2⍴wid ⍴ ,/m) ∇ 1↓⍵
-  }{0ₓ=≢⍵?⍵;⊂⍵}(bas ∆sqz inx)
+    0ₓ=≢ω?α;
+    m←∆chk↑ω ◇ 0ₓ=≢m?α ∇ 1↓ω;
+    ∨/1ₓ<≢¨m?α ∇ 1↓ω,(∆nxt m);
+    ∨/ +/set ≠ {+/,/[ω]⌷m}¨inx?α ∇ 1↓ω;
+    (α,⊂ 2ρwid ρ ,/m) ∇ 1↓ω
+  }{0ₓ=≢ω?ω;⊂ω}(bas ∆sqz inx)
 }
 
 ⍝ From https://dfns.dyalog.com/c_kt.htm
-kt←{  ⍝ Knight's tours; ⍺ limits the number of solutions.
-  ⍺←1ₓ ⋄ sreq←⍺ ⋄ nsqs←×/⍵
+kt←{  ⍝ Knight's tours; α limits the number of solutions.
+  α←1ₓ ◇ sreq←α ◇ nsqs←×/ω
   kdef←,0 1⌽⊗[1 ¯1]ₓ,⊗[2 ¯2]ₓ
-  net←⊂,⍳⍵ ∩¨ ↓ ⍳⍵ +⊗ kdef
-  ⍳↢(⍳⍵)¨⍬{
-    sreq=≢⍵?⍵;
-    path←⍶,⊂⍺
-    nsqs=≢path?⍵,⊂path;
-    nxt←⍺⊃⍹
-    0ₓ=≢nxt?⍵;
-    net←⍹~¨⊂[⍺]
+  net←⊂,ιω ∩¨ ↓ ιω +⊗ kdef
+  ι↢(ιω)¨⍬{
+    sreq=≢ω?ω;
+    path←⍶,⊂α
+    nsqs=≢path?ω,⊂path;
+    nxt←α⊃⍹
+    0ₓ=≢nxt?ω;
+    net←⍹~¨⊂[α]
     ord←[⍒≢¨[nxt]⌷net]⌷nxt
-    ⍵(path ⍢ net)/ord
-  }net/(⌽,⍳⍵),⊂0⍴⊂⍬
+    ω(path ⍢ net)/ord
+  }net/(⌽,ιω),⊂0ρ⊂⍬
 }
 
 ⍝ From https://dfns.dyalog.com/c_queens.htm
 queens←{  ⍝ N-queens solutions up to rotation and reflection.
   search←{
-    ⊂⍬ ∊ ⍵?0⍴⊂⍬;
-    0ₓ=≢⍵?rmdups ⍺;
-    [hd tl]←[↑⍵ 1↓⍵]
-    next←⍺↣,¨hd
+    ⊂⍬ ∊ ω?0ρ⊂⍬;
+    0ₓ=≢ω?rmdups α;
+    [hd tl]←[↑ω 1↓ω]
+    next←α↣,¨hd
     rems←hd free¨ ⊂tl
     ,/ next ∇¨ rems
   }
-  cvex←≥⍳⍵ × ⊂[¯1 0 1]ₓ
-  free←{⍵~¨⍺+(≢⍵)↑cvex}
+  cvex←≥ιω × ⊂[¯1 0 1]ₓ
+  free←{ω~¨α+(≢ω)↑cvex}
   rmdups←{
-    rots←⍒⍣ ⍳4ₓ
+    rots←⍒⍣ ι4ₓ
     refs←⍋⍣0 1
-    best←{↑⍋⊃⍵ ⊃ ⍵}
-    syms←,/refs¨rots⍵
-    ⍵≡best⁝syms ⊃ [⍬ ,⊂⍵]
+    best←{↑⍋⊃ω ⊃ ω}
+    syms←,/refs¨rotsω
+    ω≡best⁝syms ⊃ [⍬ ,⊂ω]
   }
   fmt←{
-    chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟"
-    expd←1↓,⊃⍺⍴⊂0 1
+    chars←[(⊃ω)=⊗ια]⌷"·⊛"
+    expd←1↓,⊃αρ⊂0 1
     ⊂⍤2 expd#⁻₋₁chars
   }
-  squares←[⍳⌈⍵÷2],1↓⍵⍴⊂⍳⍵
-  ⍵ fmt ⍬ search squares
+  squares←[ι⌈ω÷2],1↓ωρ⊂ιω
+  ω fmt ⍬ search squares
 }
 
 ⍝ From https://dfns.dyalog.com/c_ary.htm
 ary←{  ⍝ Radix representation, including recurring fractional digits.
-  ⍵=0?"0";
-  base←|⍺
-  [sign abs]←[×⍵ |⍵]
-  exp←⌈base⍟abs
+  ω=0?"0";
+  base←|α
+  [sign abs]←[×ω |ω]
+  exp←⌈base⊛abs
   man←abs×base*-exp
-  [p q]←⌊{[⍵ 1ₓ]÷1ₓ∨⍵}man
+  [p q]←⌊{[ω 1ₓ]÷1ₓ∨ω}man
   digs←{
-    ⍵=0ₓ?[(↑↓⍉[0ₓ q]⊤⍺) ⍬ 1];
-    lim<≢⍺?[(rnd↑↓⍉[0ₓ q]⊤⍺) ⍬ 0];
-    ⍵∊⍺?⍺rep⍵ , 1;
-    ⍺,⍵ ∇ base×q|⍵
+    ω=0ₓ?[(↑↓⍉[0ₓ q]⊤α) ⍬ 1];
+    lim<≢α?[(rnd↑↓⍉[0ₓ q]⊤α) ⍬ 0];
+    ω∊α?αrepω , 1;
+    α,ω ∇ base×q|ω
   }
   ofmt←{
-    [sig exp fix rep rat]←⍵
-    fmt←{[⍵]⌷$d,$a}
+    [sig exp fix rep rat]←ω
+    fmt←{[ω]⌷$d,$a}
     [lft pad]←0⌈1 ¯1×exp
-    zro←{⍵,(≢⍵)↓0ₓ}
+    zro←{ω,(≢ω)↓0ₓ}
     neg←sig<0 # '¯'
-    nnn←fmt zro lft↑fix,lft⍴rep
+    nnn←fmt zro lft↑fix,lftρrep
     fff←fmt(pad#0ₓ),lft↓fix⌊≤base
     rrr←fmt(0⌈exp-≢fix)⌽rep
     fffrrr←fff opt rrr
@@ -611,64 +611,64 @@ ary←{  ⍝ Radix representation, including recurring fractional digits.
     etc←×≢rep # "..."
     cut←rat↓'?'
     neg,nnn,dot,fffrrr,etc,cut
-  }⍣ ⍺>0ₓ
-  lim←⌈base⍟÷1e¯14⌈2*¯53
-  rnd←{¯2↓⍵ , +↢(5ₓ↣≤)/¯2↑⍵}
-  rep←{$f $t=⊂∨\⍵=⍺ #¨ 1↑↓⍉[0ₓ q]⊤⍺}
-  opt←{-+/∧\=⌿⊃⌽¨[⍺ ⍵] ↓ ⍺,⍵,⍵}
+  }⍣ α>0ₓ
+  lim←⌈base⊛÷1e¯14⌈2*¯53
+  rnd←{¯2↓ω , +↢(5ₓ↣≤)/¯2↑ω}
+  rep←{$f $t=⊂∨\ω=α #¨ 1↑↓⍉[0ₓ q]⊤α}
+  opt←{-+/∧\=⌿⊃⌽¨[α ω] ↓ α,ω,ω}
   q=1ₓ?ofmt [sign ≥exp ,1ₓ ⍬ 1];
   ofmt [sign exp],(⍬ digs p×base)
 }
 
 ⍝ From https://dfns.dyalog.com/c_pack4.htm
-pack_4←{  ⍝ Quad-tree packing; ⍺=0 expands, ⍺>1 allows lossy packing.
+pack_4←{  ⍝ Quad-tree packing; α=0 expands, α>1 allows lossy packing.
   cmp←{
-    uniq←∪,⍵
-    rep←{⍵{⍵#⍺-¯1⌽~⍵}~$t $t $f⍷⍵<0ₓ}⍣≡
-    ⍴⍵ {[uniq ⍺ ⍵]} rep ⍺ {
-      ~$f∊,⍵∊[↑,⍵]?↑,⍵;
-      ⍺≥≢∪,⍵?maxx+/ ⍳≢uniq =⊗ ,⍵;
-      ax←maxx⍴⍵
-      size←ax⊃⍴⍵
-      mask←$t,1↓(⍳size)=⌊size÷2
-      ¯1ₓ,,/(⍺ ∇¨ mask⊂⍠ax ⍵)
-    } uniq⍳⍵
+    uniq←∪,ω
+    rep←{ω{ω#α-¯1⌽~ω}~$t $t $f⍷ω<0ₓ}⍣≡
+    ρω {[uniq α ω]} rep α {
+      ~$f∊,ω∊[↑,ω]?↑,ω;
+      α≥≢∪,ω?maxx+/ ι≢uniq =⊗ ,ω;
+      ax←maxxρω
+      size←ax⊃ρω
+      mask←$t,1↓(ιsize)=⌊size÷2
+      ¯1ₓ,,/(α ∇¨ mask⊂⍠ax ω)
+    } uniqιω
   }
   exp←{
-    [uniq shape stream]←⍵
-    split←{{[⌊⍵ ⌈⍵]}⍵÷ₐ≥maxk⍵}
-    maxk←{⍳≢⍵ = maxx ⍵}
-    exp←{≥|0ₓ⌊≥⍵⌊0ₓ # ¯1ₓ⌈⍵}
+    [uniq shape stream]←ω
+    split←{{[⌊ω ⌈ω]}ω÷ₐ≥maxkω}
+    maxk←{ι≢ω = maxx ω}
+    exp←{≥|0ₓ⌊≥ω⌊0ₓ # ¯1ₓ⌈ω}
     i←↑shape{
-      [head tail]←⍵
-      0ₓ≤head?[⍺⍴head tail];
-      [ls rs]←split ⍺
+      [head tail]←ω
+      0ₓ≤head?[αρhead tail];
+      [ls rs]←split α
       [lsub lrem]←ls ∇ tail
       [rsub rrem]←rs ∇ lrem
-      subs←lsub,⍠(maxx ⍺) rsub
+      subs←lsub,⍠(maxx α) rsub
       [subs rrem]
-    }{[⍺ ⍵]}/(exp stream)
+    }{[α ω]}/(exp stream)
     [i]⌷uniq
   }
   maxx←↑⍒
-  ⍺←1ₓ ⋄ ⍺>0ₓ?⍺ cmp ⍵;exp ⍵
+  α←1ₓ ◇ α>0ₓ?α cmp ω;exp ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_von.htm
 von←{  ⍝ Capitalise names, preserving prefixes and user-supplied exceptions.
-  ⍺←""
-  [pre not]←{0ₓ=≢⍵?"" "";3ₓ>≡⍵?[⍵ ""];⍵}⍺
-  tx←¯1•c,⍵,' '
+  α←""
+  [pre not]←{0ₓ=≢ω?"" "";3ₓ>≡ω?[ω ""];ω}α
+  tx←¯1•c,ω,' '
   q←"ab af al an and ap as av da de dei della der di"
   q,←" el ja la le och of the und van ver von zu y"
-  q←{' ',¨(⍵≠' ' ⊆ ⍵),¨' '}q
+  q←{' ',¨(ω≠' ' ⊆ ω),¨' '}q
   not,←" al-" " c/o" " d'" " de'" " el-" " l'" " s'" " t'"
-  ∆pre←{-≢⍺ {⍵∨⍺⌽⍵} ⍺⍷⍵}
-  ∆not←{∨⌿⊃(-≥⍳≤≢⍺)⌽¨⊂⍺⍷⍵}
+  ∆pre←{-≢α {ω∨α⌽ω} α⍷ω}
+  ∆not←{∨⌿⊃(-≥ι≤≢α)⌽¨⊂α⍷ω}
   ∆fix←{
-    0ₓ=≢⍺?$f;
-    q←¯1•c{2ₓ>≡⍵?,⊂,⍵;⍵}⍺
-    1↓∊∨/q⍶¨⊂' ',⍵
+    0ₓ=≢α?$f;
+    q←¯1•c{2ₓ>≡ω?,⊂,ω;ω}α
+    1↓∊∨/q⍶¨⊂' ',ω
   }
   b←¯1↓∊∨/q⍷¨⊂' ',tx < $t,>/⌽⍤1↕~tx∊" -:;.,!?'""/)("
   b∨←pre(∆pre ∆fix)tx
@@ -680,143 +680,143 @@ von←{  ⍝ Capitalise names, preserving prefixes and user-supplied exceptions.
 packH←{                      ⍝ Huffman packing.
 
     compress←{                          ⍝ compression.
-        shape←⍴⍵ ⋄ vect←,⍵              ⍝ shape and items of array.
+        shape←ρω ◇ vect←,ω              ⍝ shape and items of array.
         uniq←∪vect                      ⍝ unique items.
         freq←≢⊢ ⌸vect                  ⍝ frequency of occurrence.
 
         tree←{                          ⍝ Huffman tree.
-            1ₓ=⍴⍵?↑⌽↑⍵;                  ⍝ list exhausted: done
-            nxt←[2↑⍋↑¨⍵]⌷⍵                ⍝ next two lowest frequencies,
+            1ₓ=ρω?↑⌽↑ω;                  ⍝ list exhausted: done
+            nxt←[2↑⍋↑¨ω]⌷ω                ⍝ next two lowest frequencies,
             [freqs items]←↓⍉⊃nxt        ⍝ and corresponding items.
-            ∇(⍵~nxt),⊂(+/freqs),⊂items  ⍝ collect 2 most infrequent items.
+            ∇(ω~nxt),⊂(+/freqs),⊂items  ⍝ collect 2 most infrequent items.
         }↓⍉⊃[freq uniq]                 ⍝ tree from frequency-item pairs.
 
         [items csegs]←↓⍉⊃⍬{             ⍝ Dictionary: items ←→ code-segments.
-            ⍬≡⍴⍵?⊂[⍵ ⍺];                 ⍝ all done: item and binary code.
-            ,/(⍺↣,¨0 1)∇¨⍵              ⍝ extended codes for sub-trees.
+            ⍬≡ρω?⊂[ω α];                 ⍝ all done: item and binary code.
+            ,/(α↣,¨0 1)∇¨ω              ⍝ extended codes for sub-trees.
         }tree                           ⍝ from frequency tree.
 
-        bits←∊[items⍳vect]⌷csegs          ⍝ bit string of tree indices.
+        bits←∊[itemsιvect]⌷csegs          ⍝ bit string of tree indices.
 
         [leaves depths]←↓⍉⊃tree{        ⍝ tree leaves and depths.
-            ⍬≡⍴⍺?⊂[⍺ ⍵];                 ⍝ leaf: leaf and depth.
-            ,/ ⍺ ∇¨ ≥⍵                ⍝ branch: traverse deeper sub-branches.
+            ⍬≡ρα?⊂[α ω];                 ⍝ leaf: leaf and depth.
+            ,/ α ∇¨ ≥ω                ⍝ branch: traverse deeper sub-branches.
         }0ₓ                             ⍝ starting at depth 0 for the root.
 
         [shape leaves depths bits]      ⍝ compressed structure.
     }
 
     expand←{                            ⍝ expansion.
-        [shape leaves depths bits]←⍵    ⍝ compressed structure.
+        [shape leaves depths bits]←ω    ⍝ compressed structure.
 
         tree←1⊃↑{                       ⍝ reconstituted Huffman tree.
-            ↑⍺ ≠ ↑↑⍵?[⍺],⍵;              ⍝ distinct adjacent depths: continue.
-            [≤↑⍺ [⍺₁ 1⊃↑⍵]] ∇ 1↓⍵      ⍝ identical   ..      ..  : coalesce.
+            ↑α ≠ ↑↑ω?[α],ω;              ⍝ distinct adjacent depths: continue.
+            [≤↑α [α₁ 1⊃↑ω]] ∇ 1↓ω      ⍝ identical   ..      ..  : coalesce.
         }/(↓⍉⊃[depths leaves]),¯1ₓ      ⍝ depths, leaves with trailing dummy.
 
         picks←⍬{                        ⍝ tree index vectors.
-            ⍬≡⍴⍵?⊂⍺;                     ⍝ leaf: done.
-            ,/(⍺↣,¨0 1)∇¨⍵              ⍝ visit each branch,
+            ⍬≡ρω?⊂α;                     ⍝ leaf: done.
+            ,/(α↣,¨0 1)∇¨ω              ⍝ visit each branch,
         }tree                           ⍝ ··· of the tree.
 
         maxd←≡tree                     ⍝ max depth.
 
         dict←,/{                       ⍝ lookup dictionary.
-            item←tree⊃/⌽⍵               ⍝ next tree leaf.
-            indl←≢⍵                   ⍝ trailing index length.
-            2*maxd-indl ⍴ ⊂[indl item]  ⍝ extended pick vectors.
+            item←tree⊃/⌽ω               ⍝ next tree leaf.
+            indl←≢ω                   ⍝ trailing index length.
+            2*maxd-indl ρ ⊂[indl item]  ⍝ extended pick vectors.
         }¨picks                         ⍝ ··· for each index vector.
 
-        iwin←⍳maxd                      ⍝ input index window.
-        ibuff←bits,maxd⍴0               ⍝ padded input buffer.
+        iwin←ιmaxd                      ⍝ input index window.
+        ibuff←bits,maxdρ0               ⍝ padded input buffer.
 
-        shape⍴(,shape⍴leaves){          ⍝ restore original shape.
-            [ix ox]←⍵                   ⍝ input and output indices.
-            ox=≢⍺?⍺;                     ⍝ end of output, done
+        shapeρ(,shapeρleaves){          ⍝ restore original shape.
+            [ix ox]←ω                   ⍝ input and output indices.
+            ox=≢α?α;                     ⍝ end of output, done
             nxt←⊥[ix+iwin]⌷ibuff        ⍝ next dictionary index.
             [skip item]←nxt⊃dict        ⍝ number of bits and output item.
-            item@ox⍺ ∇ ⍵+[skip 1ₓ]   ⍝ traverse input and output buffers.
+            item@oxα ∇ ω+[skip 1ₓ]   ⍝ traverse input and output buffers.
         }[0 0]ₓ                           ⍝ initial input/output buffer indices.
     }
 
-    ⍺←$t ⋄ ⍺?compress ⍵;expand ⍵       ⍝ compress or expand.
+    α←$t ◇ α?compress ω;expand ω       ⍝ compress or expand.
 }
 
 ⍝ From https://dfns.dyalog.com/c_lisp.htm
  lisp←{             ⍝ Evaluator for a subset of Scheme.
 
     ⍝ Parser functions take as arguments:
-    ⍝   ⍺ ⍝ the input string
-    ⍝   ⍵ ⍝ the current parse position in ⍺
+    ⍝   α ⍝ the input string
+    ⍝   ω ⍝ the current parse position in α
     ⍝ and return a triplet of:
     ⍝   $f position AST     ⍝ on success
     ⍝   $t position message ⍝ on failure
 
      parse←{
-         ⍵≥≢⍺?[$t ⍵ "unexpected eof"];
-         ' '≡⍵⌷⍺?⍺ ∇ ≥⍵;
-         '('≡⍵⌷⍺?⍺ parseList ≥⍵;
-         ⍵⌷⍺ ∊ $d?⍺ parseNum ⍵;
-         '''≡⍵⌷⍺?⍺ parseQuote ⍵;
-         ⍺ parseAtom ⍵
+         ω≥≢α?[$t ω "unexpected eof"];
+         ' '≡ω⌷α?α ∇ ≥ω;
+         '('≡ω⌷α?α parseList ≥ω;
+         ω⌷α ∊ $d?α parseNum ω;
+         '''≡ω⌷α?α parseQuote ω;
+         α parseAtom ω
      }
 
      parseList←{ ⍝ parse the inside of a list and consume the ')'
-         ⍵≥≢⍺?[$t ⍵ "unexpected eof"];
-         ')'≡⍵⌷⍺?[$f ≥⍵ ⍬];
-         [e p h]←⍺ parse ⍵
+         ω≥≢α?[$t ω "unexpected eof"];
+         ')'≡ω⌷α?[$f ≥ω ⍬];
+         [e p h]←α parse ω
          e?[e p h];
-         [e p t]←⍺ ∇ p
+         [e p t]←α ∇ p
          e?[e p t];
          [$f p [h],t]
      }
 
      parseNum←{
          l←20ₓ ⍝ 1 + the maximum length of a numeric literal
-         n←+/∧\$d∊⍨l↑⍵↓⍺ ⍝ actual length of the literal
-         n≡l?[$t ⍵ "numeric literal too long"];
-         [$f ⍵+n ⍎n↑⍵↓⍺]
+         n←+/∧\$d∊⍨l↑ω↓α ⍝ actual length of the literal
+         n≡l?[$t ω "numeric literal too long"];
+         [$f ω+n ⍎n↑ω↓α]
      }
 
      parseAtom←{
          la←20ₓ ⍝ 1 + the maximum length of an atom
          na←$d,"() '" ⍝ non-atom characters
-         l←+/∧\~na∊⍨la↑⍵↓⍺
-         l≡la?[$t ⍵ "atom too long"];
-         [$f ⍵+l l↑⍵↓⍺]
+         l←+/∧\~na∊⍨la↑ω↓α
+         l≡la?[$t ω "atom too long"];
+         [$f ω+l l↑ω↓α]
      }
 
      parseQuote←{
-         [e p r]←⍺ parse ≥⍵
+         [e p r]←α parse ≥ω
          e?[e p r];
          [e p ["quote" r]]
      }
 
     ⍝ Evaluator
 
-     isAtom←{' '≡↑0⍴⍵ ∧ 1ₓ=⍴⍴⍵}
-     isNum←{0≡↑0⍴⍵ ∧ 0ₓ=⍴⍴⍵}
+     isAtom←{' '≡↑0ρω ∧ 1ₓ=ρρω}
+     isNum←{0≡↑0ρω ∧ 0ₓ=ρρω}
 
-     eval←{ ⍝ ⍺: environment, ⍵: expression
-         isNum ⍵?⍵;
-         isAtom ⍵?[⍺.[: 0]⍳⊂⍵ 1]⌷⍺;
-         0ₓ≡≢⍵?⍬;
-         "quote"≡↑⍵?⍵₁;
-         1↑⍵ ∊ ,¨'\' "lambda"?["closure" ⍺],1↓⍵;
-         "cond"≡↑⍵?⍺ evcond 1↓⍵;
-         ⍺∇↑⍵ apply (⊂⍺)∇¨1↓⍵
+     eval←{ ⍝ α: environment, ω: expression
+         isNum ω?ω;
+         isAtom ω?[α.[: 0]ι⊂ω 1]⌷α;
+         0ₓ≡≢ω?⍬;
+         "quote"≡↑ω?ω₁;
+         1↑ω ∊ ,¨'\' "lambda"?["closure" α],1↓ω;
+         "cond"≡↑ω?α evcond 1↓ω;
+         α∇↑ω apply (⊂α)∇¨1↓ω
      }
 
-     apply←{ ⍝ ⍺: procedure, ⍵: arguments
-         "closure"≡↑⍺?[⍺₂⋄⍵]ᵀ⍪⍺₁ eval ⍺₃;
-         ⍎(↑⍺),'⍵'
+     apply←{ ⍝ α: procedure, ω: arguments
+         "closure"≡↑α?[α₂◇ω]ᵀ⍪α₁ eval α₃;
+         ⍎(↑α),'ω'
      }
 
-     evcond←{ ⍝ ⍺: environment, ⍵: clauses
-         0ₓ≡≢⍵?⍬;
-         "else"≡↑↑⍵?⍺ eval ↑1↓↑⍵;
-         0 ≡ ⍺eval↑↑⍵?⍺ ∇ 1↓⍵;
-         ⍺ eval ↑1↓↑⍵
+     evcond←{ ⍝ α: environment, ω: clauses
+         0ₓ≡≢ω?⍬;
+         "else"≡↑↑ω?α eval ↑1↓↑ω;
+         0 ≡ αeval↑↑ω?α ∇ 1↓ω;
+         α eval ↑1↓↑ω
      }
 
     ⍝ Initial environment
@@ -826,9 +826,9 @@ packH←{                      ⍝ Huffman packing.
      env⍪←["=" ,⊂"=/"]
      env⍪←["write" ,⊂"⎕←"]
 
-     [e p x]←⍵ parse 0   ⍝ e: failure flag, p: position, x: AST
+     [e p x]←ω parse 0   ⍝ e: failure flag, p: position, x: AST
      e?x;
-     ⍺←$t ⋄ ~⍺?x;        ⍝ ~⍺: parse only
+     α←$t ◇ ~α?x;        ⍝ ~α: parse only
      env eval x
  }
 
@@ -840,35 +840,35 @@ packH←{                      ⍝ Huffman packing.
  ⍝ Iverson, K.E., A Dictionary of APL, 1987, m⍤v. http://www.jsoftware.com/papers/APLDictionary.htm
  ⍝ Hui, R.K.W., and K.E. Iverson, J Introduction and Dictionary, 2011, Cut (;.). http://www.jsoftware.com/help/dictionary/d331.htm
 
-     ⍺←|⍹ {                          ⍝ default left argument
-         0ₓ=⍺?⍉0,⍪-⍴⍵;
-         1ₓ=⍺?0ₓ = 1↑⍵ ⍳ ⍵;
-         2ₓ=⍺?0ₓ = ¯1↑⍵ ⍳ ⍵;
-         3ₓ=⍺?⍴⍴⍵ ⍴ ⌊/⍴⍵
-     } ⍵
+     α←|⍹ {                          ⍝ default left argument
+         0ₓ=α?⍉0,⍪-ρω;
+         1ₓ=α?0ₓ = 1↑ω ι ω;
+         2ₓ=α?0ₓ = ¯1↑ω ι ω;
+         3ₓ=α?ρρω ρ ⌊/ρω
+     } ω
 
-     ⍺ ⍶{⍶ ⍵}{
+     α ⍶{⍶ ω}{
 
-         Under←{⍹⁻ ⍹⍺ ⍶ ⍹⍵}    ⍝ dyadic case of "under" operator
-         p_2←{(¯1⌽k↓⍺)⊂⍠⍶(⍶⍴0 , k←-$t⍳⍨⌽⍺)↓⍵}
-         Blk_1←{0ₓ=≢⍺?⍵;0ₓ=≢↑⍺?1↓⍺ (≥⍶)⍢ ⍵;1↓⍺ (≥⍶)⍢ ⊃(⊂↑⍺)⊂⍠⍶¨⍵}
-         Blk_2←{0ₓ=≢⍺?⍵;0ₓ=≢↑⍺?1↓⍺ (≥⍶)⍢ ⍵;1↓⍺ (≥⍶)⍢ ⊃(⊂↑⍺)(⍶ p_2)¨⍵}
-         ifv←{(⍉⍺,⍪)⍣ 2ₓ>≢⍴⍵ ⍵}         ⍝ laminate ⍺ if ⍵ is vector or unit
-         ci←{[i s]←↓(1 ifv ⍺) ⋄ (0ₓ>s){⌽⍣⍺ ⍵}¨(⍳¨|s)+(i |⍨ ⍴i ↑ ⍴⍵)-(0ₓ>i)×≤|s}
-         ti←{[m s]←↓(1 ifv ⍺) ⋄ ⊃{⊃[⍵ (×s)×(|s)⌊r-⍵]}¨m↣×¨⍳⌈r÷m+(0ₓ=m)×r←(⍴m)⍴⍴⍵}
-         tj←{[m s]←↓(1 ifv ⍺) ⋄ ⊃{⊃[⍵ s]}¨m↣×¨⍳⌈(≥r-|s)÷m+(0ₓ=m)×r←(⍴m)⍴⍴⍵}
+         Under←{⍹⁻ ⍹α ⍶ ⍹ω}    ⍝ dyadic case of "under" operator
+         p_2←{(¯1⌽k↓α)⊂⍠⍶(⍶ρ0 , k←-$tι⍨⌽α)↓ω}
+         Blk_1←{0ₓ=≢α?ω;0ₓ=≢↑α?1↓α (≥⍶)⍢ ω;1↓α (≥⍶)⍢ ⊃(⊂↑α)⊂⍠⍶¨ω}
+         Blk_2←{0ₓ=≢α?ω;0ₓ=≢↑α?1↓α (≥⍶)⍢ ω;1↓α (≥⍶)⍢ ⊃(⊂↑α)(⍶ p_2)¨ω}
+         ifv←{(⍉α,⍪)⍣ 2ₓ>≢ρω ω}         ⍝ laminate α if ω is vector or unit
+         ci←{[i s]←↓(1 ifv α) ◇ (0ₓ>s){⌽⍣α ω}¨(ι¨|s)+(i |⍨ ρi ↑ ρω)-(0ₓ>i)×≤|s}
+         ti←{[m s]←↓(1 ifv α) ◇ ⊃{⊃[ω (×s)×(|s)⌊r-ω]}¨m↣×¨ι⌈r÷m+(0ₓ=m)×r←(ρm)ρρω}
+         tj←{[m s]←↓(1 ifv α) ◇ ⊃{⊃[ω s]}¨m↣×¨ι⌈(≥r-|s)÷m+(0ₓ=m)×r←(ρm)ρρω}
 
-         1ₓ=|⍹ ∧ ⍬≡⍺ ∨ 1ₓ≠≡⍺?⊃⍶¨(⊂ 0ₓ>⍹ × ×≢¨⍺)↓¨⍺(0 Blk_1)⊂⍵;
-         2ₓ=|⍹ ∧ ⍬≡⍺ ∨ 1ₓ≠≡⍺?⊃⍶¨(⊂ 0ₓ>⍹ × -×≢¨⍺)↓¨⍺(0 Blk_2)⊂⍵;
+         1ₓ=|⍹ ∧ ⍬≡α ∨ 1ₓ≠≡α?⊃⍶¨(⊂ 0ₓ>⍹ × ×≢¨α)↓¨α(0 Blk_1)⊂ω;
+         2ₓ=|⍹ ∧ ⍬≡α ∨ 1ₓ≠≡α?⊃⍶¨(⊂ 0ₓ>⍹ × -×≢¨α)↓¨α(0 Blk_2)⊂ω;
 
-         0ₓ=⍹?⍺(⍶ ci⌷⊢)⍵;
-         1ₓ=⍹?⊃⍺(⍶¨⊂₀)⍵;
-         ¯1ₓ=⍹?⊃ ⍺ ⍶∘(1↣↓)¨⊂₀ ⍵;
-         2ₓ=⍹?⍺ (⍶∘⊖⍢1)Under⊖ ⍵;
-         ¯2ₓ=⍹?⍺ ⍶∘(¯1↣↓)⍢2 ⍵;
-         3ₓ=⍹?⍺ti⍵ (⍶⍢0)⍤2 ∞ ⍵;
-         ¯3ₓ=⍹?⍺tj⍵ (⍶⍢0)⍤2 ∞ ⍵
-     }⍹ ⍵
+         0ₓ=⍹?α(⍶ ci⌷⊢)ω;
+         1ₓ=⍹?⊃α(⍶¨⊂₀)ω;
+         ¯1ₓ=⍹?⊃ α ⍶∘(1↣↓)¨⊂₀ ω;
+         2ₓ=⍹?α (⍶∘⊖⍢1)Under⊖ ω;
+         ¯2ₓ=⍹?α ⍶∘(¯1↣↓)⍢2 ω;
+         3ₓ=⍹?αtiω (⍶⍢0)⍤2 ∞ ω;
+         ¯3ₓ=⍹?αtjω (⍶⍢0)⍤2 ∞ ω
+     }⍹ ω
  }
 
 ⍝ Dyalog 20.0.53963.0 ⎕AV and name-start alphabet; codecs retain their original wire format.
@@ -877,278 +877,278 @@ dfnsLetters←"_abcdefghijklmnopqrstuvwxyz∆ABCDEFGHIJKLMNOPQRSTUVWXYZ⍙ÁÂÃ
 
 ⍝ From https://dfns.dyalog.com/c_words.htm
 words←{  ⍝ Split a string into words and intervening text.
-  ⍺←[dfnsLetters $d]
-  1ₓ=≡,⍺?[⍺ ""]∇⍵;
-  [alph supp]←⍺
-  w←$f{⍵∊alph ∨ ⍺∧⍵∊supp}\⍵
-  ≥+\w≠¯1⌽w ⊆ ⍵
+  α←[dfnsLetters $d]
+  1ₓ=≡,α?[α ""]∇ω;
+  [alph supp]←α
+  w←$f{ω∊alph ∨ α∧ω∊supp}\ω
+  ≥+\w≠¯1⌽w ⊆ ω
 }
 
 ⍝ From https://dfns.dyalog.com/c_eis.htm
-eis←{{⊂1#⍵}⍣ 1ₓ=≡,⍵ ⍵}⊘{eis⍺ , eis⍵}  ⍝ Enclose if simple; with two arguments, link them.
+eis←{{⊂1#ω}⍣ 1ₓ=≡,ω ω}⊘{eisα , eisω}  ⍝ Enclose if simple; with two arguments, link them.
 
 ⍝ From https://dfns.dyalog.com/c_iotag.htm
- iotag←{                        ⍝ Generalized ⍳.
-     AlphaInterval←{⍵=' '?"";         ⍝ ⍳' ' is empty vector.
-         a←dfnsAV⍳"a0AÁ"                ⍝ Indices of a0AÁ.
-         k←a+.≤i←dfnsAV⍳⍵             ⍝ Find starting point.
-         ⍺←(≤k ⌷ a)⌷dfnsAV               ⍝ Default left argument.
-         </i,j←dfnsAV⍳⍺?⌽ ⍵ ∇ ⍺;         ⍝ If ⍵ before ⍺, reverse.
+ iotag←{                        ⍝ Generalized ι.
+     AlphaInterval←{ω=' '?"";         ⍝ ι' ' is empty vector.
+         a←dfnsAVι"a0AÁ"                ⍝ Indices of a0AÁ.
+         k←a+.≤i←dfnsAVιω             ⍝ Find starting point.
+         α←(≤k ⌷ a)⌷dfnsAV               ⍝ Default left argument.
+         </i,j←dfnsAVια?⌽ ω ∇ α;         ⍝ If ω before α, reverse.
          j↓ ≥i ↑ dfnsAV             ⍝ Truncate dfnsAV.
      }
-   ⍝Interval←{⍺+0,+\(|d)⍴×d←⍵-⍺}    ⍝ Interval Function.
-     Interval←{s←×/1↓⍵,(⍺>↑⍵)#¯1ₓ    ⍝ Calculate step size
-         ⍺+s×⍳⌊1ₓ-(⍺-↑⍵)÷s}        ⍝ Generate Interval
-     IndexOf←{i←1↓⍳⍴⍴⍺               ⍝ Enclose left arg axis.
-         j←1-⍴⍴⍺ ↑ ⍳⍴⍴⍵              ⍝ Enclose right arg axis.
-         m←[i]⌷⍴⍺ ⌈ [j]⌷⍴⍵         ⍝ Pad both arguments.
-         (⊂⍠i m↑⍠i ⍺)⍳⊂⍠j m↑⍠j ⍵           ⍝ Get index.
+   ⍝Interval←{α+0,+\(|d)ρ×d←ω-α}    ⍝ Interval Function.
+     Interval←{s←×/1↓ω,(α>↑ω)#¯1ₓ    ⍝ Calculate step size
+         α+s×ι⌊1ₓ-(α-↑ω)÷s}        ⍝ Generate Interval
+     IndexOf←{i←1↓ιρρα               ⍝ Enclose left arg axis.
+         j←1-ρρα ↑ ιρρω              ⍝ Enclose right arg axis.
+         m←[i]⌷ρα ⌈ [j]⌷ρω         ⍝ Pad both arguments.
+         (⊂⍠i m↑⍠i α)ι⊂⍠j m↑⍠j ω           ⍝ Get index.
      }
-     ischar←{' '≡↑0⍴,⍵}          ⍝ character fill.
-     m←$f ⋄ ⍺←m←$t                    ⍝ Monadic?
-     m∧1ₓ=⍴⍴⍵?,⊗/∇¨⍵;               ⍝ Vector right argument
-     m∧ischar ⍵?AlphaInterval ⍵;      ⍝ Alpha Monadic.
-     m?×⍵ × ⍳|⍵;                      ⍝ Integer Monadic.
-     s←0ₓ=⍴⍴⍺                        ⍝ Unit Left Argument?
-     s∧ischar ⍵?⍺ AlphaInterval ⍵;    ⍝ Alpha Interval.
-     s?⍺ Interval ⍵;                  ⍝ Numeric Interval.
-     ⍺ IndexOf ⍵                     ⍝ Dyadic.
+     ischar←{' '≡↑0ρ,ω}          ⍝ character fill.
+     m←$f ◇ α←m←$t                    ⍝ Monadic?
+     m∧1ₓ=ρρω?,⊗/∇¨ω;               ⍝ Vector right argument
+     m∧ischar ω?AlphaInterval ω;      ⍝ Alpha Monadic.
+     m?×ω × ι|ω;                      ⍝ Integer Monadic.
+     s←0ₓ=ρρα                        ⍝ Unit Left Argument?
+     s∧ischar ω?α AlphaInterval ω;    ⍝ Alpha Interval.
+     s?α Interval ω;                  ⍝ Numeric Interval.
+     α IndexOf ω                     ⍝ Dyadic.
  }
 
 ⍝ From https://dfns.dyalog.com/c_tokens.htm
  tokens←{                           ⍝ Lex of APL src line.
-     ⍺←0 ⋄ nv←⍺                          ⍝ numeric vectors as single token.
+     α←0 ◇ nv←α                          ⍝ numeric vectors as single token.
      alph←dfnsLetters         ⍝ alphabet for names.
-     all←{+/∧\⍺∊,⍵}                       ⍝ No. of leading ⍺∊⍵.
-     acc←{⍺,⊂↑/⍵ lex ↓/⍵}                ⍝ accumulated tokens.
-     size←{                                  ⍝ Length of the token at the start of ⍵.
-         hd←↑⍵
-         hd=' '?⍵ all ' ';                   ⍝ White Space.
-         hd∊alph?⍵ all alph,$d;              ⍝ Name
-         hd='⎕'?1 + 1↓⍵ all alph;          ⍝ System Name
-         hd='''?+/∧\{⍵∨¯1⌽⍵}≠\hd=⍵;          ⍝ Char literal
-         hd∊$d,'¯'?max←⍵ all $d,".¯EJ",nv#' ' ⋄ max-+/∧\' '=⌽max↑⍵;  ⍝ Numeric literal, without trailing blanks.
-         hd∊"⍺⍵∇:"?⍵ all hd;                 ⍝ ⍺⍺ or ⍵⍵ or ∇∇ or ::
-         hd='⍝'?⍴⍵;                          ⍝ Comment
+     all←{+/∧\α∊,ω}                       ⍝ No. of leading α∊ω.
+     acc←{α,⊂↑/ω lex ↓/ω}                ⍝ accumulated tokens.
+     size←{                                  ⍝ Length of the token at the start of ω.
+         hd←↑ω
+         hd=' '?ω all ' ';                   ⍝ White Space.
+         hd∊alph?ω all alph,$d;              ⍝ Name
+         hd='⎕'?1 + 1↓ω all alph;          ⍝ System Name
+         hd='''?+/∧\{ω∨¯1⌽ω}≠\hd=ω;          ⍝ Char literal
+         hd∊$d,'¯'?max←ω all $d,".¯EJ",nv#' ' ◇ max-+/∧\' '=⌽max↑ω;  ⍝ Numeric literal, without trailing blanks.
+         hd∊"αω∇:"?ω all hd;                 ⍝ αα or ωω or ∇∇ or ::
+         hd='⍝'?ρω;                          ⍝ Comment
          1                                   ⍝ Single char token.
      }
-     lex←{0ₓ=⍴⍵?⍺;⍺ acc [(size ⍵) ⍵]}       ⍝ Next token, else finished.
-     0⍴⊂"" lex ,⍵
+     lex←{0ₓ=ρω?α;α acc [(size ω) ω]}       ⍝ Next token, else finished.
+     0ρ⊂"" lex ,ω
  }
 
 ⍝ From https://dfns.dyalog.com/c_ssword.htm
  ssword←{                   ⍝ Approx alternative to xutils' ss.
-     [srce find repl]←,¨⍵        ⍝ source, find and replace vectors
+     [srce find repl]←,¨ω        ⍝ source, find and replace vectors
      alph←dfnsLetters ⍝ primary alphabet: initial letters for names
      supp←$d                     ⍝ supplementary: 0-9
-     ⍺←[alph supp]               ⍝ default left argument
+     α←[alph supp]               ⍝ default left argument
      ∊(⊂repl)@[{                  ⍝ replace find with repl
-         ⍵∊[find]                 ⍝ matches
-     }] ⍺words⁝srce             ⍝ source into words.
+         ω∊[find]                 ⍝ matches
+     }] αwords⁝srce             ⍝ source into words.
  }
 
 ⍝ From https://dfns.dyalog.com/c_packD.htm
  packD←{                                 ⍝ Pack char array to boolean vector.
 
-     key←,/{↓ ⍳⍵ >⊗ ⍳⍵}¨≥⍳23ₓ             ⍝ generate the keys (up to 276), they
+     key←,/{↓ ιω >⊗ ιω}¨≥ι23ₓ             ⍝ generate the keys (up to 276), they
                                         ⍝ start with ones and end with zeros.
      cmp←{                               ⍝ compress:
-         dt←,⍵ ⋄ k←$t,¨key               ⍝ vectorise items, separators to keys
+         dt←,ω ◇ k←$t,¨key               ⍝ vectorise items, separators to keys
          u←byfreq dt                     ⍝ sort uniques according to frequencies.
-         uq←,(8⍴2)⊤(≤⍴u),dfnsAV⍳u        ⍝ shape then uniques fit to eight bits.
-         rk←,(4⍴2)⊤⍴⍴⍵                   ⍝ rank fits in four bytes
+         uq←,(8ρ2)⊤(≤ρu),dfnsAVιu        ⍝ shape then uniques fit to eight bits.
+         rk←,(4ρ2)⊤ρρω                   ⍝ rank fits in four bytes
 
          sh←⍬{                           ⍝ shape is a trickier one
-             0ₓ∊⍴⍵?⍺;                     ⍝ all done?
-             n←≥⌊2⍟1⌈↑⍵                 ⍝ how many bits are needed for representing the integer?
-             q←(, 5⍴2 ⊤ n),,(n⍴2)⊤↑⍵      ⍝ n should fit to five bits (2*2*5 -> 4GB dimensions supported ;) )
-             ⍺,q ∇ 1↓⍵                 ⍝ add binarised figure to the result
-         }⍴⍵
+             0ₓ∊ρω?α;                     ⍝ all done?
+             n←≥⌊2⊛1⌈↑ω                 ⍝ how many bits are needed for representing the integer?
+             q←(, 5ρ2 ⊤ n),,(nρ2)⊤↑ω      ⍝ n should fit to five bits (2*2*5 -> 4GB dimensions supported ;) )
+             α,q ∇ 1↓ω                 ⍝ add binarised figure to the result
+         }ρω
 
-         0≠rk,sh,uq,∊[u⍳dt]⌷k             ⍝ join the result with binarised data, as Booleans
+         0≠rk,sh,uq,∊[uιdt]⌷k             ⍝ join the result with binarised data, as Booleans
      }
 
      unc←{                               ⍝ uncompress:
-         rk←⊥4⍴⍵                        ⍝ rank's easy
+         rk←⊥4ρω                        ⍝ rank's easy
 
          [sh x]←[⍬ 4 rk]{                ⍝ shape needs more treatment
-             [s n r]←⍺                   ⍝ deliver args
+             [s n r]←α                   ⍝ deliver args
              r=0ₓ?[s n];                  ⍝ all done: return shape and offset
-             q←⊥5⍴⍵                     ⍝ how many bits?
-             d←⊥q⍴5↓⍵                   ⍝ -> dimension length
-             [s,d n+q+5 ≤r] ∇ q+5 ↓ ⍵   ⍝ next
-         }4↓⍵
+             q←⊥5ρω                     ⍝ how many bits?
+             d←⊥qρ5↓ω                   ⍝ -> dimension length
+             [s,d n+q+5 ≤r] ∇ q+5 ↓ ω   ⍝ next
+         }4↓ω
 
-         n←≥⊥8⍴x↓⍵                     ⍝ how many uniques?
-         u←[,⊥[n 8]⍴(n×8)↑(x+8)↓⍵]⌷dfnsAV   ⍝  -> make the list
-         dt←x+8×≥n ↓ ⍵                  ⍝ rip the data part
+         n←≥⊥8ρx↓ω                     ⍝ how many uniques?
+         u←[,⊥[n 8]ρ(n×8)↑(x+8)↓ω]⌷dfnsAV   ⍝  -> make the list
+         dt←x+8×≥n ↓ ω                  ⍝ rip the data part
          p←dt≤¯1↓$f,dt                   ⍝ binary partitioner (first 1's)
-         sh⍴[key⍳p⊆dt]⌷u                  ⍝ reconstruct
+         shρ[keyιp⊆dt]⌷u                  ⍝ reconstruct
      }
 
-     ⍺←$t ⋄ ⍺?cmp ⍵;unc ⍵              ⍝ which way to go?
+     α←$t ◇ α?cmp ω;unc ω              ⍝ which way to go?
  }
 
 ⍝ From https://dfns.dyalog.com/c_packT.htm
  packT←{                        ⍝ Simple text vector packager.
 
      cmp←{
-         ec←{c←3↑dfnsAV ⋄ ↑⍋+/c=⊗⍵ ⌷ c},⍵           ⍝ escape: the least frequent of the first three dfnsAV chars
+         ec←{c←3↑dfnsAV ◇ ↑⍋+/c=⊗ω ⌷ c},ω           ⍝ escape: the least frequent of the first three dfnsAV chars
 
-         lv←1ₓ,≠/↕,⍵ ⋄ e←ec=,⍵                ⍝ repeat lengths
-         mask←e<¯1↓[1 0 0 1]ₓ⍷lv,1ₓ ⋄ (mask#1⌽lv)←1ₓ   ⍝ remove 2's and 3's
-         mask←e<¯1↓[1 0 1]ₓ⍷lv,1ₓ ⋄ (mask#1⌽lv)←1ₓ
-         ln←{-⍨/↕(⍵,1)#⍳≥⍴⍵}lv              ⍝ packables
+         lv←1ₓ,≠/↕,ω ◇ e←ec=,ω                ⍝ repeat lengths
+         mask←e<¯1↓[1 0 0 1]ₓ⍷lv,1ₓ ◇ (mask#1⌽lv)←1ₓ   ⍝ remove 2's and 3's
+         mask←e<¯1↓[1 0 1]ₓ⍷lv,1ₓ ◇ (mask#1⌽lv)←1ₓ
+         ln←{-⍨/↕(ω,1)#ι≥ρω}lv              ⍝ packables
 
          (lv#lv)←≥⌊ln÷256ₓ                  ⍝ adjust for 256 length
 
-         ln←∊{⍵<257ₓ?⍵;                       ⍝ now we have to adjust the long
-             q←256ₓ|⍵ ⋄ n←⌊⍵÷256ₓ            ⍝ sequences so that the last
+         ln←∊{ω<257ₓ?ω;                       ⍝ now we have to adjust the long
+             q←256ₓ|ω ◇ n←⌊ω÷256ₓ            ⍝ sequences so that the last
              {                               ⍝ sequence will be
-                 3ₓ<¯1↑⍵?⍵;                   ⍝ properly done, ie:
-                 ¯2↓⍵ , [¯4 4]ₓ+¯2↑⍵         ⍝   257 -> 252 5,
-             } n#256ₓ , ⍵-n×256ₓ              ⍝   NOT    256 1.
+                 3ₓ<¯1↑ω?ω;                   ⍝ properly done, ie:
+                 ¯2↓ω , [¯4 4]ₓ+¯2↑ω         ⍝   257 -> 252 5,
+             } n#256ₓ , ω-n×256ₓ              ⍝   NOT    256 1.
          }¨ln
 
-         q←lv#,⍵                             ⍝ reduce data
-         b←ln>3ₓ ∨ {↑⍵ , </↕⍵}q=ec           ⍝ find places where
-         (b#q)←b#q {ec,⍺,⍵}¨ [≤b#ln]⌷dfnsAV       ⍝  to put pack sequences
+         q←lv#,ω                             ⍝ reduce data
+         b←ln>3ₓ ∨ {↑ω , </↕ω}q=ec           ⍝ find places where
+         (b#q)←b#q {ec,α,ω}¨ [≤b#ln]⌷dfnsAV       ⍝  to put pack sequences
          ec,∊q                               ⍝ remove nesting
      }
 
      exp←{
-         ec←↑⍵                               ⍝ "esc"
-         ~ec∊1↓⍵?1↓⍵;                         ⍝ packed?
+         ec←↑ω                               ⍝ "esc"
+         ~ec∊1↓ω?1↓ω;                         ⍝ packed?
 
-         bv←{↑⍵ , </↕⍵}1↓⍵=ec                ⍝ reduce vector
-         ln←0ₓ@(⍸¯2⌽bv)(≥dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(⍸¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
-         ln#1↓⍵                              ⍝ do it!
+         bv←{↑ω , </↕ω}1↓ω=ec                ⍝ reduce vector
+         ln←0ₓ@(⍸¯2⌽bv)(≥dfnsAVι ¯2⌽bv # 1↓ω)@(⍸¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
+         ln#1↓ω                              ⍝ do it!
      }
 
-     ⍺←$t ⋄ ⍺?cmp ⍵;exp ⍵                  ⍝ compress or expand.
+     α←$t ◇ α?cmp ω;exp ω                  ⍝ compress or expand.
  }
 ⍝ From https://dfns.dyalog.com/c_parse.htm
  parse←{  ⍝ Bunda-Gerth parsing.
 
-     [opt defs]←⍵≡"" {[⍺ ⍵]}⍣ ~0≡↑0⍴⍺ ⍺     ⍝ trace/format option and defns.
+     [opt defs]←ω≡"" {[α ω]}⍣ ~0≡↑0ρα α     ⍝ trace/format option and defns.
 
      defn←{                                      ⍝ binding table definition.
-         words←⊂" " segs¨ ↑¨ ⊂"⍝" segs¨ ⍵         ⍝ blank-delimited words.
-         pop←{[↑⍵ 1↓⍵]}                          ⍝ head & tail of list.
-         sects←[0⍴⊂""] segs words               ⍝ sections.
+         words←⊂" " segs¨ ↑¨ ⊂"⍝" segs¨ ω         ⍝ blank-delimited words.
+         pop←{[↑ω 1↓ω]}                          ⍝ head & tail of list.
+         sects←[0ρ⊂""] segs words               ⍝ sections.
          [csect defs]←pop sects                  ⍝ separation of sections.
-         bindx←↑¨csect ⍳ ⊂"()"                   ⍝ index of bracket defn.
+         bindx←↑¨csect ι ⊂"()"                   ⍝ index of bracket defn.
          bsegs←bindx⊃csect,⊂,⊂"()"               ⍝ bracket pairs: () [] <> ...
-         [bkts blabs]←↓⍉⊃{[⌽2↑⍵ 2↓⍵]}¨¯1⌽¨bsegs  ⍝ brackets and their cat labels.
+         [bkts blabs]←↓⍉⊃{[⌽2↑ω 2↓ω]}¨¯1⌽¨bsegs  ⍝ brackets and their cat labels.
          [cats reps]←↓⍉⊃pop¨csect~[bsegs]         ⍝ categories & representatives.
-         bonds←⌽≥⍳≢defs                         ⍝ binding strengths
+         bonds←⌽≥ι≢defs                         ⍝ binding strengths
          bmat←cats{0ₓ}⊗cats                     ⍝ initialised binding table
-         defn←{≥cats↣⍳¨ ⊂"." segs¨ ":→"segs⍵}   ⍝ split a.b:c.d→z defn
-         dist←{,,⊗/2↑⍵ ,¨ ↑⌽⍵}                 ⍝ distribution of productions
+         defn←{≥cats↣ι¨ ⊂"." segs¨ ":→"segsω}   ⍝ split a.b:c.d→z defn
+         dist←{,,⊗/2↑ω ,¨ ↑⌽ω}                 ⍝ distribution of productions
          lmat←dist∘defn¨¨¨defs                   ⍝ loading matrix
          bftz←,/bonds,¨¨((,/)⍣2)¨lmat           ⍝ bond-from-to-rslt tuples
          [cats reps bkts blabs],⊂₀ ₁⊃{        ⍝ binding structure.
-             [bond fm to rslt]←⍺                 ⍝ binding and resulting cats.
-             (⊂[bond rslt])@ ⊂≤[fm to] ⍵       ⍝ populate cell
+             [bond fm to rslt]←α                 ⍝ binding and resulting cats.
+             (⊂[bond rslt])@ ⊂≤[fm to] ω       ⍝ populate cell
          }/bftz,⊂bmat                            ⍝ loaded binding matrix.
      }∘{                                         ⍝ pre-process alias=... lines.
-         lines←↓' ',⊃⍵                       ⍝ lines from char array.
+         lines←↓' ',⊃ω                       ⍝ lines from char array.
          wds←↑¨ ⊂" " segs¨ lines                  ⍝ first word from each line.
          [msk nsk]←$t $f=⊂'='∊¨wds               ⍝ mask of alias lines.
          dict←⊂"=" segs¨ msk#wds                 ⍝ (fm to) substitution pairs.
-         {_array.subs/dict,⊂⍵}¨nsk#lines        ⍝ lines with expanded aliases.
-     }⍣ 2ₓ≠≢⍴↑⌽defs                            ⍝ compile unless compiled.
+         {_array.subs/dict,⊂ω}¨nsk#lines        ⍝ lines with expanded aliases.
+     }⍣ 2ₓ≠≢ρ↑⌽defs                            ⍝ compile unless compiled.
 
      table←{                                     ⍝ formatted Bunda-Gerth table.
-         [cats bmat zmat]←⍵                      ⍝ categories and binding matrix.
-         fmt←{×⍺ # ⍬⍕⍺ , ' ',⍵⊃cats,'?'}          ⍝ bond and category.
-         ttl←{[' ' ⍺],.⍪[⍺ ⍵]}                   ⍝ row and column headers.
+         [cats bmat zmat]←ω                      ⍝ categories and binding matrix.
+         fmt←{×α # ⍬⍕α , ' ',ω⊃cats,'?'}          ⍝ bond and category.
+         ttl←{[' ' α],.⍪[α ω]}                   ⍝ row and column headers.
          cats ttl bmat fmt¨ ≥≢cats | ≤zmat     ⍝ formatted bonds & categories.
      }
 
      [cats reps bkts blabs bmat zmat]←defn defs  ⍝ definition structure.
 
-     ⍵≡""?{                                      ⍝ null expr: binding matrix.
-         ⍵=0?[cats reps bkts blabs bmat zmat];    ⍝ raw binding struct.
+     ω≡""?{                                      ⍝ null expr: binding matrix.
+         ω=0?[cats reps bkts blabs bmat zmat];    ⍝ raw binding struct.
          trim←{                                  ⍝ without empty rows and cols.
-             [r c]←$t,¨1 0{∨/⍠⍺ ⍵}¨⊂1 1↓~⍵∊[""]   ⍝ occupied rows and cols.
-             r#c#₋₁⍵                               ⍝ masked out empties.
+             [r c]←$t,¨1 0{∨/⍠α ω}¨⊂1 1↓~ω∊[""]   ⍝ occupied rows and cols.
+             r#c#₋₁ω                               ⍝ masked out empties.
          }                                       ⍝ :: ∇ cells → cells
          snip←{                                  ⍝ snip out top corner.
-             t←≥ ,⍵ ⍳ '┬'                        ⍝ width up to the uppermost, leftmost ┬
+             t←≥ ,ω ι '┬'                        ⍝ width up to the uppermost, leftmost ┬
              cnr←⊃[1 t-2 1]↣#¨"  ┌" "  │" "┌─┼"    ⍝ empty corner.
-             cnr@(⍳3ₓ ,⊗ ⍳t) ⍵                 ⍝ snipped formatted matrix.
+             cnr@(ι3ₓ ,⊗ ιt) ω                 ⍝ snipped formatted matrix.
          }                                       ⍝ cmat ← ∇ cmat
          bfmt←snip∘_array.disp∘((⍬↣⍕)¨)∘trim∘table   ⍝ binding matrix formatting.
          bfmt [cats bmat zmat]                   ⍝ formatted table.
      }opt;                                        ⍝ opt-ional formatting.
 
      reduce←{                                    ⍝ 2-by-2 parsing.
-         [[∆l L] Aa Bb Cc [R ∆r]]←⍵              ⍝ 3-token window on stream.
+         [[∆l L] Aa Bb Cc [R ∆r]]←ω              ⍝ 3-token window on stream.
          [Aa Cc]∧.≡eos?Bb;                        ⍝ single node: done.
-         [Aa Bb]∧.≡eos?⍵;                         ⍝ error: partial parse.
+         [Aa Bb]∧.≡eos?ω;                         ⍝ error: partial parse.
          [[A a] [B b] [C c]]←[Aa Bb Cc]          ⍝ cats and toks.
          ⊂[b c] ∊ 1↓bkts?∇ rgt [[∆l L] Aa (ebk b) R ∆r]; ⍝ empty brackets [].
          ⊂[a c] ∊ bkts?∇ rgt [∆l L (a bkt Bb) R ∆r];    ⍝ bracketed single value Bb.
-         ⊂a ∊ rbs?∇ lft lft ⍵;                    ⍝ right bracket: skip left.
-         ≥/xmat.[[A B] [B C]]?∇ lft ⍵;              ⍝ A:B ≥ B:C → skip left.
+         ⊂a ∊ rbs?∇ lft lft ω;                    ⍝ right bracket: skip left.
+         ≥/xmat.[[A B] [B C]]?∇ lft ω;              ⍝ A:B ≥ B:C → skip left.
          BbCc←zmat.[≤B ≤C],⊂[b c]              ⍝ B bound with C.
          ∇ show [[∆l L] Aa BbCc R ∆r]            ⍝ binds with token to the right?
      }                                           ⍝ :: ∇ stream → stream
 
-     show←⊣↢{⎕←sfmt lft⍣{eos≡↑⍺}⍵}⍣opt⍨          ⍝ optional tracing, en passant.
+     show←⊣↢{⎕←sfmt lft⍣{eos≡↑α}ω}⍣opt⍨          ⍝ optional tracing, en passant.
 
-     bkt←{                                       ⍝ bind of bracketed node [ ⍵ ].
-         [cat expr]←⍵                            ⍝ category of bracketed expr.
-         zcat←lbs⍳⍺ ⌷ cat,1↓bcats                ⍝ resulting category.
-         [zcat [⍺ expr]]                         ⍝ ⍺-bracketed node.
+     bkt←{                                       ⍝ bind of bracketed node [ ω ].
+         [cat expr]←ω                            ⍝ category of bracketed expr.
+         zcat←lbsια ⌷ cat,1↓bcats                ⍝ resulting category.
+         [zcat [α expr]]                         ⍝ α-bracketed node.
      }                                           ⍝ :: left_bkt ∇ node → node
 
-     ebk←{[(lbs⍳⍵)⌷bcats ⍵]}                      ⍝ empty brackets. [] {} ...
+     ebk←{[(lbsιω)⌷bcats ω]}                      ⍝ empty brackets. [] {} ...
 
      tfmt←{                                      ⍝ tree-formatted.
-         0ₓ=≡⍵?1 1⍴⍵;                             ⍝ atom: char matrix single.
-         subs←⍉⊃{⍺,' ',⍵}/(↓₀∇)¨⍵                ⍝ formatted sub-expressions.
+         0ₓ=≡ω?1 1ρω;                             ⍝ atom: char matrix single.
+         subs←⍉⊃{α,' ',ω}/(↓₀∇)¨ω                ⍝ formatted sub-expressions.
          mask←~(↑↓subs)∊"┌─┐ "                   ⍝ sub-exprs connection points.
-         mid←⍳⍴mask = ⌊ +/⍸mask ÷ 2               ⍝ mid-point for '┴' char.
+         mid←ιρmask = ⌊ +/⍸mask ÷ 2               ⍝ mid-point for '┴' char.
          inx←mask+⊽+\mask                       ⍝ indices for box-draw chars.
          top←[inx+4ₓ×mid]⌷" ?─┌ ┐┴"                ⍝ "  ┌─┴─┐  "
          top⍪subs                                ⍝ formatted expression.
      }
 
      atop←cats{                                  ⍝ category atop tree.
-         ⍺=0ₓ?⍵;                                 ⍝ ignore bad cat.
-         dent←+/∧\(↑↓⍵)∊"┌─┐ "                   ⍝ indent for category.
-         top←dent#' ' , ≤⍺ ⊃ ⍶⊣0               ⍝ indented category.
-         ⊃[top],↓⍵                               ⍝ categorised tree.
+         α=0ₓ?ω;                                 ⍝ ignore bad cat.
+         dent←+/∧\(↑↓ω)∊"┌─┐ "                   ⍝ indent for category.
+         top←dent#' ' , ≤α ⊃ ⍶⊣0               ⍝ indented category.
+         ⊃[top],↓ω                               ⍝ categorised tree.
      }
 
-     vect←{⍺←⍬                                   ⍝ vector from cons list
-         [∆l Aa Bb Cc ∆r]←⍵                      ⍝ 3-item window.
-         ~Aa≡eos?⍺,⊂Aa ∇ rgt ⍵;                 ⍝ accumlate next item.
-         ~⍺≡⍬?⍺;                                  ⍝ trailing eos: done.
-         ⍺ ∇ rgt ⍵                               ⍝ skip leading eos.
+     vect←{α←⍬                                   ⍝ vector from cons list
+         [∆l Aa Bb Cc ∆r]←ω                      ⍝ 3-item window.
+         ~Aa≡eos?α,⊂Aa ∇ rgt ω;                 ⍝ accumlate next item.
+         ~α≡⍬?α;                                  ⍝ trailing eos: done.
+         α ∇ rgt ω                               ⍝ skip leading eos.
      }
 
      class←{                                     ⍝ classification of expr tokens.
-         pairs←,/⍺,¨¨≥⍳⍴⍺                      ⍝ token-category pairs.
+         pairs←,/α,¨¨≥ιρα                      ⍝ token-category pairs.
          [toks cats]←↓⍉⊃pairs                    ⍝ category of each token.
-         [toks⍳⍵]⌷cats,0ₓ                       ⍝ token categories.
+         [toksιω]⌷cats,0ₓ                       ⍝ token categories.
      }
 
      pfmt←atop↢tfmt⌿                             ⍝ format of (token cat) pair.
      sfmt←_array.disp∘pfmt∘⍉∘⊃∘vect              ⍝ format of parse stream.
 
-     lft←{[[∆l L] A B C ∆r]←⍵ ⋄ [∆l L A B [C ∆r]]}     ⍝ skip left.
-     rgt←{[∆l A B C [R ∆r]]←⍵ ⋄ [[∆l A] B C R ∆r]}     ⍝ skip right.
+     lft←{[[∆l L] A B C ∆r]←ω ◇ [∆l L A B [C ∆r]]}     ⍝ skip left.
+     rgt←{[∆l A B C [R ∆r]]←ω ◇ [[∆l A] B C R ∆r]}     ⍝ skip right.
 
      [lbs rbs]←↓⍉⊃bkts                           ⍝ left and right brackets.
-     bcats←≥cats⍳blabs                          ⍝ bracket categories.
+     bcats←≥catsιblabs                          ⍝ bracket categories.
      xmat←0ₓ,0ₓ⍪bmat                             ⍝ extended bmat.
-     pairs←{↓⍉⊃[(reps class ⍵) ⍵]}⍵~" "           ⍝ cat-token pairs.
+     pairs←{↓⍉⊃[(reps class ω) ω]}ω~" "           ⍝ cat-token pairs.
      eos←0                                      ⍝ end of stream marker.
 
-     ∆l←{[⍺ ⍵]}⍨/⌽eos,¯2↓pairs                  ⍝ left list.
+     ∆l←{[α ω]}⍨/⌽eos,¯2↓pairs                  ⍝ left list.
      [Aa Bb Cc]←¯3↑[eos eos],pairs,eos           ⍝ 3-token window
 
      tree←reduce show [∆l Aa Bb Cc eos]          ⍝ reduced expression.
@@ -1158,242 +1158,242 @@ eis←{{⊂1#⍵}⍣ 1ₓ=≡,⍵ ⍵}⊘{eis⍺ , eis⍵}  ⍝ Enclose if simpl
 
 ⍝ From https://dfns.dyalog.com/c_tc.htm
 tc←{  ⍝ Trace function application.
-  ↑⌽⎕←[⍺ ⍶ ⍵ '⇒' (⍺ ⍶ ⍵)]
+  ↑⌽⎕←[α ⍶ ω '⇒' (α ⍶ ω)]
 }
 
 ⍝ From https://dfns.dyalog.com/c_cols.htm
  cols←{                         ⍝ Multi-column display.
 
-     ⍺←[1 102]ₓ                      ⍝ default inter-column-gap and max-width.
+     α←[1 102]ₓ                      ⍝ default inter-column-gap and max-width.
 
-     split←{+/∨\' '≠⌽⍵ ↑¨ ↓⍵}        ⍝ without-trailing-blanks-split (idiom).
+     split←{+/∨\' '≠⌽ω ↑¨ ↓ω}        ⍝ without-trailing-blanks-split (idiom).
 
-     1ₓ<⍴⍴⍵?⍺ ∇ split ⍵;              ⍝ char matrix: use the split vector.
+     1ₓ<ρρω?α ∇ split ω;              ⍝ char matrix: use the split vector.
 
      maxcols←{                       ⍝ maximum number of cols.
-         ⍵=0ₓ?0ₓ;                     ⍝ one or more items too wide: stop.
-         [nr xs]←|[0ₓ ⍵]⊤-ni         ⍝ number of rows and excess.
-         xs≥nr?∇ ≤⍵;                 ⍝ one or more empty columns: ignore.
-         ms←[⍵ nr]⍴lens              ⍝ matrix of sizes.
-         wid←gap×≤⍵ + +/⌈/ms        ⍝ total width.
-         wid≤max?⍵;                   ⍝ it fits: hurrah!
-         ∇ ≤⍵                       ⍝ otherwise, try one less column.
+         ω=0ₓ?0ₓ;                     ⍝ one or more items too wide: stop.
+         [nr xs]←|[0ₓ ω]⊤-ni         ⍝ number of rows and excess.
+         xs≥nr?∇ ≤ω;                 ⍝ one or more empty columns: ignore.
+         ms←[ω nr]ρlens              ⍝ matrix of sizes.
+         wid←gap×≤ω + +/⌈/ms        ⍝ total width.
+         wid≤max?ω;                   ⍝ it fits: hurrah!
+         ∇ ≤ω                       ⍝ otherwise, try one less column.
      }
 
-     reshape←{                       ⍝ ⍺-col reshape of ⍵.
-         ⍺=0ₓ?max↑⍤1 col ⍵;          ⍝ item too wide: truncated single col.
-         nr←⌈ni÷ₐ⍺                    ⍝ number of rows.
-         matr←[⍺ nr]⍴(⍺×nr)↑⍵,⍺#' '  ⍝ matrix blank-padded to whole no of cols.
+     reshape←{                       ⍝ α-col reshape of ω.
+         α=0ₓ?max↑⍤1 col ω;          ⍝ item too wide: truncated single col.
+         nr←⌈ni÷ₐα                    ⍝ number of rows.
+         matr←[α nr]ρ(α×nr)↑ω,α#' '  ⍝ matrix blank-padded to whole no of cols.
          pads←⊃nr#↓gap#' '           ⍝ inter-column padding.
-         {⍺,pads,⍵}/col¨↓matr       ⍝ gap-spaced cols.
+         {α,pads,ω}/col¨↓matr       ⍝ gap-spaced cols.
      }
 
-     col←(⍬↣⍕)∘{1ₓ=≡⍵?⍪⍵;⊃⍵}         ⍝ formatted numeric or char-vecs column.
+     col←(⍬↣⍕)∘{1ₓ=≡ω?⍪ω;⊃ω}         ⍝ formatted numeric or char-vecs column.
 
-     [gap max]←2↑⍺,102ₓ              ⍝ inter-column-gap and max-width.
-     ni←≢⍵                           ⍝ number of items.
-     lens←⊽≢⍵ ↑ ,⊃⍴¨(⍬↣⍕)¨⍵          ⍝ item-lengths.
+     [gap max]←2↑α,102ₓ              ⍝ inter-column-gap and max-width.
+     ni←≢ω                           ⍝ number of items.
+     lens←⊽≢ω ↑ ,⊃ρ¨(⍬↣⍕)¨ω          ⍝ item-lengths.
      ulim←⌈max÷ₐ1ₓ⌈gap+⌊/ni↑lens      ⍝ cols: upper limit for search.
 
-     maxcols⁝ulim reshape ⍵        ⍝ multi-column display.
+     maxcols⁝ulim reshape ω        ⍝ multi-column display.
  }
 
 cal←{ ⍝ Calendar for absolute year or (year month).
-    ⍺←1
-    cntr←{⌈0.5×+/∧\' '=⍵ ⌽ ⍵}
-    1ₓ=≢,⍵?{
-        12ₓ≥|⍵?•signal "DOMAIN";
-        year←4 3⍴ 0 cal¨ ⍵,¨≥⍳12ₓ
-        join←{⍉⊃(↓⍺ᵀ),"   ",↓⍵ᵀ}
-        head←cntr ¯66↑⍬⍕⍵
-        head⍪,⍠ ⍳2ₓ ⊃join/year
-    }⍵;
+    α←1
+    cntr←{⌈0.5×+/∧\' '=ω ⌽ ω}
+    1ₓ=≢,ω?{
+        12ₓ≥|ω?•signal "DOMAIN";
+        year←4 3ρ 0 cal¨ ω,¨≥ι12ₓ
+        join←{⍉⊃(↓αᵀ),"   ",↓ωᵀ}
+        head←cntr ¯66↑⍬⍕ω
+        head⍪,⍠ ι2ₓ ⊃join/year
+    }ω;
     dys←"Su" "Mo" "Tu" "We" "Th" "Fr" "Sa"
     months←"January" "February" "March" "April" "May" "June"
     months,←"July" "August" "September" "October" "November" "December"
-    [yyyy mm]←⍵
+    [yyyy mm]←ω
     day←days [yyyy mm 1ₓ]
-    [mms dds]←2↑1↓↓(date day+⍳31ₓ)ᵀ
+    [mms dds]←2↑1↓↓(date day+ι31ₓ)ᵀ
     fmts←2 0↣⍕¨(mm=mms)#dds
     pad←7ₓ|day ↑ 0↑fmts
-    dmat←⊃{⍺,' ',⍵}/dys⍪6 7⍴42↑pad,fmts
-    head←(≤mm ⊃ months),⍺#' ',⍬⍕yyyy
-    ⊃(⊂cntr ¯20↑head),↓{∨/⍵≠' ' # ⍵}dmat
+    dmat←⊃{α,' ',ω}/dys⍪6 7ρ42↑pad,fmts
+    head←(≤mm ⊃ months),α#' ',⍬⍕yyyy
+    ⊃(⊂cntr ¯20↑head),↓{∨/ω≠' ' # ω}dmat
 }
 packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns dictionary.
-    ⍺←12ₓ
-    ⍺=0ₓ?{
-        [shape bits alph]←⍵
+    α←12ₓ
+    α=0ₓ?{
+        [shape bits alph]←ω
         codes←⊥bitsᵀ
         expand←{
-            [codes dict prev out]←⍵
+            [codes dict prev out]←ω
             0ₓ=≢codes?out;
             n←↑codes
-            text←{⍵<≢dict?⍵⊃dict;prev,↑prev}n
+            text←{ω<≢dict?ω⊃dict;prev,↑prev}n
             next←dict , 0ₓ<≢prev # ⊂prev,↑text
             ∇ [1↓codes next text out,text]
         }
-        shape⍴expand [codes ,¨alph 0↑alph 0↑alph]
-    }⍵;
-    shape←⍴⍵ ⋄ src←,⍵ ⋄ alph←∪src
-    limit←2ₓ*|⍺
+        shapeρexpand [codes ,¨alph 0↑alph 0↑alph]
+    }ω;
+    shape←ρω ◇ src←,ω ◇ alph←∪src
+    limit←2ₓ*|α
     limit<≢alph?•signal "DOMAIN";
     compress←{
-        [rest dict word codes]←⍵
-        0ₓ=≢rest?[codes,(0ₓ<≢word)#dict⍳⊂word dict];
+        [rest dict word codes]←ω
+        0ₓ=≢rest?[codes,(0ₓ<≢word)#dictι⊂word dict];
         next←word,↑rest
         ⊂next ∊ dict?∇ [1↓rest dict next codes];
         extended←dict , limit>≢dict # ⊂next
-        ∇ [1↓rest extended 1↑rest codes,dict⍳⊂word]
+        ∇ [1↓rest extended 1↑rest codes,dictι⊂word]
     }
     [codes dict]←compress [src ,¨alph 0↑alph ⍬]
-    ⍺<0ₓ?⊃dict;
-    width←⌈2⍟≥⌈/codes,1ₓ
-    [shape ⍉(width⍴2ₓ)⊤codes alph]
+    α<0ₓ?⊃dict;
+    width←⌈2⊛≥⌈/codes,1ₓ
+    [shape ⍉(widthρ2ₓ)⊤codes alph]
 }
 
-unify←{ ⍝ Unify expressions; ⍺ lists variable symbols.
-    vars←,⍺
-    isvar←{∨/⍵↣≡¨vars}
+unify←{ ⍝ Unify expressions; α lists variable symbols.
+    vars←,α
+    isvar←{∨/ω↣≡¨vars}
     disagree←{
-        ⍺≡⍵?⍬;
-        isvar ⍺?[⍺ ⍵];
-        isvar ⍵?[⍵ ⍺];
-        0ₓ∊≡¨[⍺ ⍵]?•signal "DOMAIN";
-        ~ ⍴⍺ ≡ ⍴⍵?•signal "LENGTH";
-        i←,⍺≡¨⍵ ⍳ $f
-        i⊃,⍺ ∇ i⊃,⍵
+        α≡ω?⍬;
+        isvar α?[α ω];
+        isvar ω?[ω α];
+        0ₓ∊≡¨[α ω]?•signal "DOMAIN";
+        ~ ρα ≡ ρω?•signal "LENGTH";
+        i←,α≡¨ω ι $f
+        i⊃,α ∇ i⊃,ω
     }
     solve←{
-        [x y]←⍵
+        [x y]←ω
         pair←x disagree y
         0ₓ=≢pair?x;
         [var val]←pair
-        occurs←{⍵≡var?$t;0ₓ=≡⍵?$f;∨/,∇¨⍵}
+        occurs←{ω≡var?$t;0ₓ=≡ω?$f;∨/,∇¨ω}
         occurs val?•signal "DOMAIN";
-        subst←{⍵≡var?val;0ₓ=≡⍵?⍵;∇¨⍵}
+        subst←{ω≡var?val;0ₓ=≡ω?ω;∇¨ω}
         ∇ [(subst x) (subst y)]
     }
-    {solve [⍺ ⍵]}/⍵
+    {solve [α ω]}/ω
 }
 
 ratsum←{
-    sum←{[lrus mans rrus]←⍵
-        [cr rru]←⍺ rrusum rrus
+    sum←{[lrus mans rrus]←ω
+        [cr rru]←α rrusum rrus
         [cm pman]←cr rsum mans
         [lru man]←cm lrusum [lrus pman]
         [lru man rru]
     }
     rrusum←{
-        [co rru]←⍺ rsum ⍵
-        co=⍺?[co rru];
-        co rsum ⍵
+        [co rru]←α rsum ω
+        co=α?[co rru];
+        co rsum ω
     }
-    lrusum←{[lrus man]←⍵
-        [co lru]←⍺ rsum lrus
-        co=⍺?[lru man];
-        [cc dd]←⍺ rsum 2 ¯1↑lrus
+    lrusum←{[lrus man]←ω
+        [co lru]←α rsum lrus
+        co=α?[lru man];
+        [cc dd]←α rsum 2 ¯1↑lrus
         cc ∇ [¯1⌽lrus dd,man]
     }
     atab←{
-        min←⍵⍳'0'
-        vals←⍳≢⍵ - min
+        min←ωι'0'
+        vals←ι≢ω - min
         ntab←vals+⊗vals
-        base←2#⍴⍵
+        base←2#ρω
         vtab←-min-base⊤base⊥min+base⊤ntab
-        ptab←↓[min+vtab]⌷⍵
-        {ptab,⍵ ⍪ ⍵,⊂"0."}⍵,¨'.'
+        ptab←↓[min+vtab]⌷ω
+        {ptab,ω ⍪ ω,⊂"0."}ω,¨'.'
     }
     rsum←(atab ⍶~"{}"){
-        [cov itot]←↓⍉⊃[↓⍉digs⍳⍵]⌷⍶
-        '0'∧.=cov,⍺?['0' itot];
-        [co tot]←'0'∇⊃[1↓cov,⍺ itot]
+        [cov itot]←↓⍉⊃[↓⍉digsιω]⌷⍶
+        '0'∧.=cov,α?['0' itot];
+        [co tot]←'0'∇⊃[1↓cov,α itot]
         [↑↑⌽'0'∇⊃co,⊂1↑cov tot]
     }
     compile←{
-        [lmrs wids reps]←⍉⊃trans¨[⍺ ⍵]
+        [lmrs wids reps]←⍉⊃trans¨[α ω]
         mpads←-wids-⊂⌈/wids
         rpads←2#⊂∧¨/reps
-        padded←pad⍤1 ⍉[lmrs⋄mpads⋄rpads]
+        padded←pad⍤1 ⍉[lmrs◇mpads◇rpads]
         ⊃¨↓⍉padded
     }
     trans←{
-        ~∧/⍵∊digs,"<|.>"?err"bad char";
-        ~"<>"≡ext⍵?err"bad <>s";
-        ~"<>"≡⍵∩"<>"?err"bad <>s";
-        ~"||"≡⍵∩"||"?err"bad ||s";
-        [lru man rru]←'|'sepr ⍵~"<>"
+        ~∧/ω∊digs,"<|.>"?err"bad char";
+        ~"<>"≡extω?err"bad <>s";
+        ~"<>"≡ω∩"<>"?err"bad <>s";
+        ~"||"≡ω∩"||"?err"bad ||s";
+        [lru man rru]←'|'sepr ω~"<>"
         $t∊[lru man rru]∊[""]?err"null field";
         '.'∊lru,rru?err"bad number";
-        ml←man⍳'.'
-        mr←⍴man - ml+'.'∊man
-        [[lru man rru] ml,mr ,⊃⍴¨[lru rru]]
+        ml←manι'.'
+        mr←ρman - ml+'.'∊man
+        [[lru man rru] ml,mr ,⊃ρ¨[lru rru]]
     }
     pad←{
-        [[l m r] [ml mr] [lr rr]]←⍵
+        [[l m r] [ml mr] [lr rr]]←ω
         dot←'.'~m,mr↓'.'
-        man←⌽ml⍴⌽l , m,dot,mr⍴r
-        rru←rr⍴mr⌽r
-        lru←⌽lr⍴⌽(-ml)⌽l
+        man←⌽mlρ⌽l , m,dot,mrρr
+        rru←rrρmr⌽r
+        lru←⌽lrρ⌽(-ml)⌽l
         [lru man rru]
     }
-    norm←{crru xabs icon clru ⍵}
-    clru←{[lru man rru]←⍵
-        ∨/∧/optl=⊗lru?⍵;
-        [lw rw]←⌈\⍴¨[lru rru]
-        mw←⍴man~"."
-        _lru←[digs⍳lru]⌷cdigs
-        _man←". "repl(man≠'.')#⁻mw⍴_lru
-        _rru←rw⍴mw⌽_lru
+    norm←{crru xabs icon clru ω}
+    clru←{[lru man rru]←ω
+        ∨/∧/optl=⊗lru?ω;
+        [lw rw]←⌈\ρ¨[lru rru]
+        mw←ρman~"."
+        _lru←[digsιlru]⌷cdigs
+        _man←". "repl(man≠'.')#⁻mwρ_lru
+        _rru←rwρmw⌽_lru
         _lmr←[_lru _man _rru]
-        lmrr←[lru man rw⍴rru]
-        ∇ '0' sum _lmr {[⍺⋄⍵]}¨ lmrr
+        lmrr←[lru man rwρrru]
+        ∇ '0' sum _lmr {[α◇ω]}¨ lmrr
     }
-    icon←{[lru man rru]←⍵
+    icon←{[lru man rru]←ω
         [⌽minrep⌽lru man (minrep rru)]
     }
     minrep←{
-        facs←{0ₓ=⍵|⍴⍵ # ⍵}≥⍳⍴⍵
-        reps←facs⍴¨⊂⍵
-        seqs←⍴⍵ ⍴¨ reps
-        seqs⍳⊂⍵ ⊃ reps
+        facs←{0ₓ=ω|ρω # ω}≥ιρω
+        reps←facsρ¨⊂ω
+        seqs←ρω ρ¨ reps
+        seqsι⊂ω ⊃ reps
     }
-    xabs←{[lru man rru]←⍵
-        1ₓ=⍴man?⍵;
+    xabs←{[lru man rru]←ω
+        1ₓ=ρman?ω;
         '.'=↑⌽man?∇ [lru ¯1↓man rru];
-        '.'∊man ∧ ↑⌽man = ↑⌽rru?∇ ¯1 amd ⍵;
-        ~'.'∊2↑man ∧ ↑lru ≡ ↑man?∇ 1 amd ⍵;
-        ⍵
+        '.'∊man ∧ ↑⌽man = ↑⌽rru?∇ ¯1 amd ω;
+        ~'.'∊2↑man ∧ ↑lru ≡ ↑man?∇ 1 amd ω;
+        ω
     }
-    amd←{[lru man rru]←⍵
-        lru←⍺⌈0 ⌽ lru
-        rru←⍺⌊0 ⌽ rru
-        [lru ⍺↓man rru]
+    amd←{[lru man rru]←ω
+        lru←α⌈0 ⌽ lru
+        rru←α⌊0 ⌽ rru
+        [lru α↓man rru]
     }
-    crru←{[lru man rru]←⍵
-        ~rru≡,comp'0'?⍵;
-        sig←×-/digs⍳rru,'0'
-        inc←digs⍳'0' ⊃ sig⌽digs
-        zero←'0'¨¨⍵
-        inc sum ⍵ {[⍺⋄⍵]}¨ zero
+    crru←{[lru man rru]←ω
+        ~rru≡,comp'0'?ω;
+        sig←×-/digsιrru,'0'
+        inc←digsι'0' ⊃ sig⌽digs
+        zero←'0'¨¨ω
+        inc sum ω {[α◇ω]}¨ zero
     }
-    sepr←{⍺{≢⍺ ↓¨ ⍺⍷⍵ ⊂ ⍵}⍺,⍵}
-    join←{⊃⍺{⍺,⍶,⍵}/⍵}
-    repl←{⊃⍵{⍺ join ⍵ sepr ⍶}/⍺}
-    comp←{[(digs,⍵)⍳⍵]⌷(⌽digs),⍵}
-    fmt←{'|' ".|"repl('|'join ⍵)join"<>"}
-    ext←{⌽2↑¯1⌽⍵}
+    sepr←{α{≢α ↓¨ α⍷ω ⊂ ω}α,ω}
+    join←{⊃α{α,⍶,ω}/ω}
+    repl←{⊃ω{α join ω sepr ⍶}/α}
+    comp←{[(digs,ω)ιω]⌷(⌽digs),ω}
+    fmt←{'|' ".|"repl('|'join ω)join"<>"}
+    ext←{⌽2↑¯1⌽ω}
     err←{•signal "DOMAIN"}
     digs←⊃↓/(1 ¯1×"{}"≡ext ⍶),⊂⍶
     optl←'0' , '0'∊ext⁝digs # comp'0'
     cdigs←{
-        '0'∊ext⍵?comp ⍵;
-        ¯1-⊽⍵⍳'0' ⌽ ⌽⍵
+        '0'∊extω?comp ω;
+        ¯1-⊽ωι'0' ⌽ ⌽ω
     }digs
     xchars←" {}[]()<>\|/,:."
     $t∊xchars∊digs?err"bad digit";
     ~'0'∊digs?err"missing zero";
     ~digs≡∪digs?err"duplicate digits";
-    dyad←$t ⋄ ⍺←0⊣dyad←$f ⋄ ~dyad?fmt norm ↑ trans comp ⍵;
-    fmt norm '0' sum ⍺ compile ⍵
+    dyad←$t ◇ α←0⊣dyad←$f ◇ ~dyad?fmt norm ↑ trans comp ω;
+    fmt norm '0' sum α compile ω
 }

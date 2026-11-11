@@ -11,7 +11,7 @@ Monadic operator. Keys: `Alt-4`. Hanzi: `优` (`優`)
 The point is approximate. A search stops when a step changes `f` by less than option `tolerance`, relative to its value. With a smaller tolerance, the search finds the least point of Rosenbrock's function, `1 1`, to nearly full precision:
 
 ```bpl
-rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
 ["tolerance":1E¯14] rosen⇄ ¯1.2 1   ⍝ 1 1
 ```
 
@@ -30,7 +30,7 @@ Option `method` chooses the method. Without it, `⇄` minimizes with a method it
 `∂` differentiates `f` when `f` uses only what [`∂`](partial.qmd) differentiates, or has a JVP rule that `f∂←g` attaches. L-BFGS takes the gradient at each point it needs from one run of `f`, which also gives the value there. Nelder–Mead and Powell's method use only values of `f`. Differential evolution suits a function with many local minima, and needs finite bounds.
 
 ```bpl
-rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
 ["tolerance":1E¯14] rosen⇄ ¯1.2 1   ⍝ 1 1
 ```
 
@@ -54,22 +54,22 @@ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 Options `lower`, `upper`, `population`, `seed` and `batch` apply only to minimizing. Each method evaluates `f` only within the bounds, starting from `X` moved inside them.
 
 ```bpl
-rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
 ["lower":[¯∞ 0] "upper":[0.8 ∞]] rosen⇄ 0.5 0.5   ⍝ 0.8 0.64
 ```
 
-A record of named parameters makes a natural start, and the point keeps its keys. [`⍵.(…)`](../modules.qmd#records-as-namespaces) names the parameters inside `f`. Bounds can be records with the same keys.
+A record of named parameters makes a natural start, and the point keeps its keys. [`ω.(…)`](../modules.qmd#records-as-namespaces) names the parameters inside `f`. Bounds can be records with the same keys.
 
 ```bpl
-cost←{⍵.(⊼gap-6 + ⊼margin-2×gap)}
+cost←{ω.(⊼gap-6 + ⊼margin-2×gap)}
 ["lower":["gap":0 "margin":0]] cost⇄ ["gap":8 "margin":12]   ⍝ ["gap":6 "margin":12]
 ```
 
 With `batch`, `⇄` calls `f` once for the points that a method evaluates together: Nelder–Mead's first simplex and each shrink of it, and each generation of differential evolution. The points lie along a new last axis of the start's shape. `f` returns a vector with one value for each point. Each field of a record start then holds one value for each point. A vector start needs `+⌿` where one point needs `+/`.
 
 ```bpl
-cost←{⍵.(⊼gap-6 + ⊼margin-2×gap)}
-lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
+cost←{ω.(⊼gap-6 + ⊼margin-2×gap)}
+lo←["gap":0 "margin":0] ◇ hi←["gap":20 "margin":40]
 ["method":"differential-evolution" "lower":lo "upper":hi "batch":$t] cost⇄ ["gap":8 "margin":12]
 ⍝ ["gap":6 "margin":12]
 ```
@@ -77,7 +77,7 @@ lo←["gap":0 "margin":0] ⋄ hi←["gap":20 "margin":40]
 With `report`, the result is a record. Field `x` holds the point, and `converged` says whether the method's stopping test passed before the calls reached `evaluations`. Field `value` holds `f` at the point, or when solving, the norm of the residuals. Field `evaluations` counts the calls of `f`, or for a linear system, the products with A and Aᵀ. The point is the best one the search evaluated, whether or not it converged.
 
 ```bpl
-r←["method":"nelder-mead" "evaluations":10 "report":$t] {+/⊼⍵-3}⇄ 1 2
+r←["method":"nelder-mead" "evaluations":10 "report":$t] {+/⊼ω-3}⇄ 1 2
 [r.evaluations r.converged]   ⍝ 10ₓ $f
 ```
 
@@ -92,15 +92,15 @@ With option `solve`, `f` returns residuals: one or more real numbers, the same n
 One variable and one residual run Brent's method, `"brent"`. It steps outward from `X` until `f` changes sign, then narrows that bracket. Option `bracket` starts the search from two given points where the signs of `f` differ. Otherwise `⇄` runs Levenberg–Marquardt, `"levenberg-marquardt"`. It takes the Jacobian from forward differences, or from `f`'s derivative where `f` has one and returns no more residuals than `X` has variables. A circle and a line cross where both residuals are zero:
 
 ```bpl
-f←{[x y]←⍵ ⋄ [⊼x + ⊼y - 4;y-x-1]}
+f←{[x y]←ω ◇ [⊼x + ⊼y - 4;y-x-1]}
 ["solve":$t "tolerance":1E¯14] f⇄ 1 0   ⍝ 1.8228756555322954 0.8228756555322954
 ```
 
 A record start names a model's parameters. The residuals are the model's differences from the data. Where `∂` differentiates the residuals, Levenberg–Marquardt builds its Jacobian from one derivative along each parameter. Otherwise it takes forward differences, which leave the parameters accurate to about 9 digits. Here `a×*b×x` fits points that grow about as fast as `2×*x`, with a tolerance that makes every digit shown correct:
 
 ```bpl
-x←0 1 2 3 4 ⋄ y←2.1 5.4 15.2 40.3 109.1
-["solve":$t "tolerance":1E¯12] {⍵.(a×*b×x - y)}⇄ ["a":1 "b":1]   ⍝ ["a":2.055580005 "b":0.9928844207]
+x←0 1 2 3 4 ◇ y←2.1 5.4 15.2 40.3 109.1
+["solve":$t "tolerance":1E¯12] {ω.(a×*b×x - y)}⇄ ["a":1 "b":1]   ⍝ ["a":2.055580005 "b":0.9928844207]
 ```
 
 ## Linear systems
@@ -108,8 +108,8 @@ x←0 1 2 3 4 ⋄ y←2.1 5.4 15.2 40.3 109.1
 With options `solve` and `linear`, `f` is affine: f(x) is A·x−b for some matrix A. `⇄` never forms A. It multiplies vectors by A through `f`, and, for least squares, by Aᵀ through `∂`, which transposes the steps that `f` takes. That suits a matrix that's large and sparse, or never formed at all.
 
 ```bpl
-m←[4 1⋄1 3] ⋄ b←1 2
-["solve":$t "linear":$t] {m+.×⍵ - b}⇄ 0 0   ⍝ 0.09090909090909091 0.6363636363636364
+m←[4 1◇1 3] ◇ b←1 2
+["solve":$t "linear":$t] {m+.×ω - b}⇄ 0 0   ⍝ 0.09090909090909091 0.6363636363636364
 ```
 
 | `method` | Method | Chosen when |
@@ -123,8 +123,8 @@ The normal equations square A's condition number. For an ill-conditioned A, MINR
 `∂` gives the products with Aᵀ that least squares needs:
 
 ```bpl
-m←[1 0⋄0 1⋄1 1] ⋄ b←1 2 4
-f←{m+.×⍵ - b}
+m←[1 0◇0 1◇1 1] ◇ b←1 2 4
+f←{m+.×ω - b}
 ["solve":$t "linear":$t] f⇄ 0 0   ⍝ 1.3333333333333333 2.3333333333333335
 ```
 
@@ -133,9 +133,9 @@ f←{m+.×⍵ - b}
 Option `precondition` gives a function that applies M, an approximation to A⁻¹, or to (Aᵀ·A)⁻¹ for least squares. It takes and returns arrays of `X`'s shape. A good M cuts the products a solve needs. CG and MINRES apply M at each step and need it symmetric positive definite. Preconditioned MINRES stops on the residual measured through M, √(rᵀ·M·r), while CG and GMRES stop on the residual itself. GMRES applies M on the right. Calls of M don't count against `evaluations`. For a matrix whose diagonal spans five orders of magnitude, dividing by the diagonal cuts the products from 22 to 9:
 
 ```bpl
-n←20 ⋄ d←10*5× ⍳n ÷ n-1 ⋄ m←d×=⊗⍨⍳n + 0.1×1=|-⊗⍨⍳n ⋄ b←n⍴1
-f←{m+.×⍵ - b} ⋄ o←["solve":$t "linear":$t "report":$t "tolerance":1E¯12]
-[(o f⇄ n⍴0).evaluations (o,["precondition":{⍵÷d}] f⇄ n⍴0).evaluations]   ⍝ [22 9]ₓ
+n←20 ◇ d←10*5× ιn ÷ n-1 ◇ m←d×=⊗⍨ιn + 0.1×1=|-⊗⍨ιn ◇ b←nρ1
+f←{m+.×ω - b} ◇ o←["solve":$t "linear":$t "report":$t "tolerance":1E¯12]
+[(o f⇄ nρ0).evaluations (o,["precondition":{ω÷d}] f⇄ nρ0).evaluations]   ⍝ [22 9]ₓ
 ```
 
 ## Data
@@ -143,10 +143,10 @@ f←{m+.×⍵ - b} ⋄ o←["solve":$t "linear":$t "report":$t "tolerance":1E¯1
 Bind data to `f` with [`↣`](right-tail-arrow.qmd). The sum of squared differences from `1 2 3 4` is least at their mean:
 
 ```bpl
-1 2 3 4↣{+/⊼⍺-⍵}⇄ 0   ⍝ 2.5
+1 2 3 4↣{+/⊼α-ω}⇄ 0   ⍝ 2.5
 ```
 
-To search with a hand-written JVP rule and data, bind the data first, then attach the derivative to the bound function: `fit←data↣loss ⋄ fit∂←g ⋄ fit⇄ start`.
+To search with a hand-written JVP rule and data, bind the data first, then attach the derivative to the bound function: `fit←data↣loss ◇ fit∂←g ◇ fit⇄ start`.
 
 ## Numbers
 

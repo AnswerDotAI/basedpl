@@ -13,6 +13,12 @@ for (const marker of ['⍝', '注']) {
     const text = `${marker} \`sum`;
     assert.equal(entry({bpl: true, text, pos: text.length, empty: true}), undefined);
 }
+for (const [code, key, text] of [['KeyA', 'a', 'α'], ['KeyW', 'w', 'ω'], ['KeyI', 'i', 'ι'], ['KeyR', 'r', 'ρ'], ['Backquote', '`', '◇']])
+    assert.deepEqual(press({code, key, shiftKey: false, altKey: true}, true), {text, stop: true});
+for (const [i, key] of [...'BGDEZHQLMNXSTUFCYK'].entries())
+    assert.deepEqual(press({code: `Key${key}`, key, shiftKey: true, altKey: true}, true), {text: 'βγδεζηθλμνξστυφχψ↕'[i], stop: true});
+press({code: 'KeyO', key: 'o', altKey: true}, true);
+assert.deepEqual(press({code: 'Digit8', key: '8', altKey: true}, true), {text: '⊛', stop: true});
 for (const key of ['£', '‹']) assert.deepEqual(press({key, code: 'Digit3', shiftKey: true, altKey: true}, true), {text: '#', stop: true});
 for (const [code, key, text] of [['Backslash', '\\', '⍭'], ['Digit6', '§', '⁶']]) {
     const ev = {code, key, shiftKey: false, altKey: true};

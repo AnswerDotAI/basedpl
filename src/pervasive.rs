@@ -149,8 +149,7 @@ fn whole(floats: View<'_>, numeric: Numeric) -> Buffer {
         }),
         _ => None,
     };
-    let width =
-        if numeric.wrapping() { numeric.integer_width() } else { crate::array::ordinary_width_for(range) };
+    let width = if numeric.wrapping() { numeric.integer_width() } else { crate::array::ordinary_width_for(range) };
     Buffer::cast_results(floats, DType::Integer(width), false).expect("floats convert to integers")
 }
 
@@ -252,8 +251,7 @@ fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<B
     rustymath::with_tolerance!(numeric.tolerance_of(at), |t| {
         let range = with_floats!(floats, |xs| {
             let (lo, hi) = (reduce::min(xs), reduce::max(xs));
-            (!lo.is_nan() && !hi.is_nan() && !xs.is_empty())
-                .then(|| rustymath::domain::Range { lo: t.floor(lo).into(), hi: t.floor(hi).into() })
+            (!lo.is_nan() && !hi.is_nan() && !xs.is_empty()).then(|| rustymath::domain::Range { lo: t.floor(lo).into(), hi: t.floor(hi).into() })
         });
         let width = crate::array::ordinary_width_for(range);
         crate::events::taken(crate::events::Route::VectorKernel, len);
@@ -267,9 +265,7 @@ pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreeme
     let (p, numeric, len) = (plan.p, plan.numeric, agreement.len);
     let code = match left { Some(_) if p.info().dyad.code => Some(plan.constants[0].and_then(circle_code)?), _ => None };
     // A comparison's whole-number constant reads at its ordinary integer storage width (`Pervasive::narrowed`).
-    let narrow = plan.narrowed().map(|(side, n)| {
-        (side, Value::Number(Number::fixed(n, crate::array::ordinary_width(Width::narrowest(n, n)))))
-    });
+    let narrow = plan.narrowed().map(|(side, n)| (side, Value::Number(Number::fixed(n, crate::array::ordinary_width(Width::narrowest(n, n))))));
     let (left, right) = match &narrow { Some((0, n)) => (Some(n), right), Some((_, n)) => (left, n), None => (left, right) };
     let at = plan.computes()?;
     let settings = numeric.settings_for(at);
@@ -281,7 +277,7 @@ pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreeme
     };
     let result = match left.filter(|_| code.is_none()) {
         Some(left) => with_reads([(left, &agreement.left, len), (right, &agreement.right, len)], Missing::Default, run),
-        None => with_reads([(right, &agreement.right, len)], Missing::Default, run)
+        None => with_reads([(right, &agreement.right, len)], Missing::Default, run),
     }?;
     let (out, dtype) = match result { Ok(Some(result)) => result, Ok(None) => return None, Err(error) => return Some(Err(error.into())) };
     let out = whole_results(p, plan.dyadic, dtype, out, numeric);
@@ -435,7 +431,7 @@ fn scatter_under(plan: &Pervasive, held: rustymath::domain::Range, z: &mut Value
     Some(Route::Copied)
 }
 
-/// The kind that `p` computes in on arguments stored as `kind` under `numeric`, where `constants` gives the arguments that are one real number: the first kind on rustymath's ladder (`DType::computes_in`) whose kernel table has `p`. Exact numbers compute exactly, through the integer table or the `Number` path, where `p`'s formula computes integers: its kernel at an integer kind stays at an integer kind, where `Kernel::try_resolve` would otherwise promote to a float (`Formula::computing_dtype`). Otherwise they compute as floats at `Numeric::exact_width`, as for `⍟`, `√`, monadic `*`, `π` and dyadic `○` at every code. Integer `÷` floors, at every kind. An integer kind is the narrowest from `kind` upward at which no result can fail on arguments within `ranges` (`total`). Booleans compute as Booleans only where `p` is `logical`, and otherwise as exact numbers do, at the narrowest integer kind that holds every result, from the one that `next_kind` gives, as `-` on Booleans computes at 16 bits. It also gives the kernel that `total` settled on at that kind, for the plan to keep (`plan::Pervasive::kernel`). `None` where no kind on the way has `p`, as for `○` with no constant code.
+/// The kind that `p` computes in on arguments stored as `kind` under `numeric`, where `constants` gives the arguments that are one real number: the first kind on rustymath's ladder (`DType::computes_in`) whose kernel table has `p`. Exact numbers compute exactly, through the integer table or the `Number` path, where `p`'s formula computes integers: its kernel at an integer kind stays at an integer kind, where `Kernel::try_resolve` would otherwise promote to a float (`Formula::computing_dtype`). Otherwise they compute as floats at `Numeric::exact_width`, as for `⊛`, `√`, monadic `*`, `π` and dyadic `○` at every code. Integer `÷` floors, at every kind. An integer kind is the narrowest from `kind` upward at which no result can fail on arguments within `ranges` (`total`). Booleans compute as Booleans only where `p` is `logical`, and otherwise as exact numbers do, at the narrowest integer kind that holds every result, from the one that `next_kind` gives, as `-` on Booleans computes at 16 bits. It also gives the kernel that `total` settled on at that kind, for the plan to keep (`plan::Pervasive::kernel`). `None` where no kind on the way has `p`, as for `○` with no constant code.
 pub(crate) fn computes(
     p: Primitive, dyadic: bool, constants: [Option<f64>; 2], kind: DType, ranges: &[rustymath::domain::Range], numeric: Numeric
 ) -> Option<(DType, Option<Kernel>)> {
@@ -514,9 +510,7 @@ pub(crate) fn table_kernel(p: Primitive, dyadic: bool, table: DType, stored: DTy
 }
 
 /// Arguments whose real values are exactly representable as f64, for kernel planning.
-pub(crate) fn constants(left: Option<&Value>, right: &Value) -> [Option<f64>; 2] {
-    [left, Some(right)].map(|v| v?.as_number()?.lossless_float())
-}
+pub(crate) fn constants(left: Option<&Value>, right: &Value) -> [Option<f64>; 2] { [left, Some(right)].map(|v| v?.as_number()?.lossless_float()) }
 
 /// The argument that `plan`'s call on `left` and `right` gives unchanged (`Pervasive::kept`), where the result has its shape: the other argument is an atom, or the kept one isn't. A weak number beside a strong one isn't kept: the call's result is strong, as `∞⌈1ₓ₁` gives a strong `∞`, an ordinary float.
 pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Value>, right: &'a Value, agreement: &Agreement) -> Option<&'a Value> {

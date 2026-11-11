@@ -222,7 +222,7 @@ pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, ErrorKin
 /// The positions along each of `axes`, or the keys where the axis has them: one vector, or a vector of them for several axes.
 pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> { axis_selectors(value, axes, false) }
 
-/// [`selectors`], each along an axis with the name of the axis it selects, as `⍳⍠` gives them. Each then pairs with that axis by name. Indexing by one keeps the keys at the positions it selects.
+/// [`selectors`], each along an axis with the name of the axis it selects, as `ι⍠` gives them. Each then pairs with that axis by name. Indexing by one keeps the keys at the positions it selects.
 pub(crate) fn named_selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> { axis_selectors(value, axes, true) }
 
 fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, ErrorKind> {

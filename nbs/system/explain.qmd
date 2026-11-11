@@ -6,7 +6,7 @@
 - `fused` has a row for each fused group that ran, as [`•prefs`](prefs.qmd) describes fusion. `glyphs` lists the glyphs of the group's calls in the order they ran. A fold that reads through the group, without building it, adds its glyph last. `items` is the group's item count. `blocks` counts the blocks of items that the group ran in turn. `runs` counts the pieces of work that those blocks split into. A block splits where it crosses the end of a long repeat or cycle in an input, as in adding a row of 5,000 items to every row of a matrix. More runs than blocks means the group ran in smaller pieces. `copied` counts the items copied out of inputs before the calls read them, as a reversed read needs. A `copied` of 0 means the group read every input in place. A group that ran compiled code, machine code made for its calls and types, adds a `"compiled"` row to `routes`. Calls that have machine operations giving their kernels' results exactly, such as `+`, `-`, `×`, `⌈` and `⌊` on floats, compile together where two or more come one after another, or where they are all of the group's calls. The other calls run on their usual kernels. A group with about 3 million items or more compiles on its first run. Smaller groups accumulate the items processed by the same calls and types. They compile after processing twice the larger of the current group's item count and the normal deferral size (65,536 items). Existing compiled code is reused immediately. The browser build compiles nothing.
 - `compiles` has a row for each piece of a group's code that compiled. `glyphs` lists the group's calls, and `microseconds` is the compile's time, about 250 for a group of a few calls.
 - `stored` has a row for each pending array that a fused group read as an input after computing it on its own. `glyphs` gives the glyph of the call that computed it, which a copy, such as a reversal, doesn't have. `items` is its item count. `partway` is `$f`. `reason` says why the group didn't compute it as one of its calls:
-  - `"held outside the group"`: it's a copy that a name or another array also holds. A group computes any other pending array that a name or another array holds as one of its outputs, storing the array's items in the same pass, and gives it no row. A dfn's local, `⍵` or `⍺` stops holding its array at the dfn's last read of it. It holds the array until the dfn returns where a nested dfn or an error guard's handler mentions the name, or where the dfn reads names by text, as `⍎` does.
+  - `"held outside the group"`: it's a copy that a name or another array also holds. A group computes any other pending array that a name or another array holds as one of its outputs, storing the array's items in the same pass, and gives it no row. A dfn's local, `ω` or `α` stops holding its array at the dfn's last read of it. It holds the array until the dfn returns where a nested dfn or an error guard's handler mentions the name, or where the dfn reads names by text, as `⍎` does.
   - `"kept by a fold"`: a fold left its calls in it, to compute later.
   - `"a kind that the group doesn't hold"`: its items are of a type that a group doesn't hold, such as complex numbers.
 - `forced` has a row for each call or assignment that computed items of pending arrays. Computing a pending array in full ends its fusion. `function` is the call's function, or `←` for an assignment that computed one by writing into it, displaying it with `⎕←` or destructuring it. `line` and `column` give its position in `text`, and `items` counts the items computed. `reason` and `site` are empty. A small selection from a pending copy reads its source without storing the copy. The first small read of a pending elementwise result calculates only the selected items, even if a name holds it. The next read that needs source items computes and caches the whole result. Empty or all-fill selections do not count as reads. Small reads of pending copies remain selective on repeated reads.
@@ -56,27 +56,27 @@
 Each event record is a table of columns, as `•csv` returns. `(•explain t).routes.route` lists successful routes. `.fast.rule` lists fast combinations. `•prefs ["fusion":$t]` writes each forcing call and assignment as it happens. Event recording is disabled outside a capture.
 
 ```bpl
-y←¿1000000⍴0
+y←¿1000000ρ0
 (•explain "+/ 2×y+1.5 - 1").fused            ⍝ ["glyphs":["+×-+/"] "items":[1000000]ₓ "blocks":[245]ₓ "runs":[245]ₓ "copied":[0]ₓ]
 e←•explain "≢⍕ 2×y+1.5 - 1"
 e.forced.function                            ⍝ ["⍕"]
 e.fused.glyphs                               ⍝ ["+×-"]
 (•explain "2×⌽y+1").fused.copied             ⍝ [1000000]ₓ
-t←y-0.25 ⋄ (•explain "t×1-t").fused.glyphs    ⍝ ["--×"]
-q←1000005↑1⌽y ⋄ (•explain "+/q+1").stored    ⍝ ["glyphs":[""] "items":[1000000]ₓ "reason":["held outside the group"] "partway":[$f]]
+t←y-0.25 ◇ (•explain "t×1-t").fused.glyphs    ⍝ ["--×"]
+q←1000005↑1⌽y ◇ (•explain "+/q+1").stored    ⍝ ["glyphs":[""] "items":[1000000]ₓ "reason":["held outside the group"] "partway":[$f]]
 (•explain "5↑2×y+1").forced.items            ⍝ [5]ₓ
-s←2×y+1 ⋄ (•explain "5↑s").forced.items      ⍝ [5]ₓ
+s←2×y+1 ◇ (•explain "5↑s").forced.items      ⍝ [5]ₓ
 (•explain "5↑s").forced.items                ⍝ [1000000]ₓ
 (•explain "5↑s").forced.items                ⍝ ⍬ₓ
-r←⌽y ⋄ (•explain "r₀←0").forced.function   ⍝ ["←"]
+r←⌽y ◇ (•explain "r₀←0").forced.function   ⍝ ["←"]
 (•explain "(10↑)∘⍋ y").fast.rule             ⍝ ["partial grade"]
-x←¿1000⍴0 ⋄ p←¿1000⍴1000
-(•explain "{+/, 3↕⍵ (×⍤1) 1 2 1}∂ x").accumulations.items  ⍝ ⍬ₓ
-(•explain "{+/⍵.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ "path":["in place"]]
-z←1000⍴0ₓ ⋄ (•explain "z.[p]+←1ₓ").accumulations.path  ⍝ ["on a copy"]
-(•explain "{2(×⍣⍵)1}¨⍳5ₓ").fallbacks  ⍝ ["reason":["a cell's value"] "items":[5]ₓ]
-w←4⍴0.5 ⋄ (•explain "(⍳2ₓ)@[1 3] w").mixed  ⍝ ["code":["(⍳2ₓ)@[1 3]"] "line":[1]ₓ "column":[1]ₓ "target":["float64"] "written":["integer"] "items":[4]ₓ]
-m←1ₓ 2.5 ⋄ (•explain "m+1").itemwise  ⍝ ["function":["+"] "line":[1]ₓ "column":[2]ₓ "route":["item pairs"] "items":[2]ₓ]
+x←¿1000ρ0 ◇ p←¿1000ρ1000
+(•explain "{+/, 3↕ω (×⍤1) 1 2 1}∂ x").accumulations.items  ⍝ ⍬ₓ
+(•explain "{+/ω.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ "path":["in place"]]
+z←1000ρ0ₓ ◇ (•explain "z.[p]+←1ₓ").accumulations.path  ⍝ ["on a copy"]
+(•explain "{2(×⍣ω)1}¨ι5ₓ").fallbacks  ⍝ ["reason":["a cell's value"] "items":[5]ₓ]
+w←4ρ0.5 ◇ (•explain "(ι2ₓ)@[1 3] w").mixed  ⍝ ["code":["(ι2ₓ)@[1 3]"] "line":[1]ₓ "column":[1]ₓ "target":["float64"] "written":["integer"] "items":[4]ₓ]
+m←1ₓ 2.5 ◇ (•explain "m+1").itemwise  ⍝ ["function":["+"] "line":[1]ₓ "column":[2]ₓ "route":["item pairs"] "items":[2]ₓ]
 (•explain "+/⌽y").declined  ⍝ ["route":["fused fold"] "reason":["a copy that no call moves under"] "calls":[1]ₓ "items":[1000000]ₓ]
 ```
 

@@ -1,22 +1,22 @@
 //! Native reference work queue, shared by the test binary and `check_file`.
 use super::{File, checked, crashed, incomplete, load, reply, with_skips};
 use serde_json::{Value, json};
-use std::{collections::{HashMap, VecDeque}, fs, io::{BufRead, BufReader, Read, Seek, Write}, path::Path,
-    process::{self, Command, Stdio}, sync::{Mutex, mpsc}, thread, time::{Duration, Instant}};
+use std::{
+    collections::{HashMap, VecDeque}, fs, io::{BufRead, BufReader, Read, Seek, Write}, path::Path, process::{self, Command, Stdio}, sync::{Mutex, mpsc}, thread,
+    time::{Duration, Instant}
+};
 
 /// A worker must answer one item within this time, even when its evaluation does not poll cancellation.
 const STALL: Duration = Duration::from_secs(10);
 
-struct Child {
-    process: process::Child, input: mpsc::Sender<String>, output: mpsc::Receiver<Result<Value, String>>, errors: fs::File,
-}
+struct Child { process: process::Child, input: mpsc::Sender<String>, output: mpsc::Receiver<Result<Value, String>>, errors: fs::File }
 
 impl Child {
     fn spawn(mut command: Command, threads: &str) -> Result<Self, String> {
         let errors = tempfile::tempfile().map_err(|e| e.to_string())?;
         let stderr = errors.try_clone().map_err(|e| e.to_string())?;
-        let mut process = command.env("RAYON_NUM_THREADS", threads).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(stderr)
-            .spawn().map_err(|e| e.to_string())?;
+        let mut process =
+            command.env("RAYON_NUM_THREADS", threads).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(stderr).spawn().map_err(|e| e.to_string())?;
         let (mut stdin, stdout) = (process.stdin.take().unwrap(), process.stdout.take().unwrap());
         let (input, requests) = mpsc::channel::<String>();
         let (send, output) = mpsc::channel();
@@ -26,10 +26,9 @@ impl Child {
                 let result = (|| {
                     writeln!(stdin, "{request}").map_err(|e| e.to_string())?;
                     // A libtest child also writes its harness output.
-                    let line = lines.by_ref().map_while(Result::ok).find(|line| line.starts_with('{'))
-                        .ok_or("the worker stopped before replying")?;
-                    serde_json::from_str::<Value>(&line).map_err(|e| e.to_string()).and_then(|mut message|
-                        message.get_mut("result").map(Value::take).ok_or_else(|| "worker reply has no result".into()))
+                    let line = lines.by_ref().map_while(Result::ok).find(|line| line.starts_with('{')).ok_or("the worker stopped before replying")?;
+                    serde_json::from_str::<Value>(&line).map_err(|e| e.to_string())
+                        .and_then(|mut message| message.get_mut("result").map(Value::take).ok_or_else(|| "worker reply has no result".into()))
                 })();
                 if send.send(result).is_err() { break; }
             }
@@ -81,8 +80,9 @@ impl Job {
 fn failed_case(result: &Value) -> &Value { result["failures"].as_array().and_then(|f| f.first()).unwrap_or(result) }
 type Served = (usize, bool, f64, Result<Value, String>);
 
-fn serve(jobs: &[Job], queue: &Mutex<VecDeque<(usize, bool)>>, command: &impl Fn() -> Command, threads: &str,
-    deadline: Option<Instant>) -> (Vec<Served>, Vec<String>) {
+fn serve(
+    jobs: &[Job], queue: &Mutex<VecDeque<(usize, bool)>>, command: &impl Fn() -> Command, threads: &str, deadline: Option<Instant>
+) -> (Vec<Served>, Vec<String>) {
     let (mut served, mut errors, mut child) = (Vec::new(), Vec::new(), None::<Child>);
     loop {
         if deadline.is_some_and(|end| Instant::now() >= end) { break; }
@@ -110,10 +110,9 @@ fn serve(jobs: &[Job], queue: &Mutex<VecDeque<(usize, bool)>>, command: &impl Fn
     (served, errors)
 }
 
-/// Pull from one queue, longest first where `costs` records a time. Each worker keeps its process except after a crash or for a fresh deadline rerun.
-/// Return each job's reply or crash in input order, `None` where the check's deadline left it unfinished, and errors after replies.
-pub fn run(jobs: &[Job], command: impl Fn() -> Command + Sync, costs: Option<&Path>, deadline: Option<Instant>)
-    -> (Vec<Option<Result<Value, String>>>, Vec<String>) {
+/// Pull from one queue, longest first where `costs` records a time. Each worker keeps its process except after a crash or for a fresh deadline rerun. Return each job's reply or crash in input order, `None` where the check's deadline left it unfinished, and errors after replies.
+pub fn run(
+    jobs: &[Job], command: impl Fn() -> Command + Sync, costs: Option<&Path>, deadline: Option<Instant>) -> (Vec<Option<Result<Value, String>>>, Vec<String>) {
     if jobs.is_empty() { return (Vec::new(), Vec::new()); }
     let saved: HashMap<String, f64> = costs.and_then(|p| fs::read_to_string(p).ok()).and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default();
     let mut order: Vec<_> = (0..jobs.len()).collect();
@@ -142,12 +141,16 @@ pub fn run(jobs: &[Job], command: impl Fn() -> Command + Sync, costs: Option<&Pa
     for (i, seconds, result) in reruns {
         let (missed, first) = results[i].replace((seconds, result)).expect("a rerun follows the first attempt");
         let first = failed_case(first.as_ref().unwrap());
-        let again = if results[i].as_ref().unwrap().1.as_ref().is_ok_and(|r| r["failures"].as_array().map_or_else(|| !super::fails(r), Vec::is_empty)) { "passed" } else { "failed" };
+        let again = if results[i].as_ref().unwrap().1.as_ref().is_ok_and(|r| r["failures"].as_array().map_or_else(|| !super::fails(r), Vec::is_empty)) {
+            "passed"
+        } else { "failed" };
         eprintln!("{}: missed its deadline in {}, {missed:.2} s; a rerun {again}, {seconds:.2} s", jobs[i].place, first["mode"]);
     }
     if let Ok(slowest) = std::env::var("BASEDPL_TIMES") {
         times.sort_by(|a, b| b.2.total_cmp(&a.2));
-        for (i, _, seconds) in times.into_iter().take(slowest.parse().expect("BASEDPL_TIMES holds a count")) { eprintln!("{seconds:6.3} s  {}", jobs[i].place); }
+        for (i, _, seconds) in times.into_iter().take(slowest.parse().expect("BASEDPL_TIMES holds a count")) {
+            eprintln!("{seconds:6.3} s  {}", jobs[i].place);
+        }
     }
     (results.into_iter().map(|r| r.map(|(_, result)| result)).collect(), errors)
 }
@@ -166,9 +169,14 @@ pub fn check_file(spec: &Value, timeout: Option<Duration>) -> Result<Value, Stri
     if !unknown.is_empty() { return Err(format!("{} match no case. Each id is a case's id or its header's line number.", unknown.join(", "))); }
     let selected: Vec<_> = cases().filter(|(_, c)| checked(c) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, c)))).collect();
     if selected.is_empty() { return Err(format!("{} holds no case to check", path.display())); }
-    let jobs: Vec<_> = selected.iter().map(|(f, c)| Job::case(f, c, if f.setup.is_empty() { json!({"case": c}) }
-        else { json!({"reference": {"name": f.name, "text": f.text, "ids": [c["line"]]}}) })).collect();
-    let (results, errors) = run(&jobs, || { let mut command = Command::new(child); command.arg("--worker"); command }, None, deadline);
+    let jobs: Vec<_> = selected.iter().map(|(f, c)| {
+        Job::case(f, c, if f.setup.is_empty() { json!({"case": c}) } else { json!({"reference": {"name": f.name, "text": f.text, "ids": [c["line"]]}}) })
+    }).collect();
+    let (results, errors) = run(&jobs, || {
+        let mut command = Command::new(child);
+        command.arg("--worker");
+        command
+    }, None, deadline);
     if !errors.is_empty() { return Err(errors.join("\n")); }
     let no_case = "the worker reported no case, so its result can't be trusted";
     let (mut records, mut summaries) = (Vec::new(), Vec::new());
@@ -181,9 +189,7 @@ pub fn check_file(spec: &Value, timeout: Option<Duration>) -> Result<Value, Stri
                 records.push(result);
             }
             Some(Ok(mut summary)) => {
-                for field in ["failures", "obligations"] {
-                    for result in summary[field].as_array_mut().unwrap() { result["file"] = json!(file.name); }
-                }
+                for field in ["failures", "obligations"] { for result in summary[field].as_array_mut().unwrap() { result["file"] = json!(file.name); } }
                 summaries.push(summary);
             }
         }

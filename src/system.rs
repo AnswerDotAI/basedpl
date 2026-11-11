@@ -314,7 +314,7 @@ fn memory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
 /// `•detach Y`: `Y` with every `∂` tag stripped. No derivative flows back through the result. Outside `∂`, it gives `Y`.
 fn detach(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { Ok(crate::derivative::detach(right)) }
 
-/// `•index n` is `⍳n` along a fresh hidden axis name whose stem is the left argument's text (`fresh`). An array of counts gives an index for each (`indices`).
+/// `•index n` is `ιn` along a fresh hidden axis name whose stem is the left argument's text (`fresh`). An array of counts gives an index for each (`indices`).
 fn index(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let stem: std::sync::Arc<str> = match left {
         None => "".into(), Some(a) => crate::keyed::name(a).ok_or_else(|| Error::domain("•index takes text as its stem"))?

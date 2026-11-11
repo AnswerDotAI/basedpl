@@ -17,9 +17,7 @@ pub(super) fn native_primitive(f: &Function, dyadic: bool) -> Option<(Primitive,
 /// `f⍠spec`: a primitive with its own axis form, a reduce or scan along an axis, or `f` on the cells that the axes make. A keyed `spec` is an options record (`with_options`).
 pub(in crate::eval) fn along_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
     if spec.keys(0).is_some() { return with_options(f, spec, left, right, span); }
-    if let FunctionNode::Primitive(p) = f.node() && p.facts(left.is_some()).axes {
-        return Ok(Bound::from(p.call_axes(left, right, spec, span)?));
-    }
+    if let FunctionNode::Primitive(p) = f.node() && p.facts(left.is_some()).axes { return Ok(Bound::from(p.call_axes(left, right, spec, span)?)); }
     match f.node() {
         FunctionNode::Fold(operand, kind) => Ok(Bound::from(fold(operand, *kind, Some(spec), left, right, span)?)), _ => cell_axes(f, spec, left, right, span)
     }

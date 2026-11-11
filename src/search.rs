@@ -1,4 +1,4 @@
-//! Search and classification of cells, for `⍳ ∊ ~ ∪ ∩`, monadic `∪ ≠ =` and Key.
+//! Search and classification of cells, for `ι ∊ ~ ∪ ∩`, monadic `∪ ≠ =` and Key.
 //!
 //! Two cells match when `Value::matches` says they do, within the session's tolerance. Compact cells take rustymath's searches, which choose between scanning once for each of up to 16 needles and building an index:
 //! - Booleans, integers and characters of one kind search their values with `search`. A character's value is its code point. Characters match only characters.

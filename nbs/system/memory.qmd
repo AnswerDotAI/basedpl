@@ -8,15 +8,15 @@
 `pending` counts the pending arrays that this thread made, even when another thread holds one. `•memory` reads no items, so it never forces a pending array, and it accepts values that `∂` is differentiating.
 
 ```bpl
-{+/⍵×⍵}∂ 1 2 3     ⍝ 2 4 6
+{+/ω×ω}∂ 1 2 3     ⍝ 2 4 6
 •memory 0          ⍝ ["pending":0ₓ "bytes":0ₓ]
 ```
 
 A reshape is a view, which keeps all of its base's items alive:
 
 ```bpl
-v←⍳1000ₓ
-m←2 500⍴v
+v←ι1000ₓ
+m←2 500ρv
 (•memory m).bytes  ⍝ 2000ₓ
 ```
 

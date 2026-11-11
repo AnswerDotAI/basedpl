@@ -1,6 +1,7 @@
 import json, re
 import xml.etree.ElementTree as ET
-from basedpl.keyboards import LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, CONTROL_OPTION_SHIFT, attribute, keylayout, bases, shortcuts, dead_key_table
+from basedpl.keyboards import (LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, CONTROL_OPTION_SHIFT,
+    attribute, keylayout, bases, shortcuts, dead_key_table, keyboard_page)
 
 layout = json.loads(LAYOUT.read_text())
 KEYS = {char: (int(code), i) for code, values in bases()['us']['keys'].items() if int(code) <= 50
@@ -57,7 +58,7 @@ def codes(presses):
 
 def test_dead_key_table_hides_only_equivalent_shifted_keys():
     sample = {'option': {'o': {'state': 'circle'}}, 'unshifted': {'*': '8', ':': ';'},
-              'states': {'circle': {'terminator': '○', 'keys': {'*': '⍟', '8': '⍟', ':': '⍠'}}}}
+              'states': {'circle': {'terminator': '○', 'keys': {'*': '⊛', '8': '⊛', ':': '⍠'}}}}
     shown = dead_key_table(sample)
     assert '<code>8</code>' in shown and '<code>*</code>' not in shown
     assert '<code>:</code>' in shown
@@ -69,7 +70,7 @@ def test_macos_follows_the_mapping_rules():
     starts = {v['state']: [('option', k)] for k, v in layout['option'].items() if isinstance(v, dict)}
     while len(starts) < len(layout['states']):
         starts |= {v['state']: starts[n] + [('key', k)] for n in list(starts) for k, v in layout['states'][n]['keys'].items() if isinstance(v, dict)}
-    sequences = [[('option', k)] for k in layout['option']] + [[('key', '^'), ('key', '2')]]
+    sequences = [[('option', k)] for k in shortcuts(layout, 'us', bases()['us'])] + [[('key', '^'), ('key', '2')]]
     for name, start in starts.items():
         sequences += [start + [(kind, k)] for k in layout['states'][name]['keys'] for kind in ('key', 'option')]
         if len(start) == 1: sequences += [start + [('key', start[0][1])]]
@@ -84,8 +85,9 @@ def test_macos_follows_the_mapping_rules():
 
 def test_regional_layouts_preserve_native_typing_and_bpl():
     native = bases()
+    required = layout | {'option': {k: v for k, v in layout['option'].items() if not (k in layout['optional_shift'] and k.isalpha())}}
+    assert keyboard_page(layout) == keyboard_page(required)
     for lang, base in native.items():
-        required = layout | {'option': {k: v for k, v in layout['option'].items() if k not in layout['optional_shift']}}
         bindings = shortcuts(layout, lang, base)
         assert bindings.items() >= shortcuts(required, lang, base).items()
         assert all(index == OPTION_SHIFT for k, (_, index) in bindings.items() if k in layout['optional_shift'])
@@ -107,7 +109,9 @@ def test_regional_layouts_preserve_native_typing_and_bpl():
              ('de', [(50, OPTION_SHIFT)], '≥'),
              ('de', [(35, CONTROL_OPTION), (5, CONTROL_OPTION)], '⍒'),
              ('fr', [(23, CONTROL_OPTION_SHIFT), (7, CONTROL_OPTION)], 'ₓ'),
-             ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION)], '⍺'),
+             ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION)], 'α'),
              ('fr', [(18, SHIFT), (20, PLAIN)], '1"'), ('fr', [(23, OPTION_SHIFT), (27, OPTION_SHIFT)], '[]'),
-             ('fr', [(33, PLAIN), (14, PLAIN)], 'ê'), ('es', [(41, SHIFT), (39, PLAIN), (0, PLAIN)], 'Ñá')]
+             ('fr', [(33, PLAIN), (14, PLAIN)], 'ê'), ('es', [(41, SHIFT), (39, PLAIN), (0, PLAIN)], 'Ñá'),
+             ('es', [(14, OPTION_SHIFT)], '€'), ('es', [(33, PLAIN), (1, OPTION_SHIFT)], '`'),
+             ('es', [(11, OPTION_SHIFT)], 'β')]
     for lang, presses, wanted in cases: assert simulate(parse(keylayout(layout, lang)), presses) == wanted, lang

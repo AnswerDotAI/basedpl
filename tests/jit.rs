@@ -327,7 +327,7 @@ static SETTINGS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn compiled_stages_match_interpreted(more: usize) {
     use basedpl::settings::{self, Compiles};
     let _settings = SETTINGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    const SETUP: &str = "u←iuₓ₁ ⋄ v←juₓ₁ ⋄ h←ihₓ₂ ⋄ k←jhₓ₂ ⋄ w←iwₓ₄ ⋄ z←jwₓ₄ ⋄ l←ilₓ₈ ⋄ m←jlₓ₈";
+    const SETUP: &str = "u←iuₓ₁ ◇ v←juₓ₁ ◇ h←ihₓ₂ ◇ k←jhₓ₂ ◇ w←iwₓ₄ ◇ z←jwₓ₄ ◇ l←ilₓ₈ ◇ m←jlₓ₈";
     let (mut dynamic, mut fixed): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     dynamic.extend(["+", "-", "×", "÷", "π", "⌈", "⌊"].map(|g| format!("--x{g}y")));
     fixed.extend(["+", "-", "×", "÷", "⌈", "⌊"].map(|g| format!("--xf{g}yf")));
@@ -338,7 +338,7 @@ fn compiled_stages_match_interpreted(more: usize) {
     }
     dynamic.extend([
         "-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x",
-        "--0.75|x", "--x|0.75", "yi←¯32768ₓ↦32767ₓ ⋄ forced←yi≡yi ⋄ +/yi-16ₓ×yi÷16ₓ",
+        "--0.75|x", "--x|0.75", "yi←¯32768ₓ↦32767ₓ ◇ forced←yi≡yi ◇ +/yi-16ₓ×yi÷16ₓ",
     ].map(String::from));
     fixed.extend([
         "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf",
@@ -377,7 +377,9 @@ fn compiled_stages_match_interpreted(more: usize) {
             let (compiled, runs) = run(Compiles::Always);
             assert!(runs > 0, "{code} on {n} items ran no compiled part");
             let interpreted = run(Compiles::Never).0;
-            if matches!(code.as_str(), "+/b-1" | "0ₓ₄+/xf<yf") { assert!(compiled.is_atom() && interpreted.is_atom(), "{code} returned an array instead of an atom"); }
+            if matches!(code.as_str(), "+/b-1" | "0ₓ₄+/xf<yf") {
+                assert!(compiled.is_atom() && interpreted.is_atom(), "{code} returned an array instead of an atom");
+            }
             assert_eq!(
                 basedpl_testkit::reference::difference(&compiled, &interpreted, None, 0.0, true), None,
                 "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number()

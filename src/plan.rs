@@ -156,7 +156,10 @@ impl Desc {
         let kind = Kind::value(value);
         let dtype = kind.dtype.filter(|&d| d != DType::Character)?;
         let mut described = Kind::stored(Some(dtype), kind.fixed, kind.weak);
-        if kind.weak { described.minimum = kind.minimum; described.bound = kind.bound; }
+        if kind.weak {
+            described.minimum = kind.minimum;
+            described.bound = kind.bound;
+        }
         Some(described)
     }
     /// The stored item type. Pending structural copies may hold characters; traced numeric operations use `describes`.
@@ -177,8 +180,7 @@ impl Desc {
         let n = match self.dtype() {
             DType::Boolean => Number::from_bool(false), DType::Integer(w) if self.kind.fixed.is_some() => Number::fixed(0, w),
             DType::Integer(_) => Number::from_integer(0), DType::Float(w) => Number::float(0.0, w),
-            DType::Complex(w) => Number::complex(num_complex::Complex64::new(0.0, 0.0), w.into()),
-            DType::Character => return Value::Character(' '),
+            DType::Complex(w) => Number::complex(num_complex::Complex64::new(0.0, 0.0), w.into()), DType::Character => return Value::Character(' ')
         };
         Value::Number(n.marked(self.kind.weak))
     }
@@ -338,9 +340,7 @@ pub(crate) fn pervasive(p: Primitive, left: Option<Kind>, right: Kind, constants
 fn prepared(p: Primitive, left: Option<Kind>, right: Kind, numeric: Numeric) -> (Numeric, Halving, Option<Kind>, Kind) {
     let (left, right) = match left { Some(left) => (Some(left.beside(right)), right.beside(left)), None => (None, right) };
     // A reduction drops its seed's kind; keep an unresolved promotion on both sides.
-    if left.is_some_and(|k| k.dtype.is_none()) || right.dtype.is_none() {
-        return (numeric, Halving::Off, left.map(|_| Kind::default()), Kind::default());
-    }
+    if left.is_some_and(|k| k.dtype.is_none()) || right.dtype.is_none() { return (numeric, Halving::Off, left.map(|_| Kind::default()), Kind::default()); }
     let numeric = if takes_fixed(p) { numeric.for_kinds(left.into_iter().chain([right])) } else { numeric };
     let (numeric, halve) = numeric.halving(left.into_iter().chain([right]).map(Kind::float_width));
     let read = |k: Kind| Kind { dtype: k.dtype.map(|d| halve.operand(d)), ..k };
@@ -364,9 +364,7 @@ pub(crate) fn whole_float(p: Primitive, c: f64, width: FloatWidth, ints: DType, 
 }
 
 /// One source is pointwise identical on both sides only when the paired reads agree.
-fn same_at(same: bool, agreed: Option<&Agreement>) -> bool {
-    same && agreed.is_none_or(|a| a.left == a.right)
-}
+fn same_at(same: bool, agreed: Option<&Agreement>) -> bool { same && agreed.is_none_or(|a| a.left == a.right) }
 
 /// `pervasive` on the values' kinds, constants and ranges, under the supplied pairing or ordinary agreement.
 pub(crate) fn pervasive_on(p: Primitive, left: Option<&Value>, right: &Value, numeric: Numeric, agreed: Option<&Agreement>) -> Pervasive {
@@ -408,7 +406,6 @@ fn operand_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: boo
     Pervasive { same, ..pervasive(p, left.map(Operand::kind), right.kind(), [left.and_then(Operand::constant), right.constant()], bounds, numeric) }
 }
 
-
 fn map_plan(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric) -> Result<Pervasive, &'static str> {
     if !p.scalar(left.is_some()) { return Err("a call that isn't pervasive"); }
     let plan = operand_plan(p, left, right, same, numeric);
@@ -429,7 +426,8 @@ fn mapped(plan: Pervasive, left: Option<&Operand>, right: &Operand, agreed: Opti
 }
 
 /// Plan the original operands under either their ordinary agreement or an already resolved pairing.
-pub(crate) fn map(p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric, agreed: Option<&Agreement>) -> Result<Mapped, &'static str> {
+pub(crate) fn map(
+    p: Primitive, left: Option<&Operand>, right: &Operand, same: bool, numeric: Numeric, agreed: Option<&Agreement>) -> Result<Mapped, &'static str> {
     let plan = map_plan(p, left, right, same_at(same, agreed), numeric)?;
     mapped(plan, left, right, agreed)
 }
@@ -469,7 +467,7 @@ pub(crate) fn fold(p: Primitive, kind: FoldKind, seed: Option<Kind>, items: Kind
 impl Fold {
     /// The kind that each step computes in (`pervasive::computes_in`).
     pub(crate) fn computes_in(&self) -> Option<DType> { crate::pervasive::computes_in(self.p, self.kinds[0], self.kinds[1], self.numeric) }
-    /// The float width that integer items convert to before the fold or scan, where integers wrap, under static kinds or at a fixed width, and `p`'s table gives floats for them, as for `⍟`. Every item of the result then takes the call's kind, a lane's first included, and reading the items as floats first gives that through the float kernels. Where integers don't wrap, an item that no call computes, such as a scan's first, keeps its kind, so it's `None`.
+    /// The float width that integer items convert to before the fold or scan, where integers wrap, under static kinds or at a fixed width, and `p`'s table gives floats for them, as for `⊛`. Every item of the result then takes the call's kind, a lane's first included, and reading the items as floats first gives that through the float kernels. Where integers don't wrap, an item that no call computes, such as a scan's first, keeps its kind, so it's `None`.
     pub(crate) fn floated(&self) -> Option<FloatWidth> {
         if !self.numeric.wrapping() { return None; }
         let kind = self.computes_in().filter(|k| k.is_integral())?;
@@ -593,9 +591,9 @@ pub(crate) fn copy(source: &Desc, layout: &Layout) -> Result<Desc, &'static str>
     Ok(Desc { kind: Kind::stored(source.kind.dtype, source.kind.fixed, false), atom: false, layout: layout.clone(), range: source.range })
 }
 
-
-pub(crate) fn structural(form: &crate::primitive::structural::Form, params: &[Value], inputs: &[Desc], fill: Option<&Desc>)
-    -> Result<(Desc, rustymath::agreement::ReadPlan), crate::Error> {
+pub(crate) fn structural(
+    form: &crate::primitive::structural::Form, params: &[Value], inputs: &[Desc], fill: Option<&Desc>
+) -> Result<(Desc, rustymath::agreement::ReadPlan), crate::Error> {
     let layouts: Vec<&Layout> = inputs.iter().map(|d| &d.layout).collect();
     let (layout, plan) = crate::primitive::structural::plan(form, params, &layouts)?;
     let first = &inputs[0];
@@ -605,8 +603,7 @@ pub(crate) fn structural(form: &crate::primitive::structural::Form, params: &[Va
     // Provenance cannot tighten a result whose every possible source/fill has unconstrained bounds.
     let range = if parts().all(|d| d.range == Range::ANY) { Range::ANY } else {
         match plan.positional(layout.shape()) {
-            Some((source, _)) if fill.is_none() => inputs[source].range,
-            _ => parts().fold(Range::of(Some(0.0)), |range, d| range.join(d.range)),
+            Some((source, _)) if fill.is_none() => inputs[source].range, _ => parts().fold(Range::of(Some(0.0)), |range, d| range.join(d.range))
         }
     };
     let kind = Kind::stored(kind.dtype, kind.fixed, false);
@@ -638,8 +635,8 @@ pub(crate) fn select(mask: &Operand, yes: &Operand, no: &Operand) -> Result<Sele
     let kind = Kind::join(cases, Widening::Arrays);
     let dtype = kind.dtype.filter(|&d| d != DType::Character).ok_or("cases that aren't numbers")?;
     if cases.iter().any(|c| !c.weak && c.dtype != Some(dtype)) { return Err("cases of different kinds"); }
-    Ok(Select { desc: Desc { kind: Kind::stored(Some(dtype), kind.fixed, false), atom: false, layout, range: Range::of_dtype(dtype).meet(yes.range().join(no.range())) }, yes: yes_map,
-        no: no_map })
+    Ok(Select { desc: Desc { kind: Kind::stored(Some(dtype), kind.fixed, false), atom: false, layout,
+            range: Range::of_dtype(dtype).meet(yes.range().join(no.range())) }, yes: yes_map, no: no_map })
 }
 
 /// The description of `source` with every number converted to `to`, as `Value::converted` converts it for width marks, `•float` and fixed marks: floats of a width, where complex numbers keep complex parts of that width, or fixed integers of a width. The result is strong.

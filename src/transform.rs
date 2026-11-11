@@ -32,10 +32,11 @@ pub(crate) enum Kind {
 /// A batched run's current frame, saved outer frames for nested maps, and fresh names shared by its cells (`Levels::keep_fresh`).
 pub(crate) struct Batched { frame: crate::array::Layout, itemwise: bool, outer: Vec<(usize, crate::array::Layout)>, fresh: Vec<std::sync::Arc<str>> }
 
-
 impl Kind {
     /// A batched run of a map on the cells that `frame` lays out, as `batch::tried` begins it.
-    pub(crate) fn batched(frame: crate::array::Layout, itemwise: bool) -> Self { Kind::Batched(Batched { frame, itemwise, outer: Vec::new(), fresh: Vec::new() }) }
+    pub(crate) fn batched(frame: crate::array::Layout, itemwise: bool) -> Self {
+        Kind::Batched(Batched { frame, itemwise, outer: Vec::new(), fresh: Vec::new() })
+    }
     /// The rule this kind's exit applies to each binding outside its frames that it wrote, given the binding's value and the level's id. A `∂` call strips its tag, and a label level its labels. Other kinds have no rule, and record no writes.
     pub(crate) fn exit(&self) -> Option<fn(&Value, u64) -> Value> {
         match self {
@@ -89,9 +90,7 @@ impl Levels {
     /// Whether a map's batched try widens the batched run instead of beginning one: the run is the innermost level, so no `∂` call or label level wraps the map's values.
     pub(crate) fn widens(&self) -> bool { matches!(self.stack.last(), Some(Level { kind: Kind::Batched(_), .. })) }
     /// The id and frame of the batched run while a map inside it has widened it (`widen`), for code that reads a binding made before the widening (`Session::read_binding`).
-    pub(crate) fn widened(&self) -> Option<(u64, &crate::array::Layout)> {
-        self.running().filter(|(_, b)| !b.outer.is_empty()).map(|(id, b)| (id, &b.frame))
-    }
+    pub(crate) fn widened(&self) -> Option<(u64, &crate::array::Layout)> { self.running().filter(|(_, b)| !b.outer.is_empty()).map(|(id, b)| (id, &b.frame)) }
     /// Widens the run to a nested map's frame. Writes stay inside that map's call frames until `end_widening` restores the outer frame.
     pub(crate) fn widen(&mut self, frame: usize, cells: crate::array::Layout) {
         let (_, frames, batched) = self.running_mut().expect("a batched run");
@@ -403,8 +402,7 @@ impl Carrier {
     }
     /// The items of a dual or a batch for `storage`, built once into `cell` as `n` items from `at`. Building them records an `itemwise` row in `•explain` under `route`.
     pub(crate) fn built<'a>(
-        cell: &'a std::sync::OnceLock<crate::array::Storage>, route: crate::events::Route, n: usize, at: impl Fn(usize) -> Value
-    ) -> &'a crate::array::Storage {
+        cell: &'a std::sync::OnceLock<crate::array::Storage>, route: crate::events::Route, n: usize, at: impl Fn(usize) -> Value) -> &'a crate::array::Storage {
         cell.get_or_init(|| {
             crate::explain::itemwise(route, n);
             crate::array::Storage::mixed((0..n).map(|i| at(i).strong()).collect())

@@ -15,22 +15,22 @@ def test_token_separator_linear():
 def test_native_calls_and_explicit_output():
     a = bpl('1r3 2ₓ')
     bpl['x'] = a
-    r = bpl('⎕←x ⋄ x', 'explicit')
+    r = bpl('⎕←x ◇ x', 'explicit')
     np.testing.assert_array_equal(r.value, a)
     assert r.output == ['1ᵣ3 2ₓ']
-    assert bpl('1 ⋄ ⎕←2 ⋄ 3').py == 3
-    assert bpl('1 ⋄ ⎕←2 ⋄ 3', 'explicit').output == ['2']
+    assert bpl('1 ◇ ⎕←2 ◇ 3').py == 3
+    assert bpl('1 ◇ ⎕←2 ◇ 3', 'explicit').output == ['2']
     assert bpl('+/x', x=a).py == Fraction(7, 3)
 
 
 def test_static_kinds_read_under_the_session_settings():
     "After a static-kinds evaluation returns, its items still read under that session's settings. Python data imports under them too, and integers export at the width they compute at."
     try:
-        z = bpl('•prefs ["kinds":"static"] ⋄ 0j1 1j0×1')
+        z = bpl('•prefs ["kinds":"static"] ◇ 0j1 1j0×1')
         assert isinstance(z.py[1], np.complexfloating) and z.py[1] == 1
         assert z.bpl == '[0ⱼ1 1]ₛ'
         assert bpl('(•storage x).kind', x=1+0j).py == 'complex64'
-        ints = bpl('•prefs ["int":32] ⋄ ⍳5ₓ')
+        ints = bpl('•prefs ["int":32] ◇ ι5ₓ')
         assert ints.np.dtype == np.int32 and ints.own().dtype == np.int32
     finally: bpl('•prefs ["kinds":"dynamic" "int":64]')
 
@@ -61,20 +61,20 @@ def test_bindings_functions_and_output(capsys):
     assert f(3).py == -3
     bpl['x'] = [[1, 2], [3, 4]]
     np.testing.assert_array_equal(bpl['x'], [[1, 2], [3, 4]])
-    assert bpl('x←7').py == 7 and bpl('3 ⋄ f←+') is None and bpl('') is None
-    assert bpl('silent←{a←7} ⋄ silent 0').py == 7 and bpl('{}0') is None
+    assert bpl('x←7').py == 7 and bpl('3 ◇ f←+') is None and bpl('') is None
+    assert bpl('silent←{a←7} ◇ silent 0').py == 7 and bpl('{}0') is None
     assert capsys.readouterr().out == ''
-    assert bpl('1 ⋄ ⎕←2 ⋄ ⍎"3 ⋄ ⎕←4 ⋄ 5"').py == 5
+    assert bpl('1 ◇ ⎕←2 ◇ ⍎"3 ◇ ⎕←4 ◇ 5"').py == 5
     assert capsys.readouterr().out == '2\n4\n'
-    r = bpl('⎕←x ⋄ x+1ₓ', 'explicit', x=9)
+    r = bpl('⎕←x ◇ x+1ₓ', 'explicit', x=9)
     assert r.value.py == 10 and r.output == ['9ₓ'] and capsys.readouterr().out == ''
-    assert bpl.fn('{⎕←⍵}')(3).py == 3 and capsys.readouterr().out == '3ₓ\n'
+    assert bpl.fn('{⎕←ω}')(3).py == 3 and capsys.readouterr().out == '3ₓ\n'
     assert bpl(']Display 1 2', 'explicit').output and capsys.readouterr().out == ''
     with pytest.raises(TypeError): f()
     with pytest.raises(TypeError): f(1, 2, 3)
     with pytest.raises(ValueError): bpl['x←99'] = 1
     assert bpl['x'].py == 9
-    r = bpl('1 ⋄ ⎕←2 ⋄ x←3', 'repl')
+    r = bpl('1 ◇ ⎕←2 ◇ x←3', 'repl')
     assert r.value.py == 3 and r.output == ['1', '2'] and capsys.readouterr().out == ''
 
 
@@ -147,12 +147,12 @@ def test_exact_nested_and_character_values():
     boxed = bpl('⊂1 2')
     assert boxed.shape == () and boxed.np.dtype == object and bpl('≡x', x=boxed).py == 2
     np.testing.assert_array_equal(boxed.np.item(), [1, 2])
-    assert bpl('0 3⍴""').shape == (0, 3) and bpl('0⍴⊂1 2').np.dtype == object
+    assert bpl('0 3ρ""').shape == (0, 3) and bpl('0ρ⊂1 2').np.dtype == object
     assert bpl('x', x=[[], []]).shape == (2, 0)
     assert type(bpl('1j2×1j¯2').py) is complex and bpl('+1j2').py == 1-2j
     assert bpl('0#1j2').np.dtype == np.complex128
-    empty = bpl('0⍴⊂2 3⍴1ₓ')
-    assert bpl('x≡0⍴⊂2 3⍴1ₓ', x=empty).py == 1
+    empty = bpl('0ρ⊂2 3ρ1ₓ')
+    assert bpl('x≡0ρ⊂2 3ρ1ₓ', x=empty).py == 1
     assert Array(a := [1, 2]).shape == (2,)
     a.append(a)
     with pytest.raises(ValueError, match='cyclic'): Array(a)
@@ -161,18 +161,18 @@ def test_exact_nested_and_character_values():
 
 def test_errors_capture_output_and_recover(capsys):
     for call in [bpl, lambda src: bpl(src, 'explicit')]:
-        with pytest.raises(BplError) as caught: call('x←7 ⋄ ⎕←1ₓ ⋄ 1÷"a"')
+        with pytest.raises(BplError) as caught: call('x←7 ◇ ⎕←1ₓ ◇ 1÷"a"')
         e = caught.value
         assert e.kind == 'DOMAIN' and e.output == ['1ₓ'] and e.source[slice(*e.span)] == '÷'
         assert ' --> <input>:1:' in str(e)
         assert capsys.readouterr().out == ('1ₓ\n' if call is bpl else '')
         assert bpl('x+1').py == 8
-    definition = 'bad←{1÷⍵}'
+    definition = 'bad←{1÷ω}'
     bpl(definition)
     with pytest.raises(BplError) as caught: bpl.fn('bad')('a')
     assert caught.value.source == definition and caught.value.calls[-1]['source']['text'] == 'bad'
     bpl.timeout = .01
-    with pytest.raises(BplError) as caught: bpl('{∇⍵}0', 'explicit')
+    with pytest.raises(BplError) as caught: bpl('{∇ω}0', 'explicit')
     assert caught.value.kind == 'TIMEOUT' and capsys.readouterr().out == ''
     assert bpl('x').py == 7
 
@@ -181,14 +181,14 @@ def test_interrupts_and_threads(capsys):
     with ThreadPoolExecutor(max_workers=4) as pool:
         bpl(x=42)
         assert pool.submit(bpl, 'x').result().py == 42
-        assert sorted(pool.map(lambda _: bpl('x+←1ₓ ⋄ x').py, range(8))) == list(range(43, 51))
+        assert sorted(pool.map(lambda _: bpl('x+←1ₓ ◇ x').py, range(8))) == list(range(43, 51))
         bpl(x=42)
         ctrl_c = lambda: os.kill(os.getpid(), signal.SIGINT)
         for call, interrupt, error in [(bpl, bpl.interrupt, BplError), (bpl, ctrl_c, KeyboardInterrupt), (lambda src: bpl(src, 'explicit'), ctrl_c, KeyboardInterrupt)]:
             timer = threading.Timer(.05, interrupt)
             timer.start()
             try:
-                with pytest.raises(error) as caught: call('⎕←7 ⋄ {∇⍵}0')
+                with pytest.raises(error) as caught: call('⎕←7 ◇ {∇ω}0')
             finally: timer.join()
             assert caught.value.output == ['7'] and capsys.readouterr().out == ('7\n' if call is bpl else '')
             assert bpl('x').py == 42
@@ -217,7 +217,7 @@ def test_installed_command(tmp_path):
         if status: assert 'DOMAIN ERROR' in res.stderr and '<expression>:1:5' in res.stderr
         else: assert not res.stderr
     path = tmp_path/'lesson.bpl'
-    path.write_text('#!/usr/bin/env bpl\nv←⍳10\nsum←+/\nsum v\n', encoding='utf-8')
+    path.write_text('#!/usr/bin/env bpl\nv←ι10\nsum←+/\nsum v\n', encoding='utf-8')
     res = subprocess.run(['bpl', str(path)], capture_output=True, text=True, timeout=10)
     assert (res.returncode, res.stdout, res.stderr) == (0, '45\n', '')
 

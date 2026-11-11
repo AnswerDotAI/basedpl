@@ -1,11 +1,11 @@
 ⍝⍝ setup
 side←256 size 32
 n←side×side
-v←¿n⍴0
-w←¿n⍴0
-m←[side side]⍴v
-rka←•literal⁻¨⍳n
-rkb←•literal⁻¨⍳n
+v←¿nρ0
+w←¿nρ0
+m←[side side]ρv
+rka←•literal⁻¨ιn
+rkb←•literal⁻¨ιn
 ra←rka:v
 rb←rkb:w
 f←"svd"•decompose m

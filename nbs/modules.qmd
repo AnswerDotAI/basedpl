@@ -44,20 +44,20 @@ Names that aren't keys come from the code around the expression. A key hides an 
 
 ```bpl
 order←["price":2 3 5;"qty":10 20 1]
-rate←0.5 ⋄ order.(price×≥rate)    ⍝ 3 4.5 7.5
+rate←0.5 ◇ order.(price×≥rate)    ⍝ 3 4.5 7.5
 ```
 
-A dfn's argument, operand and recursion names, `⍺ ⍵ ⍶ ⍹ ∇ ⍢`, are the exception. They always come from the call, even where a key has the same spelling:
+A dfn's argument, operand and recursion names, `α ω ⍶ ⍹ ∇ ⍢`, are the exception. They always come from the call, even where a key has the same spelling:
 
 ```bpl
-f←{["⍵":0].(⍵+1)} ⋄ f 5        ⍝ 6
+f←{["ω":0].(ω+1)} ◇ f 5        ⍝ 6
 ```
 
 Assignments inside the parentheses stay there, as assignments in a dfn do. To change a field, assign to its dot path, as in `order.qty←5 5 5`.
 
 ```bpl
 order←["price":2 3 5;"qty":10 20 1]
-r←order.(qty←0) ⋄ order.qty    ⍝ 10 20 1
+r←order.(qty←0) ◇ order.qty    ⍝ 10 20 1
 ```
 
 `T⍎text` does the same for code held as text, like Dyalog's `ns⍎text`:
@@ -77,11 +77,11 @@ n.(factors 360)                ⍝ 2 2 2 3 3 5
 An array with keys on its first axis also works as a namespace. Each key names its major cell, which in a matrix is a row:
 
 ```bpl
-prices←"cost" "sale":[2 3 5⋄4 4 9]
+prices←"cost" "sale":[2 3 5◇4 4 9]
 prices.(sale-cost)             ⍝ 2 1 4
 ```
 
-A scope applies to one array. For an array of records, `{⍵.(expr)}¨records` evaluates `expr` in each.
+A scope applies to one array. For an array of records, `{ω.(expr)}¨records` evaluates `expr` in each.
 
 ## Writing a module
 
@@ -89,9 +89,9 @@ A module is a file of BPL statements, run in order each time it's loaded. Loadin
 
 ```text
 ⍝ stats.bpl
-_sq←{⍵×⍵}
+_sq←{ω×ω}
 mean←+/÷≢
-var←{mean _sq ⍵-mean ⍵}
+var←{mean _sq ω-mean ω}
 ```
 
 `•load "stats.bpl"` returns a record that holds `mean` and `var`. `var` still uses `_sq` when you call it.
@@ -105,7 +105,7 @@ A module that uses another module usually keeps it under a private name. The oth
 ```text
 ⍝ report.bpl
 _stats←•load "./stats.bpl"
-summary←{[_stats.mean ⍵;_stats.var ⍵]}
+summary←{[_stats.mean ω;_stats.var ω]}
 ```
 
 A public name exports on purpose. With `stats←•load "./stats.bpl"`, the record of `report.bpl` would hold the `stats` record too. Destructured names are public as well: `[mean:]←•load "./stats.bpl"` makes `mean` one of the module's names.

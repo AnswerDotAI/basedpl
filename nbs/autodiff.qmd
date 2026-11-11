@@ -14,23 +14,23 @@ The [`∂` page](glyphs/partial.qmd) lists what `∂` differentiates and the err
 The Jacobian of `f` at `X` holds the derivative of each item of `f X` with respect to each number in `X`. `f∂X` gives it, with the keys, axis names and nesting of the outer product `(f X)×⊗X`. A function that gives a number has a Jacobian with `X`'s structure: its gradient. A record argument gives a record gradient, with the record's keys. `cart` converts polar coordinates to Cartesian ones. Its Jacobian has a row for each result and a column for each argument:
 
 ```bpl
-cart←{[r t]←⍵ ⋄ [r×2○t r×1○t]} ⋄ cart∂ 2 0.5   ⍝ [0.8775825619 ¯0.9588510772⋄0.4794255386 1.755165124]
-p←["w":2 "b":1] ⋄ {3×⍵.w + ⍵.b}∂ p               ⍝ ["w":3 "b":1]
+cart←{[r t]←ω ◇ [r×2○t r×1○t]} ◇ cart∂ 2 0.5   ⍝ [0.8775825619 ¯0.9588510772◇0.4794255386 1.755165124]
+p←["w":2 "b":1] ◇ {3×ω.w + ω.b}∂ p               ⍝ ["w":3 "b":1]
 ```
 
 `W f∂ X` differentiates `W f X` with respect to `X`. The left argument holds what isn't differentiated, such as training data:
 
 ```bpl
-3 {⍺×⍵×⍵}∂ 2                ⍝ 12
+3 {α×ω×ω}∂ 2                ⍝ 12
 ```
 
-A JVP is the derivative of `f` at `x` in a direction `t`. `{f x+⍵×t}∂0` computes it by differentiating along one number. A vector–Jacobian product multiplies a vector `u` by the Jacobian. `{+/u×f⍵}∂ x` computes it by differentiating a sum. Neither builds the Jacobian. With `t` and `u` both `1 0`, the JVP gives the Jacobian's first column. The vector–Jacobian product gives its first row:
+A JVP is the derivative of `f` at `x` in a direction `t`. `{f x+ω×t}∂0` computes it by differentiating along one number. A vector–Jacobian product multiplies a vector `u` by the Jacobian. `{+/u×fω}∂ x` computes it by differentiating a sum. Neither builds the Jacobian. With `t` and `u` both `1 0`, the JVP gives the Jacobian's first column. The vector–Jacobian product gives its first row:
 
 ```bpl
-f←{[x y]←⍵ ⋄ [x×y x+y]} ⋄ x←2 3
-f∂ x                        ⍝ [3 2⋄1 1]
-t←1 0 ⋄ {f x+⍵×t}∂0         ⍝ 3 1
-u←1 0 ⋄ {+/u×f⍵}∂ x         ⍝ 3 2
+f←{[x y]←ω ◇ [x×y x+y]} ◇ x←2 3
+f∂ x                        ⍝ [3 2◇1 1]
+t←1 0 ◇ {f x+ω×t}∂0         ⍝ 3 1
+u←1 0 ◇ {+/u×fω}∂ x         ⍝ 3 2
 ```
 
 For a function that works item by item, such as the sine `1○`, `f∂⍤0` gives the derivative at each item. Differentiating along one number gives the same values in one pass:
@@ -38,24 +38,24 @@ For a function that works item by item, such as the sine `1○`, `f∂⍤0` give
 ```bpl
 x←0 0.5 1
 1○∂⍤0 x                     ⍝ 1 0.8775825619 0.5403023059
-{1○x+⍵}∂0                   ⍝ 1 0.8775825619 0.5403023059
+{1○x+ω}∂0                   ⍝ 1 0.8775825619 0.5403023059
 ```
 
 `f∂∂` is `∂` applied to `f∂`. It gives second and mixed derivatives, such as the matrix of mixed derivatives of `×/`, the product of the items. Its derivatives are floats, whatever the kind of `X`:
 
 ```bpl
-{⍵×⍵×⍵}∂∂∂2                  ⍝ 6
-×/∂∂ 2 3                     ⍝ [0 1⋄1 0]
+{ω×ω×ω}∂∂∂2                  ⍝ 6
+×/∂∂ 2 3                     ⍝ [0 1◇1 0]
 ⊼∂3ₓ                         ⍝ 6
 ```
 
 ## Forward mode
 
-Where `X` holds one number, `∂` runs `f` once, in forward mode. Every value that depends on `X` carries its derivative with respect to `X` beside it, as a dual number. `∂` starts the pass by making `X` a dual whose derivative is 1. A call on duals gives a dual. A pervasive function, such as `×` or `*`, finds its result's derivative by the chain rule, from a table of its partial derivatives. `⍺×⍵` has the partials `⍵` and `⍺`. `*⍵` has the partial `*⍵`, its own result. `∂` returns the derivative that the final result carries.
+Where `X` holds one number, `∂` runs `f` once, in forward mode. Every value that depends on `X` carries its derivative with respect to `X` beside it, as a dual number. `∂` starts the pass by making `X` a dual whose derivative is 1. A call on duals gives a dual. A pervasive function, such as `×` or `*`, finds its result's derivative by the chain rule, from a table of its partial derivatives. `α×ω` has the partials `ω` and `α`. `*ω` has the partial `*ω`, its own result. `∂` returns the derivative that the final result carries.
 
-Each `∂` call tags the duals it makes. A call reads only the derivatives with its own tag. Under nested `∂`, as in `{⍵×⍵×⍵}∂∂∂2`, a value is a dual of a dual of a dual. Julia's ForwardDiff tags its dual numbers in the same way.
+Each `∂` call tags the duals it makes. A call reads only the derivatives with its own tag. Under nested `∂`, as in `{ω×ω×ω}∂∂∂2`, a value is a dual of a dual of a dual. Julia's ForwardDiff tags its dual numbers in the same way.
 
-Functions that move items, such as reshape, transpose, take and windows, move each item's derivative with the item. Comparisons, floor, integer `÷`, `⍳`, grade and other functions whose results are counts, positions, Booleans or floored integers give results with no derivative.
+Functions that move items, such as reshape, transpose, take and windows, move each item's derivative with the item. Comparisons, floor, integer `÷`, `ι`, grade and other functions whose results are counts, positions, Booleans or floored integers give results with no derivative.
 
 ## Reverse mode
 
@@ -77,8 +77,8 @@ Each linear step has one transpose:
 The transposes work on whole arrays, as the steps do. The transpose of a copy or a selection adds each gradient into the position that it was read from. It never builds an array of zeros with a one at each position read. In this example, `3↕` gives windows of 3. The first function reads item 0 twice and never reads item 1. In the second, the middle items appear in more of the windows:
 
 ```bpl
-0 0 2 {+/⊼⍵.[⍺]}∂ 1 2 3     ⍝ 4 0 6
-{+/,⊼3↕⍵}∂ 1 2 3 4 5        ⍝ 2 8 18 16 10
+0 0 2 {+/⊼ω.[α]}∂ 1 2 3     ⍝ 4 0 6
+{+/,⊼3↕ω}∂ 1 2 3 4 5        ⍝ 2 8 18 16 10
 ```
 
 Folds and matrix functions have rules of their own. `×/` divides the product by each item to find that item's derivative, with zeros counted apart. `⌈/` and `⌊/` take the derivative of the item that they pick. `⌹` and the determinant `-.×` take their derivatives from one factorization of the matrix.
@@ -90,10 +90,10 @@ The record keeps the values that its steps need, such as the coefficients of its
 `f∂←g` attaches `g` as the derivative of `f`. `g` is a JVP rule: `T g X` gives the derivative of `f` at `X` in the direction `T`. Forward mode calls `g` with the tangent as `T`. Reverse mode records the steps that `g` takes on `T`, then transposes them, as JAX transposes a `custom_jvp` rule. One rule serves both modes. A straight-through estimator, which treats rounding as if its derivative were 1, is such a rule:
 
 ```bpl
-r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵}
-{1+r⍵}∂3                    ⍝ 6
-ste←{⌊⍵} ⋄ ste∂←{⍺}
-{+/ste⍵×2}∂ 1.5 2.5         ⍝ 2 2
+r←{ω×ω} ◇ r∂←{α×2×ω}
+{1+rω}∂3                    ⍝ 6
+ste←{⌊ω} ◇ ste∂←{α}
+{+/steω×2}∂ 1.5 2.5         ⍝ 2 2
 ```
 
 `•detach X` gives `X` with every derivative removed. `∂` then treats it as a constant, as JAX treats the result of `stop_gradient`. `⊢×•detach` multiplies its argument by a detached copy of itself. Its derivative at 3 is the copy's value, 3, where `⊼∂3` gives 6:
@@ -109,10 +109,10 @@ A value that `f` writes to a name outside itself loses its derivatives when `∂
 `∂` differentiates indexed, sliced and masked replacement and additive updates. The replacement can depend on the differentiated input:
 
 ```bpl
-{v←⍵ ⋄ v.[0]←0 ⋄ +/v}∂1 2 3               ⍝ 0 1 1
-{v←⍵ ⋄ v.[0]+←⍵.[1] ⋄ +/v}∂1 2 3         ⍝ 1 2 1
-{v←⍵ ⋄ v.[[0 0]]+←⍵.[1] ⋄ +/v}∂1 2 3     ⍝ 1 3 1
-{v←⍵ ⋄ v.[[0 2]]←+/⍵ ⋄ +/v}∂1 2 3        ⍝ 2 3 2
+{v←ω ◇ v.[0]←0 ◇ +/v}∂1 2 3               ⍝ 0 1 1
+{v←ω ◇ v.[0]+←ω.[1] ◇ +/v}∂1 2 3         ⍝ 1 2 1
+{v←ω ◇ v.[[0 0]]+←ω.[1] ◇ +/v}∂1 2 3     ⍝ 1 3 1
+{v←ω ◇ v.[[0 2]]←+/ω ◇ +/v}∂1 2 3        ⍝ 2 3 2
 ```
 
 Positions and masks are fixed choices during differentiation. `∂` does not differentiate which positions were chosen. An additive update counts each addition at a repeated destination, as the third example shows. A broadcast replacement's gradient sums back to the replacement's original shape, as the fourth example shows.
@@ -124,20 +124,20 @@ These rules also apply to selecting [Under](glyphs/at.qmd).
 Without a program, `∂` builds its duals or its record afresh on every call, through the interpreter. A training loop calls `∂` hundreds of times, with arguments of the same types and shapes. This loop fits a network with 16 tanh units (`7○`) to 64 points of sin 3x (`1○3×x`), in 200 steps of gradient descent on a record of parameters:
 
 ```bpl
-x←⍳64 ÷ 63 ⋄ y←1○3×x
-loss←{[x y]←⍺ ⋄ [w b v c]←⍵ ⋄ h←7○b(+⍤1)x×⊗w ⋄ +/÷≢ ⊼y-c+h+.×v}
-p←["w":1○⍳16 "b":16⍴0 "v":0.1×2○⍳16 "c":0]
+x←ι64 ÷ 63 ◇ y←1○3×x
+loss←{[x y]←α ◇ [w b v c]←ω ◇ h←7○b(+⍤1)x×⊗w ◇ +/÷≢ ⊼y-c+h+.×v}
+p←["w":1○ι16 "b":16ρ0 "v":0.1×2○ι16 "c":0]
 [x y] loss p                ⍝ 0.5232276475
-p←{⍵ - 0.1× [x y]loss∂⍵}⍣200p
+p←{ω - 0.1× [x y]loss∂ω}⍣200p
 [x y] loss p                ⍝ 0.07655752909
 ```
 
-`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. A map in the function, such as Rank in `+/{⊼1○+/w×⍵}⍤1 X`, calls its dfn once on all its cells, as it does outside a trace. Each call in the dfn then adds one step for all the cells. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
+`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. A map in the function, such as Rank in `+/{⊼1○+/w×ω}⍤1 X`, calls its dfn once on all its cells, as it does outside a trace. Each call in the dfn then adds one step for all the cells. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
 
 Later calls with the same argument types and shapes replay the program on their arguments, without running the function. The replay runs the program's steps as ordinary calls. Chains of elementwise steps then run as one stage, a block of items at a time, as they do outside a program. A stage folds its last step's items as it computes them. Its intermediate results exist only one block at a time. Once a stage is large enough, or runs again, BPL compiles it to machine code with Cranelift, if its steps can compile. The browser build has no compiler. It runs every stage on the interpreter's kernels. `•explain` shows whether a call built a program or replayed one:
 
 ```bpl
-sq←{+/⊼⍵} ⋄ g←sq∂ 1 2 3
+sq←{+/⊼ω} ◇ g←sq∂ 1 2 3
 (•explain "sq∂ 4 5 6").programs.event      ⍝ ["replayed"]
 (•explain "sq∂ 4 5 6 7").programs.event    ⍝ ["built"]
 ```
@@ -147,8 +147,8 @@ The second call replays the program that the first call built. Four numbers need
 A dfn keeps its programs with its definition. Any other function, such as a train, keeps them by its structure for the rest of the session. The structure leaves out the arrays that the function binds, which become inputs, as a dfn's free names do. So `+/w×⊢` replays its program when `w` holds new values of the same type and shape:
 
 ```bpl
-w←1 2 3 ⋄ g←(+/w×⊢)∂ 4 5 6
-w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
+w←1 2 3 ◇ g←(+/w×⊢)∂ 4 5 6
+w←7 8 9 ◇ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
 ```
 
 ### What stops a trace
@@ -156,9 +156,9 @@ w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed
 A trace stops at anything that a program can't hold: output or another effect, a random draw, `⍎`, a read of a differentiated value, as a guard on one makes, a differentiated value inside a nested array, as enclosing one makes, or a call that programs don't take yet. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
 
 ```bpl
-pos←{+/⍵ > 0 ? +/⊼⍵ ; 0}
+pos←{+/ω > 0 ? +/⊼ω ; 0}
 (•explain "pos∂ 1 2 3").stopped.reason    ⍝ ["a read of a traced value"]
-(•explain "{+/,⍵×⊃(⊂+/⍵)×2}∂ 1 2 3").stopped.reason   ⍝ ["a traced value inside a nested array"]
+(•explain "{+/,ω×⊃(⊂+/ω)×2}∂ 1 2 3").stopped.reason   ⍝ ["a traced value inside a nested array"]
 ```
 
 Each replay reads the current value of every name that the function reads from outside its body, and of every array that a function other than a dfn binds. A name or an array read as positions, a count or a guard's condition is part of the program itself. A replay checks its value. A new value traces the function again.
@@ -166,7 +166,7 @@ Each replay reads the current value of every name that the function reads from o
 A program fixes every type before it runs. Under the default dynamic kinds, a result's type can depend on its values: `√` of a negative number gives a complex number. A trace stops at such a call, unless the argument is known to be nonnegative, as `⊼x` is. Under static kinds, which `•prefs ["kinds":"static"]` sets, every type follows from the argument types. The same call then traces. Static kinds are the setting for work where speed matters.
 
 ```bpl
-roots←{+/√⍵}
+roots←{+/√ω}
 (•explain "roots∂ 1 2 3").stopped.reason  ⍝ ["a result whose type depends on values"]
 ```
 
@@ -177,9 +177,9 @@ Write a function for `∂` under static kinds, with each branch as Agenda (`⍚`
 Index notation writes the formula for one element with named indices. BPL runs the formula once, on whole arrays. [Indexing](indexing.ipynb#named-and-fresh-indices) and [`•index`](system/index.qmd) describe it. `∂` differentiates index notation as it differentiates any other code. This matrix product, written with indices, has the same gradient as `+.×`:
 
 ```bpl
-xu←[2 3]⍴⍳6 ⋄ wu←[3 4]⍴⍳12 ⋄ [b o k]←•index 2 4 3
-{+/,⊼⍵.[b k]+.×⍠k⁝wu.[k o]}∂ xu    ⍝ [324 1108 1892⋄1008 3376 5744]
-{+/,⊼⍵+.×wu}∂ xu                     ⍝ [324 1108 1892⋄1008 3376 5744]
+xu←[2 3]ρι6 ◇ wu←[3 4]ρι12 ◇ [b o k]←•index 2 4 3
+{+/,⊼ω.[b k]+.×⍠k⁝wu.[k o]}∂ xu    ⍝ [324 1108 1892◇1008 3376 5744]
+{+/,⊼ω+.×wu}∂ xu                     ⍝ [324 1108 1892◇1008 3376 5744]
 ```
 
 In a program, the indices keep their structure:
@@ -218,7 +218,7 @@ BPL also differs from all of them. `∂` strips its tags from values that escape
 These are planned:
 
 - Branches in programs. Agenda (`⍚`) with a selector computed from differentiated values stops a trace, as a guard on them does. The plan is to trace such a selector as a masked select, as JAX traces `select`.
-- Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level".
+- Programs inside maps. `∂` inside a map, as in `{f∂ω}¨x`, runs without a program. `•explain` gives the reason "a call under another level".
 - Writes. `@` and selective assignment with differentiated values stop a trace. `∂` still gives the right result, more slowly.
 - Whole training steps. A program holds one call of `∂`. The update, and the loop around it, run outside the program. A tracing point for whole training steps, such as `⍣`, would run a step's forward pass, gradient and update as one program.
 - Deferred Jacobians. `f∂ x` builds every item of the Jacobian. The plan holds a large Jacobian as its linearisation, and builds its items only when something reads them. `J+.×v` would then run as a JVP, `u+.×J` as a vector–Jacobian product, and `b⌹J` as an iterative solve, as in the Gauss–Newton step `x - r⁝x ⌹ r∂x`.

@@ -5,7 +5,7 @@
 Run `bpl --worker`. Send one JSON request per line. Each request gets one flushed JSON reply, in order. Names persist between requests.
 
 ```json
-{"code":"v←⍳10"}
+{"code":"v←ι10"}
 {"id":2,"code":"+/v"}
 ```
 
@@ -26,7 +26,7 @@ Malformed JSON, an invalid field or an invalid encoded array gives an error of k
 `code` evaluates BPL source. `timeout_ms` sets a deadline. `"echo":false` suppresses implicit display, but not explicit output.
 
 ```json
-{"id":1,"code":"+/⍳10","timeout_ms":2000,"echo":false}
+{"id":1,"code":"+/ι10","timeout_ms":2000,"echo":false}
 ```
 
 `bindings` maps names to encoded values. `call` applies a function to one or two encoded `args`, without generating BPL source.
@@ -63,7 +63,7 @@ Python's `Worker` manages a persistent `bpl --worker` subprocess with deadlines 
 from basedpl.worker import Worker
 
 with Worker() as w:
-    w.eval('v←⍳10')
+    w.eval('v←ι10')
     r = w.eval('+/v', timeout=2)
     assert r['value'] == 45
 ```

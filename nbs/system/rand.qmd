@@ -10,7 +10,7 @@ A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. E
 A [map](../terms.qmd#term-map) draws for each cell separately, in cell order, whether or not it runs as a [batched call](../evaluation.qmd#functions-and-effects), so both give the same numbers. A guard that splits the cells is the exception: each side of the guard draws for its own cells in turn. A whole-array draw and a map of draws over the same items take different streams, so `¿v` and `¿¨v` give different numbers.
 
 ```bpl
-g←•rand 3 ⋄ h←•rand 3 ⋄ (g.roll 4⍴6)≡h.roll 4⍴6    ⍝ $t
+g←•rand 3 ◇ h←•rand 3 ◇ (g.roll 4ρ6)≡h.roll 4ρ6    ⍝ $t
 ```
 
 `¿` draws from the session's own generator, which [`•prefs ["seed":n]`](prefs.qmd) seeds.

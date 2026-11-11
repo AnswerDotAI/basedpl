@@ -68,8 +68,8 @@ pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) 
     let files = serde_json::from_str(&js_sys::JSON::stringify(&files)?.as_string().unwrap()).map_err(|e| fail(e.to_string()))?;
     let files = basedpl_testkit::reference::sources(&files).map_err(fail)?;
     let cases = basedpl_testkit::timing::costs(
-        &files, only.as_deref().map(basedpl_testkit::timing::Selection::Codes), prefs.as_deref().unwrap_or_default(), false, &Default::default(), rustymath_timing::Sampling::Measure)
-    .map_err(fail)?;
+        &files, only.as_deref().map(basedpl_testkit::timing::Selection::Codes), prefs.as_deref().unwrap_or_default(), false, &Default::default(),
+        rustymath_timing::Sampling::Measure).map_err(fail)?;
     Ok(js_sys::JSON::parse(&basedpl_testkit::timing::rows(&cases, Some(basedpl_testkit::timing::WASM_COLUMN)).to_string())?)
 }
 

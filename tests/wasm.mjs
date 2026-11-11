@@ -25,30 +25,30 @@ const display = code => {
 
 // Each shape, and the depth it must reach.
 const shapes = {
-    plain: ['{⍵=0?0;1+∇ ⍵-1}', 120],
-    assigned: ['{⍵=0?0;x←∇ ⍵-1 ⋄ x+1}', 120],
-    each: ['{⍵=0?0;1+↑f¨⍵-1}', 120],
-    rank: ['{⍵=0?0;1+↑f⍤0⊢⍵-1}', 120],
-    operand: ['{⍵=0?0;1+(f m) ⍵-1}', 120],
-    outer: ['{⍵=0?0;1+↑(0 f⊗ ⍵-1)}', 79],
+    plain: ['{ω=0?0;1+∇ ω-1}', 120],
+    assigned: ['{ω=0?0;x←∇ ω-1 ◇ x+1}', 120],
+    each: ['{ω=0?0;1+↑f¨ω-1}', 120],
+    rank: ['{ω=0?0;1+↑f⍤0⊢ω-1}', 120],
+    operand: ['{ω=0?0;1+(f m) ω-1}', 120],
+    outer: ['{ω=0?0;1+↑(0 f⊗ ω-1)}', 79],
 };
 
 if (isMainThread && process.argv[2] !== 'depths') {
     test('runs code and streams its output', () => {
-        assert.deepEqual(run('⎕←"hi" ⋄ +/⍳4'), { outputs: ['"hi"', '6'], error: undefined });
+        assert.deepEqual(run('⎕←"hi" ◇ +/ι4'), { outputs: ['"hi"', '6'], error: undefined });
     });
     test('matches with JavaScript regular expressions and templates, at character positions', () => {
-        const { outputs } = run('p←"(?<=é|\\s)(?<x>[bB])(\\d)?" ⋄ m←"éb1 B" •r p ⋄ ⎕←m.position ⋄ ⎕←"éb1 B" •replace [p "<$<x>$2>"] ⋄ m.groups');
-        assert.deepEqual(outputs, ['[1 4]ₓ', '"é<b1> <B>"', '("b" "1"⋄"B" "")']);
+        const { outputs } = run('p←"(?<=é|\\s)(?<x>[bB])(\\d)?" ◇ m←"éb1 B" •r p ◇ ⎕←m.position ◇ ⎕←"éb1 B" •replace [p "<$<x>$2>"] ◇ m.groups');
+        assert.deepEqual(outputs, ['[1 4]ₓ', '"é<b1> <B>"', '("b" "1"◇"B" "")']);
     });
     test('shows a picture as RGBA bytes with its width in the MIME type, and an animation as an animated PNG', () => {
-        assert.deepEqual(display('•image 1 2⍴0 1')['image/x-rgba;width=2'], Uint8Array.of(0, 0, 0, 255, 255, 255, 255, 255));
-        assert.ok(Buffer.from(display('•image 2 3 4 3⍴0.5')['image/png']).includes('acTL'));
+        assert.deepEqual(display('•image 1 2ρ0 1')['image/x-rgba;width=2'], Uint8Array.of(0, 0, 0, 255, 255, 255, 255, 255));
+        assert.ok(Buffer.from(display('•image 2 3 4 3ρ0.5')['image/png']).includes('acTL'));
     });
     test('converts values to JavaScript', () => {
         const s = new Session();
         assert.deepEqual(s.eval('[2.5 "ab" ["x":1 "y":$t]]'), { shape: [3], data: [2.5, 'ab', { x: 1, y: true }] });
-        assert.deepEqual(s.eval('3 2⍴⍳6ₓ'), { shape: [3, 2], data: Uint8Array.of(0, 1, 2, 3, 4, 5) });
+        assert.deepEqual(s.eval('3 2ρι6ₓ'), { shape: [3, 2], data: Uint8Array.of(0, 1, 2, 3, 4, 5) });
         assert.deepEqual(s.eval('1j2 3'), { shape: [2, 2], data: Float64Array.of(1, 2, 3, 0) });
         assert.deepEqual(s.eval('[1j2 3]ₛ'), { shape: [2, 2], data: Float32Array.of(1, 2, 3, 0) });
         assert.equal(s.eval('{}0'), undefined);
@@ -61,8 +61,8 @@ if (isMainThread && process.argv[2] !== 'depths') {
         assert.deepEqual(s.eval('+⌿pts'), { shape: [2], data: Float64Array.of(4, 6) });
         assert.equal(s.eval('draw 1 2'), undefined);
         assert.deepEqual(drawn, [{ shape: [2], data: Float64Array.of(1, 2) }]);
-        assert.equal(s.eval('h←•js "Math.hypot" ⋄ 3 h 4'), 5);
-        assert.deepEqual(s.eval('upper←•js "s => s.toUpperCase()" ⋄ upper¨"ab" "cd"'), { shape: [2], data: ['AB', 'CD'] });
+        assert.equal(s.eval('h←•js "Math.hypot" ◇ 3 h 4'), 5);
+        assert.deepEqual(s.eval('upper←•js "s => s.toUpperCase()" ◇ upper¨"ab" "cd"'), { shape: [2], data: ['AB', 'CD'] });
     });
     test('numeric results preserve NaN extrema and tolerant packed comparison scans', () => {
         // The case's code and its expected result are the two lines after its header in core.bpl.
@@ -72,10 +72,10 @@ if (isMainThread && process.argv[2] !== 'depths') {
         const s = new Session();
         assert.deepEqual(s.eval(lines[at + 1]), s.eval(lines[at + 2]));
         // A raw numeric seed leaves 64 packed transitions, including values close to zero and one.
-        assert.deepEqual(s.eval('7<\\(65⍴[0 1E¯20 1 1.000000000000001 1.0000000000001])'), s.eval('65⍴[$f $t $f $t $t]'));
+        assert.deepEqual(s.eval('7<\\(65ρ[0 1E¯20 1 1.000000000000001 1.0000000000001])'), s.eval('65ρ[$f $t $f $t $t]'));
     });
     test('a canvas output carries JSON and bytes, which canvas.js draws', () => {
-        const data = display('d←•canvas "(ctx, data, options) => ctx.fillRect(options.x, 0, data.data[1], data.shape[0])" ⋄ ["x":5] d 3 2⍴⍳6');
+        const data = display('d←•canvas "(ctx, data, options) => ctx.fillRect(options.x, 0, data.data[1], data.shape[0])" ◇ ["x":5] d 3 2ρι6');
         const calls = [], show = (0, eval)(readFileSync(new URL('canvas.js', pkg), 'utf8'));
         show({ getContext: () => ({ fillRect: (...a) => calls.push(a) }) }, data['application/x-bpl-canvas+json'], data['application/x-bpl-canvas-data']);
         assert.deepEqual(calls, [[5, 0, 1, 3]]);
@@ -100,7 +100,7 @@ if (isMainThread && process.argv[2] !== 'depths') {
                                            resourceLimits: { stackSizeMb: kb ? kb / 1024 : reserveMb + 0.8 * (chromeMb - reserveMb) } })
         .on('message', results => console.log(JSON.stringify(results)));
 } else {
-    const depth = (shape, n) => { const { outputs, error } = run(`m←{⍶ ⍵} ⋄ f←${shape} ⋄ f ${n}`); return error ?? Number(outputs.at(-1)); };
+    const depth = (shape, n) => { const { outputs, error } = run(`m←{⍶ ω} ◇ f←${shape} ◇ f ${n}`); return error ?? Number(outputs.at(-1)); };
     // Each shape's depth, the depth its recursion reached, and what recursion to 300 levels gave.
     const results = {};
     for (const [name, [shape, n]] of Object.entries(workerData ?? shapes)) {

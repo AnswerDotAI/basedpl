@@ -682,7 +682,7 @@
    <key code="8" action="k8-m5"/>
    <key code="9" output="◊"/>
    <key code="10" output="°"/>
-   <key code="11" output=""/>
+   <key code="11" output="β"/>
    <key code="12" output="Œ"/>
    <key code="13" output="Æ"/>
    <key code="14" output="€"/>
@@ -1722,7 +1722,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k29-m0">
    <when state="none" output="0"/>
@@ -1859,7 +1859,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k75-m0">
    <when state="none" output="/"/>
@@ -1943,7 +1943,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m0">
    <when state="none" output="9"/>
@@ -2035,7 +2035,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k31-m1">
    <when state="none" output="O"/>
@@ -2143,7 +2143,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k67-m1">
    <when state="none" output="*"/>
@@ -2152,7 +2152,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k72-m1">
    <when state="none" output="="/>
@@ -2245,7 +2245,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m1">
    <when state="none" output="9"/>
@@ -2344,7 +2344,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k29-m2">
    <when state="none" output="0"/>
@@ -2462,7 +2462,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k75-m2">
    <when state="none" output="/"/>
@@ -2546,7 +2546,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m2">
    <when state="none" output="9"/>
@@ -2638,7 +2638,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k31-m3">
    <when state="none" output="O"/>
@@ -2746,7 +2746,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k67-m3">
    <when state="none" output="*"/>
@@ -2755,7 +2755,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k72-m3">
    <when state="none" output="="/>
@@ -2848,7 +2848,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m3">
    <when state="none" output="9"/>
@@ -2859,7 +2859,7 @@
    <when state="bar" output="⊽"/>
   </action>
   <action id="k0-m4">
-   <when state="none" output="⍺"/>
+   <when state="none" output="α"/>
    <when state="bar" output="⍶"/>
   </action>
   <action id="k1-m4">
@@ -2901,7 +2901,7 @@
    <when state="quad" output="⎕"/>
   </action>
   <action id="k13-m4">
-   <when state="none" output="⍵"/>
+   <when state="none" output="ω"/>
    <when state="bar" output="⍹"/>
   </action>
   <action id="k14-m4">
@@ -2910,7 +2910,7 @@
    <when state="bar" output="⍷"/>
   </action>
   <action id="k15-m4">
-   <when state="none" output="⍴"/>
+   <when state="none" output="ρ"/>
    <when state="subscript" output="ᵣ"/>
   </action>
   <action id="k17-m4">
@@ -2985,7 +2985,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k29-m4">
    <when state="none" output="∧"/>
@@ -3013,7 +3013,7 @@
    <when state="quad" output="⌺"/>
   </action>
   <action id="k34-m4">
-   <when state="none" output="⍳"/>
+   <when state="none" output="ι"/>
    <when state="bar" output="⍸"/>
   </action>
   <action id="k35-m4">
@@ -3103,7 +3103,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k75-m4">
    <when state="none" output="/"/>
@@ -3187,7 +3187,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m4">
    <when state="none" output="9"/>
@@ -3300,7 +3300,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k32-m5">
    <when state="none" output=" "/>
@@ -3311,7 +3311,7 @@
    <when state="native-5" output="~"/>
   </action>
   <action id="k33-m5">
-   <when state="none" output="⋄"/>
+   <when state="none" output="◇"/>
    <when state="superscript" output="⁶"/>
    <when state="superscript-minus" output="⁻⁶"/>
    <when state="subscript" output="₆"/>
@@ -3390,7 +3390,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k67-m5">
    <when state="none" output="*"/>
@@ -3399,7 +3399,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k72-m5">
    <when state="none" output="="/>
@@ -3492,7 +3492,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m5">
    <when state="none" output="9"/>
@@ -3935,7 +3935,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k29-m10">
    <when state="none" output="0"/>
@@ -4055,7 +4055,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k75-m10">
    <when state="none" output="/"/>
@@ -4139,7 +4139,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m10">
    <when state="none" output="9"/>
@@ -4212,7 +4212,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k33-m11">
    <when state="none" output="&#x001B;"/>
@@ -4291,7 +4291,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k67-m11">
    <when state="none" output="*"/>
@@ -4300,7 +4300,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k72-m11">
    <when state="none" output="&#x001F;"/>
@@ -4393,7 +4393,7 @@
    <when state="superscript-minus" output="⁻⁸"/>
    <when state="subscript" output="₈"/>
    <when state="subscript-minus" output="₋₈"/>
-   <when state="circle" output="⍟"/>
+   <when state="circle" output="⊛"/>
   </action>
   <action id="k92-m11">
    <when state="none" output="9"/>

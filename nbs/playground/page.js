@@ -4,7 +4,7 @@ import {display, editor, highlight, interpreter, show} from './bpl.js';
 const code = document.querySelector('#code'), history = document.querySelector('#history');
 const run = document.querySelector('#run'), stop = document.querySelector('#stop');
 const input = await editor(code, go, {
-    value: 'avg←+/÷≢ ⋄ avg 2 4 9', lineNumbers: 'off', lineDecorationsWidth: 0, scrollbar: {vertical: 'hidden', horizontal: 'hidden'}
+    value: 'avg←+/÷≢ ◇ avg 2 4 9', lineNumbers: 'off', lineDecorationsWidth: 0, scrollbar: {vertical: 'hidden', horizontal: 'hidden'}
 });
 function resize() { code.style.height = `${input.getContentHeight()}px`; input.layout(); }
 input.onDidContentSizeChange(e => { if (e.contentHeightChanged) resize(); });

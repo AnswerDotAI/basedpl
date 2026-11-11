@@ -11,7 +11,7 @@ pub(crate) struct Name(u32);
 struct Table { texts: Vec<&'static str>, numbers: HashMap<&'static str, u32> }
 
 /// The six names that a call binds itself, in the order of their slots in a frame (`Name::implicit`), which a call fills in that order (`Session::call_defined`).
-const IMPLICIT: [char; 6] = ['⍺', '⍵', '⍶', '⍹', '∇', '⍢'];
+const IMPLICIT: [char; 6] = ['α', 'ω', '⍶', '⍹', '∇', '⍢'];
 
 /// Whether `c` is one of the six names that a call binds itself.
 pub(crate) fn is_implicit(c: char) -> bool { IMPLICIT.contains(&c) }

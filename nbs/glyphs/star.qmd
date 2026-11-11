@@ -29,7 +29,7 @@ See also function [power `⍣`](star-diaeresis.qmd).
 
 ## Inverse
 
-`*⁻` is `⍟`. With the right argument fixed, `(*↢X)⁻Y` is `Y*÷X`.
+`*⁻` is `⊛`. With the right argument fixed, `(*↢X)⁻Y` is `Y*÷X`.
 
 ```bpl
 2*⁻8      ⍝ 3
@@ -47,5 +47,5 @@ BPL computes this combination by an algorithm of its own, in any spelling. [Trai
 On complex numbers, `¯1+*Y` computes `*Y`, then subtracts 1.
 
 ```bpl
-f←¯1+* ⋄ f 1E¯17         ⍝ 1ₑ¯17
+f←¯1+* ◇ f 1E¯17         ⍝ 1ₑ¯17
 ```

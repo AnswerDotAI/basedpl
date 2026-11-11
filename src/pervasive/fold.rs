@@ -26,7 +26,7 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     };
     let reduced = match fill.as_ref() {
         Some(fill) => with_reads([(items, &mapping, right.len()), (fill, &Mapping::Single, 1)], Missing::Scalar(1), run),
-        None => with_reads([(items, &mapping, right.len())], Missing::Default, run)
+        None => with_reads([(items, &mapping, right.len())], Missing::Default, run),
     }?;
     let ((out, order), _) = reduced.ok().flatten()?;
     // A copy lays out folds left in their source's order, pending where it's large, so that a later fold of windows can slide over them.

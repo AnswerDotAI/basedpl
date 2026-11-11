@@ -15,7 +15,7 @@ leaf←•element "x:leaf"
 "<x:root xmlns:x=""urn:example""><x:leaf>Hi</x:leaf></x:root>"
 
 ⍝ xml-numeric — Numeric attributes use XML rather than APL spelling
-path←•element "path" ⋄ •xml⁻ ["points":[¯2ₓ 1r2 1E3]] path ⍬
+path←•element "path" ◇ •xml⁻ ["points":[¯2ₓ 1r2 1E3]] path ⍬
 "<path points=""-2 0.5 1000""/>"
 
 ⍝ xml-roundtrip — Writing what •xml read gives back the same text
@@ -40,73 +40,73 @@ pic.children.attrs.r←30
 $t
 
 ⍝ mime-renderer — A renderer attached with •mime displays the current value
-total←{["text/html":"<b>",(⍕+/⍵.items),"</b>"]}ᵘ •mime ["items":[1 2 3]]
+total←{["text/html":"<b>",(⍕+/ω.items),"</b>"]}ᵘ •mime ["items":[1 2 3]]
 total.items₁←10
 "text/html"⊃•mime total   ⍝ "<b>14</b>"
 
 ⍝ mime-keep — Pervasive and structural functions keep a renderer, and other functions drop it
-im←•image 0.5×[0 1⋄1 0]
-≢¨•mime¨[1-im ⍉im im,im +/im ⍴im]
+im←•image 0.5×[0 1◇1 0]
+≢¨•mime¨[1-im ⍉im im,im +/im ρim]
 ⍝ =>
 [2 2 2 1 1]ₓ
 
 ⍝ mime-trace — A gradient at an array with a renderer runs from a program, as at any array
 ⍝⍝⍝ route trace
-im←•image 0.5×[0 1⋄1 0] ⋄ {+/,⍵×⍵}∂im   ⍝ [0 1⋄1 0]
+im←•image 0.5×[0 1◇1 0] ◇ {+/,ω×ω}∂im   ⍝ [0 1◇1 0]
 
 ⍝ image-png — PNG bytes decode to the picture they encode
-•image "png" •image⁻ 0.2×[0 1⋄2 3⋄4 5]
+•image "png" •image⁻ 0.2×[0 1◇2 3◇4 5]
 ⍝ =>
-0.2×[0 1⋄2 3⋄4 5]
+0.2×[0 1◇2 3◇4 5]
 
 ⍝ image-jpeg — JPEG drops only alpha, so a grey picture stays grey
-⍴•image "jpeg" •image⁻ 2 2⍴0 0.5 1 0.25
+ρ•image "jpeg" •image⁻ 2 2ρ0 0.5 1 0.25
 ⍝ =>
 [2 2]ₓ
 
 ⍝ image-animation — A rank-4 array, or frames given fps, displays as an animated PNG, and a still picture doesn't
-apng←{∨/"acTL"⍷•ucs "image/png"⊃•mime ⍵}
-(apng •image 2 3 4 3⍴0.5) (apng ["fps":12]•image 5 3 4⍴0.5) (apng •image 3 4⍴0.5)   ⍝ $t $t $f
+apng←{∨/"acTL"⍷•ucs "image/png"⊃•mime ω}
+(apng •image 2 3 4 3ρ0.5) (apng ["fps":12]•image 5 3 4ρ0.5) (apng •image 3 4ρ0.5)   ⍝ $t $t $f
 
 ⍝ image-animation-inverse — An animated PNG decodes to its frames, and a single frame to a picture
-f←0.2×2 2 3 3⍴5ₓ|⍳36ₓ
-g←0.2×3 2 2 1⍴5ₓ|⍳12ₓ
-s←⍴•image •image⁻ 1 2 3 3⍴0.2
+f←0.2×2 2 3 3ρ5ₓ|ι36ₓ
+g←0.2×3 2 2 1ρ5ₓ|ι12ₓ
+s←ρ•image •image⁻ 1 2 3 3ρ0.2
 [•image •image⁻ f;•image •image⁻ g;s]
 ⍝ =>
-[0.2×2 2 3 3⍴5ₓ|⍳36ₓ;0.2×3 2 2 1⍴5ₓ|⍳12ₓ;[2 3 3]ₓ]
+[0.2×2 2 3 3ρ5ₓ|ι36ₓ;0.2×3 2 2 1ρ5ₓ|ι12ₓ;[2 3 3]ₓ]
 
 ⍝ image-inverse-fps — With fps, •image⁻ encodes grey frames that have no channel axis
-h←0.2×3 2 2⍴5ₓ|⍳12ₓ
+h←0.2×3 2 2ρ5ₓ|ι12ₓ
 •image ["fps":12]•image⁻ h
 ⍝ =>
-0.2×3 2 2 1⍴5ₓ|⍳12ₓ
+0.2×3 2 2 1ρ5ₓ|ι12ₓ
 
 ⍝ image-delay — delay sets each frame's seconds, stored exactly as 1/n for a whole rate n, otherwise in milliseconds or seconds
-delays←{t←⍸"fcTL"⍷•ucs ⍵ ⋄ {256⊥2 2⍴⍵}⍤1 (⊂t+⊗24ₓ+⍳4ₓ)⌷⍵}
-delays ["delay":[1÷24 0.04 1.6 100]]•image⁻ 4 2 2⍴0.2
+delays←{t←⍸"fcTL"⍷•ucs ω ◇ {256⊥2 2ρω}⍤1 (⊂t+⊗24ₓ+ι4ₓ)⌷ω}
+delays ["delay":[1÷24 0.04 1.6 100]]•image⁻ 4 2 2ρ0.2
 ⍝ =>
-[1 24⋄1 25⋄1600 1000⋄100 1]
+[1 24◇1 25◇1600 1000◇100 1]
 
 ⍝ image-delay-time — delay makes the first axis time, and one delay applies to every frame
-h←0.2×3 2 2⍴5ₓ|⍳12ₓ
+h←0.2×3 2 2ρ5ₓ|ι12ₓ
 •image ["delay":0.1]•image⁻ h
 ⍝ =>
-0.2×3 2 2 1⍴5ₓ|⍳12ₓ
+0.2×3 2 2 1ρ5ₓ|ι12ₓ
 
 ⍝ image-delay-length — delay needs one number, or one for each frame
-["delay":[0.1 0.2 0.3]]•image⁻ 2 2 2⍴0.2
+["delay":[0.1 0.2 0.3]]•image⁻ 2 2 2ρ0.2
 ⍝ =>
 ⍝ error: LENGTH ERROR
 
 ⍝ image-jpeg-animation — Only PNG holds an animation
-"jpeg" •image⁻ 2 3 4 3⍴0.5
+"jpeg" •image⁻ 2 3 4 3ρ0.5
 ⍝ =>
 ⍝ error: DOMAIN ERROR
 
 ⍝ canvas-html — A canvas is a record of its source, options and data, and displays natively as HTML that draws it
 d←•canvas "(ctx, data) => ctx.fillRect(0, 0, 9, 9)"
-c←["width":40] d 2 2⍴⍳4
+c←["width":40] d 2 2ρι4
 c.options.width (∨/"<canvas>"⍷"text/html"⊃•mime c)   ⍝ 40 $t
 
 ⍝ canvas-text — A canvas's text form is one line, which counts frames when the options give fps
@@ -114,7 +114,7 @@ d←•canvas "x => x"
 ("text/plain"⊃•mime d 1 2) ("text/plain"⊃•mime ["fps":24] d 0 1 2)   ⍝ "canvas" "canvas: 3 frames"
 
 ⍝ mime-match — Match ignores renderers
-(•image 2 2⍴0.5)≡2 2⍴0.5
+(•image 2 2ρ0.5)≡2 2ρ0.5
 ⍝ =>
 $t
 
@@ -124,7 +124,7 @@ b←"text/markdown" •mime "b"
 ≢•mime a,b   ⍝ 2ₓ
 
 ⍝ json-hooks — JSON export omits keyed entries that hold functions
-•json⁻ ["a":"x" "f":{⍵}]
+•json⁻ ["a":"x" "f":{ω}]
 ⍝ =>
 "{""a"":""x""}"
 

@@ -1,30 +1,30 @@
-# `⍟` — Natural log / Logarithm
+# `⊛` — Natural log / Logarithm
 
 Function. Keys: `Alt-o 8`. Hanzi: `对` (`對`). Ranks: `0` monadic, `0 0` dyadic
 
-`⍟Y`: ln Y. Pervasive.
+`⊛Y`: ln Y. Pervasive.
 
 ```bpl
-⍟1                ⍝ 0
+⊛1                ⍝ 0
 ```
 
-`X⍟Y`: log<sub>X</sub> Y. Pervasive.
+`X⊛Y`: log<sub>X</sub> Y. Pervasive.
 
 ```bpl
-2⍟8               ⍝ 3
-10⍟100            ⍝ 2
-1⍟1               ⍝ 0
+2⊛8               ⍝ 3
+10⊛100            ⍝ 2
+1⊛1               ⍝ 0
 ```
 
-Uses complex logarithms where needed. `⍟0` is `¯∞`. `1⍟1` gives zero when its floating calculation has a [Mathish type](../terms.qmd#term-mathish-types) and [Mathish mode](../numbers.qmd#mathish-mode) is enabled. Other base-1 cases give an infinity or NaN.
+Uses complex logarithms where needed. `⊛0` is `¯∞`. `1⊛1` gives zero when its floating calculation has a [Mathish type](../terms.qmd#term-mathish-types) and [Mathish mode](../numbers.qmd#mathish-mode) is enabled. Other base-1 cases give an infinity or NaN.
 
 ## Inverse
 
-`⍟⁻` is `*`. With the right argument fixed, `(⍟↢X)⁻Y` is `X*÷Y`.
+`⊛⁻` is `*`. With the right argument fixed, `(⊛↢X)⁻Y` is `X*÷Y`.
 
 ```bpl
-2⍟⁻3      ⍝ 8
-(⍟↢8)⁻3   ⍝ 2
+2⊛⁻3      ⍝ 8
+(⊛↢8)⁻3   ⍝ 2
 ```
 
 ## Fast combinations
@@ -33,11 +33,11 @@ BPL computes this combination by an algorithm of its own, in any spelling. [Trai
 
 | Combination | Applies to | Benefit |
 |---|---|---|
-| `⍟1+Y`, `⍟Y+1` or `⍟∘(1+)` | real `Y` | log1p keeps the digits of a small `Y` that `1+Y` rounds away |
+| `⊛1+Y`, `⊛Y+1` or `⊛∘(1+)` | real `Y` | log1p keeps the digits of a small `Y` that `1+Y` rounds away |
 
-At an item below ¯1 under dynamic kinds, and on complex numbers, `⍟1+Y` computes `⍟` of `1+Y`. Softplus, `⍟1+*Y`, stays accurate for a very negative `Y`:
+At an item below ¯1 under dynamic kinds, and on complex numbers, `⊛1+Y` computes `⊛` of `1+Y`. Softplus, `⊛1+*Y`, stays accurate for a very negative `Y`:
 
 ```bpl
-f←⍟1+ ⋄ f 1E¯17          ⍝ 1ₑ¯17
-softplus←⍟1+* ⋄ softplus ¯40   ⍝ 4.248354255ₑ¯18
+f←⊛1+ ◇ f 1E¯17          ⍝ 1ₑ¯17
+softplus←⊛1+* ◇ softplus ¯40   ⍝ 4.248354255ₑ¯18
 ```

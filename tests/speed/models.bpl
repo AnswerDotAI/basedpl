@@ -1,72 +1,72 @@
 ⍝⍝ setup
-mx←¯0.5+¿[(1024 size 8) 64]⍴0
+mx←¯0.5+¿[(1024 size 8) 64]ρ0
 my←1○+/mx
-mp←["w":0.25×¯0.5+¿[64 256]⍴0 "b":256⍴0 "v":0.1×¯0.5+¿256⍴0 "c":0]
+mp←["w":0.25×¯0.5+¿[64 256]ρ0 "b":256ρ0 "v":0.1×¯0.5+¿256ρ0 "c":0]
 ⍝ Mean squared error of a one-hidden-layer tanh network.
 mlp←{
-  [x y]←⍺
-  [w b v c]←⍵
+  [x y]←α
+  [w b v c]←ω
   h←7○b(+⍤1)x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
-gx←¿[(1000 size 8) 32]⍴0
-gi←=⊗⍨⍳32
-glow←>⊗⍨⍳32 ⋄ components←25 size 4
-gp←["alpha":¿components⍴0 "mu":¿[components 32]⍴0 "q":0.1×¿[components 32]⍴0 "l":0.1×¿[components 32 32]⍴0]
+gx←¿[(1000 size 8) 32]ρ0
+gi←=⊗⍨ι32
+glow←>⊗⍨ι32 ◇ components←25 size 4
+gp←["alpha":¿componentsρ0 "mu":¿[components 32]ρ0 "q":0.1×¿[components 32]ρ0 "l":0.1×¿[components 32 32]ρ0]
 ⍝ Gaussian-mixture objective with a Wishart prior, in index notation. `n` names the points, `k` the components, and `d` and `e` the dimensions. The log-sum-exp shifts read detached values, which `∂` treats as constants.
 gmm←{
-  [alpha mu q l]←⍵
-  [[n d] [k e]]←•index[⍴⍺ ⍴mu]
+  [alpha mu q l]←ω
+  [[n d] [k e]]←•index[ρα ρmu]
   L←l.[k d e]×glow.[d e]
   Q←L + *q.[k d] × gi.[d e]
-  r←⍺.[n e]-mu.[k e]
+  r←α.[n e]-mu.[k e]
   sq←+/⍠d⊼+/⍠e⁝Q×r
   t←alpha.[k]++/⍠d⁝q.[k d] - 0.5×sq
   m←⌈/⍠k•detach t
   am←⌈/•detach alpha
-  +/m+⍟+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢⍺ × am+⍟+/*alpha-am
+  +/m+⊛+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢α × am+⊛+/*alpha-am
 }
 ⍝ The same objective in rank notation, with the index form's detached shifts. `⍉⍤2` transposes each component's matrix. The two spellings compute one objective and share each case's expected cost.
 gmmr←{
-  [alpha mu q l]←⍵
+  [alpha mu q l]←ω
   L←l×⍤2 glow
   Q←L+(*q)×¹ ²gi
-  sq←+/⊼(⍺(-⍤1)² ¹mu)+.×⍤2⍉⍤2⁝Q
+  sq←+/⊼(α(-⍤1)² ¹mu)+.×⍤2⍉⍤2⁝Q
   t←(alpha++/q)-0.5×sq
   m←⌈⌿•detach t
   am←⌈/•detach alpha
-  (+/m+⍟+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am
+  (+/m+⊛+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
 }
-kx←¿[(16384 size 16) 32]⍴0
-kc←¿[(64 size 4) 32]⍴0
+kx←¿[(16384 size 16) 32]ρ0
+kc←¿[(64 size 4) 32]ρ0
 ⍝ Sum of squared distances to the nearest cluster centres.
-kmeans←{+/⌊⌿(+/⊼⍵ +⊗ +/⊼⍺)-2×⍵+.×⍉⍺}
+kmeans←{+/⌊⌿(+/⊼ω +⊗ +/⊼α)-2×ω+.×⍉α}
 ⍝ The same sum in index notation, which subtracts before it squares. `n` names the points, `c` the centres and `d` the dimensions.
 kmeansi←{
-  [[n d] c]←•index[⍴⍺ ≢⍵]
-  +/⌊/⍠c+/⍠d⊼⍺.[n d]-⍵.[c d]
+  [[n d] c]←•index[ρα ≢ω]
+  +/⌊/⍠c+/⍠d⊼α.[n d]-ω.[c d]
 }
-sg←¿[(128 size 8) (128 size 8)]⍴0
-sk←[1 2 1⋄2 4 2⋄1 2 1]÷16
+sg←¿[(128 size 8) (128 size 8)]ρ0
+sk←[1 2 1◇2 4 2◇1 2 1]÷16
 n←65536 size 1024
-dx←¿(1048576 size 1024)⍴0
-dv←¿n⍴0
+dx←¿(1048576 size 1024)ρ0
+dv←¿nρ0
 dw←dv-0.5
-dp←["w":¿[64 256]⍴0 "b":¿256⍴0 "v":¿256⍴0 "c":1]
-rw←{0.1×¯0.5+¿⍵⍴0}
-tokens←64 size 8 ⋄ tid←¿[(4 size 2) tokens]⍴512ₓ
-ttg←¿[(4 size 2) tokens]⍴512ₓ
-tmk←¯1E9× ⍳tokens <⊗ ⍳tokens
-tp←["E":rw[512 128] "P":rw[tokens 128] "ga":128⍴1 "ba":128⍴0 "wqkv":rw[128 3 4 32] "wo":rw[128 128] "gb":128⍴1 "bb":128⍴0 "wu":rw[128 512] "cu":512⍴0 "wd":rw[512 128] "cd":128⍴0 "gc":128⍴1 "bc":128⍴0 "U":rw[128 512]]
+dp←["w":¿[64 256]ρ0 "b":¿256ρ0 "v":¿256ρ0 "c":1]
+rw←{0.1×¯0.5+¿ωρ0}
+tokens←64 size 8 ◇ tid←¿[(4 size 2) tokens]ρ512ₓ
+ttg←¿[(4 size 2) tokens]ρ512ₓ
+tmk←¯1E9× ιtokens <⊗ ιtokens
+tp←["E":rw[512 128] "P":rw[tokens 128] "ga":128ρ1 "ba":128ρ0 "wqkv":rw[128 3 4 32] "wo":rw[128 128] "gb":128ρ1 "bb":128ρ0 "wu":rw[128 512] "cu":512ρ0 "wd":rw[512 128] "cd":128ρ0 "gc":128ρ1 "bc":128ρ0 "U":rw[128 512]]
 gelu_scale←√2÷π1
 ⍝ GELU activation using its tanh approximation.
-gelu←{0.5×⍵×1+7○gelu_scale×⍵+0.044715×⍵*3}
+gelu←{0.5×ω×1+7○gelu_scale×ω+0.044715×ω*3}
 ⍝ Mean token cross-entropy of a pre-norm transformer decoder block, in index notation. `b` names the sequences, `t` and `u` the tokens, `d` the features, `r` the query, key and value, `h` the heads, `j` a head's features, `f` the MLP's units and `c` the classes. `norm` normalizes along `d`, with a learned gain and bias.
 dec←{
-  [ids tg]←⍺
-  [E P ga ba wqkv wo gb bb wu cu wd cd gc bc U]←⍵
-  [[b t] u [d r h j] f c]←•index[⍴ids ≢P ⍴wqkv ≢cu ≢⍉U]
-  norm←{[g o]←⍺ ⋄ z←⍵-(+/÷≢)⍠d⍵ ⋄ o.[d]+g.[d]×z÷√1E¯5+(+/÷≢)⍠d⊼z}
+  [ids tg]←α
+  [E P ga ba wqkv wo gb bb wu cu wd cd gc bc U]←ω
+  [[b t] u [d r h j] f c]←•index[ρids ≢P ρwqkv ≢cu ≢⍉U]
+  norm←{[g o]←α ◇ z←ω-(+/÷≢)⍠dω ◇ o.[d]+g.[d]×z÷√1E¯5+(+/÷≢)⍠d⊼z}
   x←E.[ids.[b t] d]+P.[t d]
   ⍝ q, k and v, each by sequence, token, head and the head's feature.
   [q k v]←:[r b t h j]⍉⁻+/⍠d([ga ba]norm x)×wqkv.[d r h j]
@@ -77,24 +77,24 @@ dec←{
   x←x+cd.[d]++/⍠f(gelu cu.[f]++/⍠d⁝a×wu.[d f])×wd.[f d]
   lg←+/⍠d([gc bc]norm x)×U.[d c]
   m←⌈/⍠c⁝lg
-  +/÷≢ , m+⍟+/⍠c*lg-m - lg.[b t tg.[b t]]
+  +/÷≢ , m+⊛+/⍠c*lg-m - lg.[b t tg.[b t]]
 }
-cx←¿[(8 size 2) 3 (32 size 8) (32 size 8)]⍴0
-ck←0.2×¯0.5+¿[16 3 3 3]⍴0
-cy←¿[(8 size 2) 16 (32 size 8) (32 size 8)]⍴0
+cx←¿[(8 size 2) 3 (32 size 8) (32 size 8)]ρ0
+ck←0.2×¯0.5+¿[16 3 3 3]ρ0
+cy←¿[(8 size 2) 16 (32 size 8) (32 size 8)]ρ0
 ⍝ A 3 by 3 convolution of 8 images of 3 channels, each 32 by 32, into 16 channels, in index notation. `•edge` gives NaN for a position past an edge, and a NaN position reads 0, so the images are padded with zeros.
 conv←{
-  [[n c i j] o a b]←•index[⍴⍺ ≢⍵ 3 3]
-  [h w]←2↓⍴⍺
-  [n o i j]⍉⁻+/⍠[c a b]⍺.[n c h•edge⁝i+a-1 w•edge⁝j+b-1]×⍵.[o c a b]
+  [[n c i j] o a b]←•index[ρα ≢ω 3 3]
+  [h w]←2↓ρα
+  [n o i j]⍉⁻+/⍠[c a b]α.[n c h•edge⁝i+a-1 w•edge⁝j+b-1]×ω.[o c a b]
 }
 ⍝ Mean squared error of one convolutional layer with tanh units, against the targets `cy`.
-closs←{+/÷≢ ,⊼cy-7○⍺conv⍵}
-hu←¿[(512 size 16) (512 size 16)]⍴0
+closs←{+/÷≢ ,⊼cy-7○αconvω}
+hu←¿[(512 size 16) (512 size 16)]ρ0
 ⍝ One step of heat diffusion: each cell moves towards the mean of its four neighbours. A neighbour past an edge is the edge cell itself (`clamp`).
 heat←{
-  [i j]←•index⍴⍵ ⋄ [h w]←⍴⍵ ⋄ clamp←•edge"clamp"
-  : ⍵ + 0.2× ⍵.[(h clamp i-1) j]+⍵.[(h clamp i+1) j]+⍵.[i (w clamp j-1)]+⍵.[i (w clamp j+1)] - 4×⍵
+  [i j]←•indexρω ◇ [h w]←ρω ◇ clamp←•edge"clamp"
+  : ω + 0.2× ω.[(h clamp i-1) j]+ω.[(h clamp i+1) j]+ω.[i (w clamp j-1)]+ω.[i (w clamp j+1)] - 4×ω
 }
 ⍝⍝ objectives
 ⍝ Models and stencils, timed without `∂`. For each function that `[derivatives]` differentiates, this is the cost that its gradient's cost is measured against.
@@ -140,7 +140,7 @@ kx kmeansi kc
 ⍝ A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once, on a batch of all the windows.
 ⍝ Expected: 1.5 copies: nine multiply-adds for each of 16,384 windows, read from the cache.
 ⍝⍝⍝ held macos 6.07: open.md lists the stencils among the speed audit's outliers that compiling didn't fix
-{+/,sk×⍵}⌺3 3 sg
+{+/,sk×ω}⌺3 3 sg
 ⍝⍝: 3	15	16	instructions macos 40.571 linux 31.014	allocated macos 25.868 linux 25.868
 
 ⍝ One step of heat diffusion on a 512 by 512 grid, 4 times `n`, reading each cell's four neighbours through `•edge`'s clamped positions.
@@ -160,35 +160,35 @@ cx closs ck
 
 ⍝⍝ derivatives
 ⍝ `∂` beside the function it differentiates. A unit argument takes one pass, whose tangent is an array of the result's shape. The bar's "Primal cost" row in the design notes asks that the primal keeps its kernels, and the tangent adds whole-array calls beside it.
-⍝ Expected: `1○dx` 112 copies: sines of a million items, 16 times `n`, at 7 copies each, as `1○v` counts them; `{1○dx+⍵}∂0` 116 copies: cosines of a million items at 7 copies each, with the sum fused into their pass. `∂` runs no sines, because its result is the tangent alone.
+⍝ Expected: `1○dx` 112 copies: sines of a million items, 16 times `n`, at 7 copies each, as `1○v` counts them; `{1○dx+ω}∂0` 116 copies: cosines of a million items at 7 copies each, with the sum fused into their pass. `∂` runs no sines, because its result is the tangent alone.
 ⍝ In wasm both expect twice their native costs, 224 and 232, as `1○v` does.
 1○dx
 ⍝⍝: 170	120	470	instructions macos 93.045 linux 53.277	allocated macos 32.119 linux 32.119
 
 ⍝ CI measured 124 to 128 on Linux in runs 56 and 59-61, and 389 to 423 in wasm in runs 59-61. On 30 October 2026 it measured 144 on macOS.
-{1○dx+⍵}∂0
+{1○dx+ω}∂0
 ⍝⍝: 180	170	580	instructions macos 107.898 linux 62.442	allocated macos 36.253 linux 36.253
 
 ⍝ A chain of fusible calls, whose tangent fuses too.
-⍝ Expected: `(dx-0.5)×dx+0.5` 24 copies: one fused pass over a million items, 16 times `n`; `{(dx-⍵)×dx+⍵}∂0.5` 24 copies: the tangent's fused pass. `∂` skips the primal, because the result holds only the tangent.
+⍝ Expected: `(dx-0.5)×dx+0.5` 24 copies: one fused pass over a million items, 16 times `n`; `{(dx-ω)×dx+ω}∂0.5` 24 copies: the tangent's fused pass. `∂` skips the primal, because the result holds only the tangent.
 ⍝ CI measured 17 to 21 on Linux in most runs from 56 to 62.
 dx-0.5 × dx+0.5
 ⍝⍝: 48	53	94	instructions macos 26.586 linux 17.285	allocated macos 96.462 linux 96.462
 
-{dx-⍵ × dx+⍵}∂0.5
+{dx-ω × dx+ω}∂0.5
 ⍝⍝: 48	53	120	instructions macos 40.359 linux 29.646	allocated macos 38.296 linux 38.296
 
 ⍝ Gradients of sums of an elementwise function of 65,536 items.
-⍝ Expected: `{+/√⍵}∂ dv` 3 copies: a square root and a division of each item, in one pass; `{+/|⍵}∂ dw` 1.2 copies: the sign of each item times the cotangent, in one pass. Their forward folds `+/√dv` and `+/|dw` cost 2.39 and 1.61 copies on 30 October 2026.
+⍝ Expected: `{+/√ω}∂ dv` 3 copies: a square root and a division of each item, in one pass; `{+/|ω}∂ dw` 1.2 copies: the sign of each item times the cotangent, in one pass. Their forward folds `+/√dv` and `+/|dw` cost 2.39 and 1.61 copies on 30 October 2026.
 ⍝⍝⍝ gap stopped "a result whose type depends on values": the gradient of a sum of square roots should keep a guarded real trace
-{+/√⍵}∂ dv
+{+/√ω}∂ dv
 ⍝⍝: 6	19	17	instructions macos 38.021 linux 27.43	allocated macos 41.768 linux 41.761
 
-{+/|⍵}∂ dw
+{+/|ω}∂ dw
 ⍝⍝: 2.4	14	27	instructions macos 10.821 linux 7.053	allocated macos 20.277 linux 20.277
 
-⍝ `√ₐ` gives a real result whatever the values, so its gradient keeps its trace under dynamic kinds and replays as one compiled stage with its two recorded selects. Expected: `{+/√ₐ⍵}∂ dv` 3 copies, as `{+/√⍵}∂ dv` expects: a square root and a division of each item, in one pass. `+/√ₐdv` costs what `+/√dv` costs: 3.14 and 3.04 copies on 1 November 2026.
-{+/√ₐ⍵}∂ dv
+⍝ `√ₐ` gives a real result whatever the values, so its gradient keeps its trace under dynamic kinds and replays as one compiled stage with its two recorded selects. Expected: `{+/√ₐω}∂ dv` 3 copies, as `{+/√ω}∂ dv` expects: a square root and a division of each item, in one pass. `+/√ₐdv` costs what `+/√dv` costs: 3.14 and 3.04 copies on 1 November 2026.
+{+/√ₐω}∂ dv
 ⍝⍝: 6	20	16	instructions macos 28.452 linux 19.041	allocated macos 31.326 linux 31.326
 +/√ₐdv
 ⍝⍝: 6	5.7	4.7	instructions macos 11.904 linux 7.263	allocated macos 8.461 linux 8.461
@@ -196,9 +196,9 @@ dx-0.5 × dx+0.5
 ⍝ A JVP of the MLP's loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
 ⍝ Expected: 122 copies on macOS, 216 on Linux and 428 in wasm: the primal and one tangent pass of the same size.
 ⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
-⍝⍝⍝ allows itemwise "item pairs": `mp+⍵×dp` pairs the parameter record's few arrays one at a time, each by a whole-array call
-⍝⍝⍝ gap stopped "a result whose type depends on values": the MLP JVP should trace record-valued parameter arithmetic; a pervasive call on one item inside `∂`'s rule for `mp+⍵×dp` plans no settled type, under static kinds too
-{[mx my] mlp mp+⍵×dp}∂0
+⍝⍝⍝ allows itemwise "item pairs": `mp+ω×dp` pairs the parameter record's few arrays one at a time, each by a whole-array call
+⍝⍝⍝ gap stopped "a result whose type depends on values": the MLP JVP should trace record-valued parameter arithmetic; a pervasive call on one item inside `∂`'s rule for `mp+ω×dp` plans no settled type, under static kinds too
+{[mx my] mlp mp+ω×dp}∂0
 ⍝⍝: 190	230	500	instructions macos 322.269 linux 560.694	allocated macos 170.494 linux 218.994
 
 ⍝ Gradients of the MLP, Gaussian mixture and k-means objectives in `[objectives]`, each from one run that records its linear calls and one transpose of the record. The bar's "Gradient cost" row asks for a small multiple of the objective's own cost.
@@ -207,7 +207,7 @@ dx-0.5 × dx+0.5
 ⍝⍝: 180	260	530	instructions macos 660.617 linux 900.047	allocated macos 429.907 linux 495.039
 
 ⍝ The tacit form that this index form replaced measured up to 932 on Linux on CI on 22 and 23 October 2026, more than twice its expected cost. CI measured the index form at 484 to 511 on Linux in most runs from 56 to 62, and 602 to 963 in wasm.
-⍝ On 27 October 2026 the index form measured 345 to 375 on macOS during a video call, against 239 for the tacit form earlier that day. Both forms trace under dynamic kinds too, since range facts show that `⍟` reads a non-negative argument. Traced, under static kinds, the index form's gradient is the faster.
+⍝ On 27 October 2026 the index form measured 345 to 375 on macOS during a video call, against 239 for the tacit form earlier that day. Both forms trace under dynamic kinds too, since range facts show that `⊛` reads a non-negative argument. Traced, under static kinds, the index form's gradient is the faster.
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 gx gmm∂ gp
 ⍝⍝: 290	730	920	instructions macos 250.523 linux 301.063	allocated macos 225.177 linux 284.71
@@ -232,7 +232,7 @@ kx kmeansi∂ kc
 
 ⍝ The gradient of the decoder block in `[objectives]`, from one run that records its linear calls and one transpose of the record.
 ⍝ Expected: 465 copies on macOS, 1060 on Linux and 2050 in wasm: about three times the objective.
-⍝ On 27 October 2026 the index form measured 810 to 864 on macOS, with other work running, against 432 for the tacit form it replaced. Under dynamic kinds, `√` and `⍟` stop both forms' traces, so `∂` runs both without a program, and the index form's run is the slower. Since a cotangent's sum along adjacent axes runs as one fold, which a product takes (`eval::folded_along`), it measures 630 to 649. Part of the rest is the copies from agreement by name's axis order that the objective's comment describes. It now measures 582 on macOS. CI measured 1,277 to 1,501 on Linux in most runs from 56 to 62, and 1,904 to 2,416 in wasm.
+⍝ On 27 October 2026 the index form measured 810 to 864 on macOS, with other work running, against 432 for the tacit form it replaced. Under dynamic kinds, `√` and `⊛` stop both forms' traces, so `∂` runs both without a program, and the index form's run is the slower. Since a cotangent's sum along adjacent axes runs as one fold, which a product takes (`eval::folded_along`), it measures 630 to 649. Part of the rest is the copies from agreement by name's axis order that the objective's comment describes. It now measures 582 on macOS. CI measured 1,277 to 1,501 on Linux in most runs from 56 to 62, and 1,904 to 2,416 in wasm.
 ⍝⍝⍝ gap stopped "a result whose type depends on values": normalization should keep guarded real traces through square root and logarithm
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 ⍝⍝⍝ gap forced "+/": the gradient's fold of 65,536 items should run in its pending argument's fused pass
@@ -267,7 +267,7 @@ gx gmm gp
 gx gmmr gp
 ⍝⍝: 68	130	210	instructions macos 143.966 linux 143.507	allocated macos 66.744 linux 78.994
 
-⍝ Expected at 32 bits: the gradient 95 copies on macOS, 203 on Linux and 371 in wasm, half its 64-bit costs. It runs from a program here, where `⍟` stops the 64-bit section's trace under dynamic kinds. On 29 October 2026 it measured 77 on macOS. CI measured 249 to 298 on Linux in runs 56 to 62.
+⍝ Expected at 32 bits: the gradient 95 copies on macOS, 203 on Linux and 371 in wasm, half its 64-bit costs. It runs from a program here, where `⊛` stops the 64-bit section's trace under dynamic kinds. On 29 October 2026 it measured 77 on macOS. CI measured 249 to 298 on Linux in runs 56 to 62.
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 gx gmm∂ gp
 ⍝⍝: 150	320	430	instructions macos 205.647 linux 233.894	allocated macos 135.637 linux 165.67

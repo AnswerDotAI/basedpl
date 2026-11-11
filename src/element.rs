@@ -1,10 +1,7 @@
 //! How compact element types read items from a `Value` and build arrays. Element fills and numeric conversions belong to rustymath.
 use crate::{Value, array::Storage, number::int::Int};
 use num_complex::{Complex32, Complex64};
-use rustymath::{
-    buffer::{ComplexBuf, Complexes, Element, FloatWidth, Source, View, Width, read_all},
-    with_complexes, with_floats, with_ints
-};
+use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, Source, View, Width, read_all}, with_complexes, with_floats, with_ints};
 use std::borrow::Cow;
 
 /// An element type of compact storage, read from and built into `Value`s.
@@ -78,4 +75,3 @@ pub(crate) fn read_as<A: Stored>(value: &Value) -> Option<Cow<'_, [A]>> where bo
         View::Complexes(z) => A::from_complexes(z)?, View::Characters(_) => return None
     }))
 }
-

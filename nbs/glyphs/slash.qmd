@@ -25,9 +25,9 @@ A dfn that reduces several lanes, such as each row of a matrix, runs each stage 
 
 ```bpl
 10-/1 2 3          ⍝ ¯8
-10+/2 3⍴⍳6ₓ         ⍝ [13 22]
+10+/2 3ρι6ₓ         ⍝ [13 22]
 ⊂10 +/ 1 2 3       ⍝ ⊂16
-10 20 +/⍤0 1 [2 3]⍴⍳6ₓ ⍝ [13 32]
+10 20 +/⍤0 1 [2 3]ρι6ₓ ⍝ [13 32]
 ```
 
 Fixed-width integer reductions keep the promoted fixed type. A wider seed selects a wider accumulator without widening the stored input array:
@@ -62,7 +62,7 @@ Use [full windows](up-down-arrow.qmd) for moving reductions.
 Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell before reducing, equivalent to `(f/,)¨⊂⍠A Y`. This is an exception to the general rule in [Axis](quad-colon.qmd). A single axis retains ordinary reduction behavior.
 
 ```bpl
-n←2 2 3⍴⍳6ₓ
+n←2 2 3ρι6ₓ
 +/₁ ₂n               ⍝ [15 15]ₓ
 +/₀ ₂n               ⍝ [6 24]ₓ
 ```
@@ -70,15 +70,15 @@ n←2 2 3⍴⍳6ₓ
 Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives the reduced value itself, as a dfn along the same axes does.
 
 ```bpl
--/₀ ₁ 2 2⍴⍳4ₓ         ⍝ ¯2ₓ
--/₁ ₀ 2 2⍴⍳4ₓ         ⍝ ¯4ₓ
+-/₀ ₁ 2 2ρι4ₓ         ⍝ ¯2ₓ
+-/₁ ₀ 2 2ρι4ₓ         ⍝ ¯4ₓ
 ```
 
 An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 ```bpl
 +/⍠⍬ [1 2 3]          ⍝ 1 2 3
-10+/₁ ₂ 2 2 3⍴⍳6ₓ      ⍝ [25 25]
+10+/₁ ₂ 2 2 3ρι6ₓ      ⍝ [25 25]
 ```
 
 Algebraic reductions such as `+/` can reassociate their operands, as [Accuracy](../numbers.qmd#accuracy) describes. Other reductions keep operand order.

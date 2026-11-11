@@ -10,15 +10,15 @@ Option-d	⌊
 Option-f	∂
 Option-h	←
 Option-g	∇
-Option-w	⍵
+Option-w	ω
 Option-x	⊃
 Option-c	∩
 Option-v	∪
 Option-b	⊥
-Option-a	⍺
+Option-a	α
 Option-z	⊂
 Option-e	∊
-Option-r	⍴
+Option-r	ρ
 Option-y	•
 Option-t	∘
 Control-Option-Shift-&	diaeresis prefix
@@ -37,7 +37,7 @@ Option-Shift-à	⍬
 Control-Option-Shift-à	∧
 Option-o	circle prefix
 Option-u	÷
-Option-i	⍳
+Option-i	ι
 Option-p	π
 Control-Option-p	stile prefix
 Option-l	↦
@@ -45,7 +45,7 @@ Option-j	↓
 Option-k	↑
 Option-Shift-k	↕
 Option-m	×
-Control-Option-`	⋄
+Control-Option-`	◇
 Option-;	⊣
 Option-Shift-;	↣
 Option-=	≡

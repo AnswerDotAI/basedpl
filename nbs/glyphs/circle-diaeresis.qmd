@@ -5,7 +5,7 @@ Dyadic operator. Keys: `Alt-1 o`. Hanzi: `经` (`經`)
 `f⍥g Y` is `f(g Y)`.
 
 ```bpl
-+/⍥, [1 2⋄3 4]   ⍝ 10
++/⍥, [1 2◇3 4]   ⍝ 10
 ```
 
 `X f⍥g Y` is `(g X)f(g Y)`.

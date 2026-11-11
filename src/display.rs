@@ -519,7 +519,7 @@ impl Tree {
     pub(crate) fn leaf(label: impl Into<String>) -> Self { Self { label: label.into(), children: vec![] } }
     pub(crate) fn render(&self) -> String {
         fn branch(node: &Tree, prefix: &str, edge: &str, next: &str, out: &mut Vec<String>) {
-            out.push(format!("{prefix}{edge}{}", node.label.replace('\n', " ⋄ ")));
+            out.push(format!("{prefix}{edge}{}", node.label.replace('\n', " ◇ ")));
             let prefix = format!("{prefix}{next}");
             for (i, child) in node.children.iter().enumerate() {
                 let last = i + 1 == node.children.len();

@@ -31,9 +31,8 @@ pub(crate) struct Linearized { argument: Value, parts: Vec<Value>, pub(crate) va
 /// `f` linearised at `right`, with `left` as its left argument. The tape level begins before the `∂` call's, so each seed is a tape value inside a dual.
 pub(crate) fn linearized(f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Linearized, Error> {
     let tracer = Arc::new(Tracer::default());
-    let (parts, value, result) = session().with_level(Kind::Tape, |level| {
-        session().with_level(Kind::Derivative, |tag| linearize(f, left, right, tag, level, &tracer, span))
-    })?;
+    let (parts, value, result) =
+        session().with_level(Kind::Tape, |level| session().with_level(Kind::Derivative, |tag| linearize(f, left, right, tag, level, &tracer, span)))?;
     Ok(Linearized { argument: right.clone(), parts, value, tape: result.map(|read| tracer.program(read)) })
 }
 
@@ -96,7 +95,7 @@ fn linearize(
     numeric(&primal)?;
     let read = match tangent {
         Some(t) if tape_of(&t).is_some() => { let laid = expand(&t, primal.layout()); tape_of(&laid).map(|t| t.read.clone()) }
-        // A tangent with no tape value anywhere in it came only from constants, as when `c∩⍵` draws its items from `c`. The result then doesn't depend on the argument.
+        // A tangent with no tape value anywhere in it came only from constants, as when `c∩ω` draws its items from `c`. The result then doesn't depend on the argument.
         Some(t) if !t.carried() => None,
         Some(_) => return Err(Error::new(ErrorKind::Unsupported, "∂ can't differentiate this result in reverse mode")),
         None => None,
@@ -154,11 +153,12 @@ fn transpose(tape: &Program, u: Value, seeds: usize, span: &Span) -> Result<Vec<
     let mut values = vec![None; nodes.len()];
     for (j, node) in nodes.iter().enumerate() {
         values[j] = match &node.origin {
-            Origin::Input(_) => None, Origin::Held(v) => Some(v.clone()), Origin::Step(step) if step.reads().any(|i| values[i].is_none()) => None,
+            Origin::Input(_) => None,
+            Origin::Held(v) => Some(v.clone()),
+            Origin::Step(step) if step.reads().any(|i| values[i].is_none()) => None,
             Origin::Step(step) => {
                 let value = |i: usize| values[i].as_ref().expect("a coefficient's operands have their values");
-                Some(run::copy_read(step, &value, &node.desc, span)
-                    .unwrap_or_else(|| run::run(step, nodes, &value, None, &node.desc, span))?)
+                Some(run::copy_read(step, &value, &node.desc, span).unwrap_or_else(|| run::run(step, nodes, &value, None, &node.desc, span))?)
             }
         };
     }
@@ -251,7 +251,6 @@ impl Back<'_> {
             }
         self.add_at(read, Places::Walk { base, steps: &kept }, &u)
     }
-
 
     fn walked(&self, j: usize) -> Option<(Read, Mapping)> { crate::program::positional_source(self.nodes, j) }
 

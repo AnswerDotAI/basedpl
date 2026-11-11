@@ -147,7 +147,10 @@ def shortcuts(layout, lang, base):
                 native = keys[code][dest]
                 accent = isinstance(native, dict) and OPTION_ACCENTS.get(lang, True)
                 ascii_key = isinstance(native, str) and len(native) == 1 and native.isascii() and native.isprintable() and native != ' '
-                if dest in (OPTION, OPTION_SHIFT) and (accent or ascii_key): continue
+                # Extra shifted letters use only native fallbacks, including after an accent.
+                if char in optional and char.isalpha():
+                    if native not in ('', label, char) or any(f'{code}:{dest}' in s['keys'] for s in base['states'].values()): continue
+                elif dest in (OPTION, OPTION_SHIFT) and (accent or ascii_key): continue
                 targets.append((code, dest))
         target = next((p for p in targets if p not in used), None)
         if target is None and char in optional: continue
@@ -271,7 +274,9 @@ def dead_key_table(layout):
 def keyboard_page(layout):
     "Generate the US-based Option keyboard diagram and dead-key table for the docs."
     base = bases()['us']
-    bindings = {chord: layout['option'][char] for char, chord in shortcuts(layout, 'us', base).items()}
+    # Optional shifted letters are typing aids, not entries on BPL's glyph map.
+    bindings = {chord: layout['option'][char] for char, chord in shortcuts(layout, 'us', base).items()
+        if char not in layout['optional_shift'] or not char.isalpha()}
     def glyph(value): return escape(layout['states'][value['state']]['terminator'] if isinstance(value, dict) else value)
     rows = []
     for row in GRID:

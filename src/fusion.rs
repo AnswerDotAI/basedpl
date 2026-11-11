@@ -2,7 +2,7 @@
 //!
 //! Without fusion, each call of a pervasive primitive reads and writes a whole array. `1.2×img-0.5` makes two passes over memory. An array larger than the cache comes back from memory for each pass. Forcing runs the pending calls as one typed program, whose block stages run all their steps on one block of items while the block is in the cache, then move to the next block (`program::blocks`). A program reads its inputs once and writes its result once.
 //!
-//! Dispatch defers a call that would give at least `Sizes::min_items` items and whose plan a block stage can run (`Pervasive::fuses`): `Primitive::pervasive_mapped` gives a pending array (`Pending`) in place of the call's result. A pending call holds its plan (`plan::Pervasive`), fixed when the call is made. It reads input arrays, scalars and other pending arrays, including pending arrays that names hold. Its items are computed when something reads them, such as a call that isn't fusible, display, or Python. A call that would make a chain gather more than `MAX_NODES` calls, or keep alive more than `MAX_KEPT` times its largest array, computes the pending arrays it reads first. Forcing gathers the pending calls that only the forced array's program reads into one `Program`, whose steps they become (`Pending::gathered`). A pending array that something outside the program also holds joins as an output: the same pass computes it and stores its items. A name and a train's argument hold their values outside any program, and so does a dfn's local or argument until its last read. A shared intermediate, as `s` in `s←img-0.5 ⋄ s×1-s`, is therefore stored by the pass that computes `s×1-s`. A reduction such as `+/` or `⌈⌿` of a pending array that nothing else holds folds each block's results while they are in the cache, and never builds the array (`fold`). Where something else holds the array, the same pass stores its items. A program runs through the units of its plan, whose block stages compile their parts by the compile policy. Forcing plans each structure of program once (`program::planned`), and later forces of the same chain on new arrays reuse the plan. With `•prefs ["fusion":$t]`, `Function::call` reports the innermost call that computes each pending argument.
+//! Dispatch defers a call that would give at least `Sizes::min_items` items and whose plan a block stage can run (`Pervasive::fuses`): `Primitive::pervasive_mapped` gives a pending array (`Pending`) in place of the call's result. A pending call holds its plan (`plan::Pervasive`), fixed when the call is made. It reads input arrays, scalars and other pending arrays, including pending arrays that names hold. Its items are computed when something reads them, such as a call that isn't fusible, display, or Python. A call that would make a chain gather more than `MAX_NODES` calls, or keep alive more than `MAX_KEPT` times its largest array, computes the pending arrays it reads first. Forcing gathers the pending calls that only the forced array's program reads into one `Program`, whose steps they become (`Pending::gathered`). A pending array that something outside the program also holds joins as an output: the same pass computes it and stores its items. A name and a train's argument hold their values outside any program, and so does a dfn's local or argument until its last read. A shared intermediate, as `s` in `s←img-0.5 ◇ s×1-s`, is therefore stored by the pass that computes `s×1-s`. A reduction such as `+/` or `⌈⌿` of a pending array that nothing else holds folds each block's results while they are in the cache, and never builds the array (`fold`). Where something else holds the array, the same pass stores its items. A program runs through the units of its plan, whose block stages compile their parts by the compile policy. Forcing plans each structure of program once (`program::planned`), and later forces of the same chain on new arrays reuse the plan. With `•prefs ["fusion":$t]`, `Function::call` reports the innermost call that computes each pending argument.
 //!
 //! A program is data (`program::Program`). Its inputs are the arrays and atoms that the gathered calls read, held under plain layouts. A call on arrays with keys or axis names reads them through the maps that agreement gives, which read a missing key as a fill, and its pending array keeps the agreement's layout. A step reads a value of its own shape, or an atom. A step reads an array's items in order under another shape through its operand's `Read`, which holds that layout. An array read through any other map goes through a `Copy` step (`read`), which a block stage reads through without making the copy. A pending call's arrays hold items of the types that a block stage holds: floats of 32 or 64 bits, Booleans and integers. A call fuses where its kernel can't fail and gives the type that the call computes at, or Booleans, so that its plan fixes its result's type (`Pervasive::fuses`). Under dynamic kinds an ordinary integer's type depends on its values, so integers fuse there only at a fixed width. A computed array of Booleans or integers joins only a call that computes at its type: a block stage would convert it into a buffer on every run, where the call's own kernel converts each item as it reads it. The `fusion` entry of `nbs/system/prefs.qmd` lists the primitives that fuse. A comparison joins a program as any other pending array does. A select, the masked lowering of `⍚` and `@[p]` (`select`), reads a comparison as its mask and takes each item from one of two operands. A function that `pervasive::keeps_exact` takes no exact argument where it computes floats, a comparison included, because a program reads exact arguments as floats. A conversion of a pending array, as a width or fixed mark makes it, is one more pending call (`convert`), so the program stores only the converted items. Each step runs the kernel that `pervasive::map` runs for the same arguments. A program therefore gives the result that its calls give.
 //!
@@ -26,10 +26,10 @@ use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError};
 /// The most bytes of block-sized data that a block touches at once: a block for each buffer and each input, and one more for each input that the block copies (`program::blocks`). Tuned for the 128 KB L1 data cache of this Mac's performance cores (Apple M5 Max), where 96 KB of them leave room for the result's stream.
 pub(crate) const BUFFERED: usize = 3 << 15;
 
-/// The most calls that forcing one pending array gathers. Making a call that would pass it forces the pending arrays it reads first, so forcing never gathers more calls than this, or recurses deeper. On the Mac, `{⍵+0.5}⍣200` on 4 million floats cost 104, 96 and 93 copies with limits of 16, 64 and 256. A larger limit gains little, and keeps more inputs alive.
+/// The most calls that forcing one pending array gathers. Making a call that would pass it forces the pending arrays it reads first, so forcing never gathers more calls than this, or recurses deeper. On the Mac, `{ω+0.5}⍣200` on 4 million floats cost 104, 96 and 93 copies with limits of 16, 64 and 256. A larger limit gains little, and keeps more inputs alive.
 const MAX_NODES: usize = 64;
 
-/// The bytes that a chain of pending calls may keep alive, as a multiple of the largest of its arrays and its result. Making a call that would pass it forces the pending arrays it reads first. A chain that reads a fresh array with each call, as `g+←…` in a loop does, then keeps about this many arrays alive, where `MAX_NODES` alone would let it keep 64. A chain that reads one array again and again, as `{⍵+x}⍣64⊢x` does, keeps that array once. A copy adds no arrays to its source's chain.
+/// The bytes that a chain of pending calls may keep alive, as a multiple of the largest of its arrays and its result. Making a call that would pass it forces the pending arrays it reads first. A chain that reads a fresh array with each call, as `g+←…` in a loop does, then keeps about this many arrays alive, where `MAX_NODES` alone would let it keep 64. A chain that reads one array again and again, as `{ω+x}⍣64⊢x` does, keeps that array once. A copy adds no arrays to its source's chain.
 const MAX_KEPT: usize = 8;
 
 /// An array whose items a program computes when something first reads them. The program holds the arrays and atoms that the call reads, among them other pending arrays, each pending array in a value of its own (`held`). Forcing gathers a chain of them into one program, which runs block by block.
@@ -293,7 +293,6 @@ fn declined(agreement: Agreement, reason: &'static str) -> Result<Value, Agreeme
     Err(agreement)
 }
 
-
 /// The description of a pending array's items as a value of its program: items of `dtype`, fixed where `prototype` is, laid out in `frame`, within `range`.
 fn described(dtype: DType, prototype: &Value, frame: &[usize], range: Range) -> Desc {
     Desc { kind: crate::plan::Kind::stored(Some(dtype), prototype.fixed_width(), false), atom: false, layout: frame.into(), range }
@@ -315,13 +314,14 @@ fn own_steps(program: &Program) -> usize { program.nodes.iter().filter(|n| match
 
 /// The bounded ordinary-body subset: one dense result, existing fusible steps, and no unresolved pending views.
 pub(crate) fn records_dense(program: &Program) -> bool {
-    !program.result.desc(&program.nodes).atom && program.outputs.is_empty() && (1..=MAX_NODES).contains(&own_steps(program)) && program.nodes.iter().all(|node| {
-        readable(node.desc.dtype()) && match &node.origin {
-            Origin::Step(Step::Map { plan, .. }) => plan.settled().is_ok() && plan.fuses(),
-            Origin::Step(Step::Copy { .. } | Step::Convert { .. } | Step::Select { .. }) => true,
-            Origin::Held(value) => !value.is_view() || value.pending().is_none(), Origin::Input(_) => !node.desc.atom, _ => false
-        }
-    })
+    !program.result.desc(&program.nodes).atom && program.outputs.is_empty() && (1..=MAX_NODES).contains(&own_steps(program))
+        && program.nodes.iter().all(|node| {
+            readable(node.desc.dtype()) && match &node.origin {
+                Origin::Step(Step::Map { plan, .. }) => plan.settled().is_ok() && plan.fuses(),
+                Origin::Step(Step::Copy { .. } | Step::Convert { .. } | Step::Select { .. }) => true,
+                Origin::Held(value) => !value.is_view() || value.pending().is_none(), Origin::Input(_) => !node.desc.atom, _ => false
+            }
+        })
 }
 
 /// Publishes an admitted dense recording through eager fusion's holding and pending-work rules.
@@ -534,7 +534,7 @@ fn copy_range<'a>(sources: impl IntoIterator<Item = &'a Value>) -> Range {
     sources.into_iter().fold(Range::of(Some(0.0)), |r, v| r.join(if v.is_atom() { Range::of(v.as_real()) } else { v.range() }))
 }
 
-/// A pending copy of `source` through `map`, for a result of `layout`, whatever its size. Where `map`'s offsets don't split into one entry for each axis of `layout` (`Mapping::entries`), as when a matrix reads windows, the copy is made at the shape of `map`'s own entries and laid out as `layout`, so that a product reads it through the map, as it reads a reshape of the windows. An atom reads as a one-item array, as a reshape of it reads it, so `n⍴0` waits as `n⍴v` does. `None` for a source that isn't compact, or for entries that hold another number of items. A fused call or a fold reads through a copy of floats at a width that programs run, which forces as a program. Any other copy forces through `Gather::walk`, as `remapped` does. A product reads a pending transpose in place (`pervasive::inner`).
+/// A pending copy of `source` through `map`, for a result of `layout`, whatever its size. Where `map`'s offsets don't split into one entry for each axis of `layout` (`Mapping::entries`), as when a matrix reads windows, the copy is made at the shape of `map`'s own entries and laid out as `layout`, so that a product reads it through the map, as it reads a reshape of the windows. An atom reads as a one-item array, as a reshape of it reads it, so `nρ0` waits as `nρv` does. `None` for a source that isn't compact, or for entries that hold another number of items. A fused call or a fold reads through a copy of floats at a width that programs run, which forces as a program. Any other copy forces through `Gather::walk`, as `remapped` does. A product reads a pending transpose in place (`pervasive::inner`).
 pub(crate) fn pending(source: &Value, layout: &Layout, map: &Mapping) -> Option<Value> {
     let lifted;
     let source = if source.is_atom() { lifted = Layout::from([1]).filled(source); &lifted } else { source };
@@ -881,8 +881,9 @@ impl Footprint for Pending {
     /// The bytes that this pending array keeps alive: its items once computed, and until then the values that its program holds.
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         if let Some(storage) = self.result.get() { return storage.footprint_in(seen); }
-        self.work().as_ref().map_or(0, |program|
-            program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => v.footprint_in(seen), _ => 0 }).sum())
+        self.work().as_ref().map_or(0, |program| {
+            program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => v.footprint_in(seen), _ => 0 }).sum()
+        })
     }
 }
 

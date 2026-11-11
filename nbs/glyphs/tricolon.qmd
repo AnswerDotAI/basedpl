@@ -5,7 +5,7 @@ Syntax. Keys: `Alt-:`. Hanzi: `隔`
 `⁝` separates tokens without ending their run. It prevents adjacent names from merging and stops a literal strand continuing. It has no value and makes no function call.
 
 ```bpl
-h←- ⋄ m←5 ⋄ h⁝m             ⍝ ¯5
+h←- ◇ m←5 ◇ h⁝m             ⍝ ¯5
 ≥⍣3⁝5                       ⍝ 8
 ```
 

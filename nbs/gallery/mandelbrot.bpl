@@ -4,25 +4,25 @@
 ⍝ computes with 64-bit floats, which hold the detail to that depth. The 32-bit version stops at about 1,000 times.
 •prefs ["float":64]
 centre←¯0.7436438870371587ⱼ0.1318259042053120
-g←≤⊽ ⍳250 ÷ 250
+g←≤⊽ ι250 ÷ 250
 grid←, 0ⱼ1×⌽g +⊗ g
 step←{
-  [z c i I V s]←⍵
+  [z c i I V s]←ω
   z←c+z×z
   live←~e←256<|z
   I,←e#i
-  V,←s+1-2⍟⍟|e#z
+  V,←s+1-2⊛⊛|e#z
   [z c i]←live↣#¨[z c i]
   [z c i I V ≥s]
 }
 frame←{
-  zoom←1.03*400-|400-800|⍵
+  zoom←1.03*400-|400-800|ω
   c←centre+grid×1.5÷zoom
-  limit←⌊200+250×10⍟zoom
-  [_ _ _ I V _]←step⍣limit [0×c;c;⍳≢c;⍬;⍬;0]
-  v←≢c ⍴ ¯1
+  limit←⌊200+250×10⊛zoom
+  [_ _ _ I V _]←step⍣limit [0×c;c;ι≢c;⍬;⍬;0]
+  v←≢c ρ ¯1
   v.[I]←V
   hue←0.35×√0⌈v
   colour←v≥0 × 0.5+0.5×2○hue+⊗0.6 1.6 2.6
-  ["image":[250 250 3]⍴colour]
+  ["image":[250 250 3]ρcolour]
 }

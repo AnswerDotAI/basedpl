@@ -24,7 +24,7 @@ The same call works from Python: `bpl('•load "lib/numeric.bpl"')` returns the 
 
 The ports count positions from 0, as the rest of BPL does. They use based arrays, `↑` for First, `⊃` for Mix, `⍶`/`⍹` operands, and seeded reductions.
 
-BPL's `≡` returns an unsigned depth, as Dyalog's does when `⎕ML` is 2 or more. Where an original under the default `⎕ML` writes `|≡`, its port writes `≡`. Dyalog's First takes the first element in ravel order, while `↑` takes the first major cell, so a port takes the first element of a matrix with `↑,⍵`.
+BPL's `≡` returns an unsigned depth, as Dyalog's does when `⎕ML` is 2 or more. Where an original under the default `⎕ML` writes `|≡`, its port writes `≡`. Dyalog's First takes the first element in ravel order, while `↑` takes the first major cell, so a port takes the first element of a matrix with `↑,ω`.
 
 `dyalog.bpl` includes `cal [year month]` and `cal year` for calendars, `packZ` for LZW compression (`0 packZ` expands; a negative bit limit returns the dictionary), `variables unify expressions` for structural unification with an occurs check, and `digits ratsum` for repeating-unit rational addition/negation.
 

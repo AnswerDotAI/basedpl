@@ -1,16 +1,16 @@
 ⍝⍝ setup
 side←256 size 32
 n←side×side
-v←¿n⍴0
-w←¿n⍴0
+v←¿nρ0
+w←¿nρ0
 s←v-0.5
-m←[side side]⍴v
-jv←¿n⍴1000ₓ
-kv←¿n⍴1000000000000ₓ
-b←0ₓ=¿n⍴3ₓ
-i←¿n⍴⌊ₓn
-cnt←¿n⍴3ₓ
-c←n⍴"the quick brown fox jumps over the lazy dog"
+m←[side side]ρv
+jv←¿nρ1000ₓ
+kv←¿nρ1000000000000ₓ
+b←0ₓ=¿nρ3ₓ
+i←¿nρ⌊ₓn
+cnt←¿nρ3ₓ
+c←nρ"the quick brown fox jumps over the lazy dog"
 nd←•distribution "normal"
 lg←•distribution "lognormal"
 ud←•distribution "uniform"
@@ -20,29 +20,29 @@ lp←•distribution "laplace"
 lo←•distribution "logistic"
 wb←1.5 2 •distribution "weibull"
 coeffs←0.5 ¯1.25 0.75 2 ¯0.125 0.0625 ¯1.5 0.25
-ms←[n÷64 8 8]⍴v
+ms←[n÷64 8 8]ρv
 ss←ms+0 2 1⍉ms
-sps←ss(+⍤2)16×=⊗⍨⍳8
-t←[n÷16 16]⍴v
-tq←¿[n÷4 24]⍴0
+sps←ss(+⍤2)16×=⊗⍨ι8
+t←[n÷16 16]ρv
+tq←¿[n÷4 24]ρ0
 z←v+0j1×w
 zm←[(128 size 16) (128 size 16)]↑m+0j1×⊖m
-bm←[side side]⍴b
-jm←[side side]⍴jv
-um←[2×side 2×side]⍴(256×w)ₓ₁
-cm←[side side]⍴c
+bm←[side side]ρb
+jm←[side side]ρjv
+um←[2×side 2×side]ρ(256×w)ₓ₁
+cm←[side side]ρc
 [ir ic]←•index side side
-ia←ir.[¿side⍴side]
+ia←ir.[¿sideρside]
 id←•index side
 lut←256↑v
-ux←(¿n⍴256)ₓ₁
+ux←(¿nρ256)ₓ₁
 ⍝⍝ copies
 ⍝ Sharing storage copies nothing.
 ⍝ Expected: 0 copies each: shares storage.
 ,m
 ⍝⍝: 0.5	0.5	0.5	instructions macos 0.938 linux 0.397	allocated macos 0.032 linux 0.032
 
-⍴m ⍴ v
+ρm ρ v
 ⍝⍝: 0.5	0.5	0.5	instructions macos 1.654 linux 0.968	allocated macos 0.074 linux 0.074
 
 ⍝ Reading each item once, with almost nothing to write.
@@ -92,7 +92,7 @@ ux←(¿n⍴256)ₓ₁
 ⍝⍝: 12	19	40	instructions macos 16.1 linux 17.508	allocated macos 0.574 linux 0.574
 
 ⍝ Reading one argument and writing each item once.
-⍝ Expected: `-v` and `⌽v` 1 copy: one read and one write per item; `-jv` 0.25 copies: 2-byte reads and writes; `~b`, `∧\b` and `∨\b` 0.13 copies: 1-byte reads and writes; `1⌽v` 1 copy: two contiguous copies; `⊖m` 1 copy: contiguous row copies; `1↓v` 1 copy: one copy; `(n÷2)↑v` 0.5 copies: copies half the items; `n⍴0` 0.5 copies: writes 8 bytes an item.
+⍝ Expected: `-v` and `⌽v` 1 copy: one read and one write per item; `-jv` 0.25 copies: 2-byte reads and writes; `~b`, `∧\b` and `∨\b` 0.13 copies: 1-byte reads and writes; `1⌽v` 1 copy: two contiguous copies; `⊖m` 1 copy: contiguous row copies; `1↓v` 1 copy: one copy; `(n÷2)↑v` 0.5 copies: copies half the items; `nρ0` 0.5 copies: writes 8 bytes an item.
 -v
 ⍝⍝: 2	1.9	2.1	instructions macos 2.995 linux 1.746	allocated macos 8.06 linux 8.06
 
@@ -126,11 +126,11 @@ n÷2 ↑ v
 ⍝⍝: 1	0.66	0.79	instructions macos 3.037 linux 1.449	allocated macos 4.082 linux 4.082
 
 ⍝ Expected: 0.5 copies: writes 8 bytes an item.
-n⍴0
+nρ0
 ⍝⍝: 1	1.2	1.3	instructions macos 1.989 linux 1.22	allocated macos 8.057 linux 8.057
 
 ⍝ Reading two arguments and writing each item once.
-⍝ Expected: `v+w`, `kv+kv` and `v⌊w` 1.5 copies: two 8-byte reads and one write per item; `jv+jv` and `jv∧ᵇjv` 0.38 copies: 2-byte reads and writes; `v×2` 1 copy: one read and one write per item; `jv×2.5` 0.63 copies: its products are floats, with 2-byte reads and 8-byte writes; `jv=jv` 0.31 copies: two 2-byte reads and a 1-byte write; `b×jv` 0.31 copies: 1- and 2-byte reads, 2-byte writes; `b×kv` 1.1 copies: 1- and 8-byte reads, 8-byte writes; `b∧b` 0.19 copies: 1-byte reads and writes; `c=c` 0.56 copies: two 4-byte reads and a 1-byte write; `⍳√n ×⊗ ⍳√n` 0.5 copies: writes 8 bytes an item.
+⍝ Expected: `v+w`, `kv+kv` and `v⌊w` 1.5 copies: two 8-byte reads and one write per item; `jv+jv` and `jv∧ᵇjv` 0.38 copies: 2-byte reads and writes; `v×2` 1 copy: one read and one write per item; `jv×2.5` 0.63 copies: its products are floats, with 2-byte reads and 8-byte writes; `jv=jv` 0.31 copies: two 2-byte reads and a 1-byte write; `b×jv` 0.31 copies: 1- and 2-byte reads, 2-byte writes; `b×kv` 1.1 copies: 1- and 8-byte reads, 8-byte writes; `b∧b` 0.19 copies: 1-byte reads and writes; `c=c` 0.56 copies: two 4-byte reads and a 1-byte write; `ι√n ×⊗ ι√n` 0.5 copies: writes 8 bytes an item.
 ⍝⍝⍝ route vector kernel
 v+w
 ⍝⍝: 3	4.5	3.7	instructions macos 3.482 linux 2.137	allocated macos 8.079 linux 8.079
@@ -170,7 +170,7 @@ c=c
 ⍝⍝: 1.2	0.77	2	instructions macos 2.943 linux 1.905	allocated macos 1.1 linux 1.1
 
 ⍝ Expected: 0.73 copies: 0.5 for writing 8 bytes an item, and one node, about 0.23 copies of 65,536 floats (`fusion::MAC_NODE_NS`, 1,800 ns), because the call waits under the cost rule and nothing fuses with it (decision 13). Jeremy accepted a lone 65,536-item call's node on 30 October 2026, as for `c=c`. Main set this expected cost on 31 October 2026, for Jeremy's review. In the browser the call runs at once, because the cost rule's limit there, from the browser's node estimate of 4 × `MAC_NODE_NS`, is about 830 KB, above the call's 512 KB. CI measured it there at 1.06 copies.
-⍳√n ×⊗ ⍳√n
+ι√n ×⊗ ι√n
 ⍝⍝: 1.5	1.7	1.9	instructions macos 6.694 linux 4.935	allocated macos 8.379 linux 8.379
 
 ⍝ Products of 64-bit integers that leave 64 bits become exact big integers, each held in an allocation of its own.
@@ -205,7 +205,7 @@ cnt#v
 
 ⍝ A range with an approximate length converts each position from an integer to a float. Wasm has no vector instruction for that, so there each block of 8 positions adds 0 to 7 to the block's first float.
 ⍝ Expected: 0.5 copies: writes 8 bytes an item.
-⍳n
+ιn
 ⍝⍝: 1	1.8	1.9	instructions macos 9.054 linux 6.507	allocated macos 2.032 linux 2.032
 
 ⍝ Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item. Tolerant floor raises each item by its scaled magnitude, capped below a half, before it floors.
@@ -232,7 +232,7 @@ v,w
 ⍝⍝: 3	4.1	3.7	instructions macos 3.228 linux 3.35	allocated macos 8.081 linux 8.081
 
 ⍝ Windows copy each item once for every window that holds it. Padded windows first copy the argument with its padding.
-⍝ Expected: `3↕v` 2 copies: reads each item once and writes it three times; `3 3↕m` 7 copies: reads each item once and writes it nine times, which costs what `[254 254 3 3]⍴v` costs to write as many items into a fresh result, 6.5 to 7.2 on macOS (22 October 2026); `¯3 ¯3↕m` 8 copies: as `3 3↕m`, plus one padded copy.
+⍝ Expected: `3↕v` 2 copies: reads each item once and writes it three times; `3 3↕m` 7 copies: reads each item once and writes it nine times, which costs what `[254 254 3 3]ρv` costs to write as many items into a fresh result, 6.5 to 7.2 on macOS (22 October 2026); `¯3 ¯3↕m` 8 copies: as `3 3↕m`, plus one padded copy.
 ⍝ `3↕v` measures 2.7 on macOS since short cells copy each run of adjacent items as one block (22 October 2026), down from 4 to 4.84.
 3↕v
 ⍝⍝: 4	6.8	8.3	instructions macos 11.227 linux 9.333	allocated macos 24.096 linux 24.096
@@ -251,14 +251,14 @@ v,w
 ⍝⍝: 1.3	1.6	1.3	instructions macos 10.264 linux 9.994	allocated macos 1.276 linux 1.276
 
 ⍝ A search also looks each item of the other argument up in the table, and unique then compresses by the mask.
-⍝ Expected: `jv⍳jv`, `jv∊jv` and `c⍳c` 4 copies: about 1 cycle an item to build the table and 1 to look up; `∪jv` and `∪c` 2 copies: the unique mask, then a compression of few items.
-jv⍳jv
+⍝ Expected: `jvιjv`, `jv∊jv` and `cιc` 4 copies: about 1 cycle an item to build the table and 1 to look up; `∪jv` and `∪c` 2 copies: the unique mask, then a compression of few items.
+jvιjv
 ⍝⍝: 8	6.6	7.8	instructions macos 23.535 linux 23.458	allocated macos 6.276 linux 6.276
 
 jv∊jv
 ⍝⍝: 8	7.1	9.6	instructions macos 23.822 linux 23.728	allocated macos 5.276 linux 5.276
 
-c⍳c
+cιc
 ⍝⍝: 8	9	11	instructions macos 20.947 linux 21.377	allocated macos 6.054 linux 6.054
 
 ∪jv
@@ -267,9 +267,9 @@ c⍳c
 ∪c
 ⍝⍝: 4	3.2	5.1	instructions macos 8.045 linux 7.523	allocated macos 1.069 linux 1.069
 
-⍝ Key classifies the keys once. `(≢⊢)⌸` counts each class without building its group, and a fold of `⊢` such as `(+/⊢)⌸` folds each group of a vector in one pass. Any other operand, `{≢⍵}` included, runs once for each group, on that group's positions.
-⍝ Expected: `{≢⍵}⌸b` 2 copies: classifying, then writing each group's positions; `(≢⊢)⌸b` 0.13 copies: reads 1 byte an item and counts.
-{≢⍵}⌸b
+⍝ Key classifies the keys once. `(≢⊢)⌸` counts each class without building its group, and a fold of `⊢` such as `(+/⊢)⌸` folds each group of a vector in one pass. Any other operand, `{≢ω}` included, runs once for each group, on that group's positions.
+⍝ Expected: `{≢ω}⌸b` 2 copies: classifying, then writing each group's positions; `(≢⊢)⌸b` 0.13 copies: reads 1 byte an item and counts.
+{≢ω}⌸b
 ⍝⍝: 4	5.8	5.3	instructions macos 17.014 linux 13.668	allocated macos 7.076 linux 7.076
 
 (≢⊢)⌸b
@@ -283,7 +283,7 @@ i (+/⊢)⌸ v
 ⍝ Layout cohorts gather equally sized groups and run the dfn once per group size through the dense batch evaluator. The specialized `(+/⊢)` route remains one native grouped fold.
 ⍝ Expected: 15 copies, as `i (+/⊢)⌸ v`: the same classification and one fold of each group.
 ⍝⍝⍝ held macos 224.8 linux 361.7: cohorts still gather and dispatch per distinct group size instead of running one flat segmented fold
-i{+/⍵}⌸v
+i{+/ω}⌸v
 ⍝⍝: 30	29	26	instructions macos 763.952 linux 882.254	allocated macos 111.616 linux 111.616
 
 ⍝ Classify of Booleans compares each item with the first. Groups of Booleans write each class's positions 8 items at a time, from a table indexed by the byte of those items' classes.
@@ -362,21 +362,21 @@ i{+/⍵}⌸v
 0<\v
 ⍝⍝: 6	6.1	11	instructions macos 8.566 linux 8.2	allocated macos 3.107 linux 3.107
 
-⍝ Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]⍴v` 3.4 against 2. Scans along a leading axis make no call for each row: `+⍀[16384 4]⍴v` cost 28 copies while each row of 4 items made two calls that stayed out of line.
-⍝ Expected: `=\[32768 2]⍴jv` 4 copies and `<\[16384 4]⍴v` 6, set on the Mac on 22 October 2026 by a route for comparison scans along short lanes that's since gone (basedpl's `Scan::compared` through rustymath's `comparison_scan`). Both now run rustymath's ordered scan: `scan_read`, then `ordered_scan` with one kernel step for each item; `≠\[16384 4]⍴b` 0.5 copies: word-wide bit operations; `+\[16384 4]⍴v` 2 copies: eight lanes run side by side, about 1 cycle an item; `+⍀[16384 4]⍴v` 3 copies: each row waits on the row before, which it reads back from the output through a store-to-load forwarding before it adds, about 6 cycles for each row of 4 items.
-=\[n÷2;2]⍴jv
+⍝ Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]ρv` 3.4 against 2. Scans along a leading axis make no call for each row: `+⍀[16384 4]ρv` cost 28 copies while each row of 4 items made two calls that stayed out of line.
+⍝ Expected: `=\[32768 2]ρjv` 4 copies and `<\[16384 4]ρv` 6, set on the Mac on 22 October 2026 by a route for comparison scans along short lanes that's since gone (basedpl's `Scan::compared` through rustymath's `comparison_scan`). Both now run rustymath's ordered scan: `scan_read`, then `ordered_scan` with one kernel step for each item; `≠\[16384 4]ρb` 0.5 copies: word-wide bit operations; `+\[16384 4]ρv` 2 copies: eight lanes run side by side, about 1 cycle an item; `+⍀[16384 4]ρv` 3 copies: each row waits on the row before, which it reads back from the output through a store-to-load forwarding before it adds, about 6 cycles for each row of 4 items.
+=\[n÷2;2]ρjv
 ⍝⍝: 8	6.7	8.8	instructions macos 8.979 linux 9.36	allocated macos 2.16 linux 2.16
 
-<\[n÷4;4]⍴v
+<\[n÷4;4]ρv
 ⍝⍝: 12	14	23	instructions macos 9.494 linux 14.869	allocated macos 8.167 linux 8.167
 
-≠\[n÷4;4]⍴b
+≠\[n÷4;4]ρb
 ⍝⍝: 1	2	2.3	instructions macos 5.918 linux 5.064	allocated macos 1.162 linux 1.162
 
-+\[n÷4;4]⍴v
++\[n÷4;4]ρv
 ⍝⍝: 4	3.4	3	instructions macos 8.155 linux 6.877	allocated macos 8.167 linux 8.167
 
-+⍀[n÷4;4]⍴v
++⍀[n÷4;4]ρv
 ⍝⍝: 6	4.6	3.4	instructions macos 15.227 linux 9.853	allocated macos 8.162 linux 8.162
 
 ⍝ A residue scan waits on the result before each item. An exact seed, or a whole float seed that stands for an integer, keeps it in integers.
@@ -464,11 +464,11 @@ lut.[ux]
 ⍝⍝: 6	13	12	instructions macos 13.003 linux 6.163	allocated macos 24.579 linux 24.579
 
 ⍝ Few distinct indices take the same loop. `10ₓ|jv` gives integer positions, which a table reads in place (`structure::index_table`).
-⍝ Expected: `{h←10⍴0 ⋄ h.[10ₓ|jv]+←1 ⋄ h}0` 3 copies: the integer residue, about 1 copy, and about 1 cycle an item for the 10 counters; `{h←10⍴0ₓ ⋄ h.[10ₓ|jv]+←1ₓ ⋄ h}0` 3 copies: as the float counters.
-⍝ About 1 copy goes to the residue and the rest to the modified write, which combines its offsets a run at a time, as the comment on `{x←v ⋄ x.[i]+←w ⋄ x}0` describes.
+⍝ Expected: `{h←10ρ0 ◇ h.[10ₓ|jv]+←1 ◇ h}0` 3 copies: the integer residue, about 1 copy, and about 1 cycle an item for the 10 counters; `{h←10ρ0ₓ ◇ h.[10ₓ|jv]+←1ₓ ◇ h}0` 3 copies: as the float counters.
+⍝ About 1 copy goes to the residue and the rest to the modified write, which combines its offsets a run at a time, as the comment on `{x←v ◇ x.[i]+←w ◇ x}0` describes.
 ⍝⍝⍝ held macos 7.45: the histograms' gap (open.md, "Kernels, memory and threads")
 {
-  h←10⍴0
+  h←10ρ0
   h.[10ₓ|jv]+←1
   h
 }0
@@ -477,7 +477,7 @@ lut.[ux]
 ⍝ Its offsets combine a run at a time without a list.
 ⍝⍝⍝ held macos 7.93: the histograms' gap (open.md, "Kernels, memory and threads")
 {
-  h←10⍴0ₓ
+  h←10ρ0ₓ
   h.[10ₓ|jv]+←1ₓ
   h
 }0
@@ -524,19 +524,19 @@ cnt⍚[- ⊢ 10×] v
 ⍝⍝: 5	3.5	5.4	instructions macos 8.482 linux 8.834	allocated macos 10.089 linux 10.089
 
 ⍝ rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.
-⍝ Expected: `*s` 5.75 copies: rustymath's f64 `Exp`, which takes each block of 64 items within ±708 through a form with no clamp and one power of two, as rustymath's `tests/speed.txt` counts it; `⍟v` 6.5 copies: rustymath's f64 `Ln`, which takes each block of 64 positive, normal, finite items through a form with no special values, as rustymath's `tests/speed.txt` counts it. `*s` was 6.5 copies until 23 October 2026, when every item took the clamp and two powers of two, and 4.5 before that, from a count of 18 that left out the clamp and building 2^n. `⍟v` was 9 copies until 23 October 2026, when every item took the full form with its special values, and 5.3 before that, from a count that left out the split, the selects and the check for NaN.
+⍝ Expected: `*s` 5.75 copies: rustymath's f64 `Exp`, which takes each block of 64 items within ±708 through a form with no clamp and one power of two, as rustymath's `tests/speed.txt` counts it; `⊛v` 6.5 copies: rustymath's f64 `Ln`, which takes each block of 64 positive, normal, finite items through a form with no special values, as rustymath's `tests/speed.txt` counts it. `*s` was 6.5 copies until 23 October 2026, when every item took the clamp and two powers of two, and 4.5 before that, from a count of 18 that left out the clamp and building 2^n. `⊛v` was 9 copies until 23 October 2026, when every item took the full form with its special values, and 5.3 before that, from a count that left out the split, the selects and the check for NaN.
 *s
 ⍝⍝: 12	10	36	instructions macos 23.74 linux 11.263	allocated macos 8.06 linux 8.06
 
-⍟v
+⊛v
 ⍝⍝: 13	9.9	36	instructions macos 27.178 linux 17.199	allocated macos 8.06 linux 8.06
 
 ⍝ A dynamic square root or logarithm of a real array with negatives gives complex results. The checked real kernel fails at the first negative item, and the call runs again at the complex type (`pervasive::searched`), computing each result from its real item (`Formula::real_complex`): √|x| placed by the sign, or ln|x| with 0 or π.
-⍝ Expected, as timed on 6 November 2026: `√s` 6 copies: about 4.4 instructions an item for the failed real pass and 4.5 for the complex results; `⍟s` 16 copies: about 16.4 for the failed real pass and 17 for the complex results. Wasm: twice each, without fused multiply-add. They were 35 and 115 copies while the rerun promoted each item to complex.
+⍝ Expected, as timed on 6 November 2026: `√s` 6 copies: about 4.4 instructions an item for the failed real pass and 4.5 for the complex results; `⊛s` 16 copies: about 16.4 for the failed real pass and 17 for the complex results. Wasm: twice each, without fused multiply-add. They were 35 and 115 copies while the rerun promoted each item to complex.
 √s
 ⍝⍝: 12.5	36	41	instructions macos 10.216 linux 9.888	allocated macos 24.06 linux 24.06
 
-⍟s
+⊛s
 ⍝⍝: 33	86	210	instructions macos 51.487 linux 34.395	allocated macos 24.06 linux 24.06
 
 ⍝ rustymath's sine and cosine reduce each item by π in three fused multiply-adds, and evaluate a polynomial of 7 terms. Tangent reduces by π/2, evaluates a polynomial of 9 terms at half the angle, and divides once.
@@ -585,7 +585,7 @@ cnt⍚[- ⊢ 10×] v
 ⍝⍝: 28	37	80	instructions macos 165.738 linux 98.98	allocated macos 16.06 linux 16.06
 
 ⍝ A constant exponent that is whole and from 1 to 8 in magnitude squares and multiplies, and one of 0.5 or 1.5 starts from the square root (`rustymath::Exponent`), each in a loop of its own. Another exponent calls rustymath's `pow` for each item, which at f64 reads tables that NEON and wasm can't vectorize.
-⍝ Expected: `v*2` 1 copy: one read and one write per item; `v*0.5` 2 copies: one square root of each item, as `√v` takes, which measured 1.88 on 30 October 2026; `v*w` 15 copies: a vectorised `pow` in extra precision, about twice `⍟` and `*` together. Before 30 October 2026, `v*0.5` took `pow`'s route, at 13 times `√v`'s cost.
+⍝ Expected: `v*2` 1 copy: one read and one write per item; `v*0.5` 2 copies: one square root of each item, as `√v` takes, which measured 1.88 on 30 October 2026; `v*w` 15 copies: a vectorised `pow` in extra precision, about twice `⊛` and `*` together. Before 30 October 2026, `v*0.5` took `pow`'s route, at 13 times `√v`'s cost.
 v*2
 ⍝⍝: 2	2.1	2.2	instructions macos 3.308 linux 2.201	allocated macos 8.085 linux 8.085
 
@@ -596,25 +596,25 @@ v*w
 ⍝⍝: 30	32	82	instructions macos 90.966 linux 39.186	allocated macos 8.079 linux 8.079
 
 ⍝ Bases 2 and 10 and degrees 2 and 3 have loops of their own.
-⍝ Expected: `2⍟v` and `10⍟v` 6.5 copies: as `⍟v`, through the fast form of rustymath's `Logb` for bases 2 and 10; `3√v` 9.25 copies: about 37 vector operations an item, for the step for subnormals, the first estimate from the exponent bits, three Newton steps, the last correction, the select for 0, ∞ and NaN, and the sign. `2⍟v` and `10⍟v` were 9 copies, as `⍟v` was. `3√v` was 4 copies, from a count of 15 that took in only the Newton steps.
-2⍟v
+⍝ Expected: `2⊛v` and `10⊛v` 6.5 copies: as `⊛v`, through the fast form of rustymath's `Logb` for bases 2 and 10; `3√v` 9.25 copies: about 37 vector operations an item, for the step for subnormals, the first estimate from the exponent bits, three Newton steps, the last correction, the select for 0, ∞ and NaN, and the sign. `2⊛v` and `10⊛v` were 9 copies, as `⊛v` was. `3√v` was 4 copies, from a count of 15 that took in only the Newton steps.
+2⊛v
 ⍝⍝: 13	12	36	instructions macos 20.724 linux 11.1	allocated macos 8.085 linux 8.085
 
-10⍟v
+10⊛v
 ⍝⍝: 13	11	37	instructions macos 20.725 linux 11.104	allocated macos 8.085 linux 8.085
 
 3√v
 ⍝⍝: 19	18	60	instructions macos 26.548 linux 18.006	allocated macos 8.085 linux 8.085
 
 ⍝ Exact integers read as floats for a function whose results are always approximate.
-⍝ Expected: `⍟jv` 7 copies: as `⍟v`, with about 2 operations to convert each integer; `*jv` 7 copies: as `*s`, with the same conversion; `jv⍟2ₓ` 10.5 copies: a conversion and a logarithm of each base, a division, and a second pass that writes the items whose base is 2 or 10 from `log2` or `log10`; `√jv` 2 copies: a conversion and a square root. `⍟jv` was 9.5 copies, as `⍟v` was 9, and `*jv` and `jv⍟2ₓ` were 4.5 and 7.3 copies, from the old count for `*s`.
-⍟jv
+⍝ Expected: `⊛jv` 7 copies: as `⊛v`, with about 2 operations to convert each integer; `*jv` 7 copies: as `*s`, with the same conversion; `jv⊛2ₓ` 10.5 copies: a conversion and a logarithm of each base, a division, and a second pass that writes the items whose base is 2 or 10 from `log2` or `log10`; `√jv` 2 copies: a conversion and a square root. `⊛jv` was 9.5 copies, as `⊛v` was 9, and `*jv` and `jv⊛2ₓ` were 4.5 and 7.3 copies, from the old count for `*s`.
+⊛jv
 ⍝⍝: 14	12	40	instructions macos 29.427 linux 18.489	allocated macos 10.062 linux 10.062
 
 *jv
 ⍝⍝: 14	15	49	instructions macos 25.986 linux 12.553	allocated macos 10.062 linux 10.062
 
-jv⍟2ₓ
+jv⊛2ₓ
 ⍝⍝: 21	21	63	instructions macos 31.358 linux 18.987	allocated macos 10.089 linux 10.089
 
 √jv
@@ -643,7 +643,7 @@ nd.quantile v
 lg.density v
 ⍝⍝: 36	28	95	instructions macos 51.081 linux 26.265	allocated macos 16.162 linux 16.162
 
-⍝ `nd.cdf ⍟v` alone costs 35 on macOS.
+⍝ `nd.cdf ⊛v` alone costs 35 on macOS.
 ⍝⍝⍝ held macos 39.3: its `erfc` arguments, -ln v/√2, span `ERFC_SPLIT`, so every block takes `erfc`'s mixed route, which on AArch64 picks `erfc_near` or `erfc_far` with a branch for each item
 lg.cdf v
 ⍝⍝: 40	81	130	instructions macos 105.753 linux 77.047	allocated macos 16.158 linux 16.158
@@ -687,12 +687,12 @@ coeffs⌻v
 ⍝⍝: 5.5	2.6	5.6	instructions macos 15.346 linux 5.444	allocated macos 8.055 linux 8.055
 
 ⍝ Each item goes into a hash table, and each item of the other argument is looked up in it. A tolerant search looks in two buckets for each item, where an exact search looks in one.
-⍝ Expected: 60 copies: about 30 cycles an item to insert and look up in a hash table. Linux and wasm, which runs on the same runner: 125 copies. Scalar work costs about 1.7 times as many copies on CI's x86 runner as on macOS, as `fib 16` and the exact `v⍳w` show. The tolerant table and its chains, about 2.9 MB, also overflow that runner's 1 MB L2, where macOS's L2 holds them, which adds about a quarter. CI measured 121 to 133.
-v⍳w
+⍝ Expected: 60 copies: about 30 cycles an item to insert and look up in a hash table. Linux and wasm, which runs on the same runner: 125 copies. Scalar work costs about 1.7 times as many copies on CI's x86 runner as on macOS, as `fib 16` and the exact `vιw` show. The tolerant table and its chains, about 2.9 MB, also overflow that runner's 1 MB L2, where macOS's L2 holds them, which adds about a quarter. CI measured 121 to 133.
+vιw
 ⍝⍝: 90	95	150	instructions macos 92.847 linux 200.737	allocated macos 64.032 linux 52.033
 
 ⍝ A radix sort moves every item once for each byte that differs between the keys. Keys that span a small range, as `jv`'s and `b`'s do, take a counting sort, which places each item once.
-⍝ Expected: `⍋v` 50 copies: a pass that counts each byte of every key, about 14, then a pass for each of the 8 bytes, at about 4.5 copies each. The count pass makes 8 counts for each key, each a load, an increment and a store, at about one a cycle. A byte pass moves each key and its 4-byte position to the next place in its byte's bucket. Nearly every key of `v` shares its top byte, which holds a float's sign and the top 7 bits of its exponent. That byte's pass moves each block of 64 keys that share it with one copy, at about the cost of another pass. `⍋jv` 6 copies: a counting sort, with a histogram pass and one scattered write of 4-byte positions. The histogram costs about 2 cycles an item, because each count is a load, an increment and a store that the next item with the same key waits for, where a copy costs about half a cycle an item. Linux: `⍋jv` 10 copies, because scalar work costs about 1.7 times as many copies on CI's x86 runner, as `v⍳w`'s comment says; CI measured 10.24. `⍋b` 1 copy: two passes writing 4-byte positions.
+⍝ Expected: `⍋v` 50 copies: a pass that counts each byte of every key, about 14, then a pass for each of the 8 bytes, at about 4.5 copies each. The count pass makes 8 counts for each key, each a load, an increment and a store, at about one a cycle. A byte pass moves each key and its 4-byte position to the next place in its byte's bucket. Nearly every key of `v` shares its top byte, which holds a float's sign and the top 7 bits of its exponent. That byte's pass moves each block of 64 keys that share it with one copy, at about the cost of another pass. `⍋jv` 6 copies: a counting sort, with a histogram pass and one scattered write of 4-byte positions. The histogram costs about 2 cycles an item, because each count is a load, an increment and a store that the next item with the same key waits for, where a copy costs about half a cycle an item. Linux: `⍋jv` 10 copies, because scalar work costs about 1.7 times as many copies on CI's x86 runner, as `vιw`'s comment says; CI measured 10.24. `⍋b` 1 copy: two passes writing 4-byte positions.
 ⍝ Linux and wasm: `⍋v` keeps 1.5 times its costs on 29 October 2026, 82.6 and 63.7, until CI times the block pass.
 ⍋v
 ⍝⍝: 75	130	110	instructions macos 165.552 linux 166.661	allocated macos 26.042 linux 26.042
@@ -713,7 +713,7 @@ v⍳w
 
 ⍝ Sorting under `∂` grades the primal once, then reads the primal and the tangent at the positions the grade gives.
 ⍝ Expected: 56 copies: a grade, about 50, and reads of the primal and the tangent at its positions, about 3 each.
-{+/ ⍳≢⍵ × <⍵}∂ v
+{+/ ι≢ω × <ω}∂ v
 ⍝⍝: 84	190	170	instructions macos 226.991 linux 218.018	allocated macos 79.548 linux 79.546
 
 ⍝ Taking a few items of a grade or a sort selects them, without sorting the rest. `search::view_selected` reads the vector once. A block of 64 items with no item below the greatest one kept so far costs a compare and an OR for each vector.
@@ -892,9 +892,9 @@ v=w
 ⍝⍝: 5	3.5	4	instructions macos 6.231 linux 4.2	allocated macos 8.085 linux 8.085
 
 ⍝ Each real indexes its `order_key` in a hash map, as exact data does.
-⍝ Expected: `v⍳w` 60 copies: about 30 cycles an item to insert and look up in a hash table; `∪v` 30 copies: one hash insert an item.
-⍝ Linux and wasm: exact `∪v` 50 copies. Scalar hash work costs about 1.7 times as many copies on CI's Zen 4 as here, as for `v⍳w` above, and CI measured 47 to 51. On wasm32, hashbrown probes 4-byte control groups (its generic `u32` word, where NEON gives 8 and SSE2 16), and foldhash, without wasm's `wide-arithmetic`, approximates each 64-by-64-bit multiply with four 32-bit ones; CI's x86 V8 measured 46 to 48, and this Mac's V8 42 to 51.
-v⍳w
+⍝ Expected: `vιw` 60 copies: about 30 cycles an item to insert and look up in a hash table; `∪v` 30 copies: one hash insert an item.
+⍝ Linux and wasm: exact `∪v` 50 copies. Scalar hash work costs about 1.7 times as many copies on CI's Zen 4 as here, as for `vιw` above, and CI measured 47 to 51. On wasm32, hashbrown probes 4-byte control groups (its generic `u32` word, where NEON gives 8 and SSE2 16), and foldhash, without wasm's `wide-arithmetic`, approximates each 64-by-64-bit multiply with four 32-bit ones; CI's x86 V8 measured 46 to 48, and this Mac's V8 42 to 51.
+vιw
 ⍝⍝: 90	74	95	instructions macos 92.6 linux 99.622	allocated macos 64.032 linux 64.033
 
 ∪v
@@ -951,7 +951,7 @@ m+.×m
 *s
 ⍝⍝: 0.65	0.47	0.54	instructions macos 10.267 linux 5.02	allocated macos 4.06 linux 4.06
 
-⍟v
+⊛v
 ⍝⍝: 0.65	0.63	0.55	instructions macos 15.455 linux 7.613	allocated macos 4.06 linux 4.06
 
 ⍝ rustymath's sine and cosine reduce in f32 with fused multiply-adds, and run a polynomial of 4 terms in place of 7.
@@ -988,7 +988,7 @@ v*w
 
 ⍝ A hash lookup costs about the same at either width. These budgets catch a 32-bit search that costs much more than a 64-bit one.
 ⍝ Expected: 1 of the 64-bit time each: a hash lookup costs the same at either width.
-v⍳w
+vιw
 ⍝⍝: 1.25	1.19	1.07	instructions macos 88.548 linux 95.586	allocated macos 40.032 linux 40.033
 
 ∪v

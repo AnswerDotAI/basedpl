@@ -4,7 +4,7 @@ See also the [language principles](principles.ipynb), [Syntax](syntax.qmd), [Eva
 
 Each entry shows one task in Dyalog APL, BPL and BQN. Most entries come from existing code: APLcart, the dfns workspace, the ngn/apl and April test suites, and BQN's documentation. A few were written for this page. An entry leaves out a language that has no equivalent.
 
-The Dyalog lines use Dyalog's default index origin, `⎕IO←1`, unless the entry says otherwise. BPL and BQN count positions from 0. Where an entry builds sample data with `⍳` or `↕`, Dyalog's data starts at 1 and the others' data starts at 0. Their results differ for that reason.
+The Dyalog lines use Dyalog's default index origin, `⎕IO←1`, unless the entry says otherwise. BPL and BQN count positions from 0. Where an entry builds sample data with `ι` or `↕`, Dyalog's data starts at 1 and the others' data starts at 0. Their results differ for that reason.
 
 The BPL blocks set sample values and show each result after `⍝`. The page tests run them. The BQN lines were run with BQN's JavaScript implementation, with sample values for their free names. BQN reserves uppercase names for functions, and its lines use lowercase names for arrays.
 
@@ -29,15 +29,15 @@ v←3 1 2
 
 ### Sort by a computed key
 
-Source: APLcart. BPL's `⌷` and BQN's `⊏` both take the positions on the left. A bracket list is always a vector. `[⍋⍺++\⍺]` holds one item, the positions along the one axis of `⍵`.
+Source: APLcart. BPL's `⌷` and BQN's `⊏` both take the positions on the left. A bracket list is always a vector. `[⍋α++\α]` holds one item, the positions along the one axis of `ω`.
 
 ```dyalog
 Av{⍵[⍋⍺++\⍺]}Bv
 ```
 
 ```bpl
-Av←3 1 2 ⋄ Bv←"abc"
-Av{[⍋⍺++\⍺]⌷⍵}Bv       ⍝ "bac"
+Av←3 1 2 ◇ Bv←"abc"
+Av{[⍋α++\α]⌷ω}Bv       ⍝ "bac"
 ```
 
 ```bqn
@@ -46,15 +46,15 @@ av {(⍋𝕨++`𝕨)⊏𝕩} bv
 
 ### Sort rows by a column
 
-Source: APLcart. `[: ⍺]⌷⍵` is column `⍺` of `⍵`. Index takes one position for each axis, with `:` for a whole axis. The outer `⌷` gets one item, the grade, and selects rows with it.
+Source: APLcart. `[: α]⌷ω` is column `α` of `ω`. Index takes one position for each axis, with `:` for a whole axis. The outer `⌷` gets one item, the grade, and selects rows with it.
 
 ```dyalog
 I{⍵[⍋⍵[;⍺];]}Ym
 ```
 
 ```bpl
-I←1 ⋄ Ym←[5 3⋄1 9⋄4 2]
-I{[⍋[: ⍺]⌷⍵]⌷⍵}Ym      ⍝ [4 2⋄5 3⋄1 9]
+I←1 ◇ Ym←[5 3◇1 9◇4 2]
+I{[⍋[: α]⌷ω]⌷ω}Ym      ⍝ [4 2◇5 3◇1 9]
 ```
 
 ```bqn
@@ -63,30 +63,30 @@ i {(⍋𝕨⊏˘𝕩)⊏𝕩} ym
 
 ### Lookup table
 
-Source: APLcart. The `1+` goes, because positions count from 0. Dyalog writes the inverse as `⊥⍣¯1⊢`, where `⊢` separates the count `¯1` from the argument. BPL's `⊥⁻` has no count and needs no `⊢`. `⌷` takes the table `$d,$a` on its right. In `[16⊥⁻⍵]`, the digits are one item of positions. BQN has no encode primitive. Its line computes the base conversion directly.
+Source: APLcart. The `1+` goes, because positions count from 0. Dyalog writes the inverse as `⊥⍣¯1⊢`, where `⊢` separates the count `¯1` from the argument. BPL's `⊥⁻` has no count and needs no `⊢`. `⌷` takes the table `$d,$a` on its right. In `[16⊥⁻ω]`, the digits are one item of positions. BQN has no encode primitive. Its line computes the base conversion directly.
 
 ```dyalog
 {(⎕D,⎕A)[1+16⊥⍣¯1⊢⍵]}
 ```
 
 ```bpl
-{[16⊥⁻⍵]⌷$d,$a} 255    ⍝ "FF"
+{[16⊥⁻ω]⌷$d,$a} 255    ⍝ "FF"
 ```
 
 ```bqn
-{"0123456789ABCDEF"⊏˜16{⌽𝕗|⌊∘÷⟜𝕗⍟(↕1+·⌊𝕗⋆⁼1⌈⊢)𝕩}𝕩}
+{"0123456789ABCDEF"⊏˜16{⌽𝕗|⌊∘÷⟜𝕗⊛(↕1+·⌊𝕗⋆⁼1⌈⊢)𝕩}𝕩}
 ```
 
 ### Translate characters
 
-Source: the translation in `lcase` in the dfns workspace, here with tables that complement a DNA strand. The table is `"TGCA",,⍵`, and the positions are `⍵⍳⍨"ACGT",,⍵`. A selection has the shape of its positions. Here that is the shape of `⍵`. The BPL spelling leaves out the original's `(⍴⍵)⍴`.
+Source: the translation in `lcase` in the dfns workspace, here with tables that complement a DNA strand. The table is `"TGCA",,ω`, and the positions are `ωι⍨"ACGT",,ω`. A selection has the shape of its positions. Here that is the shape of `ω`. The BPL spelling leaves out the original's `(ρω)ρ`.
 
 ```dyalog
 (⍴⍵)⍴('TGCA',,⍵)[('ACGT',,⍵)⍳⍵]
 ```
 
 ```bpl
-{[⍵⍳⍨"ACGT",,⍵]⌷"TGCA",,⍵} "GATTACA"   ⍝ "CTAATGT"
+{[ωι⍨"ACGT",,ω]⌷"TGCA",,ω} "GATTACA"   ⍝ "CTAATGT"
 ```
 
 ```bqn
@@ -102,7 +102,7 @@ Source: the ngn/apl tests. The assignment `x←6¿49` moves to the right of `⌷
 ```
 
 ```bpl
-⍴[⍋x]⌷x←6¿49           ⍝ [6]ₓ
+ρ[⍋x]⌷x←6¿49           ⍝ [6]ₓ
 ```
 
 ```bqn
@@ -128,7 +128,7 @@ v₀²+v₁²                 ⍝ 25
 
 ### Indexing inside a longer expression
 
-Source: `path` in the dfns workspace. `⍺` is the wave front, a vector of vertices, and `[⍺]⌷graph` selects their lists of neighbours. In `[⍺]`, `⍺` is one item, the positions along the only axis. Spaces keep the selection in its own run, before the intersection.
+Source: `path` in the dfns workspace. `α` is the wave front, a vector of vertices, and `[α]⌷graph` selects their lists of neighbours. In `[α]`, `α` is one item, the positions along the only axis. Spaces keep the selection in its own run, before the intersection.
 
 ```dyalog
 next←graph[⍺]∩¨⊂⍸⍵=¯2
@@ -136,7 +136,7 @@ next←graph[⍺]∩¨⊂⍸⍵=¯2
 
 ```bpl
 graph←[[1 2] [2] [0] [1]]
-0 1 {[⍺]⌷graph ∩¨ ⊂⍸⍵=¯2} ¯2 0 ¯2 5   ⍝ (2⋄2)
+0 1 {[α]⌷graph ∩¨ ⊂⍸ω=¯2} ¯2 0 ¯2 5   ⍝ (2◇2)
 ```
 
 ```bqn
@@ -152,7 +152,7 @@ Source: the April tests. `⌷` takes one item for each axis, like APL's index fi
 ```
 
 ```bpl
-[0;1 3 4]⌷[0 3;:;1 0]⌷6 8 5⍴⍳9ₓ     ⍝ [6 5⋄7 6⋄3 2]ₓ
+[0;1 3 4]⌷[0 3;:;1 0]⌷6 8 5ρι9ₓ     ⍝ [6 5◇7 6◇3 2]ₓ
 ```
 
 ```bqn
@@ -168,8 +168,8 @@ Source: the April tests. Dot indexing pairs its arrays of positions, one array f
 ```
 
 ```bpl
-(3 4⍴⍳9ₓ).[0 2;1 0]    ⍝ [1 8]ₓ
-(3 4⍴⍳9ₓ).[[0 1;2 0]]  ⍝ [1 8]ₓ
+(3 4ρι9ₓ).[0 2;1 0]    ⍝ [1 8]ₓ
+(3 4ρι9ₓ).[[0 1;2 0]]  ⍝ [1 8]ₓ
 ```
 
 ```bqn
@@ -178,14 +178,14 @@ Source: the April tests. Dot indexing pairs its arrays of positions, one array f
 
 ### Two sorts, each enclosed
 
-Source: the dfns string examples. In BPL, the pair is written in brackets. APL builds it with `⊂` and `,`. Inside brackets, each unspaced expression is one item. BPL lowercases with the system function `•c`, in place of `lcase`. `•c⍵` needs no space, because `⍵` is a glyph, not a name.
+Source: the dfns string examples. In BPL, the pair is written in brackets. APL builds it with `⊂` and `,`. Inside brackets, each unspaced expression is one item. BPL lowercases with the system function `•c`, in place of `lcase`. `•cω` needs no space, because `ω` is a glyph, not a name.
 
 ```dyalog
 {(⊂⍵[⍋lcase ⍵]),⊂⍵[⍋⍵]}
 ```
 
 ```bpl
-{[[⍋•c⍵]⌷⍵ <⍵]} "baC"   ⍝ "abC" "Cab"
+{[[⍋•cω]⌷ω <ω]} "baC"   ⍝ "abC" "Cab"
 ```
 
 ```bqn
@@ -194,15 +194,15 @@ Source: the dfns string examples. In BPL, the pair is written in brackets. APL b
 
 ### Dividing a row by its pivot
 
-Source: Gauss-Jordan elimination in APLcart. The pivot, `[⍺ ⍺]⌷swap`, is a run of its own and the left argument of `÷⍨@⍺`. Because the operand `⍺` ends at the space, no `⊢` is needed before the right argument.
+Source: Gauss-Jordan elimination in APLcart. The pivot, `[α α]⌷swap`, is a run of its own and the left argument of `÷⍨@α`. Because the operand `α` ends at the space, no `⊢` is needed before the right argument.
 
 ```dyalog
 mat←swap[⍺;⍺]÷⍨@⍺⊢swap
 ```
 
 ```bpl
-swap←[2 4⋄6 8]
-0 {[⍺ ⍺]⌷swap ÷⍨@⍺ swap} 0   ⍝ [1 2⋄6 8]
+swap←[2 4◇6 8]
+0 {[α α]⌷swap ÷⍨@α swap} 0   ⍝ [1 2◇6 8]
 ```
 
 ```bqn
@@ -220,9 +220,9 @@ q[1,h;1,w]←2 2⍴ch
 ```
 
 ```bpl
-q←5 5⍴0 ⋄ h←4 ⋄ w←4 ⋄ ch←1 2 3 4
-[0,h 0,w]⌷q ←2 2⍴ch
-q   ⍝ [1 0 0 0 2⋄0 0 0 0 0⋄0 0 0 0 0⋄0 0 0 0 0⋄3 0 0 0 4]
+q←5 5ρ0 ◇ h←4 ◇ w←4 ◇ ch←1 2 3 4
+[0,h 0,w]⌷q ←2 2ρch
+q   ⍝ [1 0 0 0 2◇0 0 0 0 0◇0 0 0 0 0◇0 0 0 0 0◇3 0 0 0 4]
 ```
 
 ```bqn
@@ -231,16 +231,16 @@ q↩(2‿2⥊ch)⌾(⟨0∾h,0∾w⟩⊸⊏)q
 
 ### Updating selected items from other items
 
-Source: `sudoku` in the dfns workspace. `[j]⌷q` selects the items at the positions `j`. Assigning to `q.[j]` changes those items. The run `[j]⌷q` ends at a space. Without the space, `⌷` would take everything to its right as its argument. The target needs no parentheses, because the target of `←` is the run before it. BQN writes "without" as `¬∘∊/⊣`. A vector of vectors prints in parentheses, with `⋄` between its items: `(4⋄1 2)` is `[[4] [1 2]]`.
+Source: `sudoku` in the dfns workspace. `[j]⌷q` selects the items at the positions `j`. Assigning to `q.[j]` changes those items. The run `[j]⌷q` ends at a space. Without the space, `⌷` would take everything to its right as its argument. The target needs no parentheses, because the target of `←` is the run before it. BQN writes "without" as `¬∘∊/⊣`. A vector of vectors prints in parentheses, with `◇` between its items: `(4◇1 2)` is `[[4] [1 2]]`.
 
 ```dyalog
 q[j]←q[j]~¨⊂,/q[i~j]
 ```
 
 ```bpl
-q←[[1 2 3] [1 2] [2 4] [3 4 5]] ⋄ i←0 1 2 ⋄ j←0 2
+q←[[1 2 3] [1 2] [2 4] [3 4 5]] ◇ i←0 1 2 ◇ j←0 2
 q.[j]←[j]⌷q ~¨ ⊂,/[i~j]⌷q
-q   ⍝ (3⋄1 2⋄4⋄3 4 5)
+q   ⍝ (3◇1 2◇4◇3 4 5)
 ```
 
 ```bqn
@@ -256,7 +256,7 @@ Dyalog and BQN have no keyed arrays. Most entries here show BPL alone. See [axis
 Keys on an axis name its positions. `⌷` takes one key for each axis.
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30◇40 50 60]
 "LA" "Feb"⌷sales       ⍝ 50
 ```
 
@@ -265,8 +265,8 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 `⍠` applies a function along the axes its operand names. The result keeps the keys and the name of the remaining axis. BQN has no axis names. It reduces by position, as `+´˘` does along the last axis.
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
-+/⍠"month" sales       ⍝ ["city":2]⍴["NY":60 "LA":150]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30◇40 50 60]
++/⍠"month" sales       ⍝ ["city":2]ρ["NY":60 "LA":150]
 ```
 
 ### Selecting from a result
@@ -274,7 +274,7 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 `"NY"⌷+/sales` totals each row, then selects the row for NY. The sum needs no parentheses, because Index takes its positions on the left. Pandas writes the selection after the sum: `sales.sum(axis=1)["NY"]`.
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30◇40 50 60]
 "NY"⌷+/sales           ⍝ 60
 ```
 
@@ -319,7 +319,7 @@ Source: `lisp` in the dfns workspace. The Dyalog code keeps the list as a two-co
 Source: the [home page](index.ipynb). Each row is one series. The column keys label the x axis. With `"legend":"end"`, each line is labelled with its row key. See [plots](plot.ipynb).
 
 ```bpl
-sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
+sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30◇40 50 60]
 ["legend":"end"] •plot sales
 ```
 
@@ -327,14 +327,14 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 
 ### Rank with a numeric operand
 
-An operator takes one token to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL's [separator `⁝`](glyphs/tricolon.qmd) keeps the literals apart without ending the run. The rank is `1`, and the argument is `2 3⍴⍳6ₓ`.
+An operator takes one token to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL's [separator `⁝`](glyphs/tricolon.qmd) keeps the literals apart without ending the run. The rank is `1`, and the argument is `2 3ρι6ₓ`.
 
 ```dyalog
 +/⍤1⊢2 3⍴⍳6
 ```
 
 ```bpl
-+/⍤1⁝2 3⍴⍳6ₓ           ⍝ [3 12]ₓ
++/⍤1⁝2 3ρι6ₓ           ⍝ [3 12]ₓ
 ```
 
 ```bqn
@@ -367,7 +367,7 @@ Numeric subscripts choose the axes to reduce. Dyalog and BQN ravel each cell fir
 ```
 
 ```bpl
-n←2 3 4⍴⍳24ₓ
+n←2 3 4ρι24ₓ
 +/₁ ₂n                 ⍝ [66 210]ₓ
 ```
 
@@ -394,18 +394,18 @@ n←2 3 4⍴⍳24ₓ
 
 ### Power with a list of counts
 
-A list of counts gives the result for each count, as BQN's Repeat does. `⍳5ₓ` is in parentheses because an operator takes one token to its right. `⊽` doubles each state. Dyalog has no list form, and its line applies Power once for each count.
+A list of counts gives the result for each count, as BQN's Repeat does. `ι5ₓ` is in parentheses because an operator takes one token to its right. `⊽` doubles each state. Dyalog has no list form, and its line applies Power once for each count.
 
 ```dyalog
 {(2∘×⍣⍵)1}¨0,⍳4
 ```
 
 ```bpl
-⊽⍣(⍳5ₓ)1               ⍝ [1 2 4 8 16]
+⊽⍣(ι5ₓ)1               ⍝ [1 2 4 8 16]
 ```
 
 ```bqn
-2⊸×⍟(↕5)1
+2⊸×⊛(↕5)1
 ```
 
 ### Mean
@@ -435,11 +435,11 @@ f←32+1.8∘× ⋄ f 100
 ```
 
 ```bpl
-f←32+1.8× ⋄ f100       ⍝ 212
+f←32+1.8× ◇ f100       ⍝ 212
 ```
 
 ```bqn
-F←32+1.8⊸× ⋄ F 100
+F←32+1.8⊸× ◇ F 100
 ```
 
 ### Quadratic root
@@ -451,7 +451,7 @@ BPL writes two of the three pairs of parentheses as spaces. `-b` is one run, neg
 ```
 
 ```bpl
-a←1 ⋄ b←¯3 ⋄ c←2
+a←1 ◇ b←¯3 ◇ c←2
 (-b + √ b² - 4×a×c)÷2×a   ⍝ 2
 ```
 
@@ -468,8 +468,8 @@ a +˝∘×⎉1‿∞ b
 ```
 
 ```bpl
-a←2 3⍴⍳6ₓ ⋄ b←3 2⍴⍳6ₓ
-a (+⌿×)⍤1 ∞ b           ⍝ [10 13⋄28 40]ₓ
+a←2 3ρι6ₓ ◇ b←3 2ρι6ₓ
+a (+⌿×)⍤1 ∞ b           ⍝ [10 13◇28 40]ₓ
 ```
 
 ### A vector bound into a composition
@@ -538,7 +538,7 @@ IfElse ← {c‿T‿F: c◶F‿T@}
 
 ```bpl
 ≢[2 + 3]               ⍝ 3ₓ
-ifelse←{[c t f]←⍵ ⋄ c⍚[f t]0}
+ifelse←{[c t f]←ω ◇ c⍚[f t]0}
 ifelse [1 10+ 20+]     ⍝ 10
 ```
 
@@ -555,9 +555,9 @@ IfElse (𝕩<mid⊑𝕨)‿{𝕤
 ```
 
 ```bpl
-ifelse←{[c t f]←⍵ ⋄ c⍚[f t]0}
-step←{mid←3 ⋄ hi←9 ⋄ lo←0
-  ifelse [⍵<mid⊃⍺
+ifelse←{[c t f]←ω ◇ c⍚[f t]0}
+step←{mid←3 ◇ hi←9 ◇ lo←0
+  ifelse [ω<mid⊃α
     {hi⊢←mid}
     {lo⊢←mid}]
   lo hi}
@@ -567,16 +567,16 @@ step←{mid←3 ⋄ hi←9 ⋄ lo←0
 
 ### A new leading axis
 
-Rows in array notation can be computed as well as literal. `[x⋄y]` is a matrix whose rows are `x` and `y`. BPL has no laminate.
+Rows in array notation can be computed as well as literal. `[x◇y]` is a matrix whose rows are `x` and `y`. BPL has no laminate.
 
 ```dyalog
 1 2,[0.5]3 4
 ```
 
 ```bpl
-[1 2⋄3 4]            ⍝ 2 2⍴1 2 3 4
-x←1 2 ⋄ y←3 4
-[x⋄y]                ⍝ [1 2⋄3 4]
+[1 2◇3 4]            ⍝ 2 2ρ1 2 3 4
+x←1 2 ◇ y←3 4
+[x◇y]                ⍝ [1 2◇3 4]
 ```
 
 ```bqn
@@ -585,7 +585,7 @@ x←1 2 ⋄ y←3 4
 
 ### Searching for one string
 
-`⊂"ab"` encloses the string, and `⍳` searches for it as one item, as in Dyalog. A search for one item gives a plain number in BPL and Dyalog. BQN's search functions always return an array, and BQN's documentation suggests `list⊸⊐⌾<elt` to get a plain number.
+`⊂"ab"` encloses the string, and `ι` searches for it as one item, as in Dyalog. A search for one item gives a plain number in BPL and Dyalog. BQN's search functions always return an array, and BQN's documentation suggests `list⊸⊐⌾<elt` to get a plain number.
 
 ```dyalog
 names⍳⊂'ab'
@@ -593,7 +593,7 @@ names⍳⊂'ab'
 
 ```bpl
 names←"cd" "ab" "ef"
-names⍳⊂"ab"            ⍝ 1ₓ
+namesι⊂"ab"            ⍝ 1ₓ
 ```
 
 ```bqn
@@ -609,7 +609,7 @@ names⊸⊐⌾<"ab"
 ```
 
 ```bpl
-N←1 0 2 ⋄ 1⌈|N # N>0 #⁻ 4 5   ⍝ 4 0 5 5
+N←1 0 2 ◇ 1⌈|N # N>0 #⁻ 4 5   ⍝ 4 0 5 5
 ```
 
 ## Counting from 0
@@ -640,8 +640,8 @@ a[1+26|2+a⍳t]
 ```
 
 ```bpl
-a←"abcdefghijklmnopqrstuvwxyz" ⋄ t←"hal"
-[26|3+a⍳t]⌷a           ⍝ "kdo"
+a←"abcdefghijklmnopqrstuvwxyz" ◇ t←"hal"
+[26|3+aιt]⌷a           ⍝ "kdo"
 ```
 
 ```bqn
@@ -660,14 +660,14 @@ S←{' #'[(f⍣⍵)1 1⍴1]}
 ```
 
 ```bpl
-f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵}
-S←{[f⍣⍵⍪1]⌷" #"}
-⍴S 5                   ⍝ [32 32]ₓ
+f←{ω,(ρω)ρ0 ⍪ ω,ω}
+S←{[f⍣ω⍪1]⌷" #"}
+ρS 5                   ⍝ [32 32]ₓ
 ```
 
 ```bqn
 F←{(𝕩∾˘(≢𝕩)⥊0)∾𝕩∾˘𝕩}
-S←{" #"⊏˜F⍟𝕩 1‿1⥊1}
+S←{" #"⊏˜F⊛𝕩 1‿1⥊1}
 ```
 
 The picture for `S 3`:
@@ -692,24 +692,24 @@ Source: the ngn/apl examples. Outer product is `+⊗`, in place of `∘.+`. Redu
 ```
 
 ```bpl
-picture←[9>|{⍺+⍵²}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳≥n)÷n←98]⌷" #"
-⍴picture               ⍝ [99 99]ₓ
+picture←[9>|{α+ω²}/9ρ⊂¯3×.7j.5-⍉a+⊗0j1×a←(ι≥n)÷n←98]⌷" #"
+ρpicture               ⍝ [99 99]ₓ
 ```
 
 ### Value of a Roman numeral
 
-Source: APLcart. The table `×\1,6⍴[5 2]` is the right argument of `⌷`, where it needs no parentheses. BPL uses pairs, `</↕`, in place of `2</`.
+Source: APLcart. The table `×\1,6ρ[5 2]` is the right argument of `⌷`, where it needs no parentheses. BPL uses pairs, `</↕`, in place of `2</`.
 
 ```dyalog
 {(⊢+.×¯1*2</,∘0)(×\1,6⍴5 2)['IVXLCDM'⍳⍵]}
 ```
 
 ```bpl
-{v←["IVXLCDM"⍳⍵]⌷×\1,6⍴[5 2] ⋄ v+.×¯1*</↕v,0} "MCMXCIV"   ⍝ 1994
+{v←["IVXLCDM"ιω]⌷×\1,6ρ[5 2] ◇ v+.×¯1*</↕v,0} "MCMXCIV"   ⍝ 1994
 ```
 
 ```bqn
-{v←(×`1∾6⥊5‿2)⊏˜"IVXLCDM"⊐𝕩 ⋄ +´v×¯1⋆<´˘2↕v∾0}
+{v←(×`1∾6⥊5‿2)⊏˜"IVXLCDM"⊐𝕩 ◇ +´v×¯1⋆<´˘2↕v∾0}
 ```
 
 ### Rule 30
@@ -721,13 +721,13 @@ r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2 ⋄ ' #'[1+↑⌽{⍵,⍨⊂t[1+2⊥¨3
 ```
 
 ```bpl
-r←30 ⋄ n←8 ⋄ t←⌽r⊤⍨8⍴2
-picture←[⊃⌽{⍵,⍨⊂[⊥3↕0,0,⍨↑⍵]⌷t}⍣n⊂z,1,z←n⍴0]⌷" #"
-⍴picture               ⍝ [9 17]ₓ
+r←30 ◇ n←8 ◇ t←⌽r⊤⍨8ρ2
+picture←[⊃⌽{ω,⍨⊂[⊥3↕0,0,⍨↑ω]⌷t}⍣n⊂z,1,z←nρ0]⌷" #"
+ρpicture               ⍝ [9 17]ₓ
 ```
 
 ```bqn
-r←30 ⋄ n←8 ⋄ t←2|⌊r÷2⋆↕8 ⋄ " #"⊏˜>{t⊏˜4‿2‿1+´∘×⎉1 3↕0∾𝕩∾0}⍟(↕n+1)z∾1∾z←n⥊0
+r←30 ◇ n←8 ◇ t←2|⌊r÷2⋆↕8 ◇ " #"⊏˜>{t⊏˜4‿2‿1+´∘×⎉1 3↕0∾𝕩∾0}⊛(↕n+1)z∾1∾z←n⥊0
 ```
 
 The picture:

@@ -1,7 +1,7 @@
 use crate::cancel::check;
 use crate::{
-    Described, Error, Number, Span, Value, array::generated_len, element::read_as, keyed, number::Numeric, primitive::{numeric, pervade, real},
-    session, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
+    Described, Error, Number, Span, Value, array::generated_len, element::read_as, keyed, number::Numeric, primitive::{numeric, pervade, real}, session,
+    system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
 use rand::rngs::ChaCha8Rng;
 pub(crate) use rustymath::distribution::Distribution;
@@ -96,8 +96,10 @@ fn samples(d: &Distribution, shape: &[usize], len: usize, stream: &mut Stream) -
 
 fn kernel(d: &Distribution, op: Operation, width: FloatWidth) -> rustymath::operation::Kernel {
     let variant = rustymath::domain::Variant { dtype: rustymath::buffer::DType::Float(width), checked: false, wrapping: false };
-    match op { Operation::Density => rustymath::operation::Kernel::new(Pdf(*d), variant), Operation::Cdf => rustymath::operation::Kernel::new(Cdf(*d), variant),
-        _ => rustymath::operation::Kernel::new(Quantile(*d), variant) }
+    match op {
+        Operation::Density => rustymath::operation::Kernel::new(Pdf(*d), variant), Operation::Cdf => rustymath::operation::Kernel::new(Cdf(*d), variant),
+        _ => rustymath::operation::Kernel::new(Quantile(*d), variant)
+    }
 }
 
 /// The density, cdf or quantile of `d` at each number in `right`, computed at the width of `right`'s floats, or the session's float width for other numbers. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.

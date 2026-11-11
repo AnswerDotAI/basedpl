@@ -21,17 +21,17 @@ Inverses propagate through Atop, dyadic After and Before, bound arguments, Each,
 `f⍣g Y` iterates until `new g old` is true, returning `new`.
 
 ```bpl
-≥⍣{⍺>4}0          ⍝ 5
+≥⍣{α>4}0          ⍝ 5
 ```
 
-A vector of counts gives one item for each count, holding the state after that many steps. Counts `⍳N` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector. A scalar count gives a scalar. Computed counts go in parentheses or in the run after `⍣`.
+A vector of counts gives one item for each count, holding the state after that many steps. Counts `ιN` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector. A scalar count gives a scalar. Computed counts go in parentheses or in the run after `⍣`.
 
 ```bpl
-⊽⍣(⍳5ₓ) 1               ⍝ [1 2 4 8 16]
-≥⍣(-⍳3ₓ) 5             ⍝ [5 4 3]
+⊽⍣(ι5ₓ) 1               ⍝ [1 2 4 8 16]
+≥⍣(-ι3ₓ) 5             ⍝ [5 4 3]
 ≥⍣3 ¯2 0 3⁝10        ⍝ 13 8 10 13
-,↢1⍣ ⍳3ₓ [2]           ⍝ [[2] [2 1] [2 1 1]]
-⍴ {÷'a'}⍣(0 2⍴0) "ab"  ⍝ [0 2]ₓ
+,↢1⍣ ι3ₓ [2]           ⍝ [[2] [2 1] [2 1 1]]
+ρ {÷'a'}⍣(0 2ρ0) "ab"  ⍝ [0 2]ₓ
 ⊽⍣[2 [4 ¯2 1]] 1        ⍝ [4 [16 0.25 2]]
 ⊽⍣(⊂3) 1               ⍝ ⊂8
 ```
@@ -53,9 +53,9 @@ n⍣[0 ∞]1               ⍝ 1 1.414213562373095
 The until form keeps every state when its predicate is in a one-item vector: `f⍣[g]`. The states run from `Y` to the first state where `g` holds. `f` always runs at least once. For example, `⊢⍣[≡]4` gives `4 4`.
 
 ```bpl
-≥⍣[{⍺=3}]0           ⍝ 0 1 2 3
+≥⍣[{α=3}]0           ⍝ 0 1 2 3
 ⊢⍣[≡]4                ⍝ 4 4
-n←⊽⁻+÷ ⋄ ≢n⍣[≡]1         ⍝ 7ₓ
+n←⊽⁻+÷ ◇ ≢n⍣[≡]1         ⍝ 7ₓ
 ```
 
 See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).

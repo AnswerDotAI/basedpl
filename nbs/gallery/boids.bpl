@@ -4,14 +4,14 @@
 ⍝ neighbour matrix averages their velocities and positions.
 options←["background":0.96;"fade":0.3]
 n←150
-p←500×∨⁻¿[n 2]⍴0
-v←2×○ π 2×¿n⍴0
+p←500×∨⁻¿[n 2]ρ0
+v←2×○ π 2×¿nρ0
 frame←{
   r←|d←p-⊗p
   count←+/near←r<40 ∧ r>0
-  [mv mp]←⍉ near+.×⍉[v⋄p] ÷ 1⌈count
+  [mv mp]←⍉ near+.×⍉[v◇p] ÷ 1⌈count
   v+←0.03×mv-v + 0.002×(count>0ₓ)×mp-p + 1.5×+/ r<20 × d÷1⌈r²
-  turn←○0.3×¯0.5+¿n⍴0
+  turn←○0.3×¯0.5+¿nρ0
   speed←|v
   v×←turn× 1.5⌈3⌊speed ÷ speed
   p⊢←∨⁻ 500|∨p+v

@@ -1,31 +1,31 @@
 ⍝⍝ setup
 n←1048576 size 512
-products←10000 size 64 ⋄ pid←products¿1000000ₓ
-prods←["id":pid "cat":¿products⍴20ₓ "cost":0.5+50×¿products⍴0]
-snames←("S",⍕)¨⍳50ₓ
-sales←["store":[¿n⍴50ₓ]⌷snames "product":[¿n⍴productsₓ]⌷pid "qty":≥¿n⍴10ₓ "price":1+99×¿n⍴0]
+products←10000 size 64 ◇ pid←products¿1000000ₓ
+prods←["id":pid "cat":¿productsρ20ₓ "cost":0.5+50×¿productsρ0]
+snames←("S",⍕)¨ι50ₓ
+sales←["store":[¿nρ50ₓ]⌷snames "product":[¿nρproductsₓ]⌷pid "qty":≥¿nρ10ₓ "price":1+99×¿nρ0]
 ⍝ Empirical quantiles by sorting and selecting positions.
 qs←{
-  q←<⍵
-  i←⌊ₓ⍺×≢q
+  q←<ω
+  i←⌊ₓα×≢q
   [i]⌷q
 }
 ⍝ Join sales to products and summarize stores, categories and revenue.
 tstats←{
-  p←⍺
-  s←⍵
-  j←p.id⍳s.product
+  p←α
+  s←ω
+  j←p.idιs.product
   cat←[j]⌷p.cat
   cost←[j]⌷p.cost
   rev←s.qty×s.price
   mar←rev-s.qty×cost
-  st←s.store {≢⍵ , +⌿⍵}⌸ ⍉[rev⋄mar]
-  cq←cat {0.5 0.9 qs ⍵}⌸ s.price
+  st←s.store {≢ω , +⌿ω}⌸ ⍉[rev◇mar]
+  cq←cat {0.5 0.9 qs ω}⌸ s.price
   rq←0.5 0.9 0.99 qs rev
   ["stores":st "cats":cq "revenue":rq]
 }
 ⍝⍝ tables
-⍝ Statistics over a table of a million sales, held as columns in a record, beside a table of 10,000 products. `tstats` joins each sale to its product through `⍳` on the product ids, sums the revenue and margin of each of 50 stores by grouping on the store names, finds the median and 90th percentile of the price in each of 20 categories, and finds quantiles of the revenue. `qs` finds quantiles by sorting.
+⍝ Statistics over a table of a million sales, held as columns in a record, beside a table of 10,000 products. `tstats` joins each sale to its product through `ι` on the product ids, sums the revenue and margin of each of 50 stores by grouping on the store names, finds the median and 90th percentile of the price in each of 20 categories, and finds quantiles of the revenue. `qs` finds quantiles by sorting.
 ⍝ Expected: 83 copies: the join's lookup of a million integers among 10,000 ids, about 4, and two gathers through its positions, about 6; the revenue and margin, about 4.5; grouping by the store names, about 20, for looking up a million items that share 50 arrays at about 2 ns each, and a pass that sums each group; grouping the prices by category and sorting each group, about 26; and sorting the revenue, about 20.
 ⍝ Its expected cost is 83, or 141 on Linux and 116 in wasm, where scalar work costs 1.7 and 1.4 times as many copies. Key batches each dfn over its groups, and `qs` falls back to one call per category, as the gap lines below name: with integer keys the grouping costs about 31, where the group-fold idiom `(+/⊢)⌸` costs 6.3. Classifying the store names costs about 28 on macOS, because selection reuses the 50 store-name arrays, and classification groups items by the array they share before it reads any (`search::shared_classes`). On Linux CI measured 223 to 295 in most runs from 56 to 62, and up to 549 in runs 58 and 62, whose hosts were busy.
 ⍝⍝⍝ held macos 222: Key's batched qs falls back to one call per category, and each store's +⌿ reads its gathered rows

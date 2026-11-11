@@ -25,7 +25,8 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
     let session = Session::new();
     for (request, interrupt) in receive {
         let id = request.as_ref().ok().and_then(|r| r["id"].as_u64());
-        let result = request.and_then(|r| reply(&session, &r, interrupt, output)).unwrap_or_else(|message| Reply::Json(basedpl::protocol::request_error(&message)));
+        let result =
+            request.and_then(|r| reply(&session, &r, interrupt, output)).unwrap_or_else(|message| Reply::Json(basedpl::protocol::request_error(&message)));
         if let Some(id) = id { active.lock().unwrap().remove(&id); }
         write_reply(output, id, result)?;
     }
@@ -68,9 +69,9 @@ fn reply(session: &Session, request: &Value, interrupt: InterruptHandle, output:
     if let Some(spec) = request.get("timing") { return basedpl_testkit::timing::request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("steps") { return basedpl_testkit::timing::steps_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("profile") {
-        return basedpl_testkit::timing::profile_request(spec, &options.interrupt, ||
-            write_reply(output, request["id"].as_u64(), Reply::Json(serde_json::json!({"ready":true,"error":null})))
-                .map_err(|error| error.to_string())).map(Reply::Json);
+        return basedpl_testkit::timing::profile_request(spec, &options.interrupt, || {
+            write_reply(output, request["id"].as_u64(), Reply::Json(serde_json::json!({"ready":true,"error":null}))).map_err(|error| error.to_string())
+        }).map(Reply::Json);
     }
     if let Some(spec) = request.get("costs") { return basedpl_testkit::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("check") { return basedpl_testkit::reference::runner::check_file(spec, options.timeout).map(Reply::Json); }

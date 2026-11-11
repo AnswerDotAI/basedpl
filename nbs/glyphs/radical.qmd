@@ -19,7 +19,7 @@ Function. Keys: `Alt-3`. Hanzi: `根`. Ranks: `0` monadic, `0 0` dyadic
 
 ## Inverse
 
-`√⁻Y` squares `Y`. `X√⁻Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻Y` is `Y⍟X`.
+`√⁻Y` squares `Y`. `X√⁻Y` is `Y*X`. With the right argument fixed, `(√↢X)⁻Y` is `Y⊛X`.
 
 ```bpl
 √⁻3       ⍝ 9

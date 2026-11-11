@@ -57,7 +57,7 @@ mean ⍬                 ⍝ 0
 
 That convention is useful when empty groups should contribute nothing. Where an empty group means missing data, check for it or disable Mathish mode instead of interpreting its zero as a measured mean.
 
-McDonnell also considered logarithms. Since `b⍟x` is `⍟x÷⍟b`, the case `1⍟1` becomes another zero divided by zero. Mathish mode gives it zero too.
+McDonnell also considered logarithms. Since `b⊛x` is `⊛x÷⊛b`, the case `1⊛1` becomes another zero divided by zero. Mathish mode gives it zero too.
 
 ## Division by zero in mathematics
 

@@ -7,8 +7,8 @@ BPL interprets each function call once, then runs it on the whole array in compi
 Dynamic kinds, the default, suit interactive analysis. Integer arithmetic takes the narrowest width that holds every result, up to 64 bits, and some results take their kind from their values, as `√¯4` gives a complex number. Static kinds, which `•prefs ["kinds":"static"]` sets, are the setting for performance work. Each result's kind follows from its arguments' kinds. BPL then knows the type of every result before a computation runs. More calls can run together. Under dynamic kinds, `⌊` gives exact integers and runs on its own. Under static kinds, it gives floats and runs with the multiplication and the sum:
 
 ```bpl
-y←¿200000⍴0
-(•explain "+/⌊10×y").fused.glyphs      ⍝ 0⍴⊂""
+y←¿200000ρ0
+(•explain "+/⌊10×y").fused.glyphs      ⍝ 0ρ⊂""
 •prefs ["kinds":"static"]
 (•explain "+/⌊10×y").fused.glyphs      ⍝ ["×⌊+/"]
 •prefs ["kinds":"dynamic"]
@@ -32,7 +32,7 @@ Convert imported data once, or give its columns types when reading it. Keep loop
 A wider reduction seed widens its accumulator without widening the stored input:
 
 ```bpl
-i←1000⍴255ₓ₁
+i←1000ρ255ₓ₁
 +/i                 ⍝ 24ₓ₁
 0ₓ₈+/i              ⍝ 255000ₓ₈
 ```
@@ -41,7 +41,7 @@ A result conversion such as `(+/)ₓ₈` happens after the reduction and cannot 
 
 ## Choose the intended numerical operation
 
-Use the real forms `√ₐ`, `*ₐ`, `⍟ₐ` and `○ₐ` where values can leave a real domain and you want real results. These forms, including inverse-circle real forms, have value-independent result kinds and are required fast paths. Unmarked `√`, `*`, `⍟` and `○` have no such speed guarantee. The real forms preserve the arguments' promoted float width.
+Use the real forms `√ₐ`, `*ₐ`, `⊛ₐ` and `○ₐ` where values can leave a real domain and you want real results. These forms, including inverse-circle real forms, have value-independent result kinds and are required fast paths. Unmarked `√`, `*`, `⊛` and `○` have no such speed guarantee. The real forms preserve the arguments' promoted float width.
 
 `fₐ` gives the real part of the principal result outside the real domain. For example, `√ₐ¯4` gives 0, not NaN or an error. Choose that meaning intentionally. Use Agenda when different inputs need different calculations.
 
@@ -56,7 +56,7 @@ Fusion and reassociation can change last bits, infinities and NaNs, and the sign
 An elementwise call on 65,536 numbers or more doesn't compute at once. It waits, and the calls that read its result join it. When something needs the items, the whole chain runs together, block by block. It reads each input array once and writes only what it must keep. A chain of arithmetic that ends in a reduction runs in about the time that one copy of its data takes. [`•explain`](system/explain.qmd) lists the calls of each group that ran together:
 
 ```bpl
-y←¿1000000⍴0
+y←¿1000000ρ0
 (•explain "+/ 2×y+1.5 - 1").fused.glyphs    ⍝ ["+×-+/"]
 ```
 
@@ -65,7 +65,7 @@ Waiting costs a fixed amount of planning on each call. It pays only on large arr
 Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` wait too, on large arrays of any kind. They hold only where each item of their result comes from. Such a view stays a view until a call needs its items in memory. Calls that run together read through it without building it:
 
 ```bpl
-w←1000↕¿1000000⍴0
+w←1000↕¿1000000ρ0
 (•storage w).pending     ⍝ $t
 ```
 
@@ -76,7 +76,7 @@ w←1000↕¿1000000⍴0
 By default, a group of more than one operation compiles its loop into machine code at 3,145,728 items or more. The compiled loop keeps intermediate values in registers. A smaller group compiles too where the process has already compiled its loop. A single operation normally runs its native kernel unless compilation is explicitly forced. A compile takes about a millisecond. `•explain` records each run of compiled code as a `"compiled"` route:
 
 ```bpl
-y←¿3145728⍴0
+y←¿3145728ρ0
 (⊂"compiled")∊(•explain "+/ 2×y+1.5 - 1").routes.route    ⍝ $t
 ```
 
@@ -84,19 +84,19 @@ The browser build compiles nothing at run time. Its groups run on kernels built 
 
 ## Maps
 
-Each, Rank, stencils and outer products call a dfn once, on all their cells together, where they can. `{⍵×⍵+1}¨v` then costs about what `v×v+1` costs. [Evaluation](evaluation.qmd#functions-and-effects) gives the rules. With the `batch` setting at `$f`, a map calls its operand once for each cell.
+Each, Rank, stencils and outer products call a dfn once, on all their cells together, where they can. `{ω×ω+1}¨v` then costs about what `v×v+1` costs. [Evaluation](evaluation.qmd#functions-and-effects) gives the rules. With the `batch` setting at `$f`, a map calls its operand once for each cell.
 
 ## The cost of a call
 
-An unrecorded call pays a fixed cost to interpret it, whatever the size of its arguments. A call of `{⍵}` costs about 1,500 machine instructions. Each call of a recursive Fibonacci function costs about 4,600. A loop over the items of a million-item array pays that cost a million times. Code that works on whole arrays pays it once for each call. Compiling doesn't remove this cost. Only the loops inside a group compile.
+An unrecorded call pays a fixed cost to interpret it, whatever the size of its arguments. A call of `{ω}` costs about 1,500 machine instructions. Each call of a recursive Fibonacci function costs about 4,600. A loop over the items of a million-item array pays that cost a million times. Code that works on whole arrays pays it once for each call. Compiling doesn't remove this cost. Only the loops inside a group compile.
 
 ## Names and writes
 
 A dfn releases each local name after the last statement that reads it. A waiting computation that only the name held then runs with the calls that read it. In `f`, the arithmetic and the sum run as one group, and nothing is stored on the way:
 
 ```bpl
-big←¿1000000⍴0
-f←{a←⍵×2 ⋄ b←a+1 ⋄ +/a×b}
+big←¿1000000ρ0
+f←{a←ω×2 ◇ b←a+1 ◇ +/a×b}
 (•explain "f big").fused.glyphs       ⍝ ["×+×+/"]
 ≢(•explain "f big").stored.glyphs     ⍝ 0ₓ
 ```
@@ -115,12 +115,12 @@ Large calls split across the machine's cores. A call splits only when it has eno
 
 ## Derivatives
 
-[`∂`](glyphs/partial.qmd) traces the function it differentiates into a program of typed steps. The program runs through the same groups and compiled loops. Later calls replay it while their arguments and free names still fit it. Under dynamic kinds, a call whose result type can depend on its values stops a trace. On reals, those calls are `√` and every root but the cube root `3√`, `⍟`, `!`, `0○`, and `*` whose exponent isn't a whole number or is the value being differentiated. An earlier call that keeps the argument from being negative, as `⊼` does, lets such a call trace. Otherwise `∂` runs without a program:
+[`∂`](glyphs/partial.qmd) traces the function it differentiates into a program of typed steps. The program runs through the same groups and compiled loops. Later calls replay it while their arguments and free names still fit it. Under dynamic kinds, a call whose result type can depend on its values stops a trace. On reals, those calls are `√` and every root but the cube root `3√`, `⊛`, `!`, `0○`, and `*` whose exponent isn't a whole number or is the value being differentiated. An earlier call that keeps the argument from being negative, as `⊼` does, lets such a call trace. Otherwise `∂` runs without a program:
 
 ```bpl
-(•explain "{+/√⍵}∂1 2 3").programs.event      ⍝ 0⍴⊂""
+(•explain "{+/√ω}∂1 2 3").programs.event      ⍝ 0ρ⊂""
 •prefs ["kinds":"static"]
-(•explain "{+/√⍵}∂1 2 3").programs.event      ⍝ ["built"]
+(•explain "{+/√ω}∂1 2 3").programs.event      ⍝ ["built"]
 •prefs ["kinds":"dynamic"]
 ```
 

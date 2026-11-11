@@ -1,23 +1,23 @@
 ⍝⍝ setup
-side←1024 size 32 ⋄ sv←¿(side×side)⍴0
+side←1024 size 32 ◇ sv←¿(side×side)ρ0
 n←≢sv
-sm←[n÷2;2]⍴sv
-sq←[side side]⍴sv ⋄ window_rows←(side-2)² ⋄ half←side÷2
-conv_side←256 size 8 ⋄ cimg←[conv_side conv_side 16]⍴sv ⋄ conv_rows←(conv_side-2)²
-ck←¿[144 32]⍴0
+sm←[n÷2;2]ρsv
+sq←[side side]ρsv ◇ window_rows←(side-2)² ◇ half←side÷2
+conv_side←256 size 8 ◇ cimg←[conv_side conv_side 16]ρsv ◇ conv_rows←(conv_side-2)²
+ck←¿[144 32]ρ0
 vq←side↑sv
-kq←¿[9 1]⍴0
-s_4←[n÷4;4]⍴sv
+kq←¿[9 1]ρ0
+s_4←[n÷4;4]ρsv
 w_4←s_4+0
-p_2←[n÷4;2]⍴sv
-ism←[n÷2;2]⍴⍳256ₓ
-bp_2←[n÷4;2]⍴0.5<sv
+p_2←[n÷4;2]ρsv
+ism←[n÷2;2]ρι256ₓ
+bp_2←[n÷4;2]ρ0.5<sv
 f_2←32•float p_2
-patches←8 size 2 ⋄ pixels←224 size 32
-images←["b":patches "h":pixels "w":pixels "c":3]⍴¿(patches×pixels²×3)⍴0
-split←{["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉⍵}
+patches←8 size 2 ◇ pixels←224 size 32
+images←["b":patches "h":pixels "w":pixels "c":3]ρ¿(patches×pixels²×3)ρ0
+split←{["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉ω}
 rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
-join_cells←64⍴⊂¿(n÷64)⍴0
+join_cells←64ρ⊂¿(n÷64)ρ0
 ⍝⍝ structure
 ⍝ A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
 ⍝ Expected: `2×⌽sv+1` 1.25 copies: one fused pass, with an 8-byte read and write an item, and a block buffer for the reversal; `2×1⌽sv+1` and `2× 10↓sv + 1` 1 copy: one fused pass, with an 8-byte read and write an item; `+/ ⌽sv × sv` 1 copy: two 8-byte reads of `sv` an item, folded.
@@ -121,12 +121,12 @@ ism,sm
 ⍝ A copy whose runs hold at least 128 items, rustymath's `reduce::RUN`, folds each run where it lies, with no copy. Half the columns of `sq` give runs of 512.
 ⍝ Expected: 0.5 copies: reads 8 bytes for each of half the items, and the call into the fold for each run costs about what reading its items costs.
 ⍝⍝⍝ route in place
-+/,[:;⍳halfₓ]⌷sq
++/,[:;ιhalfₓ]⌷sq
 ⍝⍝: 1	0.69	0.66	instructions macos 2.886 linux 1.798	allocated macos 4.097 linux 4.097
 
 ⍝ Expected: 0.5 copies.
 ⍝⍝⍝ held macos 1.56: open.md lists wide and 2-D window folds among the speed audit's outliers
-⌈/⌈/[[2 2]⋄[2 2]]↕sq
+⌈/⌈/[[2 2]◇[2 2]]↕sq
 ⍝⍝: 1	2.8	2.9	instructions macos 14.522 linux 12.876	allocated macos 10.372 linux 10.371
 
 +/⍉cimg
@@ -169,48 +169,48 @@ ism,sm
 ⍝⍝: 2	2.8	4.5	instructions macos 7.785 linux 3.489	allocated macos 16.285 linux 16.284
 
 ⍝ A copy's gradient reads its cotangent: a reversal's through the inverse map, windows' through a correlation that reads the cotangent's frames at each window position, and a sum of windows' through a sliding sum of the padded cotangent.
-⍝ Expected: `{+/sv×⌽⍵}∂ sv` 2 copies: the primal's pass and a reversed read of the cotangent; `{+/, 3↕sv × 3↕⍵}∂ sv` 6 copies: the primal and a correlation of the cotangent, each a few sliding passes; `{+/,+/50↕⍵}∂ sv` nothing: its gradient depends on neither `⍵` nor any other array, so its trace holds it as one constant; `{+/⊼+/50↕⍵}∂ sv` 5.5 copies: the primal's running sum, about 1, its squared sum, about 0.5, the cotangent of the window sums, about 1, and a sliding sum of the padded cotangent, about 3.
+⍝ Expected: `{+/sv×⌽ω}∂ sv` 2 copies: the primal's pass and a reversed read of the cotangent; `{+/, 3↕sv × 3↕ω}∂ sv` 6 copies: the primal and a correlation of the cotangent, each a few sliding passes; `{+/,+/50↕ω}∂ sv` nothing: its gradient depends on neither `ω` nor any other array, so its trace holds it as one constant; `{+/⊼+/50↕ω}∂ sv` 5.5 copies: the primal's running sum, about 1, its squared sum, about 0.5, the cotangent of the window sums, about 1, and a sliding sum of the padded cotangent, about 3.
 ⍝ CI measured 1.84 to 1.96 on Linux and 2.05 to 2.3 in wasm in most runs from 56 to 62.
 ⍝⍝⍝ route trace
-{+/sv×⌽⍵}∂ sv
+{+/sv×⌽ω}∂ sv
 ⍝⍝: 4	5.5	5.2	instructions macos 4.102 linux 2.528	allocated macos 16.082 linux 16.081
 
 ⍝ CI measured 13.2 to 15.8 on Linux and 12.3 to 13.9 in wasm in most runs from 56 to 62.
 ⍝⍝⍝ held macos 13.1: the cause isn't known yet; busy hosts reach the Linux and wasm costs
-{+/, 3↕sv × 3↕⍵}∂ sv
+{+/, 3↕sv × 3↕ω}∂ sv
 ⍝⍝: 12	33	32	instructions macos 26.782 linux 25.266	allocated macos 88.132 linux 88.131
 
-⍝ `{+/,+/50↕⍵}∂ sv` checks that a linear function's gradient becomes a constant. Its gradient depends on neither `⍵` nor any other array, so its trace holds it as one constant, `v0 ← held [1 2 … 50 50 …]`, and each call returns it, at about 0.004 copies on every platform. Its budgets are the 0.5 floor. A trace that computed the gradient on every call would cost several copies and fail them.
-{+/,+/50↕⍵}∂ sv
+⍝ `{+/,+/50↕ω}∂ sv` checks that a linear function's gradient becomes a constant. Its gradient depends on neither `ω` nor any other array, so its trace holds it as one constant, `v0 ← held [1 2 … 50 50 …]`, and each call returns it, at about 0.004 copies on every platform. Its budgets are the 0.5 floor. A trace that computed the gradient on every call would cost several copies and fail them.
+{+/,+/50↕ω}∂ sv
 ⍝⍝: 0.5	0.5	0.5	instructions macos 0.368 linux 0.199	allocated macos 0.016 linux 0.016
 
 ⍝ On 29 October 2026 this case cost 10.2 on macOS, spelled then with `⊼`. Since 30 October, `²` under `∂` costs what `⊼` does. CI hasn't timed it. Its Linux and wasm estimates scale its macOS cost by `+/50↕sv`'s highest ratios to macOS in runs 56 to 62, 3.6 on Linux and 4.9 in wasm.
 ⍝⍝⍝ held macos 10.2: its window sums, forward and transposed, run at the cost of `+/50↕sv`, which open.md lists among wide window folds
-⍝⍝⍝ gap forced "{+/(+/50↕⍵)²}∂": the transpose's sliding sum should read the padded cotangent in place, as a fold of padded windows does. The sum waits and runs when `∂`'s code reads it, so this call computes the padded cotangent
+⍝⍝⍝ gap forced "{+/(+/50↕ω)²}∂": the transpose's sliding sum should read the padded cotangent in place, as a fold of padded windows does. The sum waits and runs when `∂`'s code reads it, so this call computes the padded cotangent
 ⍝⍝⍝ route trace
-{+/(+/50↕⍵)²}∂ sv
+{+/(+/50↕ω)²}∂ sv
 ⍝⍝: 11	55	84	instructions macos 40.249 linux 25.159	allocated macos 64.931 linux 64.929
 
 ⍝ A product of windows reads them a block of rows at a time, straight into the matrix product, and never builds the windows matrix. A product of a single-channel image's windows with one filter adds each column of the windows, read where it lies, into the result. Its gradient for the kernel reads them again in blocks. Its gradient for the image is one product of the windows of the zero-padded cotangent with the kernel reversed.
-⍝ Expected: `[64516 144]⍴3 3↕cimg +.× ck` 19 copies on macOS, 71 on Linux and 142 in wasm: a product of 595 million flops, 567 an item, at Accelerate's rank-k rate, at 8 in a copy's time for rustymath's own kernels and at 4 in wasm. Gathering the windows adds nothing: on 30 October 2026 the case cost 24.5 on macOS and 92 with rustymath's own kernels, against 24.8 and 92 for a product from the stored windows matrix. `{+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck` costs the same, because the function is linear in the kernel: `∂`'s program runs no primal, only one product, of the transposed windows with the broadcast seed. `{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg` 27 copies on macOS, 106 on Linux and 212 in wasm, because the function is linear in the image: its program runs one product, of 604 million flops, between the windows of the zero-padded cotangent and the kernel reversed. That product has its own shape, 65,536 rows of 288 items times 16 columns: from a stored windows matrix it cost 27 on macOS and 106 with rustymath's own kernels on 30 October 2026, where the forward product's rate gives 19 and 72. Linux and wasm scale 72 and 144 by that 106 against 72.
+⍝ Expected: `[64516 144]ρ3 3↕cimg +.× ck` 19 copies on macOS, 71 on Linux and 142 in wasm: a product of 595 million flops, 567 an item, at Accelerate's rank-k rate, at 8 in a copy's time for rustymath's own kernels and at 4 in wasm. Gathering the windows adds nothing: on 30 October 2026 the case cost 24.5 on macOS and 92 with rustymath's own kernels, against 24.8 and 92 for a product from the stored windows matrix. `{+/, [64516 144]ρ3 3↕cimg +.× ω}∂ ck` costs the same, because the function is linear in the kernel: `∂`'s program runs no primal, only one product, of the transposed windows with the broadcast seed. `{+/, [64516 144]ρ3 3↕ω +.× ck}∂ cimg` 27 copies on macOS, 106 on Linux and 212 in wasm, because the function is linear in the image: its program runs one product, of 604 million flops, between the windows of the zero-padded cotangent and the kernel reversed. That product has its own shape, 65,536 rows of 288 items times 16 columns: from a stored windows matrix it cost 27 on macOS and 106 with rustymath's own kernels on 30 October 2026, where the forward product's rate gives 19 and 72. Linux and wasm scale 72 and 144 by that 106 against 72.
 ⍝ CI measured 70 to 74 on Linux in runs 56 and 59-61.
 ⍝⍝⍝ route mapped product
-[conv_rows 144]⍴3 3↕cimg +.× ck
+[conv_rows 144]ρ3 3↕cimg +.× ck
 ⍝⍝: 38	86	130	instructions macos 56.079 linux 200.807	allocated macos 47.586 linux 56.234
 
-⍝ 3.25 copies, for 9 multiply-adds per window (2.25), one read and one write. On macOS, 5.5 copies, because NEON's two lanes of f64 take twice the multiply-adds' time (4.5). `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 rustymath widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Strips of 8 for the 30 results that strips of 32 leave in each 1,022-wide row, with each result written rather than added to the zeroed output, brought it to 4.35 to 4.49 on 28 October 2026. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. In runs 56 to 62 it measured 3.38 to 3.63 on Linux, and 4.98 in run 62, whose host was busy, because its data passes the runner's 1 MB L2.
+⍝ 3.25 copies, for 9 multiply-adds per window (2.25), one read and one write. On macOS, 5.5 copies, because NEON's two lanes of f64 take twice the multiply-adds' time (4.5). `([1044484 9]ρ3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 rustymath widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Strips of 8 for the 30 results that strips of 32 leave in each 1,022-wide row, with each result written rather than added to the zeroed output, brought it to 4.35 to 4.49 on 28 October 2026. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. In runs 56 to 62 it measured 3.38 to 3.63 on Linux, and 4.98 in run 62, whose host was busy, because its data passes the runner's 1 MB L2.
 ⍝ In runs 56 to 62 CI measured 8.61 to 9.69 in wasm, where it measured 5.85 on 22 October 2026. Its expected cost there is 5.5, as on macOS, since wasm's SIMD also has two lanes of f64.
 ⍝⍝⍝ route mapped product
-[window_rows 9]⍴3 3↕sq +.× kq
+[window_rows 9]ρ3 3↕sq +.× kq
 ⍝⍝: 11	4.3	7.5	instructions macos 17.558 linux 12.626	allocated macos 8.157 linux 8.157
 
 ⍝ CI measured 80 to 87 on Linux in runs 56 and 59-61.
 ⍝⍝⍝ route mapped product
-{+/, [conv_rows 144]⍴3 3↕cimg +.× ⍵}∂ ck
+{+/, [conv_rows 144]ρ3 3↕cimg +.× ω}∂ ck
 ⍝⍝: 38	100	140	instructions macos 48.647 linux 238.533	allocated macos 84.403 linux 119.276
 
 ⍝ On 30 October 2026 it cost 48.9 on macOS and 125 with rustymath's own kernels, against 27 and 106 for its product from a stored matrix, while its program built the 144 MiB windows matrix of the padded cotangent whole. CI measured 190 on Linux in run 61. Before run 61, whose speed test first asked for huge pages through the memory guard, it measured 443 to 470 there. In wasm it measured 204 to 276 in runs 56 to 62. Later on 30 October 2026, with the program's copy of those windows left pending and read through their map, it cost about 41.3 on macOS (6,173 to 5,218 ps an item). On 1 November 2026 the backward product's cotangent, a broadcast of 1, sums `ck`'s rows once and repeats the result instead of making a [64516 144] product (plan, gs13_'s entry): 7,246 → 5,914 ps an item.
-{+/, [conv_rows 144]⍴3 3↕⍵ +.× ck}∂ cimg
+{+/, [conv_rows 144]ρ3 3↕ω +.× ck}∂ cimg
 ⍝⍝: 54	190	210	instructions macos 112.876 linux 460.047	allocated macos 58.248 linux 154.379
 
 ⍝ A transpose of a million floats is a pending copy. A product reads it where it lies, as a transposed matrix. A fused call reads it in blocks of whole rows, as many as a cache line holds items.

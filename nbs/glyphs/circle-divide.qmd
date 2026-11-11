@@ -22,10 +22,10 @@ Inverse: product. A product of machine integers past 64 bits gives the largest 6
 ```bpl
 2⨸700                ⍝ [2 0]ₓ
 ∞⨸700                ⍝ [2 0 2 1]ₓ
-¯2⨸700               ⍝ [5 7⋄2 1]ₓ
-¯∞⨸700               ⍝ [2 5 7⋄2 2 1]ₓ
+¯2⨸700               ⍝ [5 7◇2 1]ₓ
+¯∞⨸700               ⍝ [2 5 7◇2 2 1]ₓ
 0⨸700                ⍝ ⍬ₓ
-¯∞⨸1                 ⍝ 2 0⍴0ₓ
+¯∞⨸1                 ⍝ 2 0ρ0ₓ
 ```
 
 Unit cells; results assemble with fill. Large factors follow [Prime's](stile-tilde.qmd) probable-prime policy.

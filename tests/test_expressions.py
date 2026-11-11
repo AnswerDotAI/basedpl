@@ -28,8 +28,11 @@ def test_expression_parts():
     teq(fn(b.dot, [[0, 2]])([1, 2, 3]).py, [1, 3])
     assert b.match(fn(table, b.dot, b.each, [[0, 2]]), b.Array(a=[1, 3], b=[4, 6]))
     assert fn(b.Array([[1, 2], [3, 4]]), b.dot, [1, 0]).py == 3
-    op = b.bpl('{⍶⍵}')
+    op = b.bpl('{⍶ω}')
     assert fn(plus, op)(3).py == 3
+    from basedpl import ι, ρ
+    teq(ι(4).py, [0, 1, 2, 3])
+    teq(ρ([2, 2], ι(4)).py, [[0, 1], [2, 3]])
 
 
 def test_expression_weak_numbers():
@@ -42,14 +45,24 @@ def test_expression_weak_numbers():
 
 
 def test_prepared_dfns_and_scripts(capsys):
-    fn, a, w = b.fn, b.alpha, b.omega
-    err = fn((a, b.minus, w), b.divide, a)
+    from basedpl import α, ω
+    fn, a, w = b.fn, α, ω
+    assert α is b.alpha and ω is b.omega
+    err = fn((a-w)/a)
     stable_log = fn(b.natural_log, b.Array(1.), b.plus, w)
-    assert stable_log(1e-17).py == b.fn('{⍟1+⍵}')(1e-17).py
+    assert stable_log(1e-17).py == b.fn('{⊛1+ω}')(1e-17).py
     rms = b.plus.reduce.divide.tally.under(b.square)
     assert fn(rms, err)([1., 2.], [2., 4.]).py == 1.
     inc = fn(w, b.plus, 1)
     assert fn(inc, b.plus, inc)(3).py == 8
+    assert fn(b.plus-b.times)(2, 3).py == -1
+    assert fn((2+w)*3)(2).py == 12
+    assert fn((a-w)//2)(7, 2).py == 2
+    assert fn(abs(-w))(3).py == 3
+    assert fn((a<w) & (w<=3))(2, 3).py
+    assert fn(w | 2)(1).py == 3
+    teq(fn(a@w)([[1, 2], [3, 4]], [[5, 6], [7, 8]]).py, [[19, 22], [43, 50]])
+    with pytest.raises(TypeError, match='fn'): bool(a<w)
     late = fn('expression_test_g')
     b.bpl('expression_test_g←+')
     current = fn(late, w)

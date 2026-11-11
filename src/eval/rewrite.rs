@@ -1,25 +1,23 @@
-//! The form rewriter: the one home of fast combinations, the combinations of functions that BPL computes by an algorithm of its own. Each rule is one row of `RULES`: a pattern written in BPL over `⍵`, with `⍺` in a dyadic one, beside the function without a glyph that computes it (`Special`), as `⍟1+⍵` beside `Log1p`. Any other name in a pattern captures an argument, which the replacement takes as its left argument, as `k` does in `k↑⍋⍵`.
+//! The form rewriter: the one home of fast combinations, the combinations of functions that BPL computes by an algorithm of its own. Each rule is one row of `RULES`: a pattern written in BPL over `ω`, with `α` in a dyadic one, beside the function without a glyph that computes it (`Special`), as `⊛1+ω` beside `Log1p`. Any other name in a pattern captures an argument, which the replacement takes as its left argument, as `k` does in `k↑⍋ω`.
 //!
-//! The rewriter reads what a function computes, and what an expression computes, as one tree of calls (`Form`). It replaces each subtree that a rule matches, inner subtrees first, with a call of the rule's function. `Function::new` rewrites a function's monadic and dyadic forms (`function`), and `dispatch` calls the results in the function's place. The binder rewrites each list of nodes before it walks it, after dot access and joins (`expression`). So `⍟1+x`, `⍟ 1+x`, `⍟(x+1)`, the train `⍟1+` and `⍟∘(1+)` all compute through `log1p`, from the first call on. An expression is read as far as its functions are constant and its arguments are arrays, as `Session::static_category` reads them, which keeps what it read about names in the recording's facts.
+//! The rewriter reads what a function computes, and what an expression computes, as one tree of calls (`Form`). It replaces each subtree that a rule matches, inner subtrees first, with a call of the rule's function. `Function::new` rewrites a function's monadic and dyadic forms (`function`), and `dispatch` calls the results in the function's place. The binder rewrites each list of nodes before it walks it, after dot access and joins (`expression`). So `⊛1+x`, `⊛ 1+x`, `⊛(x+1)`, the train `⊛1+` and `⊛∘(1+)` all compute through `log1p`, from the first call on. An expression is read as far as its functions are constant and its arguments are arrays, as `Session::static_category` reads them, which keeps what it read about names in the recording's facts.
 //!
 //! A combination's function gives the combination's results. Where its algorithm doesn't suit the arguments, or a running level carries one, it calls the functions it combines (`combined`), which the level then sees. `•explain` reports each combination that its own algorithm computes.
-use super::{
-    Binding, Bound, Function, FunctionNode, Operand, Session, Step, binder::{Binder, Category}, operators::{grouped, primitive_expansion}, session
-};
+use super::{Binding, Bound, Function, FunctionNode, Operand, Session, Step, binder::{Binder, Category}, operators::{grouped, primitive_expansion}, session};
+use crate::events::Route;
 use crate::primitive::{Folding, Order, Pick, Special};
 use crate::syntax::{Node, NodeKind, cover};
 use crate::{Described, Error, Span, Value, name::Name, primitive::{FoldKind, OperatorKind, Primitive}};
-use crate::events::Route;
 use std::{borrow::Cow, cell::Cell, convert::Infallible, ops::Range, sync::OnceLock};
 
 /// Each fast combination apart from the selections, which `rules` adds: its pattern, and the function that computes it.
 const RULES: &[(&str, Special)] = &[
-    ("⍟1+⍵", Special::Log1p), ("¯1+*⍵", Special::Expm1), ("⍋⍋⍵", Special::Ranks(false)), ("⍋⍒⍵", Special::Ranks(true)),
-    ("(≢⊢)⌸⍵", Special::GroupCounts), ("⍺(≢⊢)⌸⍵", Special::GroupCounts), ("⍺(+/⊢)⌸⍵", Special::GroupFolds(Folding::Plus, false)),
-    ("⍺(+⌿⊢)⌸⍵", Special::GroupFolds(Folding::Plus, true)), ("⍺(⌈/⊢)⌸⍵", Special::GroupFolds(Folding::Max, false)),
-    ("⍺(⌈⌿⊢)⌸⍵", Special::GroupFolds(Folding::Max, true)), ("⍺(⌊/⊢)⌸⍵", Special::GroupFolds(Folding::Min, false)),
-    ("⍺(⌊⌿⊢)⌸⍵", Special::GroupFolds(Folding::Min, true)), ("⍺(×/⊢)⌸⍵", Special::GroupFolds(Folding::Times, false)),
-    ("⍺(×⌿⊢)⌸⍵", Special::GroupFolds(Folding::Times, true)), ("-.×⍵", Special::Determinant), ("+.×⍵", Special::Permanent),
+    ("⊛1+ω", Special::Log1p), ("¯1+*ω", Special::Expm1), ("⍋⍋ω", Special::Ranks(false)), ("⍋⍒ω", Special::Ranks(true)),
+    ("(≢⊢)⌸ω", Special::GroupCounts), ("α(≢⊢)⌸ω", Special::GroupCounts), ("α(+/⊢)⌸ω", Special::GroupFolds(Folding::Plus, false)),
+    ("α(+⌿⊢)⌸ω", Special::GroupFolds(Folding::Plus, true)), ("α(⌈/⊢)⌸ω", Special::GroupFolds(Folding::Max, false)),
+    ("α(⌈⌿⊢)⌸ω", Special::GroupFolds(Folding::Max, true)), ("α(⌊/⊢)⌸ω", Special::GroupFolds(Folding::Min, false)),
+    ("α(⌊⌿⊢)⌸ω", Special::GroupFolds(Folding::Min, true)), ("α(×/⊢)⌸ω", Special::GroupFolds(Folding::Times, false)),
+    ("α(×⌿⊢)⌸ω", Special::GroupFolds(Folding::Times, true)), ("-.×ω", Special::Determinant), ("+.×ω", Special::Permanent),
 ];
 
 /// Where an expression's form lies: a list of nodes, by its number in `Reader::lists`, and the nodes it covers there.
@@ -31,7 +29,7 @@ struct Form { kind: Kind, at: Option<At> }
 
 #[derive(Clone, Debug)]
 enum Kind {
-    /// An argument of a function or a pattern: `⍵`, or `⍺` where `true`.
+    /// An argument of a function or a pattern: `ω`, or `α` where `true`.
     Arg(bool),
     /// A pattern's capture, by its number.
     Hole(usize),
@@ -51,7 +49,7 @@ impl Form {
     }
 }
 
-/// A rule, read from its row: its pattern, the bit of the primitive or operator that its pattern applies outermost (`root`), whether its pattern spans more than one call, the function that replaces a match, and the argument that the function takes on its left, if any: `⍺`, or the pattern's capture.
+/// A rule, read from its row: its pattern, the bit of the primitive or operator that its pattern applies outermost (`root`), whether its pattern spans more than one call, the function that replaces a match, and the argument that the function takes on its left, if any: `α`, or the pattern's capture.
 struct Rule { pattern: Form, root: u64, spans: bool, with: Special, left: Option<Kind> }
 
 impl Rule {
@@ -59,7 +57,7 @@ impl Rule {
         let parsed = crate::syntax::parse(crate::error::Source::new("<rule>", text)).complete().expect("a rule parses");
         let nodes = &parsed.statements[0].nodes;
         let mut reader = Reader { session: session(), pattern: true, lists: vec![nodes], holes: Vec::new() };
-        let Some((pattern, 0)) = reader.read(0, nodes.len()) else { panic!("rule {text} doesn't read as calls on ⍵") };
+        let Some((pattern, 0)) = reader.read(0, nodes.len()) else { panic!("rule {text} doesn't read as calls on ω") };
         assert!(reader.holes.len() <= 2, "rule {text} captures at most two arguments");
         let left = if reads(&pattern, true) { Some(Kind::Arg(true)) } else if reader.holes.is_empty() { None } else { Some(Kind::Hole(0)) };
         let Kind::Call(f, l, r) = &pattern.kind else { panic!("rule {text} isn't a call") };
@@ -74,17 +72,17 @@ impl Rule {
     /// The call of the rule's function that replaces a match, on copies of the arguments that the match bound.
     fn replaced(&self, binds: Binds<'_>, at: Option<At>) -> Form {
         let left = match &self.left { Some(Kind::Arg(_)) => binds.args[1].cloned(), Some(Kind::Hole(i)) => binds.holes[*i].cloned(), _ => None };
-        let right = binds.args[0].cloned().expect("a pattern reads ⍵");
+        let right = binds.args[0].cloned().expect("a pattern reads ω");
         Form { kind: Kind::Call(Function::primitive(Primitive::Special(self.with)), left.map(Box::new), Box::new(right)), at }
     }
 }
 
-/// Whether `form` reads the argument `⍺`, where `left`, or `⍵`.
+/// Whether `form` reads the argument `α`, where `left`, or `ω`.
 fn reads(form: &Form, left: bool) -> bool {
     match &form.kind { Kind::Arg(side) => *side == left, Kind::Call(_, l, r) => l.as_deref().is_some_and(|l| reads(l, left)) || reads(r, left), _ => false }
 }
 
-/// The rules, read once, in `all`: `RULES`, and a selection for each order and pick, from `k↑⍋⍵` to `k⊃>⍵`. `masks` holds each rule's needs mask, in the same order, and `keys` the `keys` of all of them and of the spanning ones. The first `spanning` rules have patterns that span more than one call, as `⍟1+⍵` and `k↑⍋⍵` do. A pattern of one call, as `-.×⍵`, is one function, which `Function::new` rewrites.
+/// The rules, read once, in `all`: `RULES`, and a selection for each order and pick, from `k↑⍋ω` to `k⊃>ω`. `masks` holds each rule's needs mask, in the same order, and `keys` the `keys` of all of them and of the spanning ones. The first `spanning` rules have patterns that span more than one call, as `⊛1+ω` and `k↑⍋ω` do. A pattern of one call, as `-.×ω`, is one function, which `Function::new` rewrites.
 struct Rules { all: Vec<Rule>, masks: Vec<u64>, keys: [u64; 2], spanning: usize }
 
 /// The rules, read once. `None` while they're being read, since reading a pattern builds functions, which `Function::new` would rewrite.
@@ -96,7 +94,7 @@ fn rules() -> Option<&'static Rules> {
     READING.set(true);
     let selections = [Order::Grade(false), Order::Grade(true), Order::Sort(false), Order::Sort(true)].into_iter().flat_map(|o| {
         [Pick::Take, Pick::First, Pick::Index, Pick::Mix]
-            .map(|p| (format!("{}{}{}⍵", if p == Pick::First { "" } else { "k" }, p.primitive().glyph(), o.primitive().glyph()), Special::Selected(o, p)))
+            .map(|p| (format!("{}{}{}ω", if p == Pick::First { "" } else { "k" }, p.primitive().glyph(), o.primitive().glyph()), Special::Selected(o, p)))
     });
     let mut all: Vec<Rule> = RULES.iter().map(|&(text, with)| Rule::read(text, with)).chain(selections.map(|(text, with)| Rule::read(&text, with))).collect();
     all.sort_by_key(|r| !r.spans);
@@ -181,7 +179,7 @@ fn applied(f: &Function, left: Option<Form>, right: Form) -> Form {
     }
 }
 
-/// The function that computes `form` from its arguments: `⍺` and `⍵` where `dyadic`, and `⍵` alone otherwise.
+/// The function that computes `form` from its arguments: `α` and `ω` where `dyadic`, and `ω` alone otherwise.
 fn built(form: &Form, dyadic: bool, span: &Span) -> Result<Function, Error> {
     use {FunctionNode as N, OperatorKind as O};
     let atop = |f: Function, g: Function| Function::new(N::Composed(O::Atop, [Operand::Function(f), Operand::Function(g)]), span);
@@ -223,9 +221,8 @@ fn root(f: &Function) -> u64 {
 /// The needs mask of the primitives and operators that `node` writes, in its groups too.
 fn written(node: &Node) -> u64 {
     match &node.kind {
-        NodeKind::Embedded(Value::Function(f)) => f.node.needs,
-        NodeKind::Function(crate::primitive::Builtin::Primitive(p)) => glyph(*p), NodeKind::Operator(op) => bit(op.glyph()),
-        NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().fold(0, |m, n| m | written(n)), _ => 0
+        NodeKind::Embedded(Value::Function(f)) => f.node.needs, NodeKind::Function(crate::primitive::Builtin::Primitive(p)) => glyph(*p),
+        NodeKind::Operator(op) => bit(op.glyph()), NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().fold(0, |m, n| m | written(n)), _ => 0
     }
 }
 
@@ -268,7 +265,6 @@ pub(super) fn direct(f: &Function) -> Option<(Special, Option<&Value>)> {
     }
 }
 
-
 /// `nodes` with each combination in them that a rule whose pattern spans more than one call matches (`Rules::spanning`) replaced by a group that calls the rule's function, or `nodes` as they are. Only a combination that lies in `nodes` itself is replaced here: one inside a group is replaced when the binder walks the group.
 pub(super) fn expression<'a>(session: &Session, nodes: &'a [Node]) -> Cow<'a, [Node]> {
     let Some(Rules { all, masks, keys, spanning }) = rules() else { return Cow::Borrowed(nodes) };
@@ -285,13 +281,12 @@ pub(super) fn expression<'a>(session: &Session, nodes: &'a [Node]) -> Cow<'a, [N
     }
 }
 
-/// Reads forms from lists of nodes, right to left, as the binder groups them. A pattern's reader, with `pattern` set, reads `⍵` and `⍺` as arguments and any other name as a capture.
+/// Reads forms from lists of nodes, right to left, as the binder groups them. A pattern's reader, with `pattern` set, reads `ω` and `α` as arguments and any other name as a capture.
 struct Reader<'a> { session: &'a Session, pattern: bool, lists: Vec<&'a [Node]>, holes: Vec<Name> }
 
 impl<'a> Reader<'a> {
     fn category(&self, node: &Node) -> Category {
-        if self.pattern && matches!(node.kind, NodeKind::Name(..)) { Category::Value }
-        else { self.session.static_category(node) }
+        if self.pattern && matches!(node.kind, NodeKind::Name(..)) { Category::Value } else { self.session.static_category(node) }
     }
 
     /// The form of the longest run of calls that ends at `end` in list `list` and starts from an array, with where it starts.
@@ -387,9 +382,7 @@ impl<'a> Reader<'a> {
 /// Whether a node is constant: a primitive, an operator, a literal, or a group of those.
 fn constant(node: &Node) -> bool {
     match &node.kind {
-        NodeKind::Embedded(Value::Function(f)) => !f.late(),
-        NodeKind::Embedded(Value::Operator(_)) => false,
-        NodeKind::Embedded(_) => true,
+        NodeKind::Embedded(Value::Function(f)) => !f.late(), NodeKind::Embedded(Value::Operator(_)) => false, NodeKind::Embedded(_) => true,
         NodeKind::Function(crate::primitive::Builtin::Primitive(_)) | NodeKind::Operator(_) | NodeKind::Literal(_) => true,
         NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().all(constant), _ => false
     }
@@ -423,14 +416,13 @@ pub(crate) fn combined(s: Special, left: Option<&Value>, right: &Value, span: &S
         return original(s, span)?.call_array(left, right, span);
     }
     let (route, fast) = match s {
-        Special::Selected(order, pick) => {
-            (if matches!(order, Order::Grade(_)) { crate::events::routes::PartialGrade } else { crate::events::routes::PartialSort }, selected(order, pick, left, right, span))
-        }
-        Special::Ranks(down) => (crate::events::routes::Ranks, ranks(down, right, span)),
+        Special::Selected(order, pick) => (
+            if matches!(order, Order::Grade(_)) { crate::events::routes::PartialGrade } else { crate::events::routes::PartialSort },
+            selected(order, pick, left, right, span)), Special::Ranks(down) => (crate::events::routes::Ranks, ranks(down, right, span)),
         Special::GroupCounts | Special::GroupFolds(..) => return grouped(s, left, right, span)?.array(span),
         Special::Determinant => return primitive_expansion(Primitive::Arithmetic(Minus), Primitive::Arithmetic(Times), right, span),
         Special::Permanent => return primitive_expansion(Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times), right, span),
-        _ => unreachable!("a kernel computes this combination"),
+        _ => unreachable!("a kernel computes this combination")
     };
     if let Some(result) = fast { if result.is_ok() { taken(route, s) } return result; }
     crate::events::declined(route, "arguments that don't suit it", right.len());
@@ -486,8 +478,8 @@ fn bit(glyph: &str) -> u64 {
     let written = WRITTEN.get_or_init(|| {
         let selections = [Pick::Take, Pick::Index, Pick::Mix].map(|p| p.primitive().glyph()).into_iter()
             .chain([Order::Grade(false), Order::Grade(true), Order::Sort(false), Order::Sort(true)].map(|o| o.primitive().glyph()));
-        let mut chars: Vec<char> =
-            RULES.iter().map(|&(text, _)| text).chain(selections).flat_map(str::chars).filter(|c| !c.is_alphanumeric() && !"⍺⍵¯() ".contains(*c)).collect();
+        let mut chars: Vec<char> = RULES.iter().map(|&(text, _)| text).chain(selections).flat_map(str::chars)
+            .filter(|&c| Primitive::from_glyph(c).is_some() || OperatorKind::from_glyph(c).is_some()).collect();
         chars.sort_unstable();
         chars.dedup();
         assert!(chars.len() <= 64, "a needs mask holds 64 characters");

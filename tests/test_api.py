@@ -24,7 +24,7 @@ def test_builtin_attributes():
         teq(api.plu(2, 3).py, 5)
         for name in ('userfn', 'nonexistent', 'abs', 'disclose', 'diaeresis'):
             with pytest.raises(AttributeError): getattr(api, name)
-    bpl('add←99 ⋄ userfn←{⍵+1}')
+    bpl('add←99 ◇ userfn←{ω+1}')
     teq(bpl.add(2, 3).py, 5)
     teq(bpl['add'].py, 99)
     teq(bpl.userfn(1).py, 2)
@@ -46,8 +46,8 @@ def test_python_printer():
         '+/÷≢': 'add.reduce / equal_underbar_slash', '+.×': 'add @ multiply', '×⊗': 'multiply.outer_product',
         '+/⍠1': 'add.reduce.axis(1.)', '1↣+⍣[≡]': '(1. | add).power([match])', '+⌿': 'add.reduce_first', '-⍨': 'subtract.tilde_diaeresis',
         '+∘×': 'conjugate.atop(times)', '+⍥×': 'plus.over(sign)', '-↣+': 'negate.before(add)', '+↢-': 'add.after(negate)', '-⊘+': 'negate.valences(add)',
-        '{⍵<0}⍚[⊢ -]': 'fn("{⍵<0}").agenda(bpl("[⊢ -]"))', '[1 2⋄3 4]↣+': 'bpl("[1 2⋄3 4]") | add',
-        '{⍵×2}': 'fn("{⍵×2}")', '{⍵×2}¨': 'fn("{⍵×2}").each', '(×↢2)⁻': 'multiply(2.).undo', '⌽⍠0': 'circle_stile.axis(0.)',
+        '{ω<0}⍚[⊢ -]': 'fn("{ω<0}").agenda(bpl("[⊢ -]"))', '[1 2◇3 4]↣+': 'bpl("[1 2◇3 4]") | add',
+        '{ω×2}': 'fn("{ω×2}")', '{ω×2}¨': 'fn("{ω×2}").each', '(×↢2)⁻': 'multiply(2.).undo', '⌽⍠0': 'circle_stile.axis(0.)',
     }.items(): teq(to_python(bpl(code)), expected)
     teq(eval(to_python(bpl('+/⍠1')))([[1, 2], [3, 4]]).py, [3, 7])
     selected = same[None, ..., ::-1]
@@ -62,7 +62,7 @@ def test_python_printer():
     teq(to_python(bpl('+∘×'), dyad=True), 'conjugate.atop(multiply)')
     teq(to_python(multiply(2.) ** 3), 'multiply(2.) ** 3')
     teq(to_python((add.reduce / tally).each), '(add.reduce / equal_underbar_slash).each')
-    teq(to_python(bpl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
+    teq(to_python(bpl.fn('{⎕←1 ◇ ω}')), 'fn("{⎕←1 ◇ ω}")')
     teq(to_python(bpl.fn('unknown')), 'fn("unknown")')
     teq(to_python(bpl.fn('(⎕←1)+')), 'fn("(⎕←1)+")')
     teq(to_python(Array([add, multiply]).fn), 'bpl("[+ ×]").fn')
@@ -75,12 +75,12 @@ def test_load(tmp_path, monkeypatch):
     lib = tmp_path/'lib'
     lib.mkdir()
     source = lib/'defs.bpl'
-    source.write_text('_half←{⍵÷2}\nhalve←{_half ⍵}\ntwice←{⍶ ⍶ ⍵}\nx←7\n')
+    source.write_text('_half←{ω÷2}\nhalve←{_half ω}\ntwice←{⍶ ⍶ ω}\nx←7\n')
     (lib/'main.bpl').write_text('[halve:]←•load "./defs.bpl"\nq←halve 10\n')
     m = bpl('•load "lib/defs.bpl"').py
     assert sorted(m) == ['halve', 'twice', 'x']
-    assert m['twice'](bpl.fn('{⍵+1}'))(3).py == 5
-    assert bpl('{m←•load "lib/defs.bpl" ⋄ [halve: x:]←m ⋄ (halve x),-m.twice 3}0').py.tolist() == [3.5, 3]
+    assert m['twice'](bpl.fn('{ω+1}'))(3).py == 5
+    assert bpl('{m←•load "lib/defs.bpl" ◇ [halve: x:]←m ◇ (halve x),-m.twice 3}0').py.tolist() == [3.5, 3]
     assert 'halve' not in bpl.names()
     assert bpl('•LOAD "lib/main.bpl"').py['q'] == 5
     (lib/'a.bpl').write_text('•load "./b.bpl"')
@@ -89,7 +89,7 @@ def test_load(tmp_path, monkeypatch):
     source.write_text('x←7\n⎕←x\nx\n1÷"a"')
     with pytest.raises(BplError, match=r'defs.bpl:4') as err: bpl('•load "lib/defs.bpl"')
     assert err.value.output == ['7']
-    source.write_text('⎕←9\n{∇⍵}0')
+    source.write_text('⎕←9\n{∇ω}0')
     bpl.timeout = .001
     with pytest.raises(BplError, match='TIMEOUT'): bpl('•load "lib/defs.bpl"')
     bpl.timeout = None
@@ -115,9 +115,9 @@ def test_data_io(tmp_path, monkeypatch, capsys):
     with pytest.raises(BplError, match='IO ERROR'): read(str(tmp_path/'absent'))
     prompts = []
     monkeypatch.setattr('builtins.input', lambda prompt: prompts.append(prompt) or bpl('"b","ob"').py)
-    teq(bpl('"-" •nput "Name? " ⋄ "Hi ",⎕').py, 'Hi bob')
+    teq(bpl('"-" •nput "Name? " ◇ "Hi ",⎕').py, 'Hi bob')
     teq(prompts, ['Name? '])
-    bpl('"-" •nput "a" ⋄ ⎕←1')
+    bpl('"-" •nput "a" ◇ ⎕←1')
     teq(capsys.readouterr().out, 'a1\n')
 
 
@@ -209,7 +209,7 @@ def test_array_surface():
     with pytest.raises(TypeError): add(a, None)
     with pytest.raises(BplError, match='LENGTH'): a + [1, 2, 3]
     assert (Array(np.ones(2, np.float32)) + .5).np.dtype == np.float32
-    np.testing.assert_array_equal(bpl('m₀ ₀←0 ⋄ m', m=a), [[0, 2, 3], [4, 5, 6]])
+    np.testing.assert_array_equal(bpl('m₀ ₀←0 ◇ m', m=a), [[0, 2, 3], [4, 5, 6]])
     np.testing.assert_array_equal(a, [[1, 2, 3], [4, 5, 6]])
     assert len(a) == 2
     assert Array([4, 5, 6]) in a and Array([4, 5, 7]) not in a and Array(2) in Array([1, 2, 3])
@@ -244,10 +244,10 @@ def test_array_surface():
     assert short[[]].shape == (0,)
     short[names] = 9
     teq(short.py, {'a': 9, 'b': 9, 'ba': 3, '': 4})
-    nested, paths = bpl('[2 3⍴⍳6ₓ;2 2⍴⍳4ₓ]'), bpl('[[0 1] [1 0]]')
+    nested, paths = bpl('[2 3ρι6ₓ;2 2ρι4ₓ]'), bpl('[[0 1] [1 0]]')
     np.testing.assert_array_equal(nested[paths, 0], [3, 0])
     with pytest.raises(ValueError, match='paths select cells of different shapes'): nested[paths, 1:]
-    teq(bpl('[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]')[paths, 1:].py, [[5, 6], [8, 9]])
+    teq(bpl('[[1 2 3◇4 5 6] [7 8 9◇10 11 12]]')[paths, 1:].py, [[5, 6], [8, 9]])
     np.testing.assert_array_equal(a[1:2, :], [[4, 5, 6]])
     np.testing.assert_array_equal(a[:, ::-1], [[3, 2, 1], [6, 5, 4]])
     np.testing.assert_array_equal(a[:, -2:], [[2, 3], [5, 6]])
@@ -280,7 +280,7 @@ def test_pending_indexing():
         teq(selected(Array(list(range(n)))).py, a[1::2].py)
         a[1::2] = 0
         teq(a.py, [i+1 if i%2 == 0 else 0 for i in range(n)])
-    a = bpl(r'["x":[0.5×⍳100000]]')
+    a = bpl(r'["x":[0.5×ι100000]]')
     assert bpl(r'(•storage x.x₀).pending', x=a).py
     assert a.force() is a
     assert not bpl(r'(•storage x.x₀).pending', x=a).py
@@ -308,7 +308,7 @@ def test_python_array_value_semantics():
     for inf in (-np.inf, np.inf):
         teq(held[:, inf].np, [0, 0])
         teq(held[bpl('[[0] [1]]'), inf].np, [0, 0])
-    nested = bpl('[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]')
+    nested = bpl('[[1 2 3◇4 5 6] [7 8 9◇10 11 12]]')
     paths = bpl('[[0 1] [1 0]]')
     rows = np.array([[4, 5, 6], [7, 8, 9]])
     teq(nested[paths, None].np, rows[:, None, :])
@@ -340,12 +340,12 @@ def test_matrix_stack_operator():
     teq(result.np, np.asarray(expected))
 
 def test_own():
-    fresh = bpl('0.5×⍳100000')
+    fresh = bpl('0.5×ι100000')
     items = np.asarray(fresh, copy=False).ctypes.data
     moved = fresh.own()
     assert moved.ctypes.data == items and moved.flags.writeable
     with pytest.raises(ValueError): fresh.shape
-    held = bpl('shared←100000⍴0.5 ⋄ shared')
+    held = bpl('shared←100000ρ0.5 ◇ shared')
     twin = Array(held)
     items = np.asarray(held, copy=False).ctypes.data
     assert held.own().ctypes.data != items
@@ -356,7 +356,7 @@ def test_own():
     flags = bpl('0 1 0=1').own()
     assert flags.dtype == bool and flags.tolist() == [False, True, False] and flags.flags.writeable
     # A structural copy that reads its source through strides lends the source's items, without being built.
-    bpl('v←0.5×⍳1000000 ⋄ m←1000 1000⍴v')
+    bpl('v←0.5×ι1000000 ◇ m←1000 1000ρv')
     source, windows = np.asarray(bpl['v'], copy=False), np.lib.stride_tricks.sliding_window_view
     for code, expected in [('3↕v', windows(source, 3)), ('⌽v', source[::-1]), ('2↓v', source[2:]), ('2 2↕m', windows(source.reshape(1000, 1000), (2, 2)))]:
         copy = bpl(code)
@@ -370,7 +370,7 @@ def test_keyed_arrays():
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(bpl('⍳₀t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k₁+t.e≡⍬:⍬', t=d).py == 3
+    assert list(bpl('ι₀t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k₁+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
     assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})
@@ -418,7 +418,7 @@ def test_based_values():
         assert bpl('value').is_atom == value.is_atom
         assert bpl('value').shape == value.shape
     assert Array(3).is_atom and not Array(np.array(3)).is_atom
-    assert bpl('v←3 4 ⋄ 1⌷v').is_atom
+    assert bpl('v←3 4 ◇ 1⌷v').is_atom
     assert not bpl('[⊂1]⌷v').is_atom
     assert bpl('1⊃v').is_atom
     assert Array([3, 4])[1].is_atom and not Array([3, 4])[np.array(1)].is_atom
@@ -526,7 +526,7 @@ def test_math_construction():
     f = (1 | add).undo(subtract(1))
     np.testing.assert_array_equal(f.power([2, -1, 0])(10), [12, 9, 10])
     np.testing.assert_array_equal(f.power([0, -1, -2])(10), [10, 9, 8])
-    stop = bpl('limit←13 ⋄ {⍺≥limit}')
+    stop = bpl('limit←13 ◇ {α≥limit}')
     np.testing.assert_array_equal(f.power([stop])(10), [10, 11, 12, 13])
     np.testing.assert_array_equal(windows(2, [1, 2, 3]), [[1, 2], [2, 3]])
     assert prime(9).py == 29 and prime_mode(1, 29).py == 1
@@ -536,8 +536,8 @@ def test_math_construction():
     p = [1, 2, 3] | polyval
     assert p.derivative(2).py == 14 and p.derivative.derivative(2).py == 6
     np.testing.assert_array_equal(p.derivative([1, 2]), [[8, 0], [0, 14]])
-    rosen = bpl('{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}')
-    jvp = bpl('{[x y]←⍵ ⋄ +/⍺×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}')
+    rosen = bpl('{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}')
+    jvp = bpl('{[x y]←ω ◇ +/α×[(¯2×1-x) - 400×x×y-⊼x; 200×y-⊼x]}')
     r = rosen.derivative(jvp)
     assert r([-1, 2]).py == 104
     np.testing.assert_array_equal(r.derivative([-1, 2]), [396, 200])
@@ -545,10 +545,10 @@ def test_math_construction():
     found = rosen.optimize([0.5, 0.5], lower=[-np.inf, 0], upper=[0.8, np.inf], report=True).py
     np.testing.assert_allclose(found['x'], [0.8, 0.64], atol=1e-6)
     assert found['converged']
-    loss = [1, 2, 3, 4] | bpl('{+/⊼⍺-⍵}')
+    loss = [1, 2, 3, 4] | bpl('{+/⊼α-ω}')
     np.testing.assert_allclose([loss.optimize(0), loss.optimize(0, method='powell')], [2.5, 2.5])
     np.testing.assert_allclose(bpl('2-⍨⊼').optimize(1, solve=True), 2**0.5)
-    np.testing.assert_allclose(bpl('{(⍵×4)-8}').optimize(0, solve=True, linear=True, precondition=bpl('{⍵÷4}')), 2)
+    np.testing.assert_allclose(bpl('{(ω×4)-8}').optimize(0, solve=True, linear=True, precondition=bpl('{ω÷4}')), 2)
 
 
 def test_names():
@@ -573,24 +573,24 @@ def test_names():
     teq((keyed + other).np, data + [10, 20, 30])
     assert keyed.df.index.name == 'city' and keyed.df.columns.name == 'month'
     bpl(M=keyed)
-    assert bpl('⍴M').py == dict(city=2, month=3)
-    renamed = bpl('("town" 1:⍴M)⍴M')
+    assert bpl('ρM').py == dict(city=2, month=3)
+    renamed = bpl('("town" 1:ρM)ρM')
     teq(renamed.names, ('town', None))
     teq(renamed.keys, keyed.keys)
-    assert bpl('⍴("town" 1:⍴M)⍴M').py == {'town': 2, 1: 3}
-    teq(bpl('(:⍴M)⍴M').names, (None, None))
-    teq(bpl('(⍴M)⍴(:⍴M)⍴M').names, keyed.names)
-    assert bpl('⍴("items":2)⍴1 2').py == dict(items=2)
-    for code in ['["city":2 "city":3]⍴M', '("city" "city":⍴M)⍴M', '(1 1:⍴M)⍴M']:
+    assert bpl('ρ("town" 1:ρM)ρM').py == {'town': 2, 1: 3}
+    teq(bpl('(:ρM)ρM').names, (None, None))
+    teq(bpl('(ρM)ρ(:ρM)ρM').names, keyed.names)
+    assert bpl('ρ("items":2)ρ1 2').py == dict(items=2)
+    for code in ['["city":2 "city":3]ρM', '("city" "city":ρM)ρM', '(1 1:ρM)ρM']:
         with pytest.raises(BplError, match='DOMAIN'): bpl(code)
     teq(bpl('"Paris"⌷⍠"city" M').np, data[0])
     teq(bpl('1⌷M').names, ('month',))
     teq(bpl('+/⍠"city" "month" M').np, 15)
     teq(bpl('⍉M').names, ('month', 'city'))
-    teq(bpl('2 3⍴M').names, (None, None))
-    teq(bpl('(⍴M)⍴M').names, ('city', 'month'))
+    teq(bpl('2 3ρM').names, (None, None))
+    teq(bpl('(ρM)ρM').names, ('city', 'month'))
     teq(bpl(':M').names, (None, None))
-    teq(bpl('(⍴M)⍴,M').names, ('city', 'month'))
+    teq(bpl('(ρM)ρ,M').names, ('city', 'month'))
     teq(bpl('+/¨⊂₁M').names, ('city',))
     teq(bpl('⌽⍤1 M').names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
@@ -620,12 +620,12 @@ def test_function_arrays():
     fs = Array([add, multiply])
     assert pick(1, fs)(2, 3).py == 6
     assert fs.py[0](2, 3).py == 5
-    fs = bpl('offset←10 ⋄ [{offset+⍵} +]')
+    fs = bpl('offset←10 ◇ [{offset+ω} +]')
     bpl(offset=20)
-    for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[0]), bpl.fn('{↑⍵}')(fs)]: assert f(3).py == 23
+    for f in [first(fs), first(list(fs)[0]), fs.py[0], first(Array(fs.np)[0]), bpl.fn('{↑ω}')(fs)]: assert f(3).py == 23
     assert pick(1, reverse(fs))(3).py == 23
     bpl(fs=fs)
-    assert bpl('f←0⊃fs ⋄ f 3').py == 23
+    assert bpl('f←0⊃fs ◇ f 3').py == 23
     assert isinstance(fs, basedpl.FunctionArray) and not callable(Array([1, 2]))
     v = Array([1, 2])
     v[0] = add
@@ -644,7 +644,7 @@ def test_retained_and_late_bound_functions(capsys):
     with pytest.raises(BplError) as caught: bpl.fn('{')
     assert caught.value.source == '{'
     bpl(k=2)
-    f = bpl('{k+⍵}')
+    f = bpl('{k+ω}')
     assert f(3).py == 5
     bpl(k=10)
     assert f(3).py == 13
@@ -662,16 +662,16 @@ def test_retained_and_late_bound_functions(capsys):
     bpl(loop=bpl.fn('loop'))
     with pytest.raises(BplError, match='LIMIT'): bpl('loop 1')
     assert bpl('1+1').py == 2
-    assert bpl('count←{⍵=0?0;1+∇⍵-1} ⋄ count 500').py == 500
+    assert bpl('count←{ω=0?0;1+∇ω-1} ◇ count 500').py == 500
     bpl('g←-')
     assert composed(3).py == 3
     saved = bpl('g')
     bpl('g←+')
     assert saved(3).py == -3 and late(3).py == 3
     assert bpl('f 5', f=multiply(2)).py == 10
-    bpl('outer←{k←100 ⋄ ⍶ ⍵}', f=f)
+    bpl('outer←{k←100 ◇ ⍶ ω}', f=f)
     assert bpl('f outer 1').py == 11
-    g = bpl('{⎕←⍵ ⋄ ⍵}')
+    g = bpl('{⎕←ω ◇ ω}')
     assert (g + g)(2).py == 4 and capsys.readouterr().out == '2ₓ\n2ₓ\n'
     assert bpl('g', 'explicit', g=g).value(2).py == 2
     assert capsys.readouterr().out == '2ₓ\n'
@@ -680,7 +680,7 @@ def test_retained_and_late_bound_functions(capsys):
 
 def test_function_inspection():
     def help_text(command): return '\n'.join(bpl(command, 'explicit').output)
-    source = '{⍝ Mean of a vector\n(+/⍵)÷≢⍵}'
+    source = '{⍝ Mean of a vector\n(+/ω)÷≢ω}'
     bpl('mean←'+source)
     mean = bpl.fn('mean')
     teq(mean.source, source)
@@ -703,7 +703,7 @@ def test_function_inspection():
     for command in [']help?', ']help ? indexing', ']help mean -other', ']help mean -source extra']:
         with pytest.raises(BplError, match='SYNTAX'): bpl(command, 'explicit')
     assert 'No matching topics' in help_text(']help nonexistent_topic_xyz')
-    bpl('changed←0 ⋄ danger←{changed+←1 ⋄ ⍵}')
+    bpl('changed←0 ◇ danger←{changed+←1 ◇ ω}')
     assert bpl.inspect('danger')['source'].startswith('{')
     teq(bpl('changed').py, 0)
     bpl('mean←{42}')

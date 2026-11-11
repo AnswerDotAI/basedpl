@@ -154,7 +154,7 @@ pub(in crate::eval) fn inverse(f: &Function, bound: Option<(&Value, bool)>, righ
         Composed(After, [Operand::Function(g), Operand::Value(a)]) if bound.is_none() => { return inverse(g, Some((a, false)), right, span); }
         Composed(After, [Operand::Function(g), Operand::Function(h)]) => {
             let Some((a, first)) = bound else {
-                // One argument makes a hook, `⍵ g h ⍵`. Only `×↢*` has a known inverse.
+                // One argument makes a hook, `ω g h ω`. Only `×↢*` has a known inverse.
                 use crate::{number::{Arithmetic, Math}, primitive::Primitive as P};
                 if matches!(g.node(), Primitive(P::Arithmetic(Arithmetic::Times))) && matches!(h.node(), Primitive(P::Math(Math::Power))) {
                     return P::Special(crate::primitive::Special::LambertW).call(None, right, span).map(Bound::from);

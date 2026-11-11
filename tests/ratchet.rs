@@ -8,10 +8,14 @@ struct Pattern { name: &'static str, regex: &'static str, homes: &'static [&'sta
 
 const PATTERNS: &[Pattern] = &[
     Pattern { name: "an `Error` constructor passed to `ok_or_else` as a function item", regex: r"\bok_or_else\(\s*(?:\w+::)*Error::\w+\s*\)", homes: &[],
-        budget: 0, instead: "call `Error::internal()` directly, or `or_internal()` on an `Option`: a function item loses the call site" }, Pattern {
+        budget: 0, instead: "call `Error::internal()` directly, or `or_internal()` on an `Option`: a function item loses the call site" },
+    Pattern {
         // Inverses, selector syntax and NodeKind::primitive are the three exact-identity consumers outside the rewriter.
-        name: "an `.as_primitive()` call", regex: r"\.as_primitive\s*\(", homes: &["eval/rewrite.rs"], budget: 3,
-        instead: "compute through `operation()` or `dyadic_primitive()`, which give an admitted dfn body's primitive; `as_primitive` serves display, inverses and syntax only"
+        name: "an `.as_primitive()` call",
+        regex: r"\.as_primitive\s*\(",
+        homes: &["eval/rewrite.rs"],
+        budget: 3,
+        instead: "compute through `operation()` or `dyadic_primitive()`, which give an admitted dfn body's primitive; `as_primitive` serves display, inverses and syntax only",
     },
 ];
 

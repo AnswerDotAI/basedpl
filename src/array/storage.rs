@@ -88,9 +88,7 @@ pub(crate) fn static_width(width: Width) -> Option<Width> { crate::settings::int
 #[inline]
 pub(crate) fn ordinary_width(width: Width) -> Width { static_width(width).unwrap_or(width) }
 /// The ordinary width of integer bounds, saturated at i64, or i64 when no bounds are known.
-pub(crate) fn ordinary_width_for(range: Option<Range>) -> Width {
-    range.map_or(Width::I64, |r| ordinary_width(Width::narrowest(r.lo as i64, r.hi as i64)))
-}
+pub(crate) fn ordinary_width_for(range: Option<Range>) -> Width { range.map_or(Width::I64, |r| ordinary_width(Width::narrowest(r.lo as i64, r.hi as i64))) }
 /// The compact dtype that holds `item`, if any does (`Number::dtype`).
 pub(crate) fn item_dtype(item: &Value) -> Option<DType> {
     match item { Value::Number(n) => n.dtype(), Value::Character(_) => Some(DType::Character), _ => None }
@@ -429,7 +427,7 @@ impl<'a> Items<'a> {
 
 fn number(value: &Value) -> Result<&Number, ErrorKind> { match value { Value::Number(n) => Ok(n), _ => Err(Kind::Domain.into()) } }
 
-/// The kind of the items that joining sources of these item counts and kinds under `widening` gives (`plan::Kind::join`), or `None` where no source holds an item. A source with no items and a dtype, an empty compact array, holds nothing that could change the join, so it drops out: `⍬,⍳5ₓ` gives integers. Values (`Gather::joined_kind`), structural copies (`fusion::copy`) and traced copies' descriptions all join through it.
+/// The kind of the items that joining sources of these item counts and kinds under `widening` gives (`plan::Kind::join`), or `None` where no source holds an item. A source with no items and a dtype, an empty compact array, holds nothing that could change the join, so it drops out: `⍬,ι5ₓ` gives integers. Values (`Gather::joined_kind`), structural copies (`fusion::copy`) and traced copies' descriptions all join through it.
 pub(crate) fn items_kind(sources: impl IntoIterator<Item = (usize, crate::plan::Kind)>, widening: Widening) -> Option<crate::plan::Kind> {
     let mut active = sources.into_iter().filter(|(n, k)| *n > 0 || k.dtype.is_none()).map(|(_, k)| k).peekable();
     active.peek()?;

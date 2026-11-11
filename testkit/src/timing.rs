@@ -19,7 +19,7 @@ fn single_threaded_defaults() {
 enum Size { Full, Counted, Small }
 
 fn sized_setup(setup: &str, size: Size) -> String {
-    let select = match size { Size::Full => "⊣", Size::Small => "⊢", Size::Counted => "{2ₓ*⌊ₓ0.5+0.5×(2⍟⍺)+2⍟⍵}" };
+    let select = match size { Size::Full => "⊣", Size::Small => "⊢", Size::Counted => "{2ₓ*⌊ₓ0.5+0.5×(2⊛α)+2⊛ω}" };
     format!("size←{select}\n{setup}")
 }
 
@@ -98,12 +98,12 @@ pub fn rows(cases: &[Case], column: Option<usize>) -> JsonValue {
     }).collect()
 }
 
-/// A case's label in logs: `file:id` for a case with an ID, or else its code on one line. A multi-line case's lines join with `⋄`, as comments write a dfn, so its label stays the same when lines above it move: `{x←v ⋄ x.[i]←w ⋄ x}0`.
+/// A case's label in logs: `file:id` for a case with an ID, or else its code on one line. A multi-line case's lines join with `◇`, as comments write a dfn, so its label stays the same when lines above it move: `{x←v ◇ x.[i]←w ◇ x}0`.
 fn label(file: &File, case: &JsonValue) -> String {
     let (id, code) = (case["id"].as_str().unwrap_or_default(), case["code"].as_str().unwrap());
     if !id.is_empty() { format!("{}:{id}", file.name) }
     else if code.contains('\n') {
-        code.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ⋄ ").replace("{ ⋄ ", "{").replace(" ⋄ }", "}")
+        code.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ◇ ").replace("{ ◇ ", "{").replace(" ◇ }", "}")
     } else { code.into() }
 }
 
@@ -173,7 +173,8 @@ pub fn speed_case(case: &JsonValue) -> bool { case["budgets"].is_array() }
 pub fn timed(case: &JsonValue) -> bool { case["budgets"].as_array().is_some_and(|b| b.iter().any(|b| b != "-")) }
 
 /// Time selected records in copies, or as widths/exact ratios, within the timing hold that the caller takes. With `footprints`, a case whose footprint passes one core's cache also times a copy of its footprint (`rustymath_timing::footprint`).
-pub fn costs(files: &[File], only: Option<Selection<'_>>, prefs: &str, footprints: bool, interrupt: &InterruptHandle, sampling: Sampling) -> Result<Vec<Case>, String> {
+pub fn costs(
+    files: &[File], only: Option<Selection<'_>>, prefs: &str, footprints: bool, interrupt: &InterruptHandle, sampling: Sampling) -> Result<Vec<Case>, String> {
     let mut result = Vec::new();
     each_case(files, only, prefs, Size::Full, timed, |group, file, case| {
         let (section, code) = (case["section"].as_str().unwrap(), case["code"].as_str().unwrap());
@@ -420,7 +421,9 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         match time(&session, code, interrupt) {
-            Ok((seconds, _, _, cold_seconds)) => costs.push(json!({"code":code, "seconds":seconds, "cold_seconds":cold_seconds, "copies":seconds / n as f64 / copy.seconds})),
+            Ok((seconds, _, _, cold_seconds)) => {
+                costs.push(json!({"code":code, "seconds":seconds, "cold_seconds":cold_seconds, "copies":seconds / n as f64 / copy.seconds}))
+            }
             Err(failed) => return Ok(response(failed)),
         }
     }
@@ -433,15 +436,11 @@ pub fn steps_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Js
 }
 
 /// Prepares one case, forces two warm calls, signals readiness, then repeats in that same Session.
-pub fn profile_request(
-    spec: &JsonValue, interrupt: &InterruptHandle, ready: impl FnOnce() -> Result<(), String>
-) -> Result<JsonValue, String> {
+pub fn profile_request(spec: &JsonValue, interrupt: &InterruptHandle, ready: impl FnOnce() -> Result<(), String>) -> Result<JsonValue, String> {
     repeated_request(spec, interrupt, Some(ready))
 }
 
-fn repeated_request(
-    spec: &JsonValue, interrupt: &InterruptHandle, mut ready: Option<impl FnOnce() -> Result<(), String>>
-) -> Result<JsonValue, String> {
+fn repeated_request(spec: &JsonValue, interrupt: &InterruptHandle, mut ready: Option<impl FnOnce() -> Result<(), String>>) -> Result<JsonValue, String> {
     let text = |key| spec[key].as_str().ok_or_else(|| format!("steps needs {key} as a string"));
     let steps = spec["steps"].as_u64().ok_or("steps needs steps as a count")?;
     let cases = spec["cases"].as_array().ok_or("steps needs cases as an array")?;
@@ -458,7 +457,7 @@ fn repeated_request(
                 }
                 for _ in 0..steps { run(&mut failed); if failed.is_some() { break; } }
             }
-            Err(error) => failed = Some(error)
+            Err(error) => failed = Some(error),
         }
         if let Some(failed) = failed { return Ok(response(failed)); }
     }

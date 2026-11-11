@@ -2,7 +2,7 @@ use std::{io::Write, process::{Command, Stdio}};
 
 #[test]
 fn native_expression_and_diagnostic() {
-    for (code, expected) in [("2×3+4", "14\n"), ("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂[1 2]\n"), ("f←{⍵=0?0;1+∇⍵-1} ⋄ f 500", "500\n")]
+    for (code, expected) in [("2×3+4", "14\n"), ("⊂4ₓ ◇ ⊂⊂4ₓ ◇ ⊂1 2", "⊂4ₓ\n⊂⊂4ₓ\n⊂[1 2]\n"), ("f←{ω=0?0;1+∇ω-1} ◇ f 500", "500\n")]
     {
         let output = Command::new(env!("CARGO_BIN_EXE_bpl")).args(["-e", code]).output().unwrap();
         assert!(output.status.success());
@@ -47,13 +47,13 @@ fn worker_flushes_before_eof_and_recovers() {
     });
     let code = |source: &str| json!({"code": source}).to_string();
     for (request, expected, error_kind, printed) in [
-        (code("v←⍳10"), Some(json!({"shape":[10], "data":(0..10).map(f64::from).collect::<Vec<_>>(), "prototype":0.0})), None, vec![]),
+        (code("v←ι10"), Some(json!({"shape":[10], "data":(0..10).map(f64::from).collect::<Vec<_>>(), "prototype":0.0})), None, vec![]),
         (json!({"id":2, "code":"+/v"}).to_string(), Some(json!(45.0)), None, vec!["45"]), ("{".into(), None, Some("REQUEST"), vec![]),
         (json!(3).to_string(), None, Some("REQUEST"), vec![]), (json!("1+2").to_string(), None, Some("REQUEST"), vec![]),
-        (json!({"id":"x", "code":"1+2"}).to_string(), None, Some("REQUEST"), vec![]), (code("⎕←7 ⋄ 1÷'a'"), None, Some("DOMAIN"), vec!["7"]),
+        (json!({"id":"x", "code":"1+2"}).to_string(), None, Some("REQUEST"), vec![]), (code("⎕←7 ◇ 1÷'a'"), None, Some("DOMAIN"), vec!["7"]),
         (code("(2+"), None, Some("SYNTAX"), vec![]), (code("⍝ \"quoted\"\n+/v"), Some(json!(45.0)), None, vec!["45"]), (code("f←+"), None, None, vec![]),
-        (code("fs←[+ ×]"), None, None, vec![]), (code("+/"), None, None, vec!["+/"]), (code("f←1⊃fs ⋄ 2 f 3"), Some(json!(6.0)), None, vec!["6"]),
-        (code(""), None, None, vec![]), (code("⍳0"), Some(json!({"shape":[0], "data":[], "prototype":0.0})), None, vec!["⍬"]),
+        (code("fs←[+ ×]"), None, None, vec![]), (code("+/"), None, None, vec!["+/"]), (code("f←1⊃fs ◇ 2 f 3"), Some(json!(6.0)), None, vec!["6"]),
+        (code(""), None, None, vec![]), (code("ι0"), Some(json!({"shape":[0], "data":[], "prototype":0.0})), None, vec!["⍬"]),
     ] {
         writeln!(input, "{request}").unwrap();
         input.flush().unwrap();
@@ -83,7 +83,7 @@ fn worker_flushes_before_eof_and_recovers() {
 fn batch_stdin_and_persistent_repl() {
     for args in [vec!["-"], vec![]] {
         let mut child = Command::new(env!("CARGO_BIN_EXE_bpl")).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-        child.stdin.take().unwrap().write_all("v←⍳10\n+/v\n".as_bytes()).unwrap();
+        child.stdin.take().unwrap().write_all("v←ι10\n+/v\n".as_bytes()).unwrap();
         let result = child.wait_with_output().unwrap();
         assert!(result.status.success());
         assert_eq!(String::from_utf8(result.stdout).unwrap(), "45\n");
@@ -99,8 +99,8 @@ fn programs_read_standard_input() {
         let output = child.wait_with_output().unwrap();
         (String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap())
     };
-    assert_eq!(run(&["-e", "⎕ ⋄ ⍴⎕ ⋄ ⎕ ⋄ ⍬≡⎕"], "first\n\nlast"), ("\"first\"\n[0]ₓ\n\"last\"\n$t\n".into(), String::new()));
-    assert_eq!(run(&["-e", "⎕ ⋄ ≢•nget \"-\""], "head\nab\ncd\n"), ("\"head\"\n6ₓ\n".into(), String::new()));
+    assert_eq!(run(&["-e", "⎕ ◇ ρ⎕ ◇ ⎕ ◇ ⍬≡⎕"], "first\n\nlast"), ("\"first\"\n[0]ₓ\n\"last\"\n$t\n".into(), String::new()));
+    assert_eq!(run(&["-e", "⎕ ◇ ≢•nget \"-\""], "head\nab\ncd\n"), ("\"head\"\n6ₓ\n".into(), String::new()));
     // Standard input holds the program itself here.
     for args in [&["-"][..], &[]] { assert!(run(args, "⎕\n").1.contains("IO ERROR: standard input is unavailable here")); }
 }

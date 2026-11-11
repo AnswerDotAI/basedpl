@@ -729,8 +729,9 @@ fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &Interrup
         let stopped = failure.as_ref().is_some_and(|f| matches!(f["status"].as_str(), Some("panic" | "timeout" | "interrupt")));
         modes.push(if let Some(reason) = skip { entry("skipped", reason.clone()) }
         else if stopped { entry("unchecked", JsonValue::Null) }
-        else if !run.batch && read == Some(false) { entry("not applicable", json!("the run with the batch pref on never read it")) }
-        else if run.compiles == Compiles::Never && !compiled { entry("not applicable", json!("the run that compiles every stage compiled nothing")) } else {
+        else if !run.batch && read == Some(false) {
+            entry("not applicable", json!("the run with the batch pref on never read it"))
+        } else if run.compiles == Compiles::Never && !compiled { entry("not applicable", json!("the run that compiles every stage compiled nothing")) } else {
             let (before, mut reads) = (basedpl::hooks::compiled_runs(), 0);
             let ran = unwound(|| {
                 enter(case["prefs"].as_str(), Some(run))?;

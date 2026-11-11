@@ -1,8 +1,8 @@
 //! BPL report rendering and cost counts. `events` owns its vocabulary; rustymath supplies the shared process-wide capture, including worker threads and captures nested on one thread.
 //!
 //! The module also counts the pending arrays alive in the process, which `•memory` reports.
+use crate::events::{self, Column, Detail, Event, EventKind, Field, Report, Route};
 use crate::{Described, Error, Value, keyed};
-use crate::events::{self, Column, Event, EventKind, Field, Report, Route, Detail};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::{AtomicUsize, Ordering}};
 
 /// The live pending arrays.
