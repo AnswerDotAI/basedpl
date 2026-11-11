@@ -9,10 +9,15 @@ fn mixed_widths_match_rustymath() {
     let kernel = Kernel { inputs: vec![Input::Array(Ty::F32, Read::Forward), Input::Scalar(Ty::F64), Input::Scalar(Ty::F64)], steps: vec![
         Step { op: Op::Convert, ty: Ty::F64, x: Value::Input(0), y: None }, Step { op: Op::Multiply, ty: Ty::F64, x: Value::Step(0), y: Some(Value::Input(1)) },
         Step { op: Op::Minimum, ty: Ty::F64, x: Value::Step(1), y: Some(Value::Input(2)) },
-    ], stores: vec![2], folds: vec![] }.compiled().unwrap().0;
+    ], stores: vec![2], folds: vec![] };
+    assert!(!kernel.seen(2, 5));
+    assert!(!kernel.seen(2, 5));
+    assert!(kernel.seen(1, 5));
+    let compiled = kernel.compiled().unwrap().0;
+    assert!(kernel.seen(0, usize::MAX));
     for x in [vec![f32::NAN, -0.0, 3.0, -3.0, 5.0, 1.5, -7.25, 0.0, 2.0, -0.0, 9.0], vec![-0.0; 3]] {
         let mut out = vec![0.0_f64; x.len()];
-        unsafe { kernel.run(x.len(), x.len(), &[x.as_ptr().cast()], &[0.5, 0.0].map(f64::to_bits), &[out.as_mut_ptr().cast()], &mut []) };
+        unsafe { compiled.run(x.len(), x.len(), &[x.as_ptr().cast()], &[0.5, 0.0].map(f64::to_bits), &[out.as_mut_ptr().cast()], &mut []) };
         let expected = x.iter().map(|&v| minimum(f64::from(v) * 0.5, 0.0));
         assert!(out.iter().zip(&x).zip(expected).all(|((&a, &v), b)| a == b || a.is_nan() && v.is_nan()), "{out:?}");
     }
@@ -339,7 +344,7 @@ fn compiled_stages_match_interpreted(more: usize) {
         "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf",
         "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m", "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1", "--×x",
         "--×xf", "--⌊x", "--⌈xf", "--⌊(x÷3)×3", "--⌈(xf÷3)×3", "--÷xf", "--πxf", "--xfπyf", "--x*¯1", "--xf*0.5", "--x*1.5", "--xf*¯0.5",
-        "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
+        "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u", "--(33↑xf)+⊗2049↑yf",
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
     let n = 16 * settings::Sizes::DEFAULT.block + more;

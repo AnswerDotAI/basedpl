@@ -266,8 +266,10 @@ fn floored(read: &Read<'_>, len: usize, at: DType, numeric: Numeric) -> Result<B
 pub(crate) fn map(plan: &Pervasive, left: Option<&Value>, right: &Value, agreement: &Agreement) -> Option<Result<Value, crate::Error>> {
     let (p, numeric, len) = (plan.p, plan.numeric, agreement.len);
     let code = match left { Some(_) if p.info().dyad.code => Some(plan.constants[0].and_then(circle_code)?), _ => None };
-    // A comparison's constant that stands for an integer (`Pervasive::narrowed`) reads as that integer, stored at its narrowest width, so its kernel resolves at the plan's integer kind.
-    let narrow = plan.narrowed().and_then(|(side, n)| Some((side, Value::integers(Vec::<usize>::new(), vec![n]).ok()?)));
+    // A comparison's whole-number constant reads at its ordinary integer storage width (`Pervasive::narrowed`).
+    let narrow = plan.narrowed().map(|(side, n)| {
+        (side, Value::Number(Number::fixed(n, crate::array::ordinary_width(Width::narrowest(n, n)))))
+    });
     let (left, right) = match &narrow { Some((0, n)) => (Some(n), right), Some((_, n)) => (left, n), None => (left, right) };
     let at = plan.computes()?;
     let settings = numeric.settings_for(at);
@@ -511,8 +513,10 @@ pub(crate) fn table_kernel(p: Primitive, dyadic: bool, table: DType, stored: DTy
     resolved(p, code, variant(table, numeric), &[stored; 2][..if dyadic && !coded { 2 } else { 1 }], numeric)
 }
 
-/// The arguments of a call that are one real number, as the loops that run kernels give them (`Dyad::constants`).
-pub(crate) fn constants(left: Option<&Value>, right: &Value) -> [Option<f64>; 2] { [left.and_then(Value::as_real), right.as_real()] }
+/// Arguments whose real values are exactly representable as f64, for kernel planning.
+pub(crate) fn constants(left: Option<&Value>, right: &Value) -> [Option<f64>; 2] {
+    [left, Some(right)].map(|v| v?.as_number()?.lossless_float())
+}
 
 /// The argument that `plan`'s call on `left` and `right` gives unchanged (`Pervasive::kept`), where the result has its shape: the other argument is an atom, or the kept one isn't. A weak number beside a strong one isn't kept: the call's result is strong, as `∞⌈1ₓ₁` gives a strong `∞`, an ordinary float.
 pub(crate) fn unchanged<'a>(plan: &crate::plan::Pervasive, left: Option<&'a Value>, right: &'a Value, agreement: &Agreement) -> Option<&'a Value> {
@@ -554,7 +558,7 @@ pub(crate) fn number(p: Primitive, x: Option<&Number>, y: &Number, numeric: Nume
     let mut types = [DType::Boolean; 2];
     for (t, n) in types.iter_mut().zip(args) { *t = n.dtype().unwrap_or(DType::Float(width)); }
     let none = || Failure::Domain("this function has no formula for these numbers");
-    let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
+    let constants = [x.and_then(Number::lossless_float), y.lossless_float()];
     let plan = (!exact).then(|| {
         crate::plan::pervasive(p, x.map(crate::plan::Kind::number), crate::plan::Kind::number(y), constants, [rustymath::domain::Range::ANY; 2], numeric)
     });

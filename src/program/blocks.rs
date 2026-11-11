@@ -97,7 +97,7 @@ impl Input {
         let block = crate::settings::sizes().block;
         match map.period() {
             Some(Period::Walks { len, .. }) => Self { of, items, map: Mapping::Tiled(len).into(), gather: Some(map.into()) },
-            Some(period @ Period::Cycles(p)) if p < block && period.tiling(block).is_some() => {
+            Some(period @ Period::Cycles(p)) if period.tiling(block).is_some() => {
                 Self { of, items, map: Mapping::Tiled(p).into(), gather: Some(map.into()) }
             }
             _ if map.tiles_whole(block) => Self { of, items, map: Mapping::Linear(1).into(), gather: Some(map.into()) },
@@ -456,7 +456,7 @@ impl Blocks {
     #[cfg(not(web))]
     fn kernels(&self) -> impl Iterator<Item = &Compiling> { self.parts.iter().filter_map(|p| p.lowered.as_ref()).map(|l| &l.code) }
 
-    /// Whether compiled parts serve this run. Policy compiles stages with intermediate work to fuse when their size repays it or their kernel ran before; one-operation stages stay on whole-array native kernels. Always still requests compilation for either category. A part serves only the run sizes and input dtypes it was lowered for. Asked-for unsupported parts record their existing decline reasons.
+    /// Whether compiled parts serve this run. Policy compiles stages with intermediate work to fuse immediately for large stages, otherwise once cumulative processed items reach `2 * max(n, min_items)`; one-operation stages stay on whole-array native kernels. Always still requests compilation for either category. A part serves only the run sizes and input dtypes it was lowered for. Asked-for unsupported parts record their existing decline reasons.
     #[cfg(not(web))]
     fn compiles(&self, sizes: crate::settings::Sizes) -> bool {
         use crate::settings::Compiles;
@@ -465,7 +465,7 @@ impl Blocks {
         let asks = sizes.run == self.laid.sizes.run && match crate::settings::compiles() {
             Compiles::Never => false, Compiles::Always => true,
             Compiles::Policy => !self.one_operation()
-                && (compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen()))
+                && (compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen(self.n, self.n.max(sizes.min_items).saturating_mul(2))))
         };
         if asks { for &reason in &self.declines { declined(crate::events::routes::Compiled, reason, self.n); } }
         if first.is_none() || !asks { return false; }
@@ -543,11 +543,11 @@ impl Blocks {
         }
     }
 
-    /// The number of constant operand `o` where the program holds it (`Origin::Held`), so that every run reads the same value.
+    /// Constant operand `o` where the program holds it and its value is exactly representable as f64, for recipe specialization.
     #[cfg(not(web))]
     fn held(&self, o: Option<Operand>, program: &Program) -> Option<f64> {
         let Some(Operand::Constant(k)) = o else { return None };
-        match &program.nodes[self.constants[k]].origin { Origin::Held(v) => v.as_real(), _ => None }
+        match &program.nodes[self.constants[k]].origin { Origin::Held(v) => v.as_number()?.lossless_float(), _ => None }
     }
 
     /// The kernel of the part of steps `steps`, or why there's none: `Err(Some(s))` where step `s` is the first that doesn't lower, and `Err(None)` where every step lowers but the kernel would take more than `MOST` arrays, scalars or stores. A step lowers where `lowered_op` gives its operation, where it raises to a held whole exponent that `Pow` squares and multiplies, or where it's a select or a conversion, and the kernel's steps for it check (`jit::Kernel::check_step`). A step of the part reads another as a value in registers. An input that each run reads as one item becomes a scalar, as each constant does at each type that reads it, and any other input, or a step of an earlier part, an array, each at its own type. A step reads an operand of another type by converting it, where `converts` admits the conversion, and a float comparison that writes floats converts its Booleans. The kernel stores each step that a later part reads, that the stage stores, or that is the stage's last (`Store`).
@@ -890,6 +890,12 @@ impl Blocks {
     fn prepared<'a>(&self, run: &'a Run<'_>, copies: &'a mut [Buffer], from: usize, n: usize) -> Option<Vec<View<'a>>> {
         run.inputs.iter().zip(run.plans).zip(copies).enumerate().map(|(k, ((source, plan), copy))| {
             if matches!(run.reads[k], Reading::Tabled) { return Some(source.view); }
+            // Cycle preparation pads the backing by a block, so borrowing across its logical period is safe.
+            if let (Reading::Cycle, Mapping::Tiled(period)) = (run.reads[k], &*self.inputs[k].map)
+                && *period > 0 && self.inputs[k].gather.is_some() {
+                let start = from % period;
+                if let Some(view) = source.borrow(start..start + n) { return Some(view); }
+            }
             let read = rustymath::agreement::Read { sources: std::slice::from_ref(source), plan };
             let range = from..from + n;
             let (view, copied) = read.argument(range, false, copy).ok()?;

@@ -382,8 +382,8 @@ impl Operand<'_> {
     fn kind(&self) -> Kind { match self { Operand::Traced(desc) => desc.kind, Operand::Held(value) => Kind::value(value) } }
     /// The operand's layout: a traced value's description's, or a held value's layout.
     fn layout(&self) -> Layout { match self { Operand::Traced(desc) => desc.layout.clone(), Operand::Held(value) => value.layout().clone() } }
-    /// The operand's number, where it's a held real number. A kernel table can pick a kernel by it, as `x*2` picks the square. A traced number's value isn't known.
-    fn constant(&self) -> Option<f64> { match self { Operand::Held(value) => value.as_real(), Operand::Traced(_) => None } }
+    /// The operand's number where a held real number is exactly representable as f64. A kernel table can pick a kernel by it, as `x*2` picks the square. A traced number's value isn't known.
+    fn constant(&self) -> Option<f64> { match self { Operand::Held(value) => value.as_number()?.lossless_float(), Operand::Traced(_) => None } }
     fn atom(&self) -> bool { match self { Operand::Traced(desc) => desc.atom, Operand::Held(value) => value.is_atom() } }
     fn weak(&self) -> bool {
         match self { Operand::Traced(desc) => desc.kind.weak, Operand::Held(value) => matches!(value, Value::Number(n) if n.is_weak()) }

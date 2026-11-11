@@ -23,6 +23,8 @@ impl ScriptKind {
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
     Literal(Value),
+    /// A host-supplied item: callable atoms keep their grammatical category, and its storage stays native.
+    Embedded(Value),
     Function(Builtin),
     Operator(OperatorKind),
     /// A name. `true` marks a read of a dfn's local, `⍵` or `⍺` after which nothing in the dfn reads or assigns the name (`release`). That read moves the value out of the frame.
@@ -69,9 +71,32 @@ pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 #[derive(Debug)]
 pub(crate) struct Definition {
     pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], remembered: AtomicU64,
-    programs: crate::program::trace::Programs, admitted: Option<Primitive>
+    programs: crate::program::trace::Programs, admitted: Option<Primitive>, display: Option<String>
 }
 impl Definition {
+    /// Source-like display of host syntax. Opaque native items are labelled, never forced or serialized as source.
+    pub(crate) fn text(&self) -> &str { self.display.as_deref().unwrap_or_else(|| self.span.text()) }
+    fn embedded_text(bodies: &[Vec<Statement>], span: &Span) -> Option<String> {
+        let mut parts = Vec::new();
+        for statement in bodies.iter().flatten() {
+            visit(&statement.nodes, false, false, &mut |node, _, _| {
+                if let NodeKind::Embedded(value) = &node.kind {
+                    let text: String = match value {
+                        Value::Function(f) => node.kind.primitive().map(|p| p.glyph().into())
+                            .or_else(|| f.system_function().and_then(|s| s.entry.map(|e| e.name().into()))).unwrap_or_else(|| "⟪function⟫".into()),
+                        Value::Operator(_) => "⟪operator⟫".into(), _ => "⟪array⟫".into()
+                    };
+                    parts.push((node.span.range.clone(), text));
+                }
+            });
+        }
+        if parts.is_empty() { return None; }
+        parts.sort_by_key(|(range, _)| range.start);
+        let (mut text, mut at) = (String::new(), span.range.start);
+        for (range, item) in parts { text.push_str(&span.source.text[at..range.start]); text.push_str(&item); at = range.end; }
+        text.push_str(&span.source.text[at..span.range.end]);
+        Some(text)
+    }
     /// The names that the definition could assign, sorted, which each of its calls keeps in slots.
     pub fn locals(&self) -> &'static [Name] { self.locals }
     /// What maps remember of a stopped batched run of this definition, as `batch::tried` encodes it: nothing, every later call, or the arguments whose later tries it skips (`transform::Cause::kept`).
@@ -92,11 +117,11 @@ fn admitted(bodies: &[Vec<Statement>]) -> Option<Primitive> {
     while let [Node { kind: NodeKind::Run(inner) | NodeKind::Group(inner), .. }] = nodes { nodes = inner; }
     let [
         Node { kind: NodeKind::Name(Name::ALPHA, _), .. },
-        Node { kind: NodeKind::Function(Builtin::Primitive(p)), .. },
+        Node { kind, .. },
         Node { kind: NodeKind::Name(Name::OMEGA, _), .. },
     ] = nodes
     else { return None; };
-    Some(*p)
+    kind.primitive()
 }
 
 fn definition_kind(bodies: &[Vec<Statement>]) -> DefinitionKind {
@@ -161,6 +186,8 @@ fn release(bodies: &mut [Vec<Statement>], locals: &[Name]) {
         visit(&statement.nodes, false, false, &mut |node, _, nested| match &node.kind {
             NodeKind::Function(Builtin::Primitive(Primitive::Execute)) => by_text = true,
             NodeKind::Function(Builtin::System(entry)) => by_text |= matches!(entry.name(), "•nc" | "•nl" | "•src" | "•ex" | "•explain"),
+            NodeKind::Embedded(Value::Function(f)) => by_text |= node.kind.primitive() == Some(Primitive::Execute)
+                || f.system_function().is_some_and(|s| matches!(s.name, "•nc" | "•nl" | "•src" | "•ex" | "•explain")),
             NodeKind::Name(name, _) if nested => later.push(*name), _ => {}
         });
         if let StatementKind::ErrorGuard { index } = statement.kind {
@@ -265,6 +292,7 @@ enum TokenKind {
     BraceOpen,
     BraceClose,
     Literal(Value),
+    Embedded(Value),
     Function(Primitive),
     Operator(OperatorKind),
     /// One subscript or superscript integer; spaces strand integers of the same script.
@@ -585,7 +613,7 @@ fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     if !matches!(tokens.first().map(|t| &t.kind), Some(TokenKind::System(name)) if crate::system::Entry::find(name) == Some(crate::system::Entry::PREFS)) {
         return false;
     }
-    let Ok(statements) = (Parser { tokens, pos: 0 }).pieces(None).and_then(statements) else { return false };
+    let Ok(statements) = (Parser { tokens, pos: 0, embedded: false }).pieces(None).and_then(statements) else { return false };
     let [nodes] = statements.as_slice() else { return false };
     let Some(record) = prefs_record(nodes) else { return false };
     let NodeKind::ArrayLiteral(literal) = &record.kind else { unreachable!() };
@@ -855,7 +883,7 @@ pub(crate) fn cover(nodes: &[Node]) -> Span {
 /// Nodes and separators, before the enclosing delimiters give the separators their meaning.
 enum Piece { Node(Node), Diamond, Semicolon(Span), Predicate(Span) }
 
-struct Parser<'a> { tokens: &'a [Token], pos: usize }
+struct Parser<'a> { tokens: &'a [Token], pos: usize, embedded: bool }
 impl Parser<'_> {
     fn pieces(&mut self, open: Option<&Token>) -> Result<Vec<Piece>, ParseFailure> {
         let mut pieces: Vec<Piece> = Vec::new();
@@ -903,8 +931,9 @@ impl Parser<'_> {
                             let locals = locals(&bodies);
                             let admitted = admitted(&bodies);
                             release(&mut bodies, locals);
+                            let display = self.embedded.then(|| Definition::embedded_text(&bodies, &span)).flatten();
                             NodeKind::Dfn(Arc::new(Definition { locals, bodies, span: span.clone(), kind, remembered: AtomicU64::new(0),
-                                programs: Default::default(), admitted }))
+                                programs: Default::default(), admitted, display }))
                         }
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
@@ -913,6 +942,7 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
+                TokenKind::Embedded(a) => NodeKind::Embedded(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(Builtin::Primitive(*f)),
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Script(script, index) => {
@@ -1154,6 +1184,7 @@ pub(crate) fn runs(nodes: Vec<Node>) -> Vec<Node> {
 fn written_function(node: &Node) -> bool {
     match &node.kind {
         NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Script(ScriptKind::Super, _) | NodeKind::Dfn(_) => true,
+        NodeKind::Embedded(Value::Function(_) | Value::Operator(_)) => true,
         NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
     }
 }
@@ -1223,14 +1254,39 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 }
 
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
-pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral(_)) }
+pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Embedded(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral(_)) }
 
 /// The program in `source`, with numbers that have no marker read as floats of the current settings' default width. The current settings also give literals their kinds. They're the session's within an evaluation or `Session::parse`, and the defaults elsewhere, as in a check of structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus { parse_with_aliases(source, false) }
 
 pub(crate) fn parse_with_aliases(source: Arc<Source>, aliases: bool) -> ParseStatus {
     let tokens = match lex(&source, aliases, None) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
-    match (Parser { tokens: &tokens, pos: 0 }).pieces(None).and_then(statements) {
+    parsed_tokens(&tokens, false)
+}
+
+/// Replace complete placeholder ranges before structural parsing. The final flag makes imported literal data participate in literal stranding, preserving weak kinds without serialization.
+pub(crate) fn parse_embedded(source: Arc<Source>, parts: Vec<(std::ops::Range<usize>, Value, bool)>, aliases: bool) -> ParseStatus {
+    let tokens = match lex(&source, aliases, None) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
+    let mut tokens = tokens.into_iter().peekable();
+    let mut replaced = Vec::new();
+    let invalid = || ParseStatus::Invalid(Error::new(ErrorKind::Syntax, "an embedded item must replace complete tokens in source order").at(&Span::whole(source.clone())));
+    for (range, value, literal) in parts {
+        while tokens.peek().is_some_and(|t| t.span.range.start < range.start) { replaced.push(tokens.next().unwrap()); }
+        if range.is_empty() || tokens.peek().is_none_or(|t| t.span.range.start != range.start) { return invalid(); }
+        let mut end = range.start;
+        while tokens.peek().is_some_and(|t| t.span.range.start < range.end) {
+            end = tokens.next().unwrap().span.range.end;
+            if end > range.end { return invalid(); }
+        }
+        if end != range.end { return invalid(); }
+        replaced.push(Token { kind: if literal { TokenKind::Literal(value) } else { TokenKind::Embedded(value) }, span: Span { source: source.clone(), range } });
+    }
+    replaced.extend(tokens);
+    parsed_tokens(&replaced, true)
+}
+
+fn parsed_tokens(tokens: &[Token], embedded: bool) -> ParseStatus {
+    match (Parser { tokens, pos: 0, embedded }).pieces(None).and_then(statements) {
         Ok(statements) => ParseStatus::Complete(Parsed {
             statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() }),
         Err(failure) => failure.into()
@@ -1337,12 +1393,14 @@ fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
 impl NodeKind {
     fn name(&self) -> &'static str {
         match self {
-            Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(..) => "Name",
+            Self::Literal(_) => "Literal", Self::Embedded(_) => "Embedded", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(..) => "Name",
             Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
             Self::Run(_) => "Run", Self::Script(..) => "Script", Self::Scope(..) => "Scope", Self::ArrayLiteral(_) => "ArrayLiteral", Self::Dfn(_) => "Dfn",
             Self::Joiner(_) => "Joiner"
         }
     }
     /// The primitive that a glyph's node holds, or `None` for any other node.
-    pub(crate) fn primitive(&self) -> Option<Primitive> { match self { Self::Function(Builtin::Primitive(p)) => Some(*p), _ => None } }
+    pub(crate) fn primitive(&self) -> Option<Primitive> {
+        match self { Self::Function(Builtin::Primitive(p)) => Some(*p), Self::Embedded(Value::Function(f)) => f.as_primitive(), _ => None }
+    }
 }

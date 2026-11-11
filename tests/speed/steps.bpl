@@ -9,23 +9,23 @@ loss←{+/⊼1-2×⍵} ⋄ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 +⍣n 0
 ⍝⍝: -	-	-	instructions macos 3442.289 linux 3082.852	allocated macos 24.688 linux 24.688
 
-⍝ A dfn call that returns its argument.
+⍝ A dfn call that returns its argument. Held scalar Power regression: pre-VM instructions per step were about 1,727 on macOS and 1,678.148 on Linux.
 {⍵}⍣n 0
 ⍝⍝: -	-	-	instructions macos 2218.688 linux 2182.375	allocated macos 9.812 linux 9.812
 
-⍝ A dfn that reads a global.
+⍝ A dfn that reads a global. Held scalar Power regression: pre-VM instructions per step were about 6,120 on macOS and 5,811.883 on Linux.
 {⍵+k}⍣n 0
 ⍝⍝: -	-	-	instructions macos 6979.812 linux 7092.195	allocated macos 41.812 linux 41.812
 
-⍝ A local assignment and read.
+⍝ A local assignment and read. Held scalar Power regression: pre-VM instructions per step were about 6,768 on macOS and 6,387.711 on Linux.
 {x←⍵+1 ⋄ x}⍣n 0
 ⍝⍝: -	-	-	instructions macos 8994.930 linux 9084.070	allocated macos 41.812 linux 41.812
 
-⍝ A spaced run that constructs and applies a train at once.
+⍝ A spaced run that constructs and applies a train at once. Held scalar Power regression: pre-VM instructions per step were about 8,670 on macOS and 7,990.398 on Linux.
 {(⍵)+⊢ ⍵}⍣n 0
 ⍝⍝: -	-	-	instructions macos 14665.000 linux 13708.461	allocated macos 403.312 linux 403.312
 
-⍝ A bracket literal. Joining its items' kinds, fixedness and weakness in `Promoted::join` added about 125 instructions on 24 October 2026. The memory guard's check on each allocation and the later promotion refactor added about 95 more. Moving `other_step` out of line and the `Value::Pending` arms in the resolving functions added about 220 more.
+⍝ A bracket literal. Held scalar Power regression: pre-VM instructions per step were about 7,699 on macOS and 6,117.836 on Linux.
 {↑[⍵ 1]}⍣n 0
 ⍝⍝: -	-	-	instructions macos 10616.148 linux 8929.242	allocated macos 297.812 linux 297.812
 

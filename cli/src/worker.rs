@@ -73,6 +73,7 @@ fn reply(session: &Session, request: &Value, interrupt: InterruptHandle, output:
                 .map_err(|error| error.to_string())).map(Reply::Json);
     }
     if let Some(spec) = request.get("costs") { return basedpl_testkit::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("check") { return basedpl_testkit::reference::runner::check_file(spec, options.timeout).map(Reply::Json); }
     if let Some(spec) = request.get("reference") { return basedpl_testkit::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("page") { return basedpl_testkit::reference::page_request(spec, &options.interrupt, options.timeout).map(Reply::Json); }
     if let Some(spec) = request.get("route") { return basedpl_testkit::timing::route_request(spec, &options.interrupt).map(Reply::Json); }

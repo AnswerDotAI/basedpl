@@ -162,6 +162,8 @@ impl Session {
     pub(crate) fn holds_fresh(&self, value: &Value) -> bool { self.levels.borrow().holds_fresh(value) }
     /// The id and frame of the batched map that is running, if one is (`transform::Levels::batched`).
     pub(crate) fn batched(&self) -> Option<(u64, crate::array::Layout)> { self.levels.borrow().batched().map(|(id, frame)| (id, frame.clone())) }
+    /// Whether the current batched run permits per-cell rules rather than only whole-batch work.
+    pub(crate) fn batch_itemwise(&self) -> bool { self.levels.borrow().batch_itemwise() }
     /// The id of the batched run, if one is running, without the frame that `batched` clones.
     pub(crate) fn batch_level(&self) -> Option<u64> { self.levels.borrow().batched().map(|(id, _)| id) }
     /// Whether the running levels let a map run batched (`transform::Levels::admits_batch`).
@@ -360,6 +362,14 @@ impl Session {
     /// The program in `source`, with numbers that have no marker read as floats of the default width, or of the width that a leading `•prefs` statement on a literal record sets.
     pub fn parse(&self, source: Arc<Source>) -> crate::ParseStatus { crate::syntax::parse_with_aliases(source, crate::settings::hanzi_aliases()) }
     pub fn eval_parsed(&self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.eval_display(parsed, false, false)) }
+    /// Evaluate syntax containing native host items at complete placeholder ranges. A part's final flag marks literal data; the ordinary parser and binder own all expression semantics.
+    pub fn eval_embedded(&self, code: &str, parts: Vec<(std::ops::Range<usize>, Value, bool)>, options: crate::EvalOptions) -> Evaluation {
+        self.evaluation(options, |s| {
+            match crate::syntax::parse_embedded(Source::new("<expression>", code), parts, crate::settings::hanzi_aliases()).complete() {
+                Ok(parsed) => s.eval_display(&parsed, false, false), Err(error) => Evaluation::failed(error)
+            }
+        })
+    }
     fn eval_display(&self, parsed: &Parsed, diagram: bool, dissect: bool) -> Evaluation {
         let mut result = Evaluation::default();
         let mut leading = true;
@@ -600,6 +610,7 @@ impl Session {
     pub(super) fn resolve(&self, node: &Node) -> Result<Bound, Error> {
         Ok(Bound::new(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
+            NodeKind::Embedded(a) => Binding::from_element(a.clone()),
             NodeKind::Script(kind, indices) => Binding::Operator(self::OperatorNode::Script(*kind, indices.clone())),
             NodeKind::Function(builtin) => Binding::Function(builtin.function()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),

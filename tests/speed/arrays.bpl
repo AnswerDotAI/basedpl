@@ -280,12 +280,11 @@ c⍳c
 i (+/⊢)⌸ v
 ⍝⍝: 30	29	26	instructions macos 59.227 linux 58.684	allocated macos 24.258 linux 24.258
 
-⍝ `{+/⍵}` runs once for each of the about 41,000 groups. A batched Key would call it once over every group, as ragged batching runs a map's ragged cells; an uncommitted batched Key measured this case at 6,283 ps an item against 250,459 for one call a group.
+⍝ Layout cohorts gather equally sized groups and run the dfn once per group size through the dense batch evaluator. The specialized `(+/⊢)` route remains one native grouped fold.
 ⍝ Expected: 15 copies, as `i (+/⊢)⌸ v`: the same classification and one fold of each group.
-⍝⍝⍝ held linux 4894: each group runs its own call of the operand; batched ⌸ needs ragged batching
-⍝⍝⍝ gap itemwise "key groups": one batched call over every group, through ragged batching
+⍝⍝⍝ held macos 224.8 linux 361.7: cohorts still gather and dispatch per distinct group size instead of running one flat segmented fold
 i{+/⍵}⌸v
-⍝⍝: 30	29	26	instructions macos 14238.048 linux 11981.638	allocated macos 847.495 linux 847.495
+⍝⍝: 30	29	26	instructions macos 763.952 linux 882.254	allocated macos 111.616 linux 111.616
 
 ⍝ Classify of Booleans compares each item with the first. Groups of Booleans write each class's positions 8 items at a time, from a table indexed by the byte of those items' classes.
 ⍝ Expected: `⍷b` 1 copy: writes 4-byte positions, 8 at a time from a table; `=b` 0.13 copies: 1-byte reads and writes.

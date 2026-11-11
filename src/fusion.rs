@@ -409,9 +409,8 @@ pub(crate) fn copy(form: &Form, params: &[Value], inputs: &[&Value], fill: Optio
     let descriptions: Vec<Desc> = inputs.iter().map(|v| Desc::held(v)).collect();
     let fill_desc = fill.map(Desc::held);
     let (desc, plan) = crate::plan::structural(form, params, &descriptions, fill_desc.as_ref())?;
-    if !desc.atom && desc.kind.dtype.is_some() && fill.is_none() && defers(desc.layout.count())
-        && let Some((source, map)) = plan.positional(desc.shape()) {
-        if let [value] = inputs && source == 0 && map.in_order(value.len(), desc.shape()) {
+    if !desc.atom && desc.kind.dtype.is_some() && fill.is_none() && defers(desc.layout.count()) && plan.positional(desc.shape()).is_some() {
+        if let [value] = inputs && let Some((0, map)) = plan.positional(desc.shape()) && map.in_order(value.len(), desc.shape()) {
             return value.relaid(desc.layout).described("a structural view");
         }
         let mut nodes = Nodes::default();
@@ -506,6 +505,22 @@ fn copy_value(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>
 /// Items of `right` at the flat `offsets`, laid out by `layout`, as `copied` reads them, with `fill` at an offset that reaches no item, or the prototype where there's none.
 pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout, fill: Option<&Value>) -> Result<Value, ErrorKind> {
     copied(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets)]), fill)?.relaid(layout)
+}
+
+/// Selected cells of `rank` trailing axes, laid over `frame`. Small copies use storage directly; large ones retain the existing row geometry until read.
+pub(crate) fn copied_cells(source: &Value, positions: &[usize], rank: usize, frame: &Layout) -> Result<Value, ErrorKind> {
+    let split = source.shape().len().checked_sub(rank).ok_or(rustymath::error::Kind::Rank)?;
+    let cell = source.layout().axes(split..source.shape().len());
+    let width = cell.count();
+    let len = positions.len().checked_mul(width).ok_or(rustymath::error::Kind::Limit)?;
+    let layout = frame.concat(&cell);
+    if defers(len) {
+        let map = Mapping::from(vec![Steps::table(positions.to_vec()).scaled(width), Steps::along(width, 1)]);
+        return copied(source, layout, &map, None);
+    }
+    let mut data = Gather::new(&[source], len);
+    data.rows(source, positions, width);
+    data.finish(layout, || source.prototype())
 }
 
 /// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`, with `fill` where they reach no item, or the prototype where there's none.

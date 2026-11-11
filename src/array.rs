@@ -116,7 +116,7 @@ impl Layout {
     }
     /// The array with this layout holding `cells`, as `Value::assemble` gives it.
     pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> {
-        Value::assemble_layout(self, cells, empty_cell, Widening::Items, None, None)
+        Value::assemble_layout(self, cells.iter(), empty_cell, Widening::Items, None, None)
     }
 }
 
@@ -903,6 +903,21 @@ impl Value {
         }
     }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.element(i)) }
+    /// Rejoin consecutive views of one stored base without copying their items. Partial pending views stay excluded, as `part` excludes them.
+    pub(crate) fn joined_views<'a>(layout: Layout, mut parts: impl Iterator<Item = &'a Value>) -> Option<Self> {
+        let Self::Array(first) = parts.next()? else { return None };
+        let Data::Of(base, first, fixed) = &first.data else { return None };
+        let (start, mut end) = (first.start, first.end);
+        for part in parts {
+            let Self::Array(part) = part else { return None };
+            let Data::Of(other, range, other_fixed) = &part.data else { return None };
+            if !Arc::ptr_eq(base, other) || range.start != end || other_fixed != fixed { return None; }
+            end = range.end;
+        }
+        if layout.count() != end - start || base.pending().is_some() && (start != 0 || end != base.len()) { return None; }
+        Some(ArrayData::part(base, start..end, layout, *fixed))
+    }
+
     /// The items in `range`, as an array laid out by `layout`. Compact items stay in this array's storage, as a view of their range (`ArrayData::part`). A carried array gives its carrier's copy of the range (`Carrier::copied`): one node of a record, or one step of a trace. Mixed items are copied, because a mixed array's memo answers for all its items.
     pub(crate) fn part(&self, range: std::ops::Range<usize>, layout: impl Into<Layout>) -> Result<Self, ErrorKind> {
         if let Self::Array(a) = self {
@@ -1025,21 +1040,25 @@ impl Value {
             let Items::Values(items) = self.as_items() else { unreachable!("nested arrays hold values") };
             Cow::Borrowed(items)
         } else { Cow::Owned(self.elements().collect::<Vec<_>>()) };
-        Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening, chosen, None)
+        Self::assemble_layout(self.layout(), cells.iter(), &self.prototype(), widening, chosen, None)
     }
     /// `cells` assembled by trailing-axis agreement into an array whose frame is `frame`, as `Layout::assemble` and `mix` assemble them. The cells' layout is `cell_layout` where the caller knows it, and otherwise the layout that the cells agree on (`Layout::assembled`).
-    pub(crate) fn assemble_layout(
-        frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Value>, cell_layout: Option<&Layout>
+    pub(crate) fn assemble_layout<'a>(
+        frame: &Layout, cells: impl ExactSizeIterator<Item = &'a Self> + Clone, empty_cell: &Self,
+        widening: Widening, chosen: Option<&Value>, cell_layout: Option<&Layout>
     ) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
-        if cells.is_empty() { return frame.concat(cell_layout.unwrap_or(empty_cell.layout())).collect(vec![], empty_cell.prototype()); }
-        let cell_layout = match cell_layout { Some(layout) => layout.clone(), None => Layout::assembled(cells.iter().map(Value::layout))? };
+        let Some(first) = cells.clone().next() else {
+            return frame.concat(cell_layout.unwrap_or(empty_cell.layout())).collect(vec![], empty_cell.prototype());
+        };
+        if cell_layout.is_none_or(|layout| layout == first.layout()) && let Some(whole) = Self::stacked(frame, cells.clone()) { return whole; }
+        let cell_layout = match cell_layout { Some(layout) => layout.clone(), None => Layout::assembled(cells.clone().map(Value::layout))? };
         let cell_shape = cell_layout.shape();
         let rank = cell_shape.len();
         let shape = [frame.shape(), cell_shape].concat();
         let len = generated_len(&shape)?;
         let cell_len = element_count(cell_shape)?;
-        let mut data = Gather::with_widening(&cells.iter().collect::<Vec<_>>(), len, widening);
+        let mut data = Gather::with_widening(&cells.clone().collect::<Vec<_>>(), len, widening);
         for cell in cells {
             if cell.shape() == cell_shape || cell_len == 0 { data.extend(cell, 0..cell_len); continue; }
             let source_shape = [vec![1; rank - cell.shape().len()], cell.shape().to_vec()].concat();
@@ -1055,7 +1074,28 @@ impl Value {
                 true
             });
         }
-        data.finish(frame.concat(&cell_layout), || cells[0].prototype())
+        data.finish(frame.concat(&cell_layout), || first.prototype())
+    }
+
+    /// Uniform compact cells assembled without padding or widening. Admission fixes the common dtype once, before choosing a view, deferred stack or eager copy.
+    pub(crate) fn stacked<'a>(frame: &Layout, cells: impl ExactSizeIterator<Item = &'a Self> + Clone) -> Option<Result<Self, ErrorKind>> {
+        let first = cells.clone().next()?;
+        let (dtype, fixed, layout, size) = (first.dtype().filter(|_| !first.is_atom())?, first.fixed_width(), first.layout(), first.len());
+        if cells.clone().any(|cell| cell.is_atom() || cell.dtype() != Some(dtype) || cell.fixed_width() != fixed || cell.layout() != layout) { return None; }
+        let output = frame.concat(layout);
+        let len = match generated_len(output.shape()) { Ok(len) => len, Err(error) => return Some(Err(error.into())) };
+        if let Some(whole) = Self::joined_views(output.clone(), cells.clone()) { return Some(Ok(whole)); }
+        // Every source is planned, so each cell, rather than just the whole frame, justifies deferring a stack.
+        let whole = if crate::fusion::defers(size) {
+            let inputs: Vec<_> = cells.collect();
+            let form = crate::primitive::structural::Form::Stack { frame: (**frame).clone() };
+            crate::fusion::copy(&form, &[], &inputs, None).map_err(|error| error.kind.clone())
+        } else {
+            let mut data = Gather::with_widening(&[first], len, Widening::Items);
+            for cell in cells { data.extend(cell, 0..size); }
+            data.finish(output, || first.prototype())
+        };
+        Some(whole)
     }
 
     fn zeroed_array(&self) -> Self {

@@ -264,7 +264,7 @@ impl Cells {
             }
             // The case cells give the cells' layout. The scalar fills at cells that pick no case carry none.
             let result =
-                Value::assemble_layout(&self.framed.frame(), &items, &fill, crate::array::Widening::Items, None, Some(&cell)).described("invalid result")?;
+                Value::assemble_layout(&self.framed.frame(), items.iter(), &fill, crate::array::Widening::Items, None, Some(&cell)).described("invalid result")?;
             let (_, positions) = placed(&self.framed, &self.axes, &cell)?;
             if rustymath::gather::counts_up(&positions) { return Ok(result); }
             return crate::primitive::transpose_axes(fronted(&self.axes, self.framed.layout.shape().len()), &result);

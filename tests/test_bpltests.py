@@ -133,7 +133,7 @@ def test_set_budgets(tmp_path):
 def test_set_counts(tmp_path):
     path = tmp_path/'speed.bpl'
     path.write_text('⍝⍝ setup\nn←4\n⍝⍝ copies\n-v\n⍝⍝: 2.8\t2.8\t3.4\tinstructions macos 1.5\n\n⍝⍝ steps\nfib 6ₓ\n⍝⍝: -\t-\t-\n')
-    changes = set_counts('copies -v: instructions 2.125, allocated 8.000\nsteps fib 6ₓ: instructions 115000.5, allocated 0.000\n', path=path, platform='linux')
+    changes = set_counts('copies -v: instructions 2.125, allocated 8.000\n    steps fib 6ₓ: instructions 115000.5, allocated 0.000\n', path=path, platform='linux')
     assert len(changes) == 4
     assert '-v\n⍝⍝: 2.8\t2.8\t3.4\tinstructions macos 1.5 linux 2.125\tallocated linux 8\n' in path.read_text()
     assert 'fib 6ₓ\n⍝⍝: -\t-\t-\tinstructions linux 115000.5\tallocated linux 0\n' in path.read_text()
@@ -146,13 +146,17 @@ def test_set_counts(tmp_path):
 
 
 def test_checker_counts_runs_by_mode(tmp_path):
-    path = tmp_path/'checked.bpl'
-    path.write_text(r'''⍝⍝ cases
+    (tmp_path/'plain.bpl').write_text(r'''⍝⍝ cases
 ⍝ wrong — A case whose expectation every run misses
 1+1   ⍝ 3
+''')
+    path = tmp_path/'checked.bpl'
+    path.write_text(r'''⍝⍝ setup
+v←1
 
+⍝⍝ cases
 ⍝ right — A case that every run passes
-1+1   ⍝ 2
+v+1   ⍝ 2
 ''')
     report = check_file(tmp_path, timeout=10)
     [wrong] = report['failures']

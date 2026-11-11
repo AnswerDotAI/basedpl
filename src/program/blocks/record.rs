@@ -64,7 +64,7 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     fn wide_number(&self, x: f64) -> jit::Value { self.constant(x) }
     fn wide_multiply_add(&self, x: jit::Value, y: jit::Value, z: jit::Value) -> jit::Value { <Self as rustymath::recipe::Ops<F>>::multiply_add(self, x, y, z) }
     fn narrow(&self, x: jit::Value) -> jit::Value { x }
-    fn integer(&self, x: i64) -> jit::Value { let c = self.constant(x as f64); if self.integral() { c } else { self.decline(c) } }
+    fn integer(&self, x: i64) -> jit::Value { let c = self.input(jit::Input::Constant(self.ty, jit::integer_slot(x))); if self.integral() { c } else { self.decline(c) } }
     fn integer_op(&self, op: rustymath::recipe::Integer, x: jit::Value, y: jit::Value) -> jit::Value {
         use rustymath::recipe::Integer;
         let op = match op {

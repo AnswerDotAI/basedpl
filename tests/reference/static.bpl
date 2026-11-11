@@ -196,7 +196,7 @@ v←0.5×⍳10 ⋄ g←{+/(⍵.[[3 5 3]])*2} ⋄ e←•explain "[g∂v ; g∂v]
 x←0.1×2 5 3⍴⍳30 ⋄ w←0.01×2 3 4⍴⍳24 ⋄ f←{+/,(⍵(+.×⍤2)w)*2} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←2×(x(+.×⍤2)w)(+.×⍤2)0 2 1⍉w ⋄ (∧/{(⌈/,|⍵-c)≤1e¯5×⌈/,|c}¨e.value),(≢e.programs.event),≢e.stopped.reason
 [1 2 0]ₓ
 
-⍝ — A program's first reuse compiles each block stage of elementwise steps on arrays of one shape, and later calls run its compiled parts. A compiled part gives the values that its steps give one at a time. This case and the block-stage cases after it run a body on a free name in the program that `∂` builds: the gradient of `{+/⍵×(f v)}` is `f v` [compiled]
+⍝ — With compilation requested, a block stage gives the values that its elementwise steps give one at a time. This case and the block-stage cases after it run a body on a free name in the program that `∂` builds: the gradient of `{+/⍵×(f v)}` is `f v` [compiled]
 f←{(⍵-0.5)×⍵+0.5} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),1ₓ×compiled e
 [1 1]ₓ
 

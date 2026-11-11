@@ -30,12 +30,12 @@ pub(crate) enum Kind {
 }
 
 /// A batched run's current frame, saved outer frames for nested maps, and fresh names shared by its cells (`Levels::keep_fresh`).
-pub(crate) struct Batched { frame: crate::array::Layout, outer: Vec<(usize, crate::array::Layout)>, fresh: Vec<std::sync::Arc<str>> }
+pub(crate) struct Batched { frame: crate::array::Layout, itemwise: bool, outer: Vec<(usize, crate::array::Layout)>, fresh: Vec<std::sync::Arc<str>> }
 
 
 impl Kind {
     /// A batched run of a map on the cells that `frame` lays out, as `batch::tried` begins it.
-    pub(crate) fn batched(frame: crate::array::Layout) -> Self { Kind::Batched(Batched { frame, outer: Vec::new(), fresh: Vec::new() }) }
+    pub(crate) fn batched(frame: crate::array::Layout, itemwise: bool) -> Self { Kind::Batched(Batched { frame, itemwise, outer: Vec::new(), fresh: Vec::new() }) }
     /// The rule this kind's exit applies to each binding outside its frames that it wrote, given the binding's value and the level's id. A `∂` call strips its tag, and a label level its labels. Other kinds have no rule, and record no writes.
     pub(crate) fn exit(&self) -> Option<fn(&Value, u64) -> Value> {
         match self {
@@ -82,6 +82,8 @@ impl Levels {
     pub(crate) fn end(&mut self) -> Level { self.stack.pop().expect("a running level") }
     /// The id and frame of the batched run, if one is running. Only one can run, because a map inside a batched run widens it instead of beginning another (`widen`).
     pub(crate) fn batched(&self) -> Option<(u64, &crate::array::Layout)> { self.running().map(|(id, b)| (id, &b.frame)) }
+    /// Reordered cohorts stop before per-cell rules, whose work belongs to the ordered fallback.
+    pub(crate) fn batch_itemwise(&self) -> bool { self.running().is_none_or(|(_, b)| b.itemwise) }
     /// Whether a batched run may begin: every running level allows one (`Kind::admits_batch`).
     pub(crate) fn admits_batch(&self) -> bool { self.stack.iter().all(|l| l.kind.admits_batch()) }
     /// Whether a map's batched try widens the batched run instead of beginning one: the run is the innermost level, so no `∂` call or label level wraps the map's values.

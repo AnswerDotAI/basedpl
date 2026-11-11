@@ -113,6 +113,7 @@ fn numeric_constructors() {
     assert_eq!(AplValue::floats(vec![1], basedpl::buffer::FloatWidth::F64, vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
     assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).unwrap_err().name(), "DOMAIN");
     assert_same(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), &exact(-1, 2));
+    assert_eq!(run("+/[1 2 3⋄4 5 6]ₓ").unwrap().unwrap().view().unwrap().dtype(), basedpl::buffer::DType::Integer(basedpl::buffer::Width::U8));
 }
 
 #[test]

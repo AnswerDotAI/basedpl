@@ -166,10 +166,12 @@ impl Stream {
 /// Each generator that the running batched try has drawn from, with its state before the try first drew from it (`Session::drawn`). Where the try falls back, `settle` puts each state back, so the run over cells draws the numbers it would draw had no try run.
 pub(crate) type Drawn = Mutex<Vec<(Generator, Counter)>>;
 
-/// Ends a batched try's record of its draws, putting each generator's state back where the try fell back (`batch::tried`).
-pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
+/// Ends a batched try's record of its draws. Restores each generator on fallback and reports whether there were draws.
+pub(crate) fn settle(drawn: &Drawn, fell_back: bool) -> bool {
     let drawn = std::mem::take(&mut *drawn.lock().unwrap_or_else(PoisonError::into_inner));
+    let drew = !drawn.is_empty();
     if fell_back { for (generator, counter) in drawn { locked(&generator).counter = counter; } }
+    drew
 }
 
 fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generator.lock().unwrap_or_else(PoisonError::into_inner) }

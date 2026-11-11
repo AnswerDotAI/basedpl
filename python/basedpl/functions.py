@@ -15,8 +15,8 @@ def _build(kind, *operands, valence=0):
 
 class _Combinators(_Operators):
     def __bool__(self): raise TypeError('a BPL function has no truth value')
-    @property
-    def left(self): return _build('↣', _HOLE, self, valence=1)
+    def __or__(self, value): return _build('↢', self, value, valence=1)
+    def __ror__(self, value): return _build('↣', value, self, valence=1)
     def __pow__(self, counts): return _build('⍣', self, counts)
     def __getitem__(self, index): return _build('∘', Function(_Function.selection(index, _array)), self, valence=self._valence)
     def __lshift__(self, g): return _build('∘', self, g)
@@ -50,6 +50,14 @@ class Function(_Combinators):
     "A BPL function node."
     def __init__(self, inner, valence=0): self._inner, self._valence = inner, valence
     def __repr__(self): return repr(self._inner)
+    def __dir__(self): return sorted(set(super().__dir__()) | _builtins.keys())
+    def __getattr__(self, name):
+        name = _prefix(name, set(dir(type(self))) | _builtins.keys())
+        if name not in _builtins: return getattr(self, name)
+        tines = self.__dict__.get('_tines', (self,)) + (_builtin(name),)
+        result = bpl.fn(*tines)
+        result._tines = tines
+        return result
     def inspect(self):
         "BPL source and help, without running the function."
         info = bpl._session.inspect(function=self._inner)
@@ -62,6 +70,7 @@ class Function(_Combinators):
     __doc__ = _Help(__doc__)
     def __call__(self, *args, **kwargs):
         "Call with `⍵` or `⍺, ⍵`. Keyword arguments supply `⍺` as a keyed vector, and the positional arguments then form `⍵`."
+        if len(args) == 1 and not kwargs and isinstance(args[0], Function): return atop(self, args[0])
         if kwargs:
             if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
             args = (kwargs, args[0] if len(args) == 1 else list(args))
@@ -137,7 +146,15 @@ def _builtin(name):
     except ValueError: raise AttributeError(f'unknown builtin function: {name!r}') from None
     return Function(inner, valence)
 
-def __getattr__(name): return _builtin(name)
+def _prefix(name, names):
+    "Resolve an exact name or a unique prefix, listing ambiguous matches."
+    if name in names: return name
+    matches = sorted(n for n in names if not n.startswith('_') and n.startswith(name)) if not name.startswith('_') else []
+    if len(matches) == 1: return matches[0]
+    if matches: raise AttributeError(f'ambiguous name {name!r}: {", ".join(matches)}')
+    raise AttributeError(f'unknown name: {name!r}')
+
+def __getattr__(name): return _builtin(_prefix(name, _builtins))
 def __dir__(): return sorted(set(globals()) | _builtins.keys())
 
 def _glyph(glyph):
@@ -159,6 +176,7 @@ def _unary(f, y):
     return atop(f, y) if isinstance(y, _Combinators) else f(y)
 
 def _bitwise(glyph, *operands):
+    if glyph == '∨' and any(isinstance(o, _Combinators) for o in operands): return NotImplemented
     try: operands = [o if isinstance(o, (Array, _Combinators)) else Array(o) for o in operands]
     except TypeError: return NotImplemented
     f = _glyph(glyph).bitwise

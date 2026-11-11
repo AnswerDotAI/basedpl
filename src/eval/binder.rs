@@ -119,7 +119,7 @@ impl Session {
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.last().filter(|root| {
                     !on_function && match &root.kind {
-                        NodeKind::Name(_, _) | NodeKind::Group(_) => self.holds_array(root),
+                        NodeKind::Name(_, _) | NodeKind::Group(_) | NodeKind::Embedded(_) => self.holds_array(root),
                         NodeKind::Literal(_) | NodeKind::ArrayLiteral(_) | NodeKind::Scope(..) => true, _ => false
                     }
                 });

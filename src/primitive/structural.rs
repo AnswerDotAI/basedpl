@@ -52,6 +52,8 @@ pub(crate) enum Form {
     Transpose { inverse: bool, groups: Option<std::sync::Arc<[TransposeGroup]>> },
     /// Windows over the leading axes, padded by `edge` where it's given, and otherwise by fill on an axis whose size is below 0. `fill` where padding reads an explicit fill.
     Windows { edge: Option<Edge>, fill: bool },
+    /// Uniform cells joined under `frame`. The frame and cells retain their axis labels, without a renderer.
+    Stack { frame: CoreLayout },
 }
 
 impl Form {
@@ -66,7 +68,7 @@ impl Form {
 /// - Windows: the sizes, then the movements. The result's layout is `relaid` from the inputs'.
 pub(crate) fn plan(form: &Form, params: &[Value], inputs: &[&Layout]) -> Result<(Layout, ReadPlan), Error> {
     let (core, read) = core_plan(form, params, inputs)?;
-    Ok((relaid(core, inputs), read))
+    Ok((if matches!(form, Form::Stack { .. }) { core.into() } else { relaid(core, inputs) }, read))
 }
 
 /// A structural result's layout from its sources': `core` with the renderer of the one source it rearranges where the rank is unchanged, and for a join the renderer both sources agree on.
@@ -88,6 +90,12 @@ fn core_plan(form: &Form, params: &[Value], inputs: &[&Layout]) -> Result<(CoreL
     // A unit reads as `n` axes of length 1.
     let unit = |n: usize| CoreLayout::from(vec![1; n]);
     match *form {
+        Form::Stack { ref frame } => {
+            if frame.count() != inputs.len() || inputs.iter().any(|&layout| layout != inputs[0]) {
+                return Err(Error::new(Kind::Length, "stacked cells must have one layout and fill their frame"));
+            }
+            Ok((frame.concat(right), ReadPlan::joined(1, inputs.iter().enumerate().map(|(i, layout)| ReadPlan::input(i, layout.count())))?))
+        }
         Form::Call { p: p @ (Primitive::Take | Primitive::Drop), .. } => {
             let counts = &params[0];
             if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "take/drop counts must be a unit or vector")); }

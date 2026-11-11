@@ -124,13 +124,15 @@ fn isa() -> Result<OwnedTargetIsa, String> {
     }).clone()
 }
 
-/// Each kernel that ran or compiled so far, keyed with its constants cleared (`Kernel::key`), with its code once it compiled.
-static KERNELS: OnceLock<Mutex<HashMap<Kernel, Option<Arc<Compiled>>>>> = OnceLock::new();
+#[derive(Default)]
+struct Observation { items: usize, code: Option<Arc<Compiled>> }
+/// Each kernel's observed items and native code, keyed with its constants cleared (`Kernel::key`).
+static KERNELS: OnceLock<Mutex<HashMap<Kernel, Observation>>> = OnceLock::new();
 /// The most kernels the table keeps. A table that's full forgets them all before it takes a new one; code in use stays alive through its `Arc`.
 const KEPT: usize = 4096;
 
 /// The table of kernels, locked.
-fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compiled>>>> {
+fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Observation>> {
     KERNELS.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -138,7 +140,7 @@ fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compil
 pub fn forget_kernels() { kernels().clear() }
 
 /// The table `k`, emptied first where it's full and doesn't hold `key`.
-fn kept<'a>(k: &'a mut HashMap<Kernel, Option<Arc<Compiled>>>, key: &Kernel) -> &'a mut HashMap<Kernel, Option<Arc<Compiled>>> {
+fn kept<'a>(k: &'a mut HashMap<Kernel, Observation>, key: &Kernel) -> &'a mut HashMap<Kernel, Observation> {
     if k.len() >= KEPT && !k.contains_key(key) { k.clear(); }
     k
 }
@@ -147,15 +149,20 @@ impl Kernel {
     /// This kernel's native code, compiled the first time and kept with at most `KEPT` others, with the compile's time where this call compiled it. Kernels that differ only in their constants share one code.
     pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> {
         let key = self.key();
-        if let Some(Some(c)) = kernels().get(&key) { return Ok((c.clone(), None)); }
+        if let Some(c) = kernels().get(&key).and_then(|held| held.code.as_ref()) { return Ok((c.clone(), None)); }
         let start = Instant::now();
         let c = Arc::new(self.compile()?);
         let time = start.elapsed();
-        Ok((kept(&mut kernels(), &key).entry(key).or_default().get_or_insert(c).clone(), Some(time)))
+        Ok((kept(&mut kernels(), &key).entry(key).or_default().code.get_or_insert(c).clone(), Some(time)))
     }
 
-    /// Whether this kernel, or one that differs only in its constants, ran or compiled before. It counts as seen from now on.
-    pub fn seen(&self) -> bool { let (key, mut k) = (self.key(), kernels()); k.contains_key(&key) || kept(&mut k, &key).insert(key, None).is_some() }
+    /// Records this run's `items`: whether this kernel has code or has seen at least `least` items. Constants don't distinguish observations.
+    pub fn seen(&self, items: usize, least: usize) -> bool {
+        let (key, mut k) = (self.key(), kernels());
+        let held = kept(&mut k, &key).entry(key).or_default();
+        held.items = held.items.saturating_add(items);
+        held.code.is_some() || held.items >= least
+    }
 
     /// This kernel with each constant's value cleared, as the table of kernels keys it.
     fn key(&self) -> Kernel {

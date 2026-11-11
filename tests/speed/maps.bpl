@@ -82,12 +82,12 @@ v×v+1
 {+/⍵}¨nest
 ⍝⍝: 5	570	570	instructions macos 95.507 linux 97.45	allocated macos 3.459 linux 3.459
 
-⍝ Each over a nested array whose 4,096 items are matrices of 2 rows and 1 to 15 columns, ragged cells in mixed storage, with a constant vector added along each item's rows. The batched try declines on ragged cells, which aren't compact (`batch::mapped`: "an argument that isn't compact"). The dfn then runs once for each of the 4,096 cells, at about 18,600 instructions a call.
-⍝ Expected: 10 copies, from a batched map that gathers the cells into one leaf and runs the pervasive call once on it, with each item of the constant repeated over its cell's row through one `#`. That route is Later work.
-⍝⍝⍝ held linux 627: the dfn runs once for each ragged cell until batching takes ragged cells, which is later work
+⍝ Each over 4,096 matrices with 2 rows and 1 to 15 columns, adding a constant vector along each cell's rows. Layout cohorts pack matching cells and run the dfn once per column count through the dense batch evaluator.
+⍝ Expected: 10 copies for one flat segmented map. Cohorts still gather and dispatch once per distinct cell shape.
+⍝⍝⍝ held macos 46.6: cohorts gather and dispatch per distinct shape rather than running one flat segmented map
 ⍝⍝⍝ route batching
 {⍵+10 20}¨rag
-⍝⍝: 20	420	400	instructions macos 3674.203 linux 2593.752	allocated macos 191.807 linux 191.807
+⍝⍝: 20	420	400	instructions macos 511.735 linux 473.938	allocated macos 84.807 linux 84.807
 
 ⍝⍝⍝ held macos 5.37: open.md lists the stencils among the speed audit's outliers that compiling didn't fix
 ⍝⍝⍝ gap forced "{+/,⍵}⌺[3 3]": a dfn operand's fold over windows should slide over the source

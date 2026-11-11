@@ -63,7 +63,7 @@ Eligible ordinary dense-array bodies can reuse compatible recordings in Power wi
 
 Each and Rank try to apply a function once to a batch of cells. A cell is the part of an argument supplied to one mapped call. A successful batch transforms the body's operations into operations on whole arguments. Nested maps can combine frames; folds across many rows can call a dfn once per column rather than once per numeric item.
 
-Ordinary nested and ragged arrays keep their existing representation. Uniform whole-array work can batch; an unsupported layout or result takes the normal per-cell path. Per-cell program replay and one-pass ragged batching are different optimizations. Neither requires a segmented storage format merely to preserve existing values.
+Nested and ragged arrays keep their existing representation. Each can batch items that share compatible plain layouts, and Key can batch equal-length groups from compact plain arrays, in either valence. Both reuse the dense batch evaluator and assemble results in their original order. If a reordered batch draws random numbers, it restores the generators before falling back to the original call order. Unsupported bodies and layouts take the ordinary path. This saves calls without adding a segmented storage format.
 
 A guard that reads a cell's data stops batching and runs normally per cell. Constant and shape guards can remain batched. Guarded-dfn throughput has no budget or optimization requirement; Agenda and Under express intentional whole-array branching. Ordinary unguarded per-cell analytical work remains a performance target.
 

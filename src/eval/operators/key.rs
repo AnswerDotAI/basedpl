@@ -55,6 +55,7 @@ fn groups(
         Some(_) => Some(right.clone()), None if right.keys(0).is_some() => Some(crate::keyed::selectors(right, &[0]).described("invalid group indices")?),
         None => None
     };
+    if let Some(result) = cohorts(f, keys, values.as_ref(), &classes, span) { return result; }
     let width = values.as_ref().map_or(Ok(1), |v| generated_len(&v.shape()[1..]))?;
     let select = |rows: &[u32]| {
         let Some(values) = &values else { return Value::positions(vec![rows.len()], right.shape()[0], rows.iter().copied()) };
@@ -86,4 +87,30 @@ fn groups(
         Some(_) => { for (g, rows) in classes.groups.each().enumerate() { apply(g, select(rows).described("invalid key group")?, span)? } }
     }
     Ok(Bound::from(Value::assemble(&[count], &results, &results[0]).described("invalid key result")?))
+}
+
+/// Packs compact Key groups of the same length for one dense batched call.
+fn cohorts(f: &Function, keys: &Value, values: Option<&Value>, classes: &rustymath::search::Grouped, span: &Span) -> Option<Result<Bound, Error>> {
+    use crate::{array::Layout, batch::Arguments};
+    if std::iter::once(keys).chain(values).any(|v| !v.layout().plain() || v.dtype().is_none()) { return None; }
+    let width = values.map_or(1, |v| crate::array::count(&v.shape()[1..]));
+    if classes.groups.sizes.iter().any(|&n| !crate::batch::worth_packing(n.saturating_mul(width))) { return None; }
+    let groups = std::cell::OnceCell::new();
+    let gather = |source: &Value, rows: &[usize], frame: Layout| crate::fusion::copied_cells(source, rows, source.shape().len() - 1, &frame).ok();
+    let pack = |positions: &[usize], frame: &Layout| {
+        let groups = groups.get_or_init(|| classes.groups.each().collect::<Vec<_>>());
+        let len = classes.groups.sizes[positions[0]];
+        let firsts: Vec<_> = positions.iter().map(|&i| classes.firsts[i]).collect();
+        let rows: Vec<_> = positions.iter().flat_map(|&i| groups[i].iter().map(|&r| r as usize)).collect();
+        Some(Arguments {
+            left: Some((gather(keys, &firsts, frame.clone())?, keys.shape().len() - 1)),
+            right: match values {
+                Some(values) => (gather(values, &rows, Layout::from([positions.len(), len]))?, values.shape().len()),
+                None => (Value::positions([positions.len(), len], keys.shape()[0], rows.into_iter()).ok()?, 1),
+            },
+        })
+    };
+    crate::batch::cohorts(f, classes.groups.sizes.iter().map(std::slice::from_ref), pack, span).map(|r| r.and_then(|cells| {
+        Value::assemble(&[cells.len()], &cells, &cells[0]).map(Bound::from).described("invalid key result")
+    }))
 }

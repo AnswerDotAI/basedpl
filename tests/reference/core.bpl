@@ -2186,6 +2186,10 @@ a←[1 2;3 4;5 6]
 c←2 5 9⍴"ab"
 (⊃0⊃↓↓c)≡0⌷c   ⍝ $t
 
+⍝ mix-view-rank-limit — Rejoining cells still validates the assembled rank before returning a view
+a←(128⍴1)⍴⊂⍤1⁝1 2⍴⍳2ₓ ⋄ ≢⍴⊃a
+⍝ error: LIMIT ERROR
+
 ⍝ — Mix pads with a chosen fill at the type that holds both the items and the fill: small integers widen for a large fill, and floats keep their type for an exact one
 [⊃⍠["fill":1000]⍷2 0 2 1 2 ; ⊃⍠["fill":0ₓ]0.5×⍷2 0 2 1 2]   ⍝ [[0 2 4⋄1 1000 1000⋄3 1000 1000]ₓ ; [0 1 2⋄0.5 0 0⋄1.5 0 0]]
 
@@ -5976,8 +5980,8 @@ x←¿[1000 32]⍴0 ⋄ y←¿[100 32]⍴0 ⋄ walked←{e←•explain ⍵ ⋄ 
 ⍝⍝ Numeric storage
 
 ⍝ dynamic-integer-fold-storage — Integer reductions compact their array result
-r←+/[1 2 3⋄4 5 6]ₓ
-(•memory r).bytes=(•memory [6 15]ₓ).bytes   ⍝ $t
+r←+/[1 2 3⋄4 5 6]ₓ ⋄ ok←r≡[6 15]ₓ
+[ok ; (•storage r).kind]   ⍝ [$t ; "integer"]
 
 ⍝ dynamic-integer-range-edges — The widths that operands' ranges choose hold every result: negation and magnitude of the 16-bit minimum, products across signs, a negated copy, a full-range difference, a floored quotient below the real quotient's range, and the 64-bit minimum, which wraps
 v←[¯32768 32767]ₓ ⋄ [-[¯32768 5]ₓ ; |[¯32768 1]ₓ ; [¯300 200]ₓ×[300 ¯200]ₓ ; -⌽[¯32768 5]ₓ ; v-v ; [¯7 7]ₓ÷2ₓ ; |[¯9223372036854775808 1]ₓ]   ⍝ (32768 ¯5⋄32768 1⋄¯90000 ¯40000⋄¯5 32768⋄0 0⋄¯4 3⋄¯9223372036854775808 1)ₓ
@@ -6302,8 +6306,8 @@ x←1ₓ 0.5
 {(•storage ⍵).kind}¨[•json "[1,1.5]";•json "[1.5,9007199254740993]";•json "{""a"":1,""b"":2}";•json "{""a"":1,""b"":2.5}"]
 "float64" "mixed" "integer" "mixed"
 
-⍝ import-shared-texts — `•csv` and `•json` store each distinct text once, so a column of repeated texts takes less memory than copies of its texts
-v←1000⍴"ab" "cd" ⋄ c←(•csv •csv⁻ ["s":v]).s ⋄ j←•json •json⁻ v ⋄ {(•memory ⍵).bytes<(•memory {⍵,""}¨⍵).bytes}¨[c j]   ⍝ $t $t
+⍝ import-shared-texts — `•csv` and `•json` store each distinct text once; Unicode round trips make fresh text buffers for the comparison
+v←1000⍴"ab" "cd" ⋄ c←(•csv •csv⁻ ["s":v]).s ⋄ j←•json •json⁻ v ⋄ {(•memory ⍵).bytes<(•memory {•ucs •ucs ⍵}¨⍵).bytes}¨[c j]   ⍝ $t $t
 
 ⍝ — CSV columns take the same import rule
 nl←•ucs 10
@@ -7663,6 +7667,16 @@ f←{{+/⍵}¨⍵} ⋄ [f [[1 2] [3 4]]; f [[1 2 3] [4 5]]; f [[1 2 3] [4 5 6]]]
 ⍝ batch-nested-cell-keys — Each keeps its named frame and its children's keys when equal native cells join for batching
 r←["row":2]⍴[["a":1 "b":2] ["a":3 "b":4]] ⋄ ({⍵+1}¨r)≡["row":2]⍴[["a":2 "b":3] ["a":4 "b":5]]   ⍝ $t
 
+⍝ cohort-paired-shapes: Dyadic Each keeps scalar items, nested items and leading-frame broadcasting.
+⍝⍝⍝ route batching
+v←[1 2] [3] [4 5] [6] ⋄ x←[10 20] [30] [40 50] [60]
+[(10 20 30 40{⍺+⍵}¨v)≡[[11 12] [23] [34 35] [46]] ; (x{⍺+⍵}¨v)≡[[11 22] [33] [44 55] [66]] ; (10 20{⍺+⍵}¨2 2⍴v)≡2 2⍴[[11 12] [13] [24 25] [26]]]   ⍝ $t $t $t
+
+⍝ cohort-row-projections: Key and dyadic Each select whole numeric cells without changing their order or kind.
+k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ 3ₓ ⋄ m←6 3⍴⍳18ₓ ⋄ a←k{⍺ + +/⍵}⌸m
+v←[1 2] [3] [4 5] [6] ⋄ rows←⊂⍤1⁝4 3⍴0.25+⍳3 ⋄ b←v{+/(⌈/⍺)+⍵}¨rows
+[a≡[5 23⋄13 40⋄33 51]ₓ;b≡9.75 12.75 18.75 21.75;(•storage a).kind]   ⍝ [$t $t "integer"]
+
 ⍝ — Each over ragged cells, arrays of one rank and kind with different shapes, runs pervasive calls, reductions, scans, grades, shapes, rotations, takes, drops and character conversion once on the cells' leaf, by each cell's own shape, giving what calls on each item give [batched]
 ⍝⍝⍝ route batching
 v←[1 2] [3 4 5] ⍬ ⋄ s←"ab" "cde" "" ⋄ m←(2 2⍴⍳4) (3 2⍴10+⍳6) ⋄ [{-⍵}¨v ; 1 2 3 {⍺+⍵}¨ v ; {⍵×⍵}¨v ; {+/⍵}¨v ; {+\⍵}¨v ; ×\¨v ; ≢¨s ; ⍴¨s ; ⌽¨s ; 2↑¨s ; ¯1↓¨s ; •ucs¨s ; ⍒¨s ; ⊖¨m ; 1↓¨m ; ⍒¨m]
@@ -8179,6 +8193,18 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 ⍝ — Key groups right-hand values using the left-hand labels
 1 1 2{+/⍵}⌸10 20 30   ⍝ 30 30
 
+⍝ key-cohort-order: Groups of equal lengths can batch while retaining the original order and kind.
+⍝⍝⍝ route batching
+k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ ⋄ v←10ₓ 20ₓ 30ₓ 40ₓ 50ₓ
+r←k{⍺ + +/⍵}⌸v ⋄ s←{⍺ + +/⍵}⌸k
+[r;s;(•storage r).kind;(•storage s).kind]   ⍝ [[42 71 43]ₓ [4 6 6]ₓ "integer" "integer"]
+
+⍝ key-cohort-draw-order: A reordered try rolls back draws before calling the groups in order.
+k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ ⋄ v←10ₓ 20ₓ 30ₓ 40ₓ 50ₓ ⋄ f←{⍺+¿1000000ₓ}
+•prefs ["seed":7 "batch":$f] ⋄ a←k f⌸v ⋄ x←¿1000000ₓ
+•prefs ["seed":7 "batch":$t] ⋄ b←k f⌸v ⋄ y←¿1000000ₓ
+[a≡b;x=y]   ⍝ $t $t
+
 ⍝ route-rational-groups — Grouped sums retain exact rational values
 ⍝⍝⍝ allows declined "group folds: arguments that don't suit it": rational groups keep arbitrary-precision arithmetic
 ⍝⍝⍝ allows itemwise "key groups": each exact group runs one fold
@@ -8622,8 +8648,9 @@ j←[¯3 ¯1 0 1 3 1000 ¯1000]ₓ
 ⍝ — Booleans compare with a whole float as the integers 0 and 1
 [$t $f]=1   ⍝ $t $f
 
-⍝ — With Mathish mode off, a float reads 9007199254740993 as 9007199254740992, so the comparison still finds them equal
-•prefs ["mathish":$f] ⋄ (9007199254740992+⍳3ₓ)=9007199254740992   ⍝ $t $t $f
+⍝ — Integer comparisons stay exact beyond float precision, including in fused code; a float operand still rounds those integers
+•prefs ["mathish":$f] ⋄ j←9007199254740992ₓ+⍳65536ₓ ⋄ w←1ₓ+⍳65536ₓ
+(+/w×j=9007199254740993ₓ) (+/w×9007199254740993ₓ=j) (+/w×j=9007199254740992)   ⍝ [2 2 3]ₓ
 
 ⍝ — A residue of integers by a whole float gives floats, the residues by the integer it stands for
 [3|[¯7 ¯1 0 1 7 2147483647]ₓ⋄¯3|[¯7 ¯1 0 1 7 2147483647]ₓ]
@@ -8940,7 +8967,7 @@ f←{∪⍵} ⋄ r←f⍤1⁝2 3⍴⍳6ₓ
 s←2 3 4⍴⍳24 ⋄ img←3 6 6⍴⍳108 ⋄ w←3 3⍴1
 unbatched←{•prefs ["batch":$f] ⋄ r←⍎⍵ ⋄ •prefs ["batch":$t] ⋄ r}
 widens←{e←•explain ⍵ ⋄ ∧/[e.value≡unbatched ⍵ ; 0ₓ=≢e.fallbacks.reason ; ~(⊂"batching")∊e.declined.route]}
-widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{{+/,⍵×w}⌺[3 3] ⍵}⍤2 img" "{{{⍵+1}¨⍵}⍤1 ⍵}⍤2 s"   ⍝ $t $t $t
+widens¨"{{+/⍵×⍵}⍤1 ⍵}⍤2 s" "{{+/,⍵×w}⌺[3 3] ⍵}⍤2 img" "{{{⍵+1}¨⍵}⍤1 ⍵}⍤2 s" "{{⍵+1}¨[⍵;⍵+1]}¨1 2 3"   ⍝ $t $t $t $t
 
 ⍝ — A nested guard reads the outer row's captured sum after falling back to per-cell calls
 s←2 3 4⍴⍳24 ⋄ f←{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1

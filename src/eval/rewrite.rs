@@ -223,6 +223,7 @@ fn root(f: &Function) -> u64 {
 /// The needs mask of the primitives and operators that `node` writes, in its groups too.
 fn written(node: &Node) -> u64 {
     match &node.kind {
+        NodeKind::Embedded(Value::Function(f)) => f.node.needs,
         NodeKind::Function(crate::primitive::Builtin::Primitive(p)) => glyph(*p), NodeKind::Operator(op) => bit(op.glyph()),
         NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().fold(0, |m, n| m | written(n)), _ => 0
     }
@@ -315,6 +316,7 @@ impl<'a> Reader<'a> {
         if i > 0 && self.category(&nodes[i - 1]).valence() == Some(true) { return None; }
         let kind = match &nodes[i].kind {
             NodeKind::Literal(v) => Kind::Value(v.clone()),
+            NodeKind::Embedded(v) if self.category(&nodes[i]) == Category::Value => Kind::Value(v.clone()),
             NodeKind::Name(name, _) if self.pattern => match *name {
                 Name::OMEGA => Kind::Arg(false),
                 Name::ALPHA => Kind::Arg(true),
@@ -385,6 +387,9 @@ impl<'a> Reader<'a> {
 /// Whether a node is constant: a primitive, an operator, a literal, or a group of those.
 fn constant(node: &Node) -> bool {
     match &node.kind {
+        NodeKind::Embedded(Value::Function(f)) => !f.late(),
+        NodeKind::Embedded(Value::Operator(_)) => false,
+        NodeKind::Embedded(_) => true,
         NodeKind::Function(crate::primitive::Builtin::Primitive(_)) | NodeKind::Operator(_) | NodeKind::Literal(_) => true,
         NodeKind::Group(inner) | NodeKind::Run(inner) => inner.iter().all(constant), _ => false
     }

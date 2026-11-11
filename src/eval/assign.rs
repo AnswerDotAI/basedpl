@@ -38,6 +38,8 @@ impl Session {
     pub(super) fn static_category(&self, node: &Node) -> Category {
         use Category::*;
         match &node.kind {
+            NodeKind::Embedded(crate::Value::Function(_)) => Function,
+            NodeKind::Embedded(crate::Value::Operator(op)) => Category::of_operator(&op.0),
             NodeKind::Function(_) | NodeKind::System(_) => Function,
             NodeKind::Operator(op) => Category::of_operator(&self::OperatorNode::Primitive(*op)),
             NodeKind::Script(..) => Operator,

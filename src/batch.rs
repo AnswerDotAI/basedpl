@@ -189,6 +189,7 @@ pub(crate) fn from_cells(level: u64, frame: &Layout, cells: Vec<Value>) -> Optio
 
 /// `f` for each cell of batched run `level`, whose frame is `frame`, in cell order, with the cells' values joined into one batch (`from_cells`). Where the values don't stack, as values of different shapes or kinds don't, the run stops for a call with no rule for these arguments (`Cause::Rule`). `•explain` counts the cells as the `itemwise` route `batch cells`.
 pub(crate) fn each_cell(level: u64, frame: &Layout, f: impl FnMut(usize) -> Result<Value, Error>) -> Result<Value, Error> {
+    if !session().batch_itemwise() { return Err(Stop::new(level, Cause::Rule).into()); }
     let count = frame.count();
     crate::explain::itemwise(crate::events::routes::BatchCells, count);
     let cells = (0..count).map(f).collect::<Result<Vec<_>, _>>()?;
@@ -552,8 +553,83 @@ pub(crate) fn laid_over(whole: &Value, axes: usize, frame: &Layout) -> Result<Va
     laid_cells(whole, whole.shape().len() - axes, &Agreement::new(&whole.layout().axes(0..axes), frame)?.left, frame)
 }
 
+/// Avoid copying large cells just to save an already-cheap per-cell call.
+pub(crate) fn worth_packing(items: usize) -> bool { items <= 4096 }
+
+/// Packs compact cells of one layout and dtype over `frame`, with no padding or widening.
+pub(crate) fn stacked<'a>(frame: &Layout, items: impl ExactSizeIterator<Item = &'a Value> + Clone) -> Option<(Value, usize)> {
+    let first = items.clone().next()?;
+    if !worth_packing(first.len()) && Value::joined_views(frame.concat(first.layout()), items.clone()).is_none() { return None; }
+    Some((Value::stacked(frame, items)?.ok()?, first.shape().len()))
+}
+
+/// Run each repeated cell shape as a dense batch and return its cells in the original order.
+/// A reordered try with a draw restores the generators and leaves the caller to run in order.
+pub(crate) fn cohorts<K: Ord>(
+    operand: &Function, shapes: impl ExactSizeIterator<Item = K>,
+    arguments: impl Fn(&[usize], &Layout) -> Option<Arguments>, span: &Span,
+) -> Option<Result<Vec<Value>, Error>> {
+    // system() uses each_cell for every direct System operand; packing cannot remove any of that work.
+    if operand.system_function().is_some() { return None; }
+    let count = shapes.len();
+    if count < 2 || session().transforming() || !crate::settings::batch() { return None; }
+    let mut cohorts = std::collections::BTreeMap::<_, Vec<usize>>::new();
+    for (i, shape) in shapes.enumerate() { cohorts.entry(shape).or_default().push(i); }
+    if cohorts.len() > count / 2 { return None; }
+    let attempt = (|| {
+        let mut values = vec![Value::integer(0); count];
+        for positions in cohorts.into_values() {
+            let frame = Layout::from([positions.len()]);
+            let unsuited = || Ended::Fell("a cohort's arguments");
+            let Arguments { left, right } = arguments(&positions, &frame).ok_or_else(unsuited)?;
+            let x = match left { Some(x) => Some(side(x, &Entry::Begin, &frame).ok_or_else(unsuited)?), None => None };
+            let y = side(right, &Entry::Begin, &frame).ok_or_else(unsuited)?;
+            let whole = run(operand, x.as_ref(), &y, &frame, &Entry::Begin, false, span)?;
+            let cells = whole.cells(whole.shape().len() - 1).map_err(|_| Ended::Fell("a cohort's result"))?;
+            for (i, position) in positions.into_iter().enumerate() {
+                values[position] = if cells.shape().is_empty() { whole.element(i) }
+                    else { cells.get(i).map_err(|_| Ended::Fell("a cohort's result"))? };
+            }
+        }
+        Ok(values)
+    })();
+    let drew = crate::distribution::settle(&session().drawn, true);
+    match attempt {
+        Ok(values) if !drew => { crate::events::taken(crate::events::routes::Batching, count); Some(Ok(values)) }
+        Err(Ended::Passed(error)) => Some(Err(error)),
+        _ => None,
+    }
+}
+
+/// Batch nested map items by their paired cell shapes after ordinary argument agreement.
+fn ragged(operand: &Function, arguments: Arguments, layout: &Layout, span: &Span) -> Option<Result<Value, Error>> {
+    fn nested((value, rank): &(Value, usize)) -> Option<&[Value]> {
+        if *rank != 0 || value.shape().is_empty() || !value.holds_values() { return None; }
+        let crate::array::Items::Values(items) = value.as_items() else { return None };
+        Some(items)
+    }
+    let (x, y) = (arguments.left.as_ref().and_then(nested), nested(&arguments.right));
+    let varies = |cells: Option<&[Value]>| cells.is_some_and(|cells| cells.first().is_some_and(
+        |first| cells.iter().any(|cell| cell.shape() != first.shape())));
+    if !varies(x) && !varies(y) { return None; }
+    if [x, y].into_iter().flatten().flatten().any(|item| item.shape().is_empty() || !item.layout().plain() || item.dtype().is_none()) { return None; }
+    let packed = |(value, rank): &(Value, usize), cells: Option<&[Value]>, positions: &[usize], frame: &Layout| {
+        if let Some(cells) = cells { return stacked(frame, positions.iter().map(|&i| &cells[i])); }
+        if value.shape().len() == *rank { return Some((value.clone(), *rank)); }
+        Some((crate::fusion::copied_cells(value, positions, *rank, frame).ok()?, *rank))
+    };
+    let pack = |positions: &[usize], frame: &Layout| {
+        let left = match &arguments.left { Some(a) => Some(packed(a, x, positions, frame)?), None => None };
+        Some(Arguments { left, right: packed(&arguments.right, y, positions, frame)? })
+    };
+    let shapes = (0..layout.count()).map(|i| (x.map_or(&[][..], |v| v[i].shape()), y.map_or(&[][..], |v| v[i].shape())));
+    cohorts(operand, shapes, pack, span).map(|result| result.and_then(|values| {
+        let prototype = values[0].prototype();
+        layout.collect(values, prototype).described("invalid result")
+    }))
+}
 /// One batched run of `operand` on the cells that `frame` lays out, entered by `entry`, with a batch of the cells of each batched side, and each constant as it is. It gives the whole of the cells' results (`whole_over`).
-fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &Entry, span: &Span) -> Result<Value, Ended> {
+fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &Entry, itemwise: bool, span: &Span) -> Result<Value, Ended> {
     let call = |level: u64| -> Result<Value, Error> {
         let wrapped = |side: &Side| match side { Side::Batched(v) => batch(level, v.clone(), frame.shape().len()), Side::Constant(c) => c.clone() };
         let value = operand.call_array(x.map(&wrapped).as_ref(), &wrapped(y), span)?;
@@ -562,7 +638,7 @@ fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &E
         Ok(value)
     };
     let (level, called) = match entry {
-        Entry::Begin => session().with_level(crate::transform::Kind::batched(frame.clone()), |level| (level, call(level))),
+        Entry::Begin => session().with_level(crate::transform::Kind::batched(frame.clone(), itemwise), |level| (level, call(level))),
         Entry::Widen { level, .. } => (*level, session().widened(frame, || call(*level))),
     };
     match called {
@@ -591,7 +667,7 @@ fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk
             }
             Side::Constant(c) => Side::Constant(c.clone()),
         };
-        wholes.push(run(operand, x.map(&slice).as_ref(), &slice(y), &Layout::from(vec![len]), &Entry::Begin, span)?);
+        wholes.push(run(operand, x.map(&slice).as_ref(), &slice(y), &Layout::from(vec![len]), &Entry::Begin, true, span)?);
     }
     let cell = wholes[0].layout().axes(1..wholes[0].shape().len());
     if wholes.iter().any(|w| w.layout().axes(1..w.shape().len()) != cell) { return Err(Ended::Fell("the result")); }
@@ -602,7 +678,7 @@ fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk
 
 /// Where the `batch` pref is on, the result of the map whose frame is `layout`, from one call of `operand` on batches of its cells. With `mixed`, the cells' results mix into one array, as Rank mixes them. Otherwise they are the result's items, as in Each. `None` means the map calls its operand once for each cell instead.
 ///
-/// The try's conditions: `tried` gives `None` for an empty frame or a frame of rank 0, and where the running levels allow no try (`tries`). Otherwise it calls `arguments` for the map's whole arguments. It gives `None` where `arguments` does, and for an argument with a frame that isn't compact (`side`). It gives `None`, after a `fallbacks` event of `•explain`, for a dfn operand whose earlier batched run stopped for a cause that it remembers for every call, without calling `arguments`, or for a cause that it remembers for these arguments (`signature`). Each refusal before the call, other than an empty frame, is a decline with its reason (`crate::events`).
+/// The try's conditions: `tried` gives `None` for an empty frame or a frame of rank 0, and where the running levels allow no try (`tries`). Otherwise it calls `arguments` for the map's whole arguments. Nested item maps first try layout cohorts (`ragged`); other arguments with a frame need compact items (`side`). It gives `None` where `arguments` does, or after a `fallbacks` event of `•explain` for a dfn operand whose earlier batched run stopped for a cause that it remembers for every call, without calling `arguments`, or for a cause that it remembers for these arguments (`signature`). Each refusal before the call, other than an empty frame, is a decline with its reason (`crate::events`).
 ///
 /// The run: a map outside any batched run begins one (`Entry::Begin`). A map inside one widens it (`Entry::Widen`): the run's frame comes first in the widened frame, each of the run's batches lays over the widened frame, and each constant with a frame spreads over the run's frame (`side`).
 ///
@@ -621,7 +697,12 @@ pub(crate) fn tried(
     if !tries(cells) { return None; }
     let memory = operand.remembers().map_or(NOTHING, |d| d.remembered());
     if memory & !CAUSE == ALWAYS { return fell_back(Earlier::of(memory), cells); }
-    let Some(Arguments { left, right }) = arguments() else { return declined("an argument too large to lay over the frame") };
+    let Some(arguments) = arguments() else { return declined("an argument too large to lay over the frame") };
+    if !mixed && !session().transforming()
+        && arguments.left.iter().chain(std::iter::once(&arguments.right)).any(|(v, rank)| v.shape().len() > *rank && v.holds_values()) {
+        return ragged(operand, arguments, layout, span).or_else(|| declined("an argument that isn't compact"));
+    }
+    let Arguments { left, right } = arguments;
     let entry = session().batched().map_or(Entry::Begin, |(level, outer)| Entry::Widen { level, outer });
     // The run's frame has no axis names. Every argument is laid over the frame already, so names stay on cell axes, which pair by name as separate calls on cells pair them. The result gets the frame's names back.
     let unnamed = if layout.has_names() { Cow::Owned(layout.clone().inherit_names(Vec::new())) } else { Cow::Borrowed(layout) };
@@ -632,7 +713,7 @@ pub(crate) fn tried(
     };
     let signature = |with_frame: bool| signature(x.as_ref(), &y, run_frame.shape(), with_frame);
     if memory != NOTHING && memory & !CAUSE == signature(memory & 1 == 1) { return fell_back(Earlier::of(memory), cells); }
-    let mut ran = run(operand, x.as_ref(), &y, &run_frame, &entry, span);
+    let mut ran = run(operand, x.as_ref(), &y, &run_frame, &entry, true, span);
     if let Entry::Begin = entry {
         while let Err(Ended::Stopped(stop, _)) = &ran && let Some(chunk) = stop.chunk() { ran = chunked(operand, x.as_ref(), &y, layout, chunk, span); }
         crate::distribution::settle(&session().drawn, ran.is_err());

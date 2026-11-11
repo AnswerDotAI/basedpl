@@ -96,7 +96,7 @@ class _Printer:
         if len(args) != 2: return _apl(f), 100
         b = args[1]
         af, bf = isinstance(a, _Function), isinstance(b, _Function)
-        if kind == '↣' and not af: return f'{r(b, True, 100)}.left({r(a)})', 100
+        if kind == '↣' and not af: return f'{r(a, context=16)} | {r(b, True, 16)}', 15
         if kind == '↢' and not bf:
             operand = a.parts()
             if operand and not operand[1] and _names.get(operand[0], ('', '', ''))[2]:

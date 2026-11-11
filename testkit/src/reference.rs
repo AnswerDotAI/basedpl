@@ -4,6 +4,9 @@ use basedpl::{EvalOptions, InterruptHandle, Session, Value, hooks::Numeric, sett
 use serde_json::{Value as JsonValue, json};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub mod runner;
+
 /// A value captured from another interpreter. Its numbers carry no exactness or domain, so its prototype matches by value: a complex array's `0j0` matches a captured `0`. A capture encodes a simple atom as a scalar array, and BPL expectations use based values directly.
 pub fn expected_array(value: &JsonValue) -> Option<Value> {
     let result = basedpl::protocol::import(value, true).ok()?;
@@ -107,7 +110,7 @@ impl basedpl::Input for Lines {
 /// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`settings::Sizes::SMALL`), when block stages compile their parts (`settings::Compiles`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run, its mode, in results and failures.
 #[derive(Clone, Copy)]
 struct Run { batch: bool, fused: bool, compiles: Compiles, twice: bool, words: &'static str }
-/// The runs of a case without a `batch` field: the `batch` pref on, then off, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts, then on with the code as a dfn's body, whose second call runs the statements that its first call recorded. The run with the pref off takes place only where the run before it read the pref, and the run with no compiled parts only where the run before it used one (`case_result`): otherwise each would repeat the run before it.
+/// The runs of a case without a `batch` field: the `batch` pref on, then off, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts, then on with the code as a dfn body called twice, checking its second call against the same expectation. The run with the pref off takes place only where the preceding run read the pref, and the run with no compiled parts only where the preceding run used one (`case_result`): otherwise each would repeat that run. A `compiled` case requests compilation in every selected run and omits the run with no compiled parts.
 const RUNS: [Run; 5] = [
     Run { batch: true, fused: false, compiles: Compiles::Policy, twice: false, words: "with the batch pref on" },
     Run { batch: false, fused: false, compiles: Compiles::Policy, twice: false, words: "with the batch pref off" },
@@ -116,17 +119,19 @@ const RUNS: [Run; 5] = [
     Run { batch: true, fused: false, compiles: Compiles::Policy, twice: true, words: "on a dfn's second call" },
 ];
 
-/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the runs with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, `mixed` leaves out the comparison of the result's storage with the expectation's, and `compiled` leaves out the run with no compiled parts, for a case whose value says whether a stage compiled.
+/// Header options set their own case flag to true: `unfused` omits fusion's small-size runs, `batched` omits the run with batching off, and `mixed` omits the result-storage comparison. `compiled` requests compilation in every selected run and omits the run with no compiled parts, for cases whose result inspects compilation.
 const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "compiled"];
 
 /// The runs that `case` takes: the first of `RUNS` with the `batch` pref that its Boolean `batch` field picks, where it has one, and otherwise each of `RUNS` that its `unfused`, `batched` and `compiled` options leave in.
 fn runs(case: &JsonValue) -> Vec<Run> {
-    match case["batch"].as_bool() {
+    let mut selected: Vec<Run> = match case["batch"].as_bool() {
         Some(batch) => RUNS.into_iter().filter(|r| r.batch == batch).take(1).collect(),
         None => RUNS.into_iter().filter(|r| {
             !(r.fused && case["unfused"] == true) && (r.batch || case["batched"] != true) && !(r.compiles == Compiles::Never && case["compiled"] == true)
         }).collect(),
-    }
+    };
+    if case["compiled"] == true { for run in &mut selected { run.compiles = Compiles::Always; } }
+    selected
 }
 
 /// Defaults, with each program checked before it runs, and file/section preferences, optionally overridden by a run's batch, fusion and compile settings.
@@ -433,7 +438,7 @@ fn unescaped(text: &str, location: &str) -> Result<String, String> {
 }
 
 /// One BPL test file: a shared setup and records which check a result, carry timing budgets, or both.
-pub struct File { pub name: String, pub setup: String, pub cases: Vec<JsonValue> }
+pub struct File { pub name: String, pub setup: String, pub cases: Vec<JsonValue>, pub text: String }
 
 /// Whether a record supplies an independent result or error expectation.
 pub fn checked(case: &JsonValue) -> bool { ["expected", "expected_code", "expected_error"].iter().any(|key| case.get(key).is_some()) }
@@ -464,7 +469,7 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
     let prefs = lines.first().filter(|line| line.starts_with("•prefs")).copied().unwrap_or_default();
     let mathish = if name.ends_with("_mathish.bpl") { r#"•prefs ["mathish":$t]"# } else { "" };
     let (mut i, mut title, mut local) = (usize::from(!prefs.is_empty()), "", "");
-    let mut file = File { name: name.into(), setup: String::new(), cases: Vec::new() };
+    let mut file = File { name: name.into(), setup: String::new(), cases: Vec::new(), text: String::new() };
     let mut ids = rustymath::hashing::HashSet::default();
     while i < lines.len() {
         if lines[i].is_empty() { i += 1; continue; }
@@ -580,6 +585,7 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         }
         file.cases.push(case);
     }
+    if !file.setup.is_empty() { file.text = text.into(); }
     Ok(file)
 }
 
@@ -655,8 +661,9 @@ pub fn suite() -> Result<Vec<File>, String> {
     }
     Ok(files)
 }
-/// The result of each case of `cases`, in their order: the case with the fields of its result (`case_result`). Where `routes` is set, each case that passes and has route directives is then captured once (`route_check`): `tests/reference.rs`, `check` and Python's `check_file` set it. Each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. Each case's header line is written to standard error as `case LINE` when it starts, so a caller whose process stops knows which case stopped it. After an interrupt, no case starts. The settings are reset at the end.
+/// The result of each case of `cases`, in their order: the case with the fields of its result (`case_result`). Where `routes` is set, each case that passes and has route directives is then captured once (`route_check`): `tests/reference.rs`, `check` and Python's `check_file` set it. Each run has `TIMEOUT`. The entry enables memory checks, including the shared two-run check for retained large allocations. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. Each case's header line is written to standard error as `case LINE` when it starts, so a caller whose process stops knows which case stopped it. After an interrupt, no case starts. The settings are reset at the end.
 pub fn results<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str, routes: bool, interrupt: &InterruptHandle) -> Vec<JsonValue> {
+    rustymath::memory::set_checks(true);
     let mut results = Vec::new();
     for case in cases {
         eprintln!("case {}", case["line"]);
@@ -706,9 +713,11 @@ pub fn accounting(results: &[JsonValue]) -> JsonValue {
 pub fn modes(case: &JsonValue) -> Vec<&'static str> { runs(case).into_iter().map(|run| run.words).collect() }
 
 /// The case's worker abort. Mode results were not returned and remain "unchecked".
-pub fn crashed(case: &JsonValue, message: &str) -> JsonValue {
+pub fn crashed(case: &JsonValue, message: &str) -> JsonValue { incomplete(case, "crash", message) }
+
+fn incomplete(case: &JsonValue, status: &str, message: &str) -> JsonValue {
     let modes: Vec<_> = modes(case).into_iter().map(|mode| json!({"mode":mode, "status":"unchecked"})).collect();
-    recorded(case, json!({"status":"crash", "message":message, "modes":modes}))
+    recorded(case, json!({"status":status, "message":message, "modes":modes}))
 }
 
 /// The result of `case`, with each run (`runs`) under `modes` as `{"mode", "status", "message"}`. Its status and message come from the first failing run, or `"pass"`. Each run starts from the file's leading preferences and its mode's settings (`enter`). A panic, timeout or interrupt ends the case; later runs stay `"unchecked"`. A run with the `batch` pref off is not applicable if the run with it on never read the pref (`settings::batch_reads`), and a never-compiled run is not applicable if the always-compiled run compiled nothing: each would repeat the run before it. A skipped case runs nothing. Route-directive violations remain separate `obligations`, beside the routes the capture exercised (`route_check`).
@@ -759,9 +768,14 @@ fn unwound<T>(check: impl FnOnce() -> Result<T, JsonValue>) -> Result<T, JsonVal
     })
 }
 
-/// What `check` gives, or a leak where `rustymath::memory::set_checks` is on and a case that passes leaves the guard's count higher than it found it on each of two runs. One run that leaves it higher can be filling a cache that lasts.
+/// A passing case fails if each of two runs leaves more large allocations held. Release the plan cache after each complete case, outside its value, replay and timing checks.
 fn held_back(check: impl Fn() -> JsonValue) -> JsonValue {
-    let (mut result, left) = crate::held_back(check, |result| result["status"] == "pass");
+    basedpl::hooks::forget_plans();
+    let (mut result, left) = crate::held_back(|| {
+        let result = check();
+        basedpl::hooks::forget_plans();
+        result
+    }, |result| result["status"] == "pass");
     if left == 0 { return result; }
     result["status"] = json!("leak");
     result["message"] = json!(format!("each of two runs left {left} or more bytes held in large allocations"));

@@ -2,7 +2,6 @@
 import csv, difflib, json, math, os, re, selectors, shutil, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
-from queue import Empty, Queue
 from itertools import accumulate
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -17,7 +16,7 @@ except ModuleNotFoundError as e: raise ModuleNotFoundError(f"{e.name} isn't inst
 from fastcore.script import parse_cli
 from fastcore.basics import listify
 from fastcore.meta import delegates
-from ._core import _captured_literal, _reference_file, _reference_accounting, _reference_crashed, _retry_pauses, _budget, _budget_lines, _budget_columns as _BUDGETS
+from ._core import _captured_literal, _reference_file, _reference_accounting, _retry_pauses, _budget, _budget_lines, _budget_columns as _BUDGETS
 from .reference import Corpus, _dyalog_string
 from . import BplError, _value
 from .worker import LIMIT, Limit, Worker, environment, fresh, resolved, _commented, _installed
@@ -196,92 +195,51 @@ def add(ids, output='tests/reference', directory='provenance'):
     return list(rows)
 
 
-_STALL = 60 # Seconds that a check's worker may start no case or example before it counts as stuck, as a deadlock leaves it: a case runs at most a few evaluations of `reference::TIMEOUT`, 2 s each
-
-def _merged(replies):
-    "One reply from several `reference` or `page` replies: their failures and obligations together, and their counts by mode (`accounting`) summed."
-    accounting = {}
-    for r in replies:
-        for mode, counts in r.get('accounting', {}).items():
-            total = accounting.setdefault(mode, {'planned': 0, 'checked': 0, 'failed': 0, 'not applicable': 0})
-            for k, n in counts.items(): total[k] += n
-    return dict(failures=[f for r in replies for f in r['failures']], obligations=[o for r in replies for o in r.get('obligations', [])], accounting=accounting)
-
-
-def _checked(worker, kind, spec, sentinel, bpl, limit):
-    "The reply that `worker` gives for a `kind` request, `reference` or `page`, with `spec`. A page request's text ends with an example that must fail, which `sentinel` picks and the reply leaves out. A page that the deadline ends early reports its first unchecked example instead (`reference::page`). Otherwise a reply that doesn't report it raises `ValueError`, as does a reference reply whose counts by mode (`accounting`) show no case, so a worker that checked nothing never reads as a pass. A reference worker notes each case on stderr as it starts it (`case LINE`). Where an abort, such as a stack overflow, ends the worker, or the worker starts nothing for `_STALL` seconds, the last noted case gets the reply that `reference::crashed` gives, with its counts by mode, and the worker's other cases run again in a fresh worker of `bpl` while `limit` has time left, since the stopped worker's results never arrived. A stuck worker is closed, so no worker outlives the timing lock's hold (`_replies`). Each request gets what's left of `limit`."
-    try: r = worker.request({kind: spec}, timeout=limit.left(), stall=_STALL)
-    except (EOFError, TimeoutError) as e:
-        started = re.findall(r'^case (\d+)$', worker.diagnostics, re.M)
-        if kind != 'reference' or not started: raise
-        line = int(started[-1])
-        case = next(c for c in _reference_file(spec['text'])['cases'] if c['line'] == line)
-        tail = worker.diagnostics.rsplit(f'case {line}\n', 1)[-1].strip()
-        rest = [i for i in spec['ids'] if i not in (line, case['id'])]
-        try: limit.left()
-        except TimeoutError: rest = None
-        message = (str(e) if isinstance(e, TimeoutError) else 'the worker aborted') + (f': {tail}' if tail else '') + ('; the call reached its limit, so its other cases are unchecked' if rest is None else '')
-        failed = _reference_crashed(json.dumps(case), message)
-        if not rest: return failed
-        with Worker(bpl, cwd=worker.cwd, lock=False) as w: return _merged([failed, _checked(w, kind, dict(spec, ids=rest), sentinel, bpl, limit)])
-    if e := r['error']: raise ValueError(e['message'])
-    if kind == 'reference' and not r['accounting']: raise ValueError("the worker reported no case, so its result can't be trusted")
-    if sentinel is None or any(f.get('status') == 'unchecked' for f in r['failures']): return r
-    if sum(map(sentinel, r['failures'])) != 1: raise ValueError("the worker didn't report the example that must fail, so its result can't be trusted")
-    return dict(r, failures=[f for f in r['failures'] if not sentinel(f)])
-
-
-def _replies(kind, specs, sentinel=None, build=None, timeout=LIMIT, cwd=None):
-    "One reply (`_merged`) from what `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build, resolved once. The workers run while this holds the timing lock shared, as the reference test does, and share `timeout`'s limit (`worker.Limit`), counted while this holds the lock. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure and obligation holds its spec's file `name` as `file`, and its code's linear form (`syntax.linear`) as `linear`."
-    bpl, limit = resolved(build), Limit.of(timeout)
+def _check(request, build, timeout, cwd=None):
+    limit = Limit.of(timeout)
+    cwd = None if cwd is None else Path(cwd).expanduser().resolve()
     with timing_lock(), limit.running():
-        workers = [Worker(bpl, cwd=cwd, lock=False) for _ in specs]
-        pool = ThreadPoolExecutor(len(workers))
-        try: replies = [job.result() for job in [pool.submit(_checked, w, kind, s, sentinel, bpl, limit) for w, s in zip(workers, specs)]]
-        finally:
-            for w in workers: w.close()
-            pool.shutdown()
-    def tagged(r, s): return dict(r, **{k: [{'file': s.get('name'), **f, 'linear': linear(f['code'])} for f in r.get(k, [])] for k in ('failures', 'obligations')})
-    return _merged([tagged(r, s) for r, s in zip(replies, specs)])
+        seconds = limit.left()
+        if seconds is not None: request['timeout_ms'] = math.ceil(seconds*1000)
+        p = bounded([resolved(build).resolve(), '--worker'], None if seconds is None else seconds+1,
+            input=json.dumps(request, ensure_ascii=False)+'\n', cwd=cwd)
+    if p.returncode: raise EOFError(p.stderr or f'worker exited with status {p.returncode}')
+    reply = json.loads(p.stdout)['result']
+    if e := reply.pop('error', None): raise ValueError(e['message'])
+    return reply
 
 
 def check_file(
     path, # A `.bpl` reference file, or a directory of them
     ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
-    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    build:str=None, # The worker to check, resolved once: a path to a `bpl`, a retained build id, or None for the installed build
     timeout:float=LIMIT, # Seconds of work that the check gets, or a `Limit` to share (`worker.Limit`); None: no limit
     cwd:Path=None, # The workers' working directory, for relative `•load` paths; None: this process's
 ):
-    "Check the cases in `path` as `tests/reference.rs` does, with their route directives, in a fresh worker for each core that takes every n-th case of a file. Returns what the workers reply, as `reference::file_request` gives it: the `failures` in file and line order, the `obligations`, and the counts by mode under `accounting`."
-    files = sorted(Path(path).glob('*.bpl')) if Path(path).is_dir() else [Path(path)]
+    "Check `path` in the native reference queue. Return failures in file and line order, route obligations and counts by mode under `accounting`."
     if isinstance(ids, (int, str)): ids = [ids]
-    specs, known = [], set()
-    for file in files:
-        source = file.read_text()
-        cases = _reference_file(source)['cases']
-        known.update(k for c in cases for k in (c['id'], c['line']))
-        lines = [c['line'] for c in cases if ids is None or c['id'] in ids or c['line'] in ids]
-        n = max(1, min(os.cpu_count(), len(lines)))
-        specs += [dict(name=file.name, text=source, ids=lines[k::n]) for k in range(n) if lines[k::n]]
-    # An id that names no case goes to a worker for the first file, whose error names it.
-    if unknown := [i for i in ids or () if i not in known]:
-        specs = specs or [dict(name=files[0].name, text=files[0].read_text(), ids=[])]
-        specs[0]['ids'] += unknown
-    if not specs: raise ValueError(f'{path} holds no case to check')
-    result = _replies('reference', specs, build=build, timeout=timeout, cwd=cwd)
-    return dict(result, failures=sorted(result['failures'], key=lambda f: (f['file'], f['line'])))
+    spec = dict(path=str(Path(path).resolve()), ids=ids, child=str(resolved(build).resolve()))
+    result = _check(dict(check=spec), None, timeout, cwd)
+    for key in ('failures', 'obligations'):
+        for failure in result[key]: failure['linear'] = linear(failure['code'])
+    result['failures'].sort(key=lambda f: (f['file'], f['line']))
+    return result
 
 
 def check_page(
     path, # A `.qmd` page
-    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
+    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
     unbatched:bool=False, # Run each example with the `batch` pref off
     timeout:float=LIMIT # Seconds of work that the check gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
     text = Path(path).read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
     line = text.count('\n') - 1
-    return _replies('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build, timeout)['failures']
+    failures = _check(dict(page=dict(text=text, batch=False if unbatched else None)), build, timeout)['failures']
+    if not any(f.get('status') == 'unchecked' for f in failures):
+        if sum(f.get('line') == line for f in failures) != 1: raise ValueError("the worker didn't report the example that must fail, so its result can't be trusted")
+        failures = [f for f in failures if f.get('line') != line]
+    return [{'file': None, **f, 'linear': linear(f['code'])} for f in failures]
 
 def _kind(r):
     "A mismatch's kind, as `reference::Difference` records it under `mismatch`, with `in an item` where it lies inside a nested item."
@@ -1433,12 +1391,12 @@ def logged_counts(
     "Each case's counts for each item that `log` gives, keyed by its section and label, as `{measure: count}`: from the count tests' lines (`basedpl_testkit::timing::Counted::line`) and from cost lines that end in counts (`rustymath_timing::line`). A case that the log counts more than once gives its last counts."
     if isinstance(log, Path) or '\n' not in log: log = Path(log).expanduser().read_text()
     found = {}
-    for m in filter(None, (_COUNTED.match(line) or _LOGGED.match(line) for line in log.splitlines())):
+    for m in filter(None, (_COUNTED.match(line) or _LOGGED.match(line) for line in map(str.lstrip, log.splitlines()))):
         if m['counts']: found[m['section'], m['code']] = {k: float(v) for k, v in re.findall(r'(\w+) ([\d.]+)', m['counts'])}
     return found
 
 def set_counts(
-    log, # What a speed test prints with `<NAME>_COSTS` set, or the path of a file that holds it, as `logged_counts` takes it
+    log, # Counts from `logged_counts`, speed-test output (including nextest), or the path of its log
     path=_SPEED, # A BPL file/directory, or Rustymath's speed.txt or speed_python.txt
     platform:str=None, # The column to write: 'macos' or 'linux'; None: this machine's (`_platform`)
 )->CountChanges:

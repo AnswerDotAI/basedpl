@@ -470,7 +470,7 @@ impl PyOperator {
     fn __repr__(&self) -> String { self.inner.to_string() }
 }
 /// What a request runs: source code, or a function called with arguments.
-enum Run { Code(String), Call(Function, Vec<Value>) }
+enum Run { Code(String), Call(Function, Vec<Value>), Expression(String, Vec<(std::ops::Range<usize>, Value, bool)>) }
 struct EvalRequest { run: Option<Run>, bindings: Vec<(String, Operand)>, options: EvalOptions }
 impl EvalRequest {
     fn run(&mut self, session: &Session) -> Result<Evaluation, &'static str> {
@@ -482,6 +482,7 @@ impl EvalRequest {
         let options = std::mem::take(&mut self.options);
         Ok(match &self.run {
             Some(Run::Code(code)) => session.eval_with(code, options), Some(Run::Call(function, args)) => session.call_function_with(function, args, options),
+            Some(Run::Expression(code, parts)) => session.eval_embedded(code, parts.clone(), options),
             None => Evaluation::default()
         })
     }
@@ -532,6 +533,19 @@ impl PySession {
             Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
         };
         response(py, result)
+    }
+    /// Evaluate ordinary BPL syntax with native `(start, end, object, literal)` parts replacing its placeholder tokens; literal data keeps its weak kind and normal stranding.
+    #[pyo3(signature = (source, parts, *, timeout=None, show=None))]
+    fn expression(
+        &self, py: Python<'_>, source: String, parts: Vec<(usize, usize, Bound<'_, PyAny>, bool)>, timeout: Option<f64>, show: Option<Py<PyAny>>
+    ) -> PyResult<Py<PyDict>> {
+        let parts = parts.into_iter().map(|(start, end, part, literal)| {
+            let value = if let Ok(f) = part.extract::<PyRef<'_, PyFunction>>() { Value::Function(f.inner.clone()) }
+                else if let Ok(op) = part.extract::<PyRef<'_, PyOperator>>() { Value::Operator(op.inner.clone()) }
+                else { part.extract::<PyRef<'_, PyArray>>()?.value()?.clone() };
+            Ok((start..end, value, literal))
+        }).collect::<PyResult<_>>()?;
+        self.request(py, EvalRequest { run: Some(Run::Expression(source, parts)), bindings: Vec::new(), options: options(timeout, false)? }, show)
     }
     /// The array that the Python data `obj` gives. Python floats take the default float width.
     fn array(&self, obj: &Bound<'_, PyAny>) -> PyResult<PyArray> {
@@ -687,13 +701,6 @@ fn _reference_accounting(py: Python<'_>, results: &str) -> PyResult<Py<PyAny>> {
     )
 }
 
-/// The reference reply (`reference::reply`) for `case`, given as JSON, when the worker checking it stopped (`reference::crashed`), with `message` saying why.
-#[pyfunction]
-fn _reference_crashed(py: Python<'_>, case: &str, message: &str) -> PyResult<Py<PyAny>> {
-    let case: serde_json::Value = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    python(py, &basedpl_testkit::reference::reply(vec![basedpl_testkit::reference::crashed(&case, message)]))
-}
-
 /// A case's budget for `cost` in `section`, as a footer or budget line writes it, by the rule that `rustymath_timing::budget` holds.
 #[pyfunction]
 #[pyo3(signature = (section, cost, estimate=false))]
@@ -751,7 +758,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
     m.add_function(wrap_pyfunction!(_reference_file, m)?)?;
     m.add_function(wrap_pyfunction!(_reference_accounting, m)?)?;
-    m.add_function(wrap_pyfunction!(_reference_crashed, m)?)?;
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;

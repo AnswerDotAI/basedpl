@@ -834,7 +834,7 @@ impl Function {
 #[derive(Clone, Debug)]
 pub(crate) struct Closure { definition: Arc<Definition>, environment: Option<usize>, module: usize }
 
-impl Closure { fn text(&self) -> &str { self.definition.span.text() } }
+impl Closure { fn text(&self) -> &str { self.definition.text() } }
 impl PartialEq for Closure {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.definition, &other.definition) && (self.environment, self.module) == (other.environment, other.module)

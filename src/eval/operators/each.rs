@@ -1,14 +1,14 @@
 //! Each (`¨`).
 use super::*;
 
-/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. They become the result's items, or with `mixed` they mix into one array whose numbers keep their kinds, as Rank mixes them. `mixed` gives the message for results that don't mix. It first tries one call on batches of all the cells, from the whole arguments that `whole` builds (`batch::tried`), except for one cell of atoms. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`.
+/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. They become the result's items, or with `mixed` they mix into one array whose numbers keep their kinds, as Rank mixes them. `mixed` gives the message for results that don't mix. Before per-cell calls, `arguments` supplies whole arguments for a batched try, except for one cell of atoms. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`.
 pub(super) fn each_pair(
     operand: &Function, len: usize, layout: crate::array::Layout, pair: impl Fn(usize) -> Result<(Option<Value>, Value), Error>,
-    whole: impl FnOnce() -> Option<crate::batch::Arguments>, mixed: Option<&'static str>, span: &Span) -> Result<Bound, Error> {
+    arguments: impl FnOnce() -> Option<crate::batch::Arguments>, mixed: Option<&'static str>, span: &Span) -> Result<Bound, Error> {
     // One cell of atoms runs faster on its own than through a batched call. A cell of rank 1 or more doesn't.
     let atoms = len == 1 && { let (x, y) = pair(0)?; x.as_ref().is_none_or(Value::is_atom) && y.is_atom() };
     if !atoms || crate::session().tracing().is_some() {
-        if let Some(result) = crate::batch::tried(operand, whole, &layout, mixed.is_some(), span) { return result.map(Bound::from); }
+        if let Some(result) = crate::batch::tried(operand, arguments, &layout, mixed.is_some(), span) { return result.map(Bound::from); }
     }
     // A recording can take the batched route; reject only the per-item fallback here.
     if len != 0 && crate::session().tracing().is_some() {
@@ -69,21 +69,9 @@ pub(super) fn items_whole(a: &Value) -> (Value, usize) {
         let rank = item.shape().len();
         return (item, rank);
     }
-    stacked(a).unwrap_or_else(|| (a.clone(), 0))
-}
-
-/// One compact array whose cells are the items of the nested array `a`, and their rank, where every item is a compact array of one layout and dtype: each cell then holds exactly an item, with no padding or widening. It gathers the items in one pass and gives up at the first that differs.
-fn stacked(a: &Value) -> Option<(Value, usize)> {
-    use crate::array::{Gather, Items, Widening};
-    if !a.holds_values() { return None; }
-    let Items::Values(items @ [first, ..]) = a.as_items() else { return None };
-    let (dtype, layout, size) = (first.dtype().filter(|_| !first.is_atom())?, first.layout(), first.len());
-    let mut data = Gather::with_widening(&[first], items.len() * size, Widening::Items);
-    for item in items {
-        if item.is_atom() || item.dtype() != Some(dtype) || item.layout() != layout { return None; }
-        data.extend(item, 0..size);
-    }
-    Some((data.finish(a.layout().concat(layout), || first.prototype()).ok()?, layout.shape().len()))
+    if a.holds_values() && let crate::array::Items::Values(items) = a.as_items()
+        && let Some(whole) = crate::batch::stacked(a.layout(), items.iter()) { return whole; }
+    (a.clone(), 0)
 }
 
 /// `operand` on each item of `right`, with `left` whole for each: how a builtin that takes items maps over a right argument that holds several (`primitive::Item::maps`). It's Each with `left` enclosed.
