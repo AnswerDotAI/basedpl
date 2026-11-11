@@ -5,22 +5,35 @@ Repeat a prefix chord to type its character, or release modifiers before its nex
 
 Chord	Output or prefix
 Option-q	quad prefix
+Option-Shift-q	θ
 Option-s	⌈
+Option-Shift-s	σ
 Option-d	⌊
+Option-Shift-d	δ
 Option-f	∂
+Option-Shift-f	φ
 Option-h	←
+Option-Shift-h	η
 Option-g	∇
+Option-Shift-g	γ
 Option-w	ω
 Option-x	⊃
+Option-Shift-x	ξ
 Option-c	∩
+Option-Shift-c	χ
 Option-v	∪
 Option-b	⊥
+Option-Shift-b	β
 Option-a	α
 Option-z	⊂
+Option-Shift-z	ζ
 Option-e	∊
+Option-Shift-e	ε
 Option-r	ρ
 Option-y	•
+Option-Shift-y	ψ
 Option-t	∘
+Option-Shift-t	τ
 Control-Option-Shift-&	diaeresis prefix
 Option-Shift-é	⌽
 Option-Shift-"	√
@@ -37,14 +50,17 @@ Option-Shift-à	⍬
 Control-Option-Shift-à	∧
 Option-o	circle prefix
 Option-u	÷
+Option-Shift-u	υ
 Option-i	ι
 Option-p	π
 Control-Option-p	stile prefix
 Option-l	↦
+Option-Shift-l	λ
 Option-j	↓
 Option-k	↑
 Option-Shift-k	↕
 Option-m	×
+Option-Shift-m	μ
 Control-Option-`	◇
 Option-;	⊣
 Option-Shift-;	↣

@@ -112,6 +112,6 @@ def test_regional_layouts_preserve_native_typing_and_bpl():
              ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION)], 'α'),
              ('fr', [(18, SHIFT), (20, PLAIN)], '1"'), ('fr', [(23, OPTION_SHIFT), (27, OPTION_SHIFT)], '[]'),
              ('fr', [(33, PLAIN), (14, PLAIN)], 'ê'), ('es', [(41, SHIFT), (39, PLAIN), (0, PLAIN)], 'Ñá'),
-             ('es', [(14, OPTION_SHIFT)], '€'), ('es', [(33, PLAIN), (1, OPTION_SHIFT)], '`'),
+             ('us', [(1, OPTION_SHIFT)], 'σ'), ('es', [(14, OPTION_SHIFT)], 'ε'),
              ('es', [(11, OPTION_SHIFT)], 'β')]
     for lang, presses, wanted in cases: assert simulate(parse(keylayout(layout, lang)), presses) == wanted, lang

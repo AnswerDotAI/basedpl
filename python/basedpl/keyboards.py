@@ -123,7 +123,7 @@ def character(value, base):
 
 
 def shortcuts(layout, lang, base):
-    "Assign BPL shortcuts to local keys, preserving native Option ASCII and accent keys."
+    "Assign BPL shortcuts; extra shifted letters can replace native symbols, but not BPL bindings."
     optional = layout['optional_shift']
     keys = {int(code): values for code, values in base['keys'].items() if int(code) <= 50}
     bindings = {char: (next(code for code, values in keys.items() if character(values[PLAIN], base) == label), index)
@@ -147,10 +147,7 @@ def shortcuts(layout, lang, base):
                 native = keys[code][dest]
                 accent = isinstance(native, dict) and OPTION_ACCENTS.get(lang, True)
                 ascii_key = isinstance(native, str) and len(native) == 1 and native.isascii() and native.isprintable() and native != ' '
-                # Extra shifted letters use only native fallbacks, including after an accent.
-                if char in optional and char.isalpha():
-                    if native not in ('', label, char) or any(f'{code}:{dest}' in s['keys'] for s in base['states'].values()): continue
-                elif dest in (OPTION, OPTION_SHIFT) and (accent or ascii_key): continue
+                if not (char in optional and char.isalpha()) and dest in (OPTION, OPTION_SHIFT) and (accent or ascii_key): continue
                 targets.append((code, dest))
         target = next((p for p in targets if p not in used), None)
         if target is None and char in optional: continue
