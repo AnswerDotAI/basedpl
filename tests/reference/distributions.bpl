@@ -50,7 +50,7 @@ d←1 2 •distribution "inversegamma"
 [*¯1 0.5×*¯1 2]
 
 ⍝ distribution:chisquared — Two degrees of freedom is exponential
-d←2 •distribution "chisquared" ⋄ [d.density 2;d.cdf 2]
+d←2 •distribution "chisquared" ◇ [d.density 2;d.cdf 2]
 [0.5×*¯1 1-*¯1]
 
 ⍝ distribution:cauchy-student — Student t with one degree of freedom
@@ -86,13 +86,13 @@ d←0 1 •distribution "logistic"
 
 ⍝ distribution:layout — Nested, keyed and empty inputs
 d←0 1 •distribution "uniform"
-[d.cdf "a" "b":0.25 0.5;d.cdf [[0.25 0.5] 0⍴⊂[0.25 0.5]]]
+[d.cdf "a" "b":0.25 0.5;d.cdf [[0.25 0.5] 0ρ⊂[0.25 0.5]]]
 ⍝ =>
-[["a":0.25 "b":0.5] [[0.25 0.5] 0⍴⊂[0 0]]]
+[["a":0.25 "b":0.5] [[0.25 0.5] 0ρ⊂[0 0]]]
 
 ⍝ distribution:shapes — Shape argument controls unit and empty draws
 d←0 1 •distribution "normal"
-[⍴d.sample ⍬;⍴d.sample 2 0 3;⍴d.sample 2 3]
+[ρd.sample ⍬;ρd.sample 2 0 3;ρd.sample 2 3]
 ⍝ =>
 [⍬;2 0 3;2 3]ₓ
 
@@ -103,10 +103,10 @@ d←1 •distribution "bernoulli"
 [[1 1 1]ₓ;0 1;0 1;[1 1 1]ₓ]
 
 ⍝ distribution:bad-probability — A probability outside [0,1] gives NaN
-d←0 1 •distribution "normal" ⋄ d.quantile 1.01   ⍝ $n
+d←0 1 •distribution "normal" ◇ d.quantile 1.01   ⍝ $n
 
 ⍝ distribution:bad-shape — Sampling needs integer dimensions
-d←0 1 •distribution "normal" ⋄ d.sample 1.5
+d←0 1 •distribution "normal" ◇ d.sample 1.5
 ⍝ error: DOMAIN ERROR
 
 ⍝ distribution:bad-scale — Gamma scale cannot be zero
@@ -141,15 +141,15 @@ e←•distribution "exponential"
 ⍝ error: DOMAIN ERROR
 
 ⍝ distribution:bad-valence — Only sample takes a left argument, and it must be a generator
-d←0 1 •distribution "normal" ⋄ 2 d.sample 3
+d←0 1 •distribution "normal" ◇ 2 d.sample 3
 ⍝ error: DOMAIN ERROR
 
 ⍝ —
-d←0 1 •distribution "normal" ⋄ 2 d.density 3
+d←0 1 •distribution "normal" ◇ 2 d.density 3
 ⍝ error: SYNTAX ERROR
 
 ⍝ distribution:sample-limit — Check allocations before drawing
-d←0 1 •distribution "normal" ⋄ d.sample 1000000001
+d←0 1 •distribution "normal" ◇ d.sample 1000000001
 ⍝ error: LIMIT ERROR
 
 ⍝ distribution:integer-limit — Trial count is checked before floating-point rounding
@@ -180,98 +180,98 @@ a≡¿6 6 6   ⍝ $t
 
 ⍝ distribution:map-draws — A variable-shape map executes one draw per cell
 •prefs ["seed":7]
-a←•explain "{¿⍵⍴6}¨1 3"
-x←¿8⍴1000000
+a←•explain "{¿ωρ6}¨1 3"
+x←¿8ρ1000000
 •prefs ["seed":7]
-b←•explain "[¿1⍴6;¿3⍴6]"
-[a.value≡b.value;x≡¿8⍴1000000]   ⍝ $t $t
+b←•explain "[¿1ρ6;¿3ρ6]"
+[a.value≡b.value;x≡¿8ρ1000000]   ⍝ $t $t
 
 ⍝ distribution:generator-map-draws — Each fallback draw advances an explicit generator once
 g←•rand 3
-a←•explain "{g.roll ⍵⍴6}¨1 3"
+a←•explain "{g.roll ωρ6}¨1 3"
 h←•rand 3
-b←•explain "[h.roll 1⍴6;h.roll 3⍴6]"
-[a.value≡b.value;(g.roll 8⍴1000000)≡h.roll 8⍴1000000]   ⍝ $t $t
+b←•explain "[h.roll 1ρ6;h.roll 3ρ6]"
+[a.value≡b.value;(g.roll 8ρ1000000)≡h.roll 8ρ1000000]   ⍝ $t $t
 
 ⍝ distribution:map-rank — Rank and Each use the same whole-array draw
 •prefs ["seed":7]
-x←{¿6}¨⍳4
+x←{¿6}¨ι4
 •prefs ["seed":7]
-y←({¿6}⍤0)⍳4
+y←({¿6}⍤0)ι4
 x≡y   ⍝ $t
 
 ⍝ distribution:batched-draws — A batched draw reproduces its whole result when reseeded and called with the same spelling
 •prefs ["seed":7]
-e←•explain "{⍵+¿10}¨⍳6"
+e←•explain "{ω+¿10}¨ι6"
 •prefs ["seed":7]
-a←•explain "{⍵+¿10}¨⍳6"
+a←•explain "{ω+¿10}¨ι6"
 [e.value≡a.value;6=≢e.value;0ₓ=≢e.fallbacks.reason]   ⍝ $t $t $t
 
 ⍝ distribution:batched-order — Multiple draws remain distinct and reproducible
 •prefs ["seed":7]
-a←•explain "{(¿10)+100×¿10}¨⍳3"
+a←•explain "{(¿10)+100×¿10}¨ι3"
 •prefs ["seed":7]
-b←•explain "{(¿10)+100×¿10}¨⍳3"
+b←•explain "{(¿10)+100×¿10}¨ι3"
 [a.value≡b.value;3=≢a.value;0ₓ=≢a.fallbacks.reason]   ⍝ $t $t $t
 
 ⍝ distribution:batched-arguments — Roll respects each bound; deals have the requested length and no repeats
 •prefs ["seed":7]
 g←•rand 7
-a←(•explain "{¿⍵}¨5 6 7 8").value
-b←{3¿⍵}¨10 20 30
-c←{g.roll ⍵}¨5 6 7 8
-[a≡c;∧/a<5 6 7 8;∧/3=≢¨b;∧/3={≢∪⍵}¨b]   ⍝ $t $t $t $t
+a←(•explain "{¿ω}¨5 6 7 8").value
+b←{3¿ω}¨10 20 30
+c←{g.roll ω}¨5 6 7 8
+[a≡c;∧/a<5 6 7 8;∧/3=≢¨b;∧/3={≢∪ω}¨b]   ⍝ $t $t $t $t
 
 ⍝ distribution:batched-generator — Captured explicit and session generators retain independent seeded streams
 •prefs ["seed":7]
 g←•rand 3
 d←2 0.5 •distribution "binomial"
-a←•explain "{⍵+(g.roll 10)+d.sample 1}¨⍳5"
+a←•explain "{ω+(g.roll 10)+d.sample 1}¨ι5"
 •prefs ["seed":7]
 g←•rand 3
-b←•explain "{⍵+(g.roll 10)+d.sample 1}¨⍳5"
+b←•explain "{ω+(g.roll 10)+d.sample 1}¨ι5"
 [a.value≡b.value;0ₓ=≢a.fallbacks.reason]   ⍝ $t $t
 
 ⍝ distribution:batched-cells — Drawn arrays preserve cell shapes, including rejection samplers; a generator created in each cell is fresh
 •prefs ["seed":7]
 d←100 0.3 •distribution "binomial"
-a←{(¿3⍴10)+⍵}¨⍳4
-b←{d.sample 500}¨⍳4
-c←{g←•rand 5 ⋄ 3 g.deal ⍵}¨4⍴1000
+a←{(¿3ρ10)+ω}¨ι4
+b←{d.sample 500}¨ι4
+c←{g←•rand 5 ◇ 3 g.deal ω}¨4ρ1000
 k←•rand 5
-[(≢¨a)≡4⍴3;(≢¨b)≡4⍴500;∧/0≤∊b;∧/100≥∊b;c≡4⍴⊂(3 k.deal 1000)]
+[(≢¨a)≡4ρ3;(≢¨b)≡4ρ500;∧/0≤∊b;∧/100≥∊b;c≡4ρ⊂(3 k.deal 1000)]
 ⍝ =>
 $t $t $t $t $t
 
 ⍝ distribution:batched-nested — Nested maps retain both frames and reproduce their seeded draws
 •prefs ["seed":7]
-a←•explain "{{¿10}¨⍳3}¨⍳4"
+a←•explain "{{¿10}¨ι3}¨ι4"
 •prefs ["seed":7]
-b←•explain "{{¿10}¨⍳3}¨⍳4"
-[a.value≡b.value;4=≢a.value;(≢¨a.value)≡4⍴3]   ⍝ $t $t $t
+b←•explain "{{¿10}¨ι3}¨ι4"
+[a.value≡b.value;4=≢a.value;(≢¨a.value)≡4ρ3]   ⍝ $t $t $t
 
 ⍝ distribution:batched-guard — Each branch draws within its own bounds
 •prefs ["seed":7]
-a←{⍵<2?¿10;100+¿10}¨⍳4
-[(2↑a)∊⍳10;(2↓a)∊100+⍳10]
+a←{ω<2?¿10;100+¿10}¨ι4
+[(2↑a)∊ι10;(2↓a)∊100+ι10]
 ⍝ =>
 [$t $t;$t $t]
 
 ⍝ distribution:batched-restore — Falling back after a draw does not duplicate external writes
 y←0
-f←{x←⍵+¿10 ⋄ y+←1 ⋄ x}
+f←{x←ω+¿10 ◇ y+←1 ◇ x}
 •prefs ["seed":7]
-a←•explain "f¨⍳5"
+a←•explain "f¨ι5"
 •prefs ["seed":7]
-b←f¨⍳5
+b←f¨ι5
 [a.value≡b;y]   ⍝ $t 10
 
 ⍝ distribution:batched-scalars — Formatting drawn cells does not execute their draws twice
 g←•rand 7
-a←•explain "{x←⍵+(g.roll 0) ⋄ ⍎⍕x}¨⍳5"
+a←•explain "{x←ω+(g.roll 0) ◇ ⍎⍕x}¨ι5"
 h←•rand 7
 b←•explain "[0+h.roll 0;1+h.roll 0;2+h.roll 0;3+h.roll 0;4+h.roll 0]"
-[a.value≡b.value;(g.roll 8⍴1000000)≡h.roll 8⍴1000000]   ⍝ $t $t
+[a.value≡b.value;(g.roll 8ρ1000000)≡h.roll 8ρ1000000]   ⍝ $t $t
 
 ⍝ distribution:session-seed-domain — The seed is one nonnegative whole number
 •prefs ["seed":¯1]

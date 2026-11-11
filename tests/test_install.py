@@ -17,3 +17,13 @@ def test_install_for_user(tmp_path):
     if sys.platform == 'darwin':
         source = ASSETS/'macos/BasedPL-de.bundle/Contents/Resources/BasedPL-de.keylayout'
         assert (tmp_path/'Library/Keyboard Layouts/BasedPL-de.bundle/Contents/Resources'/source.name).read_bytes() == source.read_bytes()
+
+
+def test_font_spellings():
+    from fontTools.ttLib import TTFont
+    root = Path(__file__).resolve().parents[1]
+    for name, web in [('SAX2B', root/'python/basedpl/browser'), ('BQN386B', root/'nbs/fonts')]:
+        for path in [ASSETS/f'fonts/{name}.ttf', web/f'{name}.woff2']:
+            with TTFont(path) as font:
+                for cmap in font['cmap'].tables:
+                    if cmap.isUnicode(): assert all(cmap.cmap[ord(a)] == cmap.cmap.get(ord(b)) for a, b in zip('⍺⍵⍳⍴⍟⋄', 'αωιρ⊛◇'))

@@ -221,7 +221,7 @@ impl Exact {
     }
 }
 
-/// A function with real results, which `ₐ` after a primitive reaches: monadic `√` and `⍟`, dyadic `*`, and `○` and `○⁻` by code, which give the real part where the result would leave the real domain (rustymath's `RealSqrt`, `RealLn`, `RealPow` and `RealCircle`). Each shares the row of the primitive it modifies, as `Exact` does.
+/// A function with real results, which `ₐ` after a primitive reaches: monadic `√` and `⊛`, dyadic `*`, and `○` and `○⁻` by code, which give the real part where the result would leave the real domain (rustymath's `RealSqrt`, `RealLn`, `RealPow` and `RealCircle`). Each shares the row of the primitive it modifies, as `Exact` does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Real { Sqrt, Ln, Pow, Circle, Arc }
 impl Real {
@@ -257,7 +257,7 @@ impl Primitive {
             _ => None,
         }
     }
-    /// The primitive that `x p⁻ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, `⍟` and `*` for each other, `⊥` for `⊤`, and `-` and `π` for themselves. `÷` isn't one: `0÷⁻y` has no inverse, where `0÷y` gives a value. The binder's `p⁻` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`), and `inverse` calls it for `(x↣p)⁻ y`.
+    /// The primitive that `x p⁻ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, `⊛` and `*` for each other, `⊥` for `⊤`, and `-` and `π` for themselves. `÷` isn't one: `0÷⁻y` has no inverse, where `0÷y` gives a value. The binder's `p⁻` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`), and `inverse` calls it for `(x↣p)⁻ y`.
     pub(crate) fn left_inverse(self) -> Option<Primitive> {
         use Math::*;
         match self {
@@ -287,7 +287,7 @@ impl Primitive {
     }
 }
 
-/// A function without a glyph. `•special` makes the ones in `ALL`, named as SciPy names them. `∂` records `Sign`, `|`'s slope in floats, and `BinomDn` and `BinomDk`, the slopes of `!`'s binomial in n and in k. `LambertW` is the inverse of the hook `×↢*`. The form rewriter puts the rest in place of the combinations they compute by an algorithm of their own (`eval/rewrite.rs`): `Log1p` and `Expm1` for `⍟1+⍵` and `¯1+*⍵`, `Selected` for a selection from an order, `Ranks` for a grade of a grade, `GroupCounts` and `GroupFolds` for Key's count and fold of each group, and `Determinant` and `Permanent` for monadic `-.×` and `+.×`. `Polygamma`, `Beta`, `Gammainc`, `Betainc`, the binomial's slopes and `GroupFolds` take two arguments, `Selected` and `GroupCounts` one or two, and the others one.
+/// A function without a glyph. `•special` makes the ones in `ALL`, named as SciPy names them. `∂` records `Sign`, `|`'s slope in floats, and `BinomDn` and `BinomDk`, the slopes of `!`'s binomial in n and in k. `LambertW` is the inverse of the hook `×↢*`. The form rewriter puts the rest in place of the combinations they compute by an algorithm of their own (`eval/rewrite.rs`): `Log1p` and `Expm1` for `⊛1+ω` and `¯1+*ω`, `Selected` for a selection from an order, `Ranks` for a grade of a grade, `GroupCounts` and `GroupFolds` for Key's count and fold of each group, and `Determinant` and `Permanent` for monadic `-.×` and `+.×`. `Polygamma`, `Beta`, `Gammainc`, `Betainc`, the binomial's slopes and `GroupFolds` take two arguments, `Selected` and `GroupCounts` one or two, and the others one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Special {
     Gammaln, Digamma, Polygamma, Erf, Erfc, Erfinv, Beta, Gammainc, Betainc, BetaincAt([u64; 2]), Sign, BinomDn, BinomDk, Log1p, Expm1, LambertW,

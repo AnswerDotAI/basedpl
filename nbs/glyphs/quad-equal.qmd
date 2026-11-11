@@ -5,7 +5,7 @@ Monadic operator. Keys: `Alt-q =`. Hanzi: `组` (`組`)
 `K f⌸Y` groups major cells of `Y` by corresponding keys in `K`. Calls `key f group`; groups appear in first-occurrence order.
 
 ```bpl
-1 1 2{+/⍵}⌸10 20 30 ⍝ 30 30
+1 1 2{+/ω}⌸10 20 30 ⍝ 30 30
 ```
 
 `f⌸Y` uses `Y` as keys and their positions as values.

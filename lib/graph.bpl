@@ -10,231 +10,231 @@ _array←•load "./array.bpl"
 ⍝ From http://dfns.dyalog.com/c_assign.htm
 
 assign ← {  ⍝ Hungarian method cost assignment.
-  step_0←{step_1 ⌽⌈\⌽⍴⍵ ↑ ⍵}  ⍝ 0: at least as many rows as cols.
-  step_1←{step_2⊃ ↓⍵ - ⌊/⍵}
+  step_0←{step_1 ⌽⌈\⌽ρω ↑ ω}  ⍝ 0: at least as many rows as cols.
+  step_1←{step_2⊃ ↓ω - ⌊/ω}
   step_2←{  ⍝ 2: mark independent zeros.
     stars←{  ⍝ independent zeros.
-      ~$t∊,⍵?⍺;  ⍝ no more zeros: done.
-      next←{⍵∧1ₓ=+\⍵}{⍵∧1ₓ=+⍀⍵}⍵
+      ~$t∊,ω?α;  ⍝ no more zeros: done.
+      next←{ω∧1ₓ=+\ω}{ω∧1ₓ=+⍀ω}ω
       mask←rows⁝next ∨ cols⁝next  ⍝ mask of dependent rows and cols.
-      ⍺∨next ∇ ⍵>mask  ⍝ ⍺-accumulated star matrix.
+      α∨next ∇ ω>mask  ⍝ α-accumulated star matrix.
     }
-    zeros←{⍵ + $f stars ⍵}⍵=0  ⍝ 1=>zero, 2=>independent zero.
-    step_3 [⍵ zeros]  ⍝ next step: 3.
+    zeros←{ω + $f stars ω}ω=0  ⍝ 1=>zero, 2=>independent zero.
+    step_3 [ω zeros]  ⍝ next step: 3.
   }
-  step_3←{[costs zeros]←⍵  ⍝ 3: cover cols with starred zeros.
+  step_3←{[costs zeros]←ω  ⍝ 3: cover cols with starred zeros.
     stars←zeros=2ₓ  ⍝ starred zeros.
     covers←⊽cols stars  ⍝ covered cols.
     ~0ₓ∊,covers?stars;  ⍝ all cols covered: solution.
     step_4 [costs zeros covers]  ⍝ next step: 4.
   }
-  step_4←{[costs zeros covers]←⍵  ⍝ 4: adjust covering lines.
+  step_4←{[costs zeros covers]←ω  ⍝ 4: adjust covering lines.
     mask←covers=0ₓ  ⍝ mask of uncovered elements.
     open←1ₓ=mask×zeros  ⍝ uncovered zeros.
-    ~$t∊,open?(⌊/ ,mask # ,costs)step_6 ⍵;  ⍝ no uncovered zeros, next step :6.
+    ~$t∊,open?(⌊/ ,mask # ,costs)step_6 ω;  ⍝ no uncovered zeros, next step :6.
     prime←first open  ⍝ choose first uncovered zero.
     prow←rows prime  ⍝ row containing prime.
     star←2ₓ=zeros×prow  ⍝ star in row containing prime.
     ~$t∊,star?prime step_5 {  ⍝ no star in row, next step :5,
-      [costs ⍵ prime]  ⍝ adjusted zeros matrix,
+      [costs ω prime]  ⍝ adjusted zeros matrix,
     }zeros+⊽prime;  ⍝ new primed zero (3).
     cnext←covers+prow-⊽cols⁝star  ⍝ adjusted covers.
     znext←zeros⌈3ₓ×prime  ⍝ primed zero.
     ∇ [costs znext cnext]  ⍝ adjusted zeros and covers
   }
-  step_5←{[costs zeros prime]←⍵  ⍝ 5: exchange starred zeros.
+  step_5←{[costs zeros prime]←ω  ⍝ 5: exchange starred zeros.
     star←cols⁝prime ∧ zeros=2ₓ  ⍝ next star.
-    ~$t∊,star?step_3 ⍺{  ⍝ no stars: next step :3.
-      {[costs ⍵]}{⍵-⊽⍵=3ₓ}⍵-⍺∧⍵>1ₓ  ⍝ unstarred stars; starred primes.
+    ~$t∊,star?step_3 α{  ⍝ no stars: next step :3.
+      {[costs ω]}{ω-⊽ω=3ₓ}ω-α∧ω>1ₓ  ⍝ unstarred stars; starred primes.
     }zeros;  ⍝ adjusted zero markers.
     pnext←rows⁝star ∧ zeros=3ₓ  ⍝ next prime.
-    ⍺∨pnext∨star ∇ [costs zeros pnext]  ⍝ ⍺-accumulated prime-star-··· path.
+    α∨pnext∨star ∇ [costs zeros pnext]  ⍝ α-accumulated prime-star-··· path.
   }
-  step_6←{[costs zeros covers]←⍵  ⍝ 6: adjust cost matrix.
-    cnext←costs+⍺×[¯1 1]ₓ+.×[0 3]ₓ=⊗covers
+  step_6←{[costs zeros covers]←ω  ⍝ 6: adjust cost matrix.
+    cnext←costs+α×[¯1 1]ₓ+.×[0 3]ₓ=⊗covers
     znext←zeros + ×costs - ×cnext  ⍝ amended zeros marker.
     step_4 [cnext znext covers]  ⍝ next step: 4.
   }
-  rows←{⍴⍵ ⍴ ↑⌽⍴⍵ # ∨/⍵}
-  cols←{⍴⍵ ⍴ ∨⌿⍵}  ⍝ column propagation.
-  first←{⍴⍵ ⍴ {⍵∧1ₓ=+\⍵},⍵}
-  ⍴⍵ ↑ step_0 ⍵  ⍝ start with step 0.
+  rows←{ρω ρ ↑⌽ρω # ∨/ω}
+  cols←{ρω ρ ∨⌿ω}  ⍝ column propagation.
+  first←{ρω ρ {ω∧1ₓ=+\ω},ω}
+  ρω ↑ step_0 ω  ⍝ start with step 0.
 }
 
 ⍝ From http://dfns.dyalog.com/n_alists.htm
 
-gperm ← {⊂⍵ ⍳¨ [⍵]⌷⍺}  ⍝ ⍵-permutation of vertices of graph ⍺.
+gperm ← {⊂ω ι¨ [ω]⌷α}  ⍝ ω-permutation of vertices of graph α.
 
 ⍝ From http://dfns.dyalog.com/n_insnode.htm
 
-insnode ← {  ⍝ Insert vertex ⍵ in graph ⍺.
-  n←≥⍵  ⍝ vertex ⍵ is item ⍵, so the graph needs ⍵+1 items.
-  n⌈≢⍺ ↑ ⍺,n⍴⊂⍬  ⍝ extend graph with sufficient nulls.
+insnode ← {  ⍝ Insert vertex ω in graph α.
+  n←≥ω  ⍝ vertex ω is item ω, so the graph needs ω+1 items.
+  n⌈≢α ↑ α,nρ⊂⍬  ⍝ extend graph with sufficient nulls.
 }
 
 ⍝ From http://dfns.dyalog.com/n_remnode.htm
 
-remnode ← {  ⍝ Remove vertex ⍵ from graph ⍺.
-  new←⍵≠⍳⍴⍺ # ⍺~¨⊂[⍵]  ⍝ graph with vertex ⍵ removed,
-  new-new>⍵  ⍝ and edges adjusted.
+remnode ← {  ⍝ Remove vertex ω from graph α.
+  new←ω≠ιρα # α~¨⊂[ω]  ⍝ graph with vertex ω removed,
+  new-new>ω  ⍝ and edges adjusted.
 }
 
 ⍝ From http://dfns.dyalog.com/n_inslink.htm
 
-inslink ← {  ⍝ Graph ⍺ with new edge ⍵.
-  [fm to]←⍵  ⍝ edge
-  ∪↢to∘,@fm ⍺  ⍝ graph with new edge ⍵.
+inslink ← {  ⍝ Graph α with new edge ω.
+  [fm to]←ω  ⍝ edge
+  ∪↢to∘,@fm α  ⍝ graph with new edge ω.
 }
 
 ⍝ From http://dfns.dyalog.com/n_remlink.htm
 
-remlink ← {  ⍝ Graph ⍺ without edge ⍵.
-  [fm to]←⍵  ⍝ edge
-  ~↢[to]@fm ⍺  ⍝ graph without edge ⍵.
+remlink ← {  ⍝ Graph α without edge ω.
+  [fm to]←ω  ⍝ edge
+  ~↢[to]@fm α  ⍝ graph without edge ω.
 }
 
 ⍝ From http://dfns.dyalog.com/n_search.htm
 
-search ← {  ⍝ Breadth-first search of graph ⍺.
-  graph←⍺  ⍝ ⍺ is graph vector.
-  (,⍵){  ⍝ from starting vertex.
-    ⍵≡⍬?⍺;  ⍝ no unvisited vertices: done.
-    adjv←[⍵]⌷graph  ⍝ adjacent vertices.
-    next←∪ ,/adjv ~ ⍺
-    ⍺,next ∇ next  ⍝ advance wave of visited vertices.
-  }⍵  ⍝ from starting vertex.
+search ← {  ⍝ Breadth-first search of graph α.
+  graph←α  ⍝ α is graph vector.
+  (,ω){  ⍝ from starting vertex.
+    ω≡⍬?α;  ⍝ no unvisited vertices: done.
+    adjv←[ω]⌷graph  ⍝ adjacent vertices.
+    next←∪ ,/adjv ~ α
+    α,next ∇ next  ⍝ advance wave of visited vertices.
+  }ω  ⍝ from starting vertex.
 }
 
 ⍝ From http://dfns.dyalog.com/n_path.htm
 
-path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
-  graph←⍺ ⋄ [fm to]←,¨⍵  ⍝ graph and entry/exit vertex vectors
+path ← {  ⍝ Shortest path from/to ω in graph α.
+  graph←α ◇ [fm to]←,¨ω  ⍝ graph and entry/exit vertex vectors
   fm{  ⍝ fm is the starting-from vertex
-    ⍺≡⍬?⍬;  ⍝ no vertices left: no path
-    ∨/to∊⍺?⍬(⊃↢⍵){  ⍝ found target: path from tree:
-      ⍵<0ₓ?⍺;  ⍝ root: finished
-      ⍵,⍺ ∇ ⍶ ⍵
-    }1↑⍺∩to;  ⍝ found vertex ⍺
-    next←[,⍺]⌷graph ∩¨ ⊂⍸⍵=¯2ₓ
-    back←,/⍺+0ₓ×next
+    α≡⍬?⍬;  ⍝ no vertices left: no path
+    ∨/to∊α?⍬(⊃↢ω){  ⍝ found target: path from tree:
+      ω<0ₓ?α;  ⍝ root: finished
+      ω,α ∇ ⍶ ω
+    }1↑α∩to;  ⍝ found vertex α
+    next←[,α]⌷graph ∩¨ ⊂⍸ω=¯2ₓ
+    back←,/α+0ₓ×next
     wave←,/next
-    ∪wave ∇ back@wave ⍵  ⍝ advanced wave front
-  }¯2ₓ+(⍳⍴⍺)∊fm  ⍝ null spanning tree
+    ∪wave ∇ back@wave ω  ⍝ advanced wave front
+  }¯2ₓ+(ιρα)∊fm  ⍝ null spanning tree
 }
 
 ⍝ From http://dfns.dyalog.com/n_span.htm
 
-span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
-  graph←⍺  ⍝ ⍺ is graph vector.
-  (¯2ₓ + ⍳⍴⍺ ∊ ,⍵){  ⍝ ⍺: partial spanning tree.
-    ⍵≡⍬?⍺;  ⍝ no vertices: done.
-    next←[⍵]⌷graph ∩¨ ⊂⍸⍺=¯2ₓ  ⍝ untravelled edges
-    back←⍵+0ₓ×next  ⍝ back link per edge
-    tree←(∊back)@ ∊next ⍺  ⍝ partial spanning tree
+span ← {  ⍝ Breadth-first spanning tree for graph α.
+  graph←α  ⍝ α is graph vector.
+  (¯2ₓ + ιρα ∊ ,ω){  ⍝ α: partial spanning tree.
+    ω≡⍬?α;  ⍝ no vertices: done.
+    next←[ω]⌷graph ∩¨ ⊂⍸α=¯2ₓ  ⍝ untravelled edges
+    back←ω+0ₓ×next  ⍝ back link per edge
+    tree←(∊back)@ ∊next α  ⍝ partial spanning tree
     tree ∇ ∪∊next  ⍝ advanced wave front
-  }⍵  ⍝ ⍵: next wave of vertices to visit.
+  }ω  ⍝ ω: next wave of vertices to visit.
 }
 
 ⍝ From http://dfns.dyalog.com/c_dfspan.htm
 
-dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
-  graph←⍺  ⍝ ⍺ is graph vector.
+dfspan ← {  ⍝ Depth-first spanning tree: graph α from vertex ω.
+  graph←α  ⍝ α is graph vector.
   trav←{  ⍝ initial vertex and parent
-    ¯2ₓ≠⍺⊃⍵?⍵;  ⍝ vertex visited: backtrack
-    next←⌽⍺⊃graph  ⍝ edges from vertex ⍺
-    tree←⍶@⍺ ⍵  ⍝ ⍶ is ⍺'s parent
-    tree (⍺⍢)/ next
+    ¯2ₓ≠α⊃ω?ω;  ⍝ vertex visited: backtrack
+    next←⌽α⊃graph  ⍝ edges from vertex α
+    tree←⍶@α ω  ⍝ ⍶ is α's parent
+    tree (α⍢)/ next
   }  ⍝ :: tree ← vtx (vtx ⍢) tree
-  ⍵(¯1ₓ trav)¯2ₓ¨⍺  ⍝ depth-first traversal of graph ⍵
+  ω(¯1ₓ trav)¯2ₓ¨α  ⍝ depth-first traversal of graph ω
 }
 
 ⍝ From http://dfns.dyalog.com/s_scc.htm
 
-show ← {⊃ 0⍕¨⍳⍴⍵ ,¨ " → "↣,¨0⍕¨⍵}
+show ← {⊃ 0⍕¨ιρω ,¨ " → "↣,¨0⍕¨ω}
 
 ⍝ From http://dfns.dyalog.com/c_scc.htm
 
 scc ← {  ⍝ Strongly connected components (Tarjan).
   ⍝ State T: C L X x S
   ⍝ C: components; L: low-links; X: indices; x: next index; S: stack.
-  TT←(3#⊂0ₓ¨G←⍵),1ₓ ⍬  ⍝ state tuple T :: C L X x S
-  [C L X x S]←⍳⍴TT  ⍝ access names for items of tuple TT
-  put←{(⍹⊃⍵)@ ⊂[⍶ ⍺] ⍵}  ⍝ ⍹ at ⍺ in field ⍶ of ⍵
-  Lx←L put x  ⍝ ⍺ at x in lowlink vec :: T ← ⍺ ∇ T
-  Xx←X put x  ⍝ ⍺ at x in indices vec :: T ← ⍺ ∇ T
-  succ←{≥@x ⍵}  ⍝ successor of index x  :: T ←   ∇ T
+  TT←(3#⊂0ₓ¨G←ω),1ₓ ⍬  ⍝ state tuple T :: C L X x S
+  [C L X x S]←ιρTT  ⍝ access names for items of tuple TT
+  put←{(⍹⊃ω)@ ⊂[⍶ α] ω}  ⍝ ⍹ at α in field ⍶ of ω
+  Lx←L put x  ⍝ α at x in lowlink vec :: T ← α ∇ T
+  Xx←X put x  ⍝ α at x in indices vec :: T ← α ∇ T
+  succ←{≥@x ω}  ⍝ successor of index x  :: T ←   ∇ T
   push←,@S
-  ⍺←$f ⋄ trace←{⎕←0 _array.dsp ⍺,⍵ ⋄ ⍵}⍣⍺  ⍝ ⍺: optional tracing   :: T ←   ∇ T
-  comp←{v←⍺  ⍝ strongly connected component
-    pops←≥+/∧\v≠stk←S⊃⍵  ⍝ number of connected comps on stack
-    C∆←(≥⌈/C⊃⍵)@ pops↑stk C⊃⍵  ⍝ extended strongly connected comps
-    [pops↓stk C∆]@[S C]⍵  ⍝ reduced stack; extended comps
+  α←$f ◇ trace←{⎕←0 _array.dsp α,ω ◇ ω}⍣α  ⍝ α: optional tracing   :: T ←   ∇ T
+  comp←{v←α  ⍝ strongly connected component
+    pops←≥+/∧\v≠stk←S⊃ω  ⍝ number of connected comps on stack
+    C∆←(≥⌈/C⊃ω)@ pops↑stk C⊃ω  ⍝ extended strongly connected comps
+    [pops↓stk C∆]@[S C]ω  ⍝ reduced stack; extended comps
   }  ⍝ :: T ← v ∇ T
-  conn←{v←⍺  ⍝ connection of vertex v
-    T_0←v trace ⍵  ⍝ optional tracing
+  conn←{v←α  ⍝ connection of vertex v
+    T_0←v trace ω  ⍝ optional tracing
     T_1←succ v push v Lx v Xx T_0  ⍝ successor state for x S L and X
-    T_2←T_1 {w←⍺
-      min_L←{(w⊃⍺⊃⍵)⌊@ ⊂[L v] ⍵}
-      0ₓ=w⊃X⊃⍵?L min_L w conn ⍵;
-      X min_L⍣ w∊S⊃⍵ ⍵  ⍝ low-link if w on stack
+    T_2←T_1 {w←α
+      min_L←{(w⊃α⊃ω)⌊@ ⊂[L v] ω}
+      0ₓ=w⊃X⊃ω?L min_L w conn ω;
+      X min_L⍣ w∊S⊃ω ω  ⍝ low-link if w on stack
     }/ ⌽v⊃G  ⍝ for each edge from vertex v
     root←v⊃L⊃T_2 = v⊃X⊃T_2
     v comp⍣root T_2  ⍝ new component if root
   }  ⍝ :: T ← v ∇ T
   loop←{  ⍝ for each vertex in graph G
-    vert←{⍺ conn⍣ 0ₓ=⍺⊃X⊃⍵ ⍵}
-    ⍵ vert/ ⌽⍳⍴G
+    vert←{α conn⍣ 0ₓ=α⊃X⊃ω ω}
+    ω vert/ ⌽ιρG
   }  ⍝ :: T ← ∇ T
-  ∪⍳⊢ C⊃loop TT  ⍝ for each vertex
+  ∪ι⊢ C⊃loop TT  ⍝ for each vertex
 }
 
 ⍝ From http://dfns.dyalog.com/s_scc.htm
 
-cond ← {  ⍝ Condensation of graph ⍵.
-  c←scc ⍵  ⍝ strongly connected components
+cond ← {  ⍝ Condensation of graph ω.
+  c←scc ω  ⍝ strongly connected components
   v←⍷c  ⍝ component-grouped vertex indices
-  e←c{⊂⍵}⌸⍵  ⍝ ..      ..      edges
+  e←c{⊂ω}⌸ω  ⍝ ..      ..      edges
   x←∪¨ ∊¨e ~¨ v  ⍝ out-of-component edges
   m←↓∨/¨x∊⊗v
-  g←m#¨⊂⍳⍴v  ⍝ condensed DAG
+  g←m#¨⊂ιρv  ⍝ condensed DAG
   [g v]  ⍝ ... and contracted vertices
 }
 
 ⍝ From http://dfns.dyalog.com/c_stdists.htm
 
 stdists ← {  ⍝ Spanning-tree path lengths.
-  tree←⍵  ⍝ spanning tree
+  tree←ω  ⍝ spanning tree
   0ₓ{  ⍝ distance from root
-    [next dvec]←⍵  ⍝ chldren and distance vector
+    [next dvec]←ω  ⍝ chldren and distance vector
     next≡⍬?dvec;  ⍝ no children: finished
-    ∆dvec←⍺@next dvec  ⍝ extended distance vector
+    ∆dvec←α@next dvec  ⍝ extended distance vector
     ∆next←⍸tree∊,next  ⍝ grandchildren
-    ≥⍺ ∇ [∆next ∆dvec]  ⍝ examine rest of tree
-  }[⍵⍳¯1ₓ ¯1ₓ¨⍵]  ⍝ starting vertex and initial distances
+    ≥α ∇ [∆next ∆dvec]  ⍝ examine rest of tree
+  }[ωι¯1ₓ ¯1ₓ¨ω]  ⍝ starting vertex and initial distances
 }
 
 ⍝ From http://dfns.dyalog.com/n_stpath.htm
 
-stpath ← {  ⍝ Path through spanning tree ⍺ to vertex ⍵.
-  tree←⍺  ⍝ (partial) spanning tree.
+stpath ← {  ⍝ Path through spanning tree α to vertex ω.
+  tree←α  ⍝ (partial) spanning tree.
   ⍬{  ⍝ path accumulator.
-    ⍵<0ₓ?⍵=¯2ₓ ↓ ⍺;  ⍝ root or unvisited vertex: finished.
-    ⍵,⍺ ∇ ⍵⊃tree  ⍝ otherwise: prefix previous (parent) vertex.
-  }⍵
+    ω<0ₓ?ω=¯2ₓ ↓ α;  ⍝ root or unvisited vertex: finished.
+    ω,α ∇ ω⊃tree  ⍝ otherwise: prefix previous (parent) vertex.
+  }ω
 }
 
 ⍝ From http://dfns.dyalog.com/c_stpaths.htm
 
 stpaths ← {  ⍝ Spanning tree paths.
-  tree←⍵  ⍝ spanning tree.
-  root←⍵⍳¯1ₓ  ⍝ index of root vertex.
-  paths←root=⍳⍴⍵ ↑¨ root  ⍝ initial path vector.
+  tree←ω  ⍝ spanning tree.
+  root←ωι¯1ₓ  ⍝ index of root vertex.
+  paths←root=ιρω ↑¨ root  ⍝ initial path vector.
   paths{  ⍝ path to current vertices.
-    next←⍵=⊂tree #¨ ⊂⍳⍴tree  ⍝ vertices at next tree level.
-    ⊂⍬ ∧.≡ next?⍺;  ⍝ all null: finished.
-    exts←⊂¨[⍵]⌷⍺ ,¨¨ next  ⍝ paths to next tree level.
+    next←ω=⊂tree #¨ ⊂ιρtree  ⍝ vertices at next tree level.
+    ⊂⍬ ∧.≡ next?α;  ⍝ all null: finished.
+    exts←⊂¨[ω]⌷α ,¨¨ next  ⍝ paths to next tree level.
     indx←,/next
-    paths←,/exts @indx ⍺
+    paths←,/exts @indx α
     paths ∇ indx  ⍝ advance to next tree level.
   }root  ⍝ index of starting vertex.
 }
@@ -242,140 +242,140 @@ stpaths ← {  ⍝ Spanning tree paths.
 ⍝ From http://dfns.dyalog.com/c_X.htm
 
 X ← {  ⍝ Exact cover: Knuth's Algorithm X.
-  ⍺←$t∨.∨⍵  ⍝ all cols required by default.
-  x←⍳⍴⍺  ⍝ column indices.
-  d←x~⍺#x =⊗ x
+  α←$t∨.∨ω  ⍝ all cols required by default.
+  x←ιρα  ⍝ column indices.
+  d←x~α#x =⊗ x
   z←{  ⍝ cover vector.
-    [r c]←⍴⍵  ⍝ number of rows and columns.
-    c=0ₓ?r⍴$f;  ⍝ empty matrix: success.
-    n←+⌿⍵  ⍝ number of covers per column.
-    f←{⍵∧1ₓ=+\⍵}n=⌊/n #₋₁ ⍵
-    ⍵ ∇{  ⍝ ⍺ is constraint matrix.
-      ~$t∊⍵?$f;  ⍝ no rows: failure.
-      f←{⍵∧1ₓ=+\⍵}⍵
-      c←,f#⍺  ⍝ cols selected by first row.
-      r←∨/c#₋₁⍺  ⍝ rows covered by selected cols.
-      s←⍶(~c)#₋₁(~r)#⍺
-      s≡$f?⍺ ∇ f<⍵;  ⍝ failure: try a different row.
+    [r c]←ρω  ⍝ number of rows and columns.
+    c=0ₓ?rρ$f;  ⍝ empty matrix: success.
+    n←+⌿ω  ⍝ number of covers per column.
+    f←{ω∧1ₓ=+\ω}n=⌊/n #₋₁ ω
+    ω ∇{  ⍝ α is constraint matrix.
+      ~$t∊ω?$f;  ⍝ no rows: failure.
+      f←{ω∧1ₓ=+\ω}ω
+      c←,f#α  ⍝ cols selected by first row.
+      r←∨/c#₋₁α  ⍝ rows covered by selected cols.
+      s←⍶(~c)#₋₁(~r)#α
+      s≡$f?α ∇ f<ω;  ⍝ failure: try a different row.
       f ∨ ~r #⁻ s  ⍝ success: row f included.
-    } ,f  ⍝ ⍵ is vector of marked rows.
-  }⍵⍪d  ⍝ exact cover.
+    } ,f  ⍝ ω is vector of marked rows.
+  }ω⍪d  ⍝ exact cover.
   z≡$f?$f;  ⍝ failure: $f
-  -+/~⍺ ↓ z  ⍝ without dummy rows.
+  -+/~α ↓ z  ⍝ without dummy rows.
 }
 
 ⍝ From http://dfns.dyalog.com/s_X.htm
 
-sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
-  z←,⍠(⍳6ₓ) ,⍠(6ₓ+⍳4ₓ)⍳10⍴⌊√⍵  ⍝ cell coordinate properties.
+sudokuMatrix ← {  ⍝ Matrix for ω ω-Sudoku puzzle.
+  z←,⍠(ι6ₓ) ,⍠(6ₓ+ι4ₓ)ι10ρ⌊√ω  ⍝ cell coordinate properties.
   row←↓1 1 0 0 1 1 1 1 1 1#₋₁⊃z
   col←↓0 0 1 1 1 1 1 1 1 1#₋₁⊃z
   box←↓1 0 1 0 1 1 1 1 1 1#₋₁⊃z
   all←↓1 1 1 1 0 0 1 1 1 1#₋₁⊃z
   same←≡/∘ 1 0 0 0 1 0 0 0⊂  ⍝ matching pairs.
-  same¨row,col,box,all  ⍝ constraints matrix for ⍵ ⍵-puzzle.
+  same¨row,col,box,all  ⍝ constraints matrix for ω ω-puzzle.
 }
 
-sudokuX ← {[n n]←⍴⍵  ⍝ Exact cover Sudoku solver.
-  ⍺←sudokuMatrix n  ⍝ generic ⍵×⍵ constraint matrix.
-  r←∊(⍵≠0ₓ)>(⊂≥⍳n)=¨⍵  ⍝ already placed rows.
-  m←~r # ⍺  ⍝ reduced matrix.
+sudokuX ← {[n n]←ρω  ⍝ Exact cover Sudoku solver.
+  α←sudokuMatrix n  ⍝ generic ω×ω constraint matrix.
+  r←∊(ω≠0ₓ)>(⊂≥ιn)=¨ω  ⍝ already placed rows.
+  m←~r # α  ⍝ reduced matrix.
   f←X m  ⍝ exact cover.
   z←~r #⁻ f  ⍝ merge of placements.
-  [n n]⍴ z # ⍴z ⍴ ≥⍳n  ⍝ solution matrix.
+  [n n]ρ z # ρz ρ ≥ιn  ⍝ solution matrix.
 }
 
 queensX ← {  ⍝ Exact cover N-Queens.
-  m←⍳3#⍵  ⍝ cell coordinate properties.
+  m←ι3#ω  ⍝ cell coordinate properties.
   r←=/¨1 0 1↣#¨m  ⍝ each rank must contain one queen.
   f←=/¨0 1 1↣#¨m  ⍝ ..  file  ..     ..      ..
-  dm←-/¨⍳2#⍵  ⍝ diagonals.
+  dm←-/¨ι2#ω  ⍝ diagonals.
   du←<∪,dm  ⍝ unique diagonals.
   x←dm =⊗ du
   y←⊖dm =⊗ du
   m←,₀ ₁x,y,r,f  ⍝ constraints matrix.
-  d←~ ⍳1↓⍴m ∊ ⍳⊽⍴du  ⍝ mask of required cols.
-  [⍵ ⍵]⍴ d X m  ⍝ exact cover - matrix of queens.
+  d←~ ι1↓ρm ∊ ι⊽ρdu  ⍝ mask of required cols.
+  [ω ω]ρ d X m  ⍝ exact cover - matrix of queens.
 }
 
 
 ⍝⍝ Weighted graph processing
 
-wcost ← {  ⍝ Cost vector for path ⍵ through weighted graph ⍺.
-  [graph costs]←↓⍺  ⍝ edges and edge-costs.
-  2ₓ>≢⍵?0;  ⍝ null path: no cost.
+wcost ← {  ⍝ Cost vector for path ω through weighted graph α.
+  [graph costs]←↓α  ⍝ edges and edge-costs.
+  2ₓ>≢ω?0;  ⍝ null path: no cost.
   {
-    node←,⍺⊃graph  ⍝ exits from vertex.
-    indx←node⍳⍵  ⍝ index of (⍺ ⍵) vertex.
-    indx⊃,⍺⊃costs  ⍝ ... associated cost.
-  }/↕⍵
+    node←,α⊃graph  ⍝ exits from vertex.
+    indx←nodeιω  ⍝ index of (α ω) vertex.
+    indx⊃,α⊃costs  ⍝ ... associated cost.
+  }/↕ω
 }
 
 ⍝ From http://dfns.dyalog.com/c_wpath.htm
 
-wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
-  [graph costs]←↓⍺  ⍝ graph structure and costs
-  [fm to]←⍵  ⍝ start and ending vertices
+wpath ← {  ⍝ Quickest path fm/to ω in weighted graph α.
+  [graph costs]←↓α  ⍝ graph structure and costs
+  [fm to]←ω  ⍝ start and ending vertices
   tree←¯1ₓ¨graph  ⍝ initial spanning tree
-  cost←0@fm ⍴costs ⍴ ∞
-  I←⊃¨↢⊂  ⍝ helper function: ⍺th items of ⍵
+  cost←0@fm ρcosts ρ ∞
+  I←⊃¨↢⊂  ⍝ helper function: αth items of ω
   fm{  ⍝ from starting vertex.
-    [acc to]←⍵  ⍝ accumulator and next vertex
+    [acc to]←ω  ⍝ accumulator and next vertex
     to<0ₓ?to=¯2ₓ ↓ acc;  ⍝ root or unvisited vertex: finished
-    ⍺ ∇ [to,acc to⊃⍺]  ⍝ otherwise: parent vertex prefix
+    α ∇ [to,acc to⊃α]  ⍝ otherwise: parent vertex prefix
   }{  ⍝ lowest spanning cost tree:
-    [tree cost]←⍵  ⍝ current tree and cost vectors
-    ⍺≡⍬?tree ⍶ [⍬ to];
-    adjv←⍺ I graph  ⍝ adjacent vertices
-    accm←⍺ I cost+costs  ⍝ costs to adjacent vertices
+    [tree cost]←ω  ⍝ current tree and cost vectors
+    α≡⍬?tree ⍶ [⍬ to];
+    adjv←α I graph  ⍝ adjacent vertices
+    accm←α I cost+costs  ⍝ costs to adjacent vertices
     best←adjv I¨ ⊂cost  ⍝ costs to beat
     mask←accm<best⌊to⊃cost  ⍝ mask of better routes
     next←mask#¨adjv  ⍝ next vertices to visit
-    back←,/⍺+0ₓ×next
+    back←,/α+0ₓ×next
     cvec←,/mask#¨accm
-    decr←{⍒cvec I ⍵}  ⍝ in decreasing order of cost
+    decr←{⍒cvec I ω}  ⍝ in decreasing order of cost
     wave←decr,/next
-    new←[back cvec] {(decr ⍺)@wave ⍵}¨ ⍵  ⍝ successor tree & cost
+    new←[back cvec] {(decr α)@wave ω}¨ ω  ⍝ successor tree & cost
     ∪wave ∇ new  ⍝ wave spreads to adjacent vertices
   }[tree cost]  ⍝ initial spanning tree and cost vectors
 }
 
 ⍝ From http://dfns.dyalog.com/n_wspan.htm
 
-wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
-  [graph costs]←↓⍺  ⍝ graph structure and costs.
+wspan ← {  ⍝ Spanning tree for weighted graph α from ω.
+  [graph costs]←↓α  ⍝ graph structure and costs.
   tree←¯1ₓ¨graph  ⍝ initial spanning tree.
-  cost←0@⍵ ⍴costs ⍴ ∞
-  I←⊃¨↢⊂  ⍝ helper function: ⍺th items of ⍵
-  ⍵{  ⍝ from starting vertex.
-    [tree cost]←⍵  ⍝ current tree and costs
-    ⍺≡⍬?tree;  ⍝ all vertices visited: done
-    adjv←⍺ I graph  ⍝ adjacent vertices
-    accm←⍺ I cost+costs  ⍝ cumulative cost via this vertex
+  cost←0@ω ρcosts ρ ∞
+  I←⊃¨↢⊂  ⍝ helper function: αth items of ω
+  ω{  ⍝ from starting vertex.
+    [tree cost]←ω  ⍝ current tree and costs
+    α≡⍬?tree;  ⍝ all vertices visited: done
+    adjv←α I graph  ⍝ adjacent vertices
+    accm←α I cost+costs  ⍝ cumulative cost via this vertex
     mask←accm < adjv I¨ ⊂cost  ⍝ mask of better routes
     cvec←,/mask#¨accm
     next←mask#¨adjv  ⍝ next vertices to visit
-    back←,/⍺+0ₓ×next
+    back←,/α+0ₓ×next
     decr←(⍒cvec)I⊢  ⍝ in decreasing order of cost
     wave←decr,/next
-    new←[back cvec] {(decr ⍺)@wave ⍵}¨ ⍵  ⍝ successor tree & cost
+    new←[back cvec] {(decr α)@wave ω}¨ ω  ⍝ successor tree & cost
     ∪wave ∇ new  ⍝ wave spreads to adjacent vertices
   }[tree cost]  ⍝ initial spanning tree and cost vectors
 }
 
 ⍝ From http://dfns.dyalog.com/s_wmst.htm
 
-wmst ← {  ⍝ Minimum Spanning Tree for wu-graph ⍺.
-  [graph costs]←↓⍺  ⍝ weighted, undirected graph
-  xvec←⍳⍴graph  ⍝ index vector for graph
-  (,⍵){  ⍝ vertices inside tree: T
-    [tree todo]←⍵  ⍝ partial tree and unconnected vertices
+wmst ← {  ⍝ Minimum Spanning Tree for wu-graph α.
+  [graph costs]←↓α  ⍝ weighted, undirected graph
+  xvec←ιρgraph  ⍝ index vector for graph
+  (,ω){  ⍝ vertices inside tree: T
+    [tree todo]←ω  ⍝ partial tree and unconnected vertices
     todo≡⍬?tree;  ⍝ all vertices connected: finished
-    edges←graph∊¨⊂todo ∧ xvec∊⍺  ⍝ edges from T to G~T
+    edges←graph∊¨⊂todo ∧ xvec∊α  ⍝ edges from T to G~T
     min←⌊/⌊/¨edges#¨costs  ⍝ minimum edge cost
     masks←edges∧min=costs  ⍝ lowest cost edge masks
-    [fm to]←{⊃,/masks#¨⍵}¨[xvec graph]
+    [fm to]←{⊃,/masks#¨ω}¨[xvec graph]
     fm≡⍬?tree;  ⍝ disjoint graph: quit
-    ⍺,to ∇ [fm@to tree;todo~to]  ⍝ vertices from G~T to T
-  }[¯1ₓ¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
+    α,to ∇ [fm@to tree;todo~to]  ⍝ vertices from G~T to T
+  }[¯1ₓ¨graph xvec~,ω]  ⍝ initial tree and unconnected vertices
 }

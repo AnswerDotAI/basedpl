@@ -213,9 +213,9 @@ impl Value {
         let rows: Result<Vec<String>, ErrorKind> =
             positions(cells.len(), edges).map(|i| i.map_or(Ok("…".into()), |i| Ok(cells.get(i)?.row(item, el, edges)))).collect();
         match rows {
-            // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
-            Ok(rows) if rows.len() == 1 => format!("[{}⋄]", rows[0]),
-            Ok(rows) => format!("[{}]", rows.join("⋄")),
+            // One major cell needs a trailing `◇`, or it reads back as that cell alone.
+            Ok(rows) if rows.len() == 1 => format!("[{}◇]", rows[0]),
+            Ok(rows) => format!("[{}]", rows.join("◇")),
             Err(_) => crate::display::plain(self, el),
         }
     }
@@ -246,7 +246,7 @@ impl Value {
     }
     /// The value as one item inside brackets. Text with a space between its runs, or with a `:` that would read as a key, needs parentheses.
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
-    /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.
+    /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3ρ0`, needs parentheses.
     pub(crate) fn operand(&self, el: Elide) -> String {
         let text = self.source(el);
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
@@ -268,7 +268,7 @@ impl Value {
     fn named_literal(&self, el: Elide) -> String {
         let shape: Vec<_> = self.axis_names().iter().zip(self.shape())
             .map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(&n)))).collect();
-        format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
+        format!("[{}]ρ{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
     /// An array of rank 2 or more with keys: a key list for each axis, applied to the array without keys. A position stands for each missing key.
@@ -297,14 +297,14 @@ impl Value {
     fn empty_literal(&self, el: Elide) -> String {
         let prototype = self.prototype();
         match (self.shape(), &prototype) {
-            ([_], Self::Number(n)) if n.as_bool().is_some() => "0⍴$f".into(),
+            ([_], Self::Number(n)) if n.as_bool().is_some() => "0ρ$f".into(),
             ([_], Self::Number(n)) if n.is_exact() => format!("⍬{}", Elide::NONE.marker(n).unwrap_or_default()),
             ([_], Self::Number(n)) => format!("⍬{}", el.marker(n).unwrap_or_default()),
             ([_], Self::Character(_)) => "\"\"".into(),
             (shape, _) => {
                 let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
                 let fill = if matches!(prototype, Self::Array(_)) { Self::enclosed_literal(&prototype, el) } else { prototype.source(el) };
-                format!("{}⍴{fill}", shape.join(" "))
+                format!("{}ρ{fill}", shape.join(" "))
             }
         }
     }
@@ -314,7 +314,7 @@ impl Value {
         if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row(el)) {
             let mark = self.elements().map(|e| e.mark(el)).reduce(|a, b| if a == b { a } else { None }).flatten();
             let item = if mark.is_some() { Self::unmarked_item } else { Self::item };
-            let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join("⋄");
+            let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join("◇");
             return format!("({rows}){}", mark.unwrap_or_default());
         }
         format!("[{}]", self.bracket_items(Self::item, el, edges))
@@ -329,7 +329,7 @@ impl Value {
         items.join(" ")
     }
 
-    /// Whether the value prints as one row of `(a⋄b)`: a vector with items, other than a string.
+    /// Whether the value prints as one row of `(a◇b)`: a vector with items, other than a string.
     fn is_row(&self, el: Elide) -> bool {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && !self.is_empty() && crate::keyed::name(self).is_none() && !self.shows_names(el)
     }

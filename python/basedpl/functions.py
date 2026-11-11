@@ -2,7 +2,7 @@
 import builtins
 from keyword import iskeyword
 from unicodedata import normalize
-from . import Array, _Operators, _Function, _array, _show, bpl, symbols
+from . import Array, _Operators, _Expression, _Function, _array, _show, bpl, symbols
 from ._core import _builtin_names, _number_marks
 
 _HOLE = object()
@@ -69,7 +69,7 @@ class Function(_Combinators):
     def source(self): return self.inspect()['source']
     __doc__ = _Help(__doc__)
     def __call__(self, *args, **kwargs):
-        "Call with `⍵` or `⍺, ⍵`. Keyword arguments supply `⍺` as a keyed vector, and the positional arguments then form `⍵`."
+        "Call with `ω` or `α, ω`. Keyword arguments supply `α` as a keyed vector, and the positional arguments then form `ω`."
         if len(args) == 1 and not kwargs and isinstance(args[0], Function): return atop(self, args[0])
         if kwargs:
             if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
@@ -163,6 +163,7 @@ def _glyph(glyph):
 
 def _binary(f, x, y):
     if isinstance(f, str): f = _glyph(f)
+    if isinstance(x, _Expression) or isinstance(y, _Expression): return _Expression(x, f, y)
     composed = isinstance(x, _Combinators) or isinstance(y, _Combinators)
     try:
         if composed: operands = [o if isinstance(o, _Combinators) else _array(o) for o in (x, y)]
@@ -173,17 +174,20 @@ def _binary(f, x, y):
 def _unary(f, y):
     if y is NotImplemented: return NotImplemented
     if isinstance(f, str): f = _glyph(f)
+    if isinstance(y, _Expression): return _Expression(f, y)
     return atop(f, y) if isinstance(y, _Combinators) else f(y)
 
 def _bitwise(glyph, *operands):
     if glyph == '∨' and any(isinstance(o, _Combinators) for o in operands): return NotImplemented
-    try: operands = [o if isinstance(o, (Array, _Combinators)) else Array(o) for o in operands]
+    try: operands = [o if isinstance(o, (Array, _Combinators, _Expression)) else Array(o) for o in operands]
     except TypeError: return NotImplemented
     f = _glyph(glyph).bitwise
     return _unary(f, *operands) if len(operands) == 1 else _binary(f, *operands)
 
 def _matmul(x, y):
     if isinstance(x, _Combinators) or isinstance(y, _Combinators): raise TypeError('inner product requires two arrays or two functions')
+    f = _glyph('+').inner_product(_glyph('×')).rank(2)
+    if isinstance(x, _Expression) or isinstance(y, _Expression): return _Expression(x, f, y)
     try: x, y = (o if isinstance(o, Array) else Array(o) for o in (x, y))
     except TypeError: return NotImplemented
-    return _glyph('+').inner_product(_glyph('×')).rank(2)(x, y)
+    return f(x, y)

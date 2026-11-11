@@ -263,8 +263,8 @@ impl Cells {
                 }
             }
             // The case cells give the cells' layout. The scalar fills at cells that pick no case carry none.
-            let result =
-                Value::assemble_layout(&self.framed.frame(), items.iter(), &fill, crate::array::Widening::Items, None, Some(&cell)).described("invalid result")?;
+            let result = Value::assemble_layout(&self.framed.frame(), items.iter(), &fill, crate::array::Widening::Items, None, Some(&cell))
+                .described("invalid result")?;
             let (_, positions) = placed(&self.framed, &self.axes, &cell)?;
             if rustymath::gather::counts_up(&positions) { return Ok(result); }
             return crate::primitive::transpose_axes(fronted(&self.axes, self.framed.layout.shape().len()), &result);
@@ -300,7 +300,6 @@ impl Cells {
         placed(&self.framed, &self.axes, &cell)?.0.collect(Vec::new(), result.prototype()).described("invalid result")
     }
 }
-
 
 /// The cells of an array along its frame axes. `layout` and `steps` put the frame's axes first and then a cell's, as `⍉` would, but no item moves. The first `rank` steps reach each cell's start; the rest read its items.
 struct Framed { layout: crate::array::Layout, rank: usize, steps: Vec<rustymath::gather::Steps> }

@@ -55,7 +55,7 @@ impl Input {
         let enter = key == KeyEvent::from('\r') || key == KeyEvent::from('\n');
         let tab = key == KeyEvent::from('\t');
         let plain = key.1.is_empty();
-        let delimiter = plain && matches!(key.0, KeyCode::Char(c) if !c.is_alphabetic());
+        let delimiter = plain && matches!(key.0, KeyCode::Char(c) if !c.is_ascii_alphabetic());
         if tab || self.active && (enter || delimiter) {
             if let Some((start, prefix)) = entry(line, pos, self.aliases) {
                 let found = matches(prefix);

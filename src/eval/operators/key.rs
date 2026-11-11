@@ -102,15 +102,11 @@ fn cohorts(f: &Function, keys: &Value, values: Option<&Value>, classes: &rustyma
         let len = classes.groups.sizes[positions[0]];
         let firsts: Vec<_> = positions.iter().map(|&i| classes.firsts[i]).collect();
         let rows: Vec<_> = positions.iter().flat_map(|&i| groups[i].iter().map(|&r| r as usize)).collect();
-        Some(Arguments {
-            left: Some((gather(keys, &firsts, frame.clone())?, keys.shape().len() - 1)),
-            right: match values {
-                Some(values) => (gather(values, &rows, Layout::from([positions.len(), len]))?, values.shape().len()),
-                None => (Value::positions([positions.len(), len], keys.shape()[0], rows.into_iter()).ok()?, 1),
-            },
-        })
+        Some(Arguments { left: Some((gather(keys, &firsts, frame.clone())?, keys.shape().len() - 1)), right: match values {
+            Some(values) => (gather(values, &rows, Layout::from([positions.len(), len]))?, values.shape().len()),
+            None => (Value::positions([positions.len(), len], keys.shape()[0], rows.into_iter()).ok()?, 1),
+        } })
     };
-    crate::batch::cohorts(f, classes.groups.sizes.iter().map(std::slice::from_ref), pack, span).map(|r| r.and_then(|cells| {
-        Value::assemble(&[cells.len()], &cells, &cells[0]).map(Bound::from).described("invalid key result")
-    }))
+    crate::batch::cohorts(f, classes.groups.sizes.iter().map(std::slice::from_ref), pack, span)
+        .map(|r| r.and_then(|cells| Value::assemble(&[cells.len()], &cells, &cells[0]).map(Bound::from).described("invalid key result")))
 }

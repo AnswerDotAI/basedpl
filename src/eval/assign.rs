@@ -54,8 +54,7 @@ impl Session {
 
     /// The category of a name or of a field reached from its value, without evaluating it.
     pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>]) -> Category {
-        if keys.is_empty() { Category::named(self.bindings.category(name)) }
-        else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) }
+        if keys.is_empty() { Category::named(self.bindings.category(name)) } else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) }
     }
 
     pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize) -> Result<(usize, Category), Error> {
@@ -86,8 +85,13 @@ impl Session {
             start -= 1;
             category = Function;
         } else if start > 0 && matches!(Rule::get(self.static_category(&nodes[start - 1]), category), Rule::BindRight) {
-            if start == 1 { start = 0; category = Operator; }
-            else { start = self.trailing_operand(nodes, start - 1)?.0; category = Function; }
+            if start == 1 {
+                start = 0;
+                category = Operator;
+            } else {
+                start = self.trailing_operand(nodes, start - 1)?.0;
+                category = Function;
+            }
         }
         Ok((start, category))
     }
@@ -98,8 +102,8 @@ impl Session {
         let end = nodes.len();
         let (operand, category) = self.trailing_operand(nodes, end)?;
         // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
-        let modified = operand > 0 && matches!(category, Category::Function)
-            && (self.holds_array(&nodes[operand - 1]) || !self.assignment_names(&nodes[operand..]));
+        let modified =
+            operand > 0 && matches!(category, Category::Function) && (self.holds_array(&nodes[operand - 1]) || !self.assignment_names(&nodes[operand..]));
         let start = if modified { self.trailing_operand(nodes, operand)?.0 } else { operand };
         if start > 0 && self.holds_array(&nodes[start]) && self.holds_array(&nodes[start - 1]) {
             let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
@@ -108,7 +112,7 @@ impl Session {
         Ok(start)
     }
 
-    /// Inside a dfn, `⍵` is a local name bound to the argument. The other argument and operand names can't be assigned.
+    /// Inside a dfn, `ω` is a local name bound to the argument. The other argument and operand names can't be assigned.
     fn assignable(&self, name: Name) -> bool { name.implicit().is_none() || name == Name::OMEGA && self.bindings.current().is_some() }
     fn store(&self, name: Name, value: Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(Error::new(ErrorKind::Syntax, "arguments and operands cannot be assigned here").at(span)); }
@@ -255,7 +259,9 @@ impl Session {
                 self.update_array(&binding, updated, &node.span)
             }
             NodeKind::ArrayLiteral(literal) => {
-                for (cell, item) in Self::destructure(self.targets(&literal.cells, literal.record)?, right, &node.span)? { self.modify_names(cell, &item, modifier)?; }
+                for (cell, item) in Self::destructure(self.targets(&literal.cells, literal.record)?, right, &node.span)? {
+                    self.modify_names(cell, &item, modifier)?;
+                }
                 Ok(())
             }
             _ => unreachable!(),

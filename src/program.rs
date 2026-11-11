@@ -92,8 +92,8 @@ impl Nodes {
     pub(crate) fn held(&mut self, value: &Value, desc: Desc) -> Read {
         let layout = desc.layout.clone();
         // Pending identities belong to demand/retention; resolution composes their reads when sharing permits it.
-        let one = (!value.carried() && value.len() > 1 && value.pending().is_none()
-            && value.view().is_some_and(rustymath::buffer::Buffer::same)).then(|| value.at(0));
+        let one = (!value.carried() && value.len() > 1 && value.pending().is_none() && value.view().is_some_and(rustymath::buffer::Buffer::same))
+            .then(|| value.at(0));
         if let Some(item) = one && let Some(d) = Desc::of(&item) {
             // Every item has the array's proved bounds and kind; extraction may narrow an ordinary integer atom.
             let of = self.held(&item, Desc { kind: desc.kind, range: desc.range, ..d });
@@ -101,9 +101,8 @@ impl Nodes {
         }
         let plain = Layout::from(value.shape().to_vec());
         let held = match value.pending() {
-            Some(p) => Value::deferred(plain.clone(), p.clone()),
-            None if value.layout().plain() => value.clone(),
-            None => value.relaid(plain.clone()).expect("a held value keeps its item count"),
+            Some(p) => Value::deferred(plain.clone(), p.clone()), None if value.layout().plain() => value.clone(),
+            None => value.relaid(plain.clone()).expect("a held value keeps its item count")
         };
         let of = self.add(Node { desc: Desc { layout: plain, ..desc }, origin: Origin::Held(held) });
         Read::new(of, layout)
@@ -163,12 +162,12 @@ impl Nodes {
     pub(crate) fn structured(&mut self, form: Form, params: Vec<Read>, inputs: Vec<Read>, fill: Option<Read>, desc: Desc, plan: ReadPlan) -> Read {
         if fill.is_none() && let Some((source, map)) = plan.positional(desc.shape())
             && let Ok(copied) = crate::plan::copy(&inputs[source].desc(self), &desc.layout) && copied.kind == desc.kind {
-            let input = inputs[source].desc(self);
-            if input.kind == desc.kind && input.atom == desc.atom && map.in_order(input.layout.count(), desc.shape()) {
-                return Read::new(inputs[source].of, desc.layout);
+                let input = inputs[source].desc(self);
+                if input.kind == desc.kind && input.atom == desc.atom && map.in_order(input.layout.count(), desc.shape()) {
+                    return Read::new(inputs[source].of, desc.layout);
+                }
+                return self.copied(inputs[source].clone(), map, desc);
             }
-            return self.copied(inputs[source].clone(), map, desc);
-        }
         self.stepped(desc, Step::Structural { inputs, form, params, fill, plan })
     }
 }
@@ -294,7 +293,7 @@ pub(crate) enum Step {
     At { p: Primitive, base: Read, items: Read, writes: Writes },
     /// A mask of Booleans in the layout of `of`, true at the item of each lane along `axis` that `p`, `⌈` or `⌊`, picks, the first of any ties (`derivative::extreme_mask`, `plan::picks`).
     Picks { p: Primitive, axis: usize, of: Read },
-    /// Monadic `p`, `≢` or `⍴`, of `of`, read from its current layout when the step runs. Exact-layout guards also protect any shape facts used during construction.
+    /// Monadic `p`, `≢` or `ρ`, of `of`, read from its current layout when the step runs. Exact-layout guards also protect any shape facts used during construction.
     Shape { p: Primitive, of: Read },
 }
 
@@ -312,7 +311,8 @@ impl Selector {
     /// The parts as text: each read named by `read`, and each marker by its glyph.
     fn listing(&self, read: impl Fn(&Read) -> String) -> String {
         self.parts.iter().map(|part| match part {
-            IndexPart::Axis(r) => read(r), IndexPart::Slice(slice) => slice.to_string(), IndexPart::All => ":".into(), IndexPart::Rest => "∞".into(), IndexPart::NewAxis => "¯∞".into()
+            IndexPart::Axis(r) => read(r), IndexPart::Slice(slice) => slice.to_string(), IndexPart::All => ":".into(), IndexPart::Rest => "∞".into(),
+            IndexPart::NewAxis => "¯∞".into()
         }).collect::<Vec<_>>().join(" ")
     }
 }

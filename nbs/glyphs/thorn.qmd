@@ -6,7 +6,7 @@ Function. Keys: `Alt-o n`. Hanzi: `文`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 ```bpl
 ⍕1 2 3             ⍝ "1 2 3"
-⍕2 2⍴⍳4ₓ           ⍝ 2 6⍴"[0 1   2 3]ₓ"
+⍕2 2ρι4ₓ           ⍝ 2 6ρ"[0 1   2 3]ₓ"
 ```
 
 `D⍕Y` gives `D` decimal places. A negative `D` gives exponent notation with `|D|` significant digits.
@@ -21,7 +21,7 @@ An empty `D`, `⍬` or `''`, gives `⍕Y`'s text without the markers of numbers'
 ```bpl
 ⍕[1 2 3]ₓ          ⍝ "[1 2 3]ₓ"
 ⍬⍕[1 2 3]ₓ         ⍝ "1 2 3"
-''⍕2 2⍴⍳4ₓ         ⍝ 2 3⍴"0 12 3"
+''⍕2 2ρι4ₓ         ⍝ 2 3ρ"0 12 3"
 ```
 
 `W D⍕Y` also sets the field width `W`. Give one pair per column to set each column separately. Width 0 fits each column to its longest number, with one space between columns. Overflowing fields become `*`.

@@ -27,7 +27,7 @@ pub(crate) enum NodeKind {
     Embedded(Value),
     Function(Builtin),
     Operator(OperatorKind),
-    /// A name. `true` marks a read of a dfn's local, `⍵` or `⍺` after which nothing in the dfn reads or assigns the name (`release`). That read moves the value out of the frame.
+    /// A name. `true` marks a read of a dfn's local, `ω` or `α` after which nothing in the dfn reads or assigns the name (`release`). That read moves the value out of the frame.
     Name(Name, bool),
     /// A system name that the system table doesn't hold, which is a VALUE error when evaluated. A known system name is a `Function`, as a glyph is.
     System(String),
@@ -53,16 +53,14 @@ pub(crate) enum NodeKind {
 pub(crate) enum ListForm {
     /// `[a b]`: each cell is one item.
     Items,
-    /// `[1 2⋄3 4]`: each cell is a major cell of the result.
+    /// `[1 2◇3 4]`: each cell is a major cell of the result.
     Cells,
-    /// `(4⋄4 5)`: each cell is a row, and each row is one item.
+    /// `(4◇4 5)`: each cell is a row, and each row is one item.
     Rows,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ArrayLiteral {
-    pub cells: Vec<Vec<Node>>, pub form: ListForm, pub record: bool, pub constant: Option<OnceLock<(Numeric, Value)>>
-}
+pub(crate) struct ArrayLiteral { pub cells: Vec<Vec<Node>>, pub form: ListForm, pub record: bool, pub constant: Option<OnceLock<(Numeric, Value)>> }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
@@ -93,7 +91,11 @@ impl Definition {
         if parts.is_empty() { return None; }
         parts.sort_by_key(|(range, _)| range.start);
         let (mut text, mut at) = (String::new(), span.range.start);
-        for (range, item) in parts { text.push_str(&span.source.text[at..range.start]); text.push_str(&item); at = range.end; }
+        for (range, item) in parts {
+            text.push_str(&span.source.text[at..range.start]);
+            text.push_str(&item);
+            at = range.end;
+        }
         text.push_str(&span.source.text[at..span.range.end]);
         Some(text)
     }
@@ -105,22 +107,17 @@ impl Definition {
     pub fn remember(&self, memory: u64) { self.remembered.store(memory, Relaxed) }
     /// The programs that `∂` of this definition builds, and the argument signatures whose traces stopped (`program`).
     pub(crate) fn programs(&self) -> &crate::program::trace::Programs { &self.programs }
-    /// The primitive this definition is, where it's `{⍺ p ⍵}` (`admitted`): computation takes it as that primitive, with its algebraic and floating-point freedoms. Display keeps the definition's text.
+    /// The primitive this definition is, where it's `{α p ω}` (`admitted`): computation takes it as that primitive, with its algebraic and floating-point freedoms. Display keeps the definition's text.
     pub(crate) fn admitted(&self) -> Option<Primitive> { self.admitted }
 }
 
-/// The primitive that a definition is, where its one body is one expression `⍺ p ⍵` of a primitive `p`. An absent `⍺` drops out, so the definition is `p` with either valence.
+/// The primitive that a definition is, where its one body is one expression `α p ω` of a primitive `p`. An absent `α` drops out, so the definition is `p` with either valence.
 fn admitted(bodies: &[Vec<Statement>]) -> Option<Primitive> {
     let [body] = bodies else { return None };
     let [Statement { nodes, kind: StatementKind::Expression, .. }] = body.as_slice() else { return None };
     let mut nodes = nodes.as_slice();
     while let [Node { kind: NodeKind::Run(inner) | NodeKind::Group(inner), .. }] = nodes { nodes = inner; }
-    let [
-        Node { kind: NodeKind::Name(Name::ALPHA, _), .. },
-        Node { kind, .. },
-        Node { kind: NodeKind::Name(Name::OMEGA, _), .. },
-    ] = nodes
-    else { return None; };
+    let [Node { kind: NodeKind::Name(Name::ALPHA, _), .. }, Node { kind, .. }, Node { kind: NodeKind::Name(Name::OMEGA, _), .. }] = nodes else { return None; };
     kind.primitive()
 }
 
@@ -157,8 +154,15 @@ macro_rules! child_nodes {
         let mut visit = $visit;
         match $kind {
             NodeKind::Group(nodes) | NodeKind::Run(nodes) => visit(nodes, false),
-            NodeKind::ArrayLiteral($literal) => { for nodes in $cells { visit(nodes, false); } }
-            NodeKind::Scope(root, body) => { visit($single(root), false); visit($single(body), true); }
+            NodeKind::ArrayLiteral($literal) => {
+                for nodes in $cells {
+                    visit(nodes, false);
+                }
+            }
+            NodeKind::Scope(root, body) => {
+                visit($single(root), false);
+                visit($single(body), true);
+            }
             _ => {}
         }
     }};
@@ -171,13 +175,11 @@ fn visit(nodes: &[Node], target: bool, nested: bool, f: &mut dyn FnMut(&Node, bo
         let target = target || i < end;
         f(node, target, nested);
         child_nodes!(&node.kind, std::slice::from_ref, literal => &literal.cells, |inner: &[Node], scoped| visit(inner, target, nested || scoped, f));
-        if let NodeKind::Dfn(definition) = &node.kind {
-            for statement in definition.bodies.iter().flatten() { visit(&statement.nodes, false, true, f); }
-        }
+        if let NodeKind::Dfn(definition) = &node.kind { for statement in definition.bodies.iter().flatten() { visit(&statement.nodes, false, true, f); } }
     }
 }
 
-/// Marks each read of a local, `⍵` or `⍺` after which nothing in the definition reads or assigns the name. That read moves the value out of the frame (`Bindings::take`), so a pending array that only the reader then holds joins the reader's program (`fusion::Pending::gathered`). Where a statement reads the name more than once, the read that runs last is the one marked (`mark_last`). A name that a nested definition or an error handler mentions is never released. Nothing is released in a definition that reads names by text, through `⍎`, `•nc`, `•nl`, `•src`, `•ex` or `•explain`.
+/// Marks each read of a local, `ω` or `α` after which nothing in the definition reads or assigns the name. That read moves the value out of the frame (`Bindings::take`), so a pending array that only the reader then holds joins the reader's program (`fusion::Pending::gathered`). Where a statement reads the name more than once, the read that runs last is the one marked (`mark_last`). A name that a nested definition or an error handler mentions is never released. Nothing is released in a definition that reads names by text, through `⍎`, `•nc`, `•nl`, `•src`, `•ex` or `•explain`.
 fn release(bodies: &mut [Vec<Statement>], locals: &[Name]) {
     let mut by_text = false;
     // The names that a nested definition, an error handler or a later statement mentions.
@@ -186,9 +188,12 @@ fn release(bodies: &mut [Vec<Statement>], locals: &[Name]) {
         visit(&statement.nodes, false, false, &mut |node, _, nested| match &node.kind {
             NodeKind::Function(Builtin::Primitive(Primitive::Execute)) => by_text = true,
             NodeKind::Function(Builtin::System(entry)) => by_text |= matches!(entry.name(), "•nc" | "•nl" | "•src" | "•ex" | "•explain"),
-            NodeKind::Embedded(Value::Function(f)) => by_text |= node.kind.primitive() == Some(Primitive::Execute)
-                || f.system_function().is_some_and(|s| matches!(s.name, "•nc" | "•nl" | "•src" | "•ex" | "•explain")),
-            NodeKind::Name(name, _) if nested => later.push(*name), _ => {}
+            NodeKind::Embedded(Value::Function(f)) => {
+                by_text |= node.kind.primitive() == Some(Primitive::Execute)
+                    || f.system_function().is_some_and(|s| matches!(s.name, "•nc" | "•nl" | "•src" | "•ex" | "•explain"))
+            }
+            NodeKind::Name(name, _) if nested => later.push(*name),
+            _ => {}
         });
         if let StatementKind::ErrorGuard { index } = statement.kind {
             visit(&statement.nodes[index + 1..], false, false, &mut |node, _, _| {
@@ -225,12 +230,14 @@ fn mark_last(nodes: &mut [Node], name: Name) -> Result<bool, ()> {
         .unwrap_or(nodes.len());
     if nodes[i + 1..end].iter().any(reads) { return Err(()); }
     match &mut nodes[i].kind {
-        NodeKind::Name(_, last) => { *last = true; Ok(true) } NodeKind::Group(nodes) | NodeKind::Run(nodes) => mark_last(nodes, name),
-        NodeKind::ArrayLiteral(literal) => { for cell in Arc::make_mut(literal).cells.iter_mut().rev() { if mark_last(cell, name)? { return Ok(true); } } Ok(false) }
-        NodeKind::Scope(root, body) => {
-            if reads(body) { Err(()) } else { mark_last(std::slice::from_mut(root.as_mut()), name) }
+        NodeKind::Name(_, last) => { *last = true; Ok(true) }
+        NodeKind::Group(nodes) | NodeKind::Run(nodes) => mark_last(nodes, name),
+        NodeKind::ArrayLiteral(literal) => {
+            for cell in Arc::make_mut(literal).cells.iter_mut().rev() { if mark_last(cell, name)? { return Ok(true); } }
+            Ok(false)
         }
-        _ => Ok(false)
+        NodeKind::Scope(root, body) => { if reads(body) { Err(()) } else { mark_last(std::slice::from_mut(root.as_mut()), name) } }
+        _ => Ok(false),
     }
 }
 
@@ -238,7 +245,10 @@ fn mark_last(nodes: &mut [Node], name: Name) -> Result<bool, ()> {
 pub(crate) fn reorder_reads(nodes: &mut [Node]) {
     fn clear(nodes: &mut [Node], names: &mut Vec<Name>) {
         for node in nodes {
-            if let NodeKind::Name(name, last) = &mut node.kind && *last { names.push(*name); *last = false; }
+            if let NodeKind::Name(name, last) = &mut node.kind && *last {
+                names.push(*name);
+                *last = false;
+            }
             child_nodes!(&mut node.kind, std::slice::from_mut, literal => &mut Arc::make_mut(literal).cells, |inner: &mut [Node], _| clear(inner, names));
         }
     }
@@ -246,7 +256,6 @@ pub(crate) fn reorder_reads(nodes: &mut [Node]) {
     clear(nodes, &mut names);
     for name in names { let _ = mark_last(nodes, name); }
 }
-
 
 #[derive(Clone, Debug)]
 pub(crate) struct Node { pub kind: NodeKind, pub span: Span }
@@ -305,7 +314,7 @@ enum TokenKind {
     BracketOpen,
     /// A closing bracket, and the number marker after it.
     BracketClose(Option<Mark>),
-    /// `⋄`, or a line break between two items.
+    /// `◇`, or a line break between two items.
     Separator,
     Semicolon,
     Name(String),
@@ -447,7 +456,7 @@ fn exact_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
 /// The empty numeric vector whose prototype is `fill`.
 pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fill)).unwrap() }
 
-/// Whether a token can be part of a marked literal: a literal, a parenthesis or bracket, `;`, `⋄`, a key's colon, or a superscript that the parser folds into the number before it.
+/// Whether a token can be part of a marked literal: a literal, a parenthesis or bracket, `;`, `◇`, a key's colon, or a superscript that the parser folds into the number before it.
 fn literal_token(kind: &TokenKind) -> bool {
     matches!(
         kind, TokenKind::Literal(_) | TokenKind::Open | TokenKind::Close(_) | TokenKind::BracketOpen | TokenKind::BracketClose(_) | TokenKind::Semicolon
@@ -525,7 +534,7 @@ fn run_on(chars: &mut Characters<'_>, digit: bool) -> Option<usize> {
 /// Whether `c` can start or continue a name. Syntax, glyphs and digits end a name.
 pub(crate) fn name_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !c.is_ascii_digit() && !subscript(c) && !matches!(
-        c, '(' | ')' | '[' | ']' | '{' | '}' | '\'' | '"' | ';' | ':' | '?' | '$' | '•' | '←' | '⎕' | '⍝' | '⋄' | '⁝' | '⍬' | '¯' | '∞' | '⍛'
+        c, '(' | ')' | '[' | ']' | '{' | '}' | '\'' | '"' | ';' | ':' | '?' | '$' | '•' | '←' | '⎕' | '⍝' | '◇' | '⁝' | '⍬' | '¯' | '∞' | '⍛'
             | 'ᵀ' | 'ᵘ' | '⁻' | '₋'
     ) && !is_implicit(c) && script_digit(SUPERSCRIPT_DIGITS, c).is_none() && script_digit(SUBSCRIPT_DIGITS, c).is_none() && Primitive::from_glyph(c).is_none()
         && OperatorKind::from_glyph(c).is_none()
@@ -568,11 +577,11 @@ fn script_integer(c: char, chars: &mut Characters<'_>, digits: &str, what: &str)
 const UNQUOTED: &str = "_ quotes the next character into a name, and there is none";
 const DOLLAR: &str = "$ and one letter is a constant ($t, $f, $n, $a or $d) or a handler's error ($e)";
 
-/// Reads the rest of a name. Unreserved characters continue it, and a digit ends it. `_` quotes the next character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a key, so `T.q1` names the key `q1`. A lone `_`, before a space, `]`, `)`, `←`, `;`, `⋄` or the end, is the name `_`. Any other `_` with nothing to quote gives the position after it.
+/// Reads the rest of a name. Unreserved characters continue it, and a digit ends it. `_` quotes the next character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a key, so `T.q1` names the key `q1`. A lone `_`, before a space, `]`, `)`, `←`, `;`, `◇` or the end, is the name `_`. Any other `_` with nothing to quote gives the position after it.
 fn name(chars: &mut Characters<'_>, key: bool) -> Result<(), (usize, &'static str)> {
     let canonical = chars.spelling();
     let aliases = chars.aliases;
-    let lone = |c: Option<&(usize, char)>| c.is_none_or(|&(_, c)| c.is_whitespace() || matches!(canonical(c), ']' | ')' | '←' | ';' | '⋄'));
+    let lone = |c: Option<&(usize, char)>| c.is_none_or(|&(_, c)| c.is_whitespace() || matches!(canonical(c), ']' | ')' | '←' | ';' | '◇'));
     let mut first = true;
     loop {
         match chars.peek() {
@@ -588,7 +597,7 @@ fn name(chars: &mut Characters<'_>, key: bool) -> Result<(), (usize, &'static st
     }
 }
 
-/// Whether a line break beside a token of `kind` separates nothing. `before` says the token comes before the line break. Every other line break reads as `⋄`.
+/// Whether a line break beside a token of `kind` separates nothing. `before` says the token comes before the line break. Every other line break reads as `◇`.
 fn absorbs_line_break(kind: &TokenKind, before: bool) -> bool {
     use TokenKind::*;
     match kind {
@@ -600,9 +609,8 @@ fn absorbs_line_break(kind: &TokenKind, before: bool) -> bool {
 pub(crate) fn prefs_record(nodes: &[Node]) -> Option<&Node> {
     let nodes = match nodes { [Node { kind: NodeKind::Run(inner), .. }] => inner.as_slice(), _ => nodes };
     match nodes {
-        [Node { kind: NodeKind::Function(Builtin::System(crate::system::Entry::PREFS)), .. },
-            record @ Node { kind: NodeKind::ArrayLiteral(literal), .. },
-        ] if literal.record && non_literal(std::slice::from_ref(record), &|_| false).is_none() => Some(record), _ => None
+        [Node { kind: NodeKind::Function(Builtin::System(crate::system::Entry::PREFS)), .. }, record @ Node { kind: NodeKind::ArrayLiteral(literal), .. }]
+            if literal.record && non_literal(std::slice::from_ref(record), &|_| false).is_none() => { Some(record) } _ => None
     }
 }
 
@@ -798,7 +806,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             '[' => TokenKind::BracketOpen,
             ']' => TokenKind::BracketClose(marked(chars)?),
             ';' => TokenKind::Semicolon,
-            '⋄' => TokenKind::Separator,
+            '◇' => TokenKind::Separator,
             '←' => TokenKind::Assign,
             '•' if chars.peek().is_some_and(|&(_, c)| name_char(c)) => {
                 name(chars, false).map_err(|(end, message)| Error::new(ErrorKind::Syntax, message).at(&span(end)))?;
@@ -976,7 +984,7 @@ impl Parser<'_> {
     }
 }
 
-/// The nodes between separators. `⋄` always separates, and `;` only when `semicolons` is set. Elsewhere `;` is an error. `?` belongs only in dfns.
+/// The nodes between separators. `◇` always separates, and `;` only when `semicolons` is set. Elsewhere `;` is an error. `?` belongs only in dfns.
 fn split(pieces: Vec<Piece>, semicolons: bool) -> Result<Vec<Vec<Node>>, ParseFailure> {
     let mut parts = vec![Vec::new()];
     for piece in pieces {
@@ -989,12 +997,12 @@ fn split(pieces: Vec<Piece>, semicolons: bool) -> Result<Vec<Vec<Node>>, ParseFa
     Ok(parts)
 }
 
-/// Statements at the top level: a line break or `⋄` ends one.
+/// Statements at the top level: a line break or `◇` ends one.
 fn statements(pieces: Vec<Piece>) -> Result<Vec<Vec<Node>>, ParseFailure> {
     split(pieces, false)?.into_iter().filter(|nodes| !nodes.is_empty()).map(expression).collect()
 }
 
-/// A dfn's bodies, separated by `;`. A line break or `⋄` ends a statement, and `?` ends a predicate. Every body but the last needs a predicate: a body without one always returns, so the bodies after it could never run. A body that ends after its predicate returns no result.
+/// A dfn's bodies, separated by `;`. A line break or `◇` ends a statement, and `?` ends a predicate. Every body but the last needs a predicate: a body without one always returns, so the bodies after it could never run. A body that ends after its predicate returns no result.
 fn bodies(pieces: Vec<Piece>, span: &Span) -> Result<Vec<Vec<Statement>>, ParseFailure> {
     let (mut bodies, mut ends, mut body, mut nodes) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for piece in pieces {
@@ -1037,7 +1045,7 @@ fn end_statement(body: &mut Vec<Statement>, nodes: &mut Vec<Node>, predicate: Op
     Ok(())
 }
 
-/// Parentheses group. With `⋄` or a line break between items, they write rows instead.
+/// Parentheses group. With `◇` or a line break between items, they write rows instead.
 fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     if pieces.iter().any(|p| matches!(p, Piece::Diamond)) { return rows(pieces, span); }
     let nodes = split(pieces, false)?.pop().unwrap();
@@ -1045,7 +1053,7 @@ fn parenthesised(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailu
     Ok(NodeKind::Group(expression(nodes)?))
 }
 
-/// Parts separated by `⋄`, where a trailing `⋄` ends the last row: `(1 2⋄)` is `[[1 2]]`, and `[1 2⋄]` is a 1×2 matrix.
+/// Parts separated by `◇`, where a trailing `◇` ends the last row: `(1 2◇)` is `[[1 2]]`, and `[1 2◇]` is a 1×2 matrix.
 fn diamond_rows(mut parts: Vec<Vec<Node>>, span: &Span) -> Result<Vec<Vec<Node>>, ParseFailure> {
     if parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) { parts.pop(); }
     if parts.iter().any(Vec::is_empty) { return Err(invalid(span, "empty row between diamonds")); }
@@ -1057,7 +1065,6 @@ fn array_literal(cells: Vec<Vec<Node>>, form: ListForm) -> NodeKind {
     NodeKind::ArrayLiteral(Arc::new(ArrayLiteral { record: form == ListForm::Items && cells.iter().any(|c| key_colon(c).is_some()), cells, form, constant }))
 }
 
-
 /// One row read as a bracketed list of its items.
 fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
     let span = cover(&nodes);
@@ -1065,7 +1072,7 @@ fn row(nodes: Vec<Node>) -> Result<Node, ParseFailure> {
     Ok(Node { kind: array_literal(cells, ListForm::Items), span })
 }
 
-/// `(4⋄4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
+/// `(4◇4 5)` is `[[4] [4 5]]`. Its items are the rows, each read as a bracketed list.
 fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let cells = diamond_rows(split(pieces, false)?, span)?.into_iter().map(|nodes| Ok(vec![row(nodes)?])).collect::<Result<_, ParseFailure>>()?;
     Ok(array_literal(cells, ListForm::Rows))
@@ -1076,17 +1083,19 @@ pub(crate) fn touching(a: &Node, b: &Node) -> bool {
     a.span.source.text.get(a.span.range.end..b.span.range.start).is_some_and(|gap| gap.chars().all(|c| canonical(c) == '⁝'))
 }
 
-/// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `⋄` or a line break separates major cells. Brackets round one item make a one-item vector.
+/// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `◇` or a line break separates major cells. Brackets round one item make a one-item vector.
 fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     let semicolon = pieces.iter().any(|p| matches!(p, Piece::Semicolon(_)));
     let diamond = pieces.iter().any(|p| matches!(p, Piece::Diamond));
-    if semicolon && diamond { return Err(invalid(span, "; and ⋄ cannot both separate items in one pair of brackets")); }
+    if semicolon && diamond { return Err(invalid(span, "; and ◇ cannot both separate items in one pair of brackets")); }
     let mut parts = split(pieces, true)?;
     if diamond {
         // A row that is a single item is that item's major cell.
         let cells = diamond_rows(parts, span)?.into_iter().map(|nodes| {
             let row = row(nodes)?;
-            Ok(match row.kind { NodeKind::ArrayLiteral(mut literal) if literal.cells.len() == 1 => Arc::make_mut(&mut literal).cells.pop().unwrap(), _ => vec![row] })
+            Ok(match row.kind {
+                NodeKind::ArrayLiteral(mut literal) if literal.cells.len() == 1 => Arc::make_mut(&mut literal).cells.pop().unwrap(), _ => vec![row]
+            })
         }).collect::<Result<_, ParseFailure>>()?;
         return Ok(array_literal(cells, ListForm::Cells));
     }
@@ -1184,8 +1193,7 @@ pub(crate) fn runs(nodes: Vec<Node>) -> Vec<Node> {
 fn written_function(node: &Node) -> bool {
     match &node.kind {
         NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Script(ScriptKind::Super, _) | NodeKind::Dfn(_) => true,
-        NodeKind::Embedded(Value::Function(_) | Value::Operator(_)) => true,
-        NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
+        NodeKind::Embedded(Value::Function(_) | Value::Operator(_)) => true, NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
     }
 }
 
@@ -1254,7 +1262,9 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 }
 
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
-pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Embedded(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral(_)) }
+pub(crate) fn key_node(n: &Node) -> bool {
+    matches!(n.kind, NodeKind::Literal(_) | NodeKind::Embedded(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral(_))
+}
 
 /// The program in `source`, with numbers that have no marker read as floats of the current settings' default width. The current settings also give literals their kinds. They're the session's within an evaluation or `Session::parse`, and the defaults elsewhere, as in a check of structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus { parse_with_aliases(source, false) }
@@ -1269,7 +1279,9 @@ pub(crate) fn parse_embedded(source: Arc<Source>, parts: Vec<(std::ops::Range<us
     let tokens = match lex(&source, aliases, None) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
     let mut tokens = tokens.into_iter().peekable();
     let mut replaced = Vec::new();
-    let invalid = || ParseStatus::Invalid(Error::new(ErrorKind::Syntax, "an embedded item must replace complete tokens in source order").at(&Span::whole(source.clone())));
+    let invalid = || {
+        ParseStatus::Invalid(Error::new(ErrorKind::Syntax, "an embedded item must replace complete tokens in source order").at(&Span::whole(source.clone())))
+    };
     for (range, value, literal) in parts {
         while tokens.peek().is_some_and(|t| t.span.range.start < range.start) { replaced.push(tokens.next().unwrap()); }
         if range.is_empty() || tokens.peek().is_none_or(|t| t.span.range.start != range.start) { return invalid(); }
@@ -1279,7 +1291,8 @@ pub(crate) fn parse_embedded(source: Arc<Source>, parts: Vec<(std::ops::Range<us
             if end > range.end { return invalid(); }
         }
         if end != range.end { return invalid(); }
-        replaced.push(Token { kind: if literal { TokenKind::Literal(value) } else { TokenKind::Embedded(value) }, span: Span { source: source.clone(), range } });
+        replaced
+            .push(Token { kind: if literal { TokenKind::Literal(value) } else { TokenKind::Embedded(value) }, span: Span { source: source.clone(), range } });
     }
     replaced.extend(tokens);
     parsed_tokens(&replaced, true)
@@ -1287,9 +1300,10 @@ pub(crate) fn parse_embedded(source: Arc<Source>, parts: Vec<(std::ops::Range<us
 
 fn parsed_tokens(tokens: &[Token], embedded: bool) -> ParseStatus {
     match (Parser { tokens, pos: 0, embedded }).pieces(None).and_then(statements) {
-        Ok(statements) => ParseStatus::Complete(Parsed {
-            statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() }),
-        Err(failure) => failure.into()
+        Ok(statements) => {
+            ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
+        }
+        Err(failure) => failure.into(),
     }
 }
 
@@ -1393,10 +1407,10 @@ fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
 impl NodeKind {
     fn name(&self) -> &'static str {
         match self {
-            Self::Literal(_) => "Literal", Self::Embedded(_) => "Embedded", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(..) => "Name",
-            Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
-            Self::Run(_) => "Run", Self::Script(..) => "Script", Self::Scope(..) => "Scope", Self::ArrayLiteral(_) => "ArrayLiteral", Self::Dfn(_) => "Dfn",
-            Self::Joiner(_) => "Joiner"
+            Self::Literal(_) => "Literal", Self::Embedded(_) => "Embedded", Self::Function(_) => "Function", Self::Operator(_) => "Operator",
+            Self::Name(..) => "Name", Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard",
+            Self::Group(_) => "Group", Self::Run(_) => "Run", Self::Script(..) => "Script", Self::Scope(..) => "Scope", Self::ArrayLiteral(_) => "ArrayLiteral",
+            Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner"
         }
     }
     /// The primitive that a glyph's node holds, or `None` for any other node.

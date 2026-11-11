@@ -124,7 +124,15 @@ def add_separator(font):
     for offset in (-gap, 0, gap): pen.addComponent(source, (0.5, 0, 0, 0.5, round(x), round(y+offset)))
     add_glyph(font, '⁝', pen.glyph(), advance)
 
+def map_spellings(font):
+    "Use the existing BPL outlines for its replacement Unicode spellings."
+    cmap = font.getBestCmap()
+    spellings = {ord(new): cmap[ord(old)] for old, new in zip('⍺⍵⍳⍴⍟⋄', 'αωιρ⊛◇')}
+    for table in font['cmap'].tables:
+        if table.isUnicode(): table.cmap.update(spellings)
+
 def write_font(font, name, version, web_dest):
+    map_spellings(font)
     names = {1: name, 3: f'{name}-{version}', 4: name, 5: f'Version {version}', 6: name}
     for record in font['name'].names:
         if record.nameID in names:
@@ -146,11 +154,11 @@ def build():
     thicken_slashes(font)
     add_separator(font)
     compact_subscripts(font)
-    paths = write_font(font, 'SAX2B', '2.003', Path(__file__).with_name('browser'))
+    paths = write_font(font, 'SAX2B', '2.004', Path(__file__).with_name('browser'))
     font = TTFont(io.BytesIO(urlread(BQN386_URL + 'BQN386.ttf', decode=False, timeout=30)), recalcTimestamp=False)
     add_separator(font)
     compact_subscripts(font)
-    paths += write_font(font, 'BQN386B', '1.002', web_dest)
+    paths += write_font(font, 'BQN386B', '1.003', web_dest)
     for name, url in [('SAX2', SAX2_URL), ('BQN386', BQN386_URL)]:
         (GENERATED/f'fonts/LICENSE-{name}').write_text(urlread(url + 'LICENSE', timeout=30))
     return paths

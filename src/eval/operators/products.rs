@@ -15,9 +15,7 @@ fn outer_items(operand: &Function, left: &Value, right: &Value, span: &Span) -> 
     let agreement = Agreement::outer(left.layout(), right.layout()).described("outer product is too large")?;
     // A batched try reads each argument laid over the result's frame (`batch::Arguments::laid`), as Each's does (`items_whole`).
     let whole = || crate::batch::Arguments::laid(&agreement, Some(items_whole(left)), items_whole(right));
-    each_pair(
-        operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(Some(left), right, i)),
-        whole, None, span)
+    each_pair(operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(Some(left), right, i)), whole, None, span)
 }
 
 /// `f.g` with function operands. Primitives call the operation that they name (`Operation::call`). Other operands route to a running level, then take one batched call of `g` (`by_triples`), or else the general path (`Contraction::items`).
@@ -148,7 +146,8 @@ pub(crate) fn primitive_expansion(f: Primitive, g: Primitive, right: &Value, spa
     if let Some(route) = route {
         let square = matrix(right).filter(|&[m, n]| m == n && n > 0 && !crate::transform::carried(None, right)).map(|[_, n]| n);
         let fast = match (route, square) {
-            (crate::events::routes::Determinant, Some(n)) => crate::primitive::determinant(right, n)?, (crate::events::routes::Permanent, Some(n)) if n < 64 => permanent(right, n)?, _ => None
+            (crate::events::routes::Determinant, Some(n)) => crate::primitive::determinant(right, n)?,
+            (crate::events::routes::Permanent, Some(n)) if n < 64 => permanent(right, n)?, _ => None
         };
         let Some(value) = fast else {
             crate::events::declined(route, "arguments that don't suit it", right.len());

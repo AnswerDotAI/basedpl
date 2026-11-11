@@ -1,17 +1,18 @@
 "Python parts for BPL's expression parser."
 import operator
 from fractions import Fraction
-from . import Array, _array
+from . import Array, _Expression, _array
 from .functions import Function, Operator, _operator_names, _marks, __all__ as _function_names
 
 
-class _Syntax:
+class _Syntax(_Expression):
     def __init__(self, source): self.source = source
     def __repr__(self): return self.source
 
 class _Script(_Syntax): pass
 
-space, dot, alpha, omega, diamond, guard, otherwise = map(_Syntax, (' ', '.', '⍺', '⍵', '⋄', '?', ';'))
+space, dot, alpha, omega, diamond, guard, otherwise = map(_Syntax, (' ', '.', 'α', 'ω', '◇', '?', ';'))
+α, ω = alpha, omega
 
 def _script(values, digits):
     if not values: raise TypeError('a script needs at least one integer')
@@ -25,7 +26,7 @@ def subscript(*indices):
     "A numeric subscript: positions on data, axes on a function."
     return _script(indices, '₋₀₁₂₃₄₅₆₇₈₉')
 
-__all__ = ['space', 'dot', 'alpha', 'omega', 'diamond', 'guard', 'otherwise', 'superscript', 'subscript']
+__all__ = ['space', 'dot', 'alpha', 'omega', 'α', 'ω', 'diamond', 'guard', 'otherwise', 'superscript', 'subscript']
 _syntax_names = {name:glyph for glyph, (_, *names) in _operator_names.items() for name in names if name}
 _syntax_names.update({name:glyph for glyph,name in _marks.items()})
 for _name, _glyph in _syntax_names.items():
@@ -51,8 +52,9 @@ def _expression(parts):
     def part(value):
         nonlocal formal
         if isinstance(value, _Syntax):
-            formal |= value.source in ('⍺', '⍵')
+            formal |= value.source in ('α', 'ω')
             text(value.source)
+        elif isinstance(value, _Expression): part(value.parts)
         elif isinstance(value, (list, tuple)):
             opening, closing, separator = ('[', ']', ' ') if isinstance(value, list) else ('(', ')', '⁝')
             text(opening)

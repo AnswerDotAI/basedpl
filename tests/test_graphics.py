@@ -6,26 +6,26 @@ from basedpl.worker import Worker
 
 
 def test_svg_display_and_renderers():
-    pic = bpl('circle←•element "circle" ⋄ pic←•svg ["r":20] circle ⍬')
+    pic = bpl('circle←•element "circle" ◇ pic←•svg ["r":20] circle ⍬')
     root = ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])
     teq(root.tag, '{http://www.w3.org/2000/svg}svg')
     teq(root.attrib['viewBox'], '0 0 100 100')
-    result = bpl('⎕←"before" ⋄ pic ⋄ ⎕←"after"', 'repl')
+    result = bpl('⎕←"before" ◇ pic ◇ ⎕←"after"', 'repl')
     teq([e['kind'] for e in result.events], ['explicit', 'display', 'explicit'])
     teq(result.events[1]['data']['image/svg+xml'], pic._repr_mimebundle_()['image/svg+xml'])
     bpl('pic.children.attrs.r←30')
     teq(ET.fromstring(bpl('pic')._repr_mimebundle_()['image/svg+xml'])[0].attrib['r'], '30')
-    bpl('x←{["text/plain":⍕+/⍵.items]}ᵘ •mime ["items":[1 2 3]]')
+    bpl('x←{["text/plain":⍕+/ω.items]}ᵘ •mime ["items":[1 2 3]]')
     teq(bpl('x')._repr_mimebundle_(), {'text/plain': '6'})
     bpl('x.items+←10')
     teq(bpl('x')._repr_mimebundle_(), {'text/plain': '36'})
-    bpl('bad←["items":[1 2]] ⋄ bad←{1÷"a"}ᵘ •mime bad')
+    bpl('bad←["items":[1 2]] ◇ bad←{1÷"a"}ᵘ •mime bad')
     teq(list(bpl('bad', 'repl').events[0]['data']), ['text/plain'])
     teq(list(bpl('bad')._repr_mimebundle_()), ['text/plain'])
     with pytest.raises(BplError): bpl('•mime bad')
     teq(int(bpl('2+3')), 5)
     teq(ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])[0].attrib['r'], '20')
-    png = bpl('•image 2 3⍴0 0.5 1')._repr_mimebundle_()['image/png']
+    png = bpl('•image 2 3ρ0 0.5 1')._repr_mimebundle_()['image/png']
     teq(png[:8], b'\x89PNG\r\n\x1a\n')
 
 
@@ -34,13 +34,13 @@ def test_plot_labels():
     def texts(code):
         root = ET.fromstring(bpl(f'"image/svg+xml"⊃•mime {code}').py)
         return {e.text.strip(): float(e.get('y')) for e in root.iter('{http://www.w3.org/2000/svg}text')}
-    bpl('sales←["city":["London" "Paris"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ⋄ 40 50 60]')
+    bpl('sales←["city":["London" "Paris"] "month":["Jan" "Feb" "Mar"]]:[10 20 30 ◇ 40 50 60]')
     plain = texts('•plot sales')
     assert {'Jan', 'Feb', 'Mar', 'month'} <= plain.keys() and 'London' not in plain
     assert {'London', 'Paris', 'city'} <= texts('["legend":"top-left"] •plot sales').keys()
-    bpl('p←•plot 1 10 100 ⋄ p.y.scale←"log" ⋄ p.x.ticks←["first":0 "last":2]')
+    bpl('p←•plot 1 10 100 ◇ p.y.scale←"log" ◇ p.x.ticks←["first":0 "last":2]')
     assert {'1', '10', '100', 'first', 'last'} <= texts('p').keys()
-    bpl('top←["title":"Top"] •plot sales ⋄ fig←["title":"Both"] •plot [top ⍬] ⋄ bars←["mark":"bar" "labels":1] •plot 5 7')
+    bpl('top←["title":"Top"] •plot sales ◇ fig←["title":"Both"] •plot [top ⍬] ◇ bars←["mark":"bar" "labels":1] •plot 5 7')
     assert {'Both', 'Top'} <= texts('fig').keys()
     assert {'5', '7'} <= texts('bars').keys()
     ends = texts('["legend":"end"] •plot ["x":[1 2] "aa":[3 4] "bb":[3 4]]')
@@ -50,15 +50,15 @@ def test_plot_labels():
 
 def test_plot_cells():
     "Cell rows run down the plot as the matrix prints, and each run of equal colours in a row is one rectangle."
-    root = ET.fromstring(bpl('"image/svg+xml"⊃•mime ["mark":"cell" "colorbar":$t] •plot ["city":["London" "Paris"] "month":["Jan" "Feb"]]:[10 20 ⋄ 30 60]').py)
+    root = ET.fromstring(bpl('"image/svg+xml"⊃•mime ["mark":"cell" "colorbar":$t] •plot ["city":["London" "Paris"] "month":["Jan" "Feb"]]:[10 20 ◇ 30 60]').py)
     y = {e.text.strip(): float(e.get('y')) for e in root.iter('{http://www.w3.org/2000/svg}text')}
     assert y['London'] < y['Paris'] and {'10', '60'} <= y.keys()
-    root = ET.fromstring(bpl('"image/svg+xml"⊃•mime "cell" •plot [1 1 2 ⋄ 3 3 3]').py)
+    root = ET.fromstring(bpl('"image/svg+xml"⊃•mime "cell" •plot [1 1 2 ◇ 3 3 3]').py)
     teq(len(root.findall('{http://www.w3.org/2000/svg}rect')), 4)
 
 def test_svg_worker():
     with Worker() as w:
-        result = w.eval('⎕←"picture" ⋄ •svg ⍬')
+        result = w.eval('⎕←"picture" ◇ •svg ⍬')
         assert result['error'] is None
         teq(result['value']['axis_keys'], [['tag', 'attrs', 'children']])
         teq([e['kind'] for e in result['output']], ['explicit', 'display'])

@@ -19,7 +19,7 @@ The monadic hook `f↢g Y` is `Y f(g Y)`. The left argument of `f` is `Y` itself
 
 ```bpl
 -↢10⁝3           ⍝ ¯7
-y←3 ⋄ -↢10 y       ⍝ ¯7
+y←3 ◇ -↢10 y       ⍝ ¯7
 ```
 
 See [Before](right-tail-arrow.qmd), [Atop / Rank](jot-diaeresis.qmd) and [Over](circle-diaeresis.qmd).

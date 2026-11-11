@@ -26,7 +26,7 @@ $n=$n                ⍝ $f
 
 ```bpl
 3↑$a               ⍝ "ABC"
-$a⍳"CAB"           ⍝ [2 0 1]ₓ
+$aι"CAB"           ⍝ [2 0 1]ₓ
 ```
 
 ## `$d` — Digits
@@ -49,9 +49,9 @@ $mₛ=2*¯23            ⍝ $t
 A matrix's rank is the number of its singular values above a cutoff. NumPy's cutoff is `$m` times the larger of the matrix's two lengths times the largest singular value:
 
 ```bpl
-m←[1 2⋄2 4⋄3 6]
+m←[1 2◇2 4◇3 6]
 s←(["kind":"svd" "vectors":$f]•decompose m).s
-+/s>$m×(⌈/⍴m)×⌈/s     ⍝ 1ₓ
++/s>$m×(⌈/ρm)×⌈/s     ⍝ 1ₓ
 ```
 ## `$e` — Caught error
 

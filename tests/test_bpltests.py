@@ -52,7 +52,7 @@ def test_records_and_boundaries():
     row = dict(id='curated:1', code='1+2', expected_code='3')
     assert convert(row).expect == '3'
     cases = [Case('1+2', '3', 'ngn:1', 'addition'),
-        Case("f←{\n\n⍵+1\n}\nf 2\n", '(\n3\n)', comment='multiline', rtol=1e-14, atol=1e-15),
+        Case("f←{\n\nω+1\n}\nf 2\n", '(\n3\n)', comment='multiline', rtol=1e-14, atol=1e-15),
         Case('"unfinished', '⍝ error: SYNTAX ERROR'), Case('', '⍝ error: SYNTAX ERROR')]
     text = render(cases)
     for ending in ['', '\n', '\n\n']: assert parse(text.rstrip('\n')+ending) == cases
@@ -71,11 +71,11 @@ def test_records_and_boundaries():
     with pytest.raises(ValueError, match='duplicate'): parse(render([cases[0], cases[0]]))
     with pytest.raises(ValueError, match='use one'): render([Case('1\n⍝ =>\n2', '2')])
     with pytest.raises(ValueError, match='tolerance'): parse('⍝  — [rtol=-1]\n1\n1\n\n')
-    cases = [Case('⎕←9 ⋄ ⎕←2 ⋄ 7', '7', section='Agenda', output='9\n2'),
+    cases = [Case('⎕←9 ◇ ⎕←2 ◇ 7', '7', section='Agenda', output='9\n2'),
         Case('1', '1', section='Silence', output=''), Case("⎕←'\\'", "'\\'", section='Silence', output='\\')]
     for ending in ['', '\n', '\n\n']: assert parse(render(cases).rstrip('\n')+ending) == cases
-    multiline = Case('{\n⍵\n}1', '1')
-    assert parse('⍝ —\n{\n⍵\n}1\n⍝ =>\n1') == parse('⍝ —\n{\n⍵\n}1   ⍝ 1') == [multiline]
+    multiline = Case('{\nω\n}1', '1')
+    assert parse('⍝ —\n{\nω\n}1\n⍝ =>\n1') == parse('⍝ —\n{\nω\n}1   ⍝ 1') == [multiline]
     assert '}1   ⍝ 1' in render([multiline])
     assert r'⍝ ⎕: 9\n2' in render(cases)
     with pytest.raises(ValueError, match='escapes'): parse('⍝ —\n1\n1\n⍝ ⎕: \\t\n\n')

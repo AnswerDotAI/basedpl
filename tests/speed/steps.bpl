@@ -1,32 +1,32 @@
 ⍝⍝ setup
 ⍝ Each case's counts are for each of `n` steps. In `calls`, a case makes its own `n` steps, each reading the step before. In `steps`, the count runs a case `n` times, forcing its value each time, because a value that nothing reads never runs. These cases have counts and no time budgets.
 n←1024 size 16
-k←0 ⋄ t←64⍴"ab" "cde" ⋄ m←[0 1⋄¯1 0] ⋄ s←[64 2 2]⍴$t $f $f $t $t $t $f $t
-v_4←1.5 2.5 3.5 4.5 ⋄ v_16←1.5+⍳16 ⋄ a←v_4
-loss←{+/⊼1-2×⍵} ⋄ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
+k←0 ◇ t←64ρ"ab" "cde" ◇ m←[0 1◇¯1 0] ◇ s←[64 2 2]ρ$t $f $f $t $t $t $f $t
+v_4←1.5 2.5 3.5 4.5 ◇ v_16←1.5+ι16 ◇ a←v_4
+loss←{+/⊼1-2×ω} ◇ rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
 ⍝⍝ calls
 ⍝ A primitive call.
 +⍣n 0
 ⍝⍝: -	-	-	instructions macos 3442.289 linux 3082.852	allocated macos 24.688 linux 24.688
 
 ⍝ A dfn call that returns its argument. Held scalar Power regression: pre-VM instructions per step were about 1,727 on macOS and 1,678.148 on Linux.
-{⍵}⍣n 0
+{ω}⍣n 0
 ⍝⍝: -	-	-	instructions macos 2218.688 linux 2182.375	allocated macos 9.812 linux 9.812
 
 ⍝ A dfn that reads a global. Held scalar Power regression: pre-VM instructions per step were about 6,120 on macOS and 5,811.883 on Linux.
-{⍵+k}⍣n 0
+{ω+k}⍣n 0
 ⍝⍝: -	-	-	instructions macos 6979.812 linux 7092.195	allocated macos 41.812 linux 41.812
 
 ⍝ A local assignment and read. Held scalar Power regression: pre-VM instructions per step were about 6,768 on macOS and 6,387.711 on Linux.
-{x←⍵+1 ⋄ x}⍣n 0
+{x←ω+1 ◇ x}⍣n 0
 ⍝⍝: -	-	-	instructions macos 8994.930 linux 9084.070	allocated macos 41.812 linux 41.812
 
 ⍝ A spaced run that constructs and applies a train at once. Held scalar Power regression: pre-VM instructions per step were about 8,670 on macOS and 7,990.398 on Linux.
-{(⍵)+⊢ ⍵}⍣n 0
+{(ω)+⊢ ω}⍣n 0
 ⍝⍝: -	-	-	instructions macos 14665.000 linux 13708.461	allocated macos 403.312 linux 403.312
 
 ⍝ A bracket literal. Held scalar Power regression: pre-VM instructions per step were about 7,699 on macOS and 6,117.836 on Linux.
-{↑[⍵ 1]}⍣n 0
+{↑[ω 1]}⍣n 0
 ⍝⍝: -	-	-	instructions macos 10616.148 linux 8929.242	allocated macos 297.812 linux 297.812
 
 ⍝ Each reverses the 64 ragged strings in `t` cell by cell. Their two lengths prevent rectangular stacking, so batching declines and the ordinary structural-copy path reads each string's plan.
@@ -34,7 +34,7 @@ loss←{+/⊼1-2×⍵} ⋄ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x}
 ⍝⍝: -	-	-	instructions macos 520127.914 linux 440998.188	allocated macos 37761.812 linux 37761.812
 
 ⍝ Rank's general path calls a dfn once for each of the same 64 cells.
-{⌽⍵}⍤0⍣n t
+{⌽ω}⍤0⍣n t
 ⍝⍝: -	-	-	instructions macos 828788.719 linux 816740.578	allocated macos 43355.375 linux 43355.375
 
 ⍝ A system function that converts each item on its own runs once on the leaf of the same 64 strings (`batch::leaf_system`).
@@ -69,7 +69,7 @@ loss∂v_16
 
 
 ⍝ Selective assignment through a selecting function on 4 floats, then a read of the result. The target `1↑a` runs under a `Label` level on the simple root `a`, whose labels hold a mapping and no ids. `Selection::write_into` writes the value at the position that the labels give.
-(1↑a)←0 ⋄ a
+(1↑a)←0 ◇ a
 ⍝⍝: -	-	-	instructions macos 33168.719 linux 25247.758	allocated macos 4832 linux 4832
 
 ⍝ Under with a selecting function on the same kind of root. `1↑` runs under a `Label` level and `2×` on its result. `Selection::write_into` writes that result at the position that the labels give.

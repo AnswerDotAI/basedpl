@@ -57,8 +57,9 @@ pub(crate) fn fold(operand: &Function, kind: FoldKind, axis: Option<&Value>, lef
     }
     let along = kind.axis(axis.as_ref(), right)?;
     let axis = axis.is_some().then_some(along);
-    if !kind.scan && left.is_none() && let Some((p, axis)) = native
-        && let Some(result) = crate::primitive::catenate_many(p, axis, right)? { return Ok(result); }
+    if !kind.scan && left.is_none() && let Some((p, axis)) = native && let Some(result) = crate::primitive::catenate_many(p, axis, right)? {
+        return Ok(result);
+    }
     match primitive {
         Some(p) => Operation::Fold(p, kind).call(Pairing::Axis(axis), left, right, span), None => fold_array(operand, kind, axis, left, right, span)
     }
@@ -183,10 +184,10 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<usize>, seed: Opt
         FoldPlan::Whole(items) => items,
         FoldPlan::Done(result) => result,
         FoldPlan::Lanes { lanes, shape } => match by_lanes(operand, kind, seed, right, along, &lanes, span) {
-            Some(result) => result?, None => {
+            Some(result) => result?,
+            None => {
                 let mut body = BodyCaller::new(operand);
-                item_lanes(kind.scan, &lanes, shape, seed, right,
-                    |x, y| body.call(Some(x), y, span)?.into_value(span), crate::transform::carried(None, right))?
+                item_lanes(kind.scan, &lanes, shape, seed, right, |x, y| body.call(Some(x), y, span)?.into_value(span), crate::transform::carried(None, right))?
             }
         },
     };

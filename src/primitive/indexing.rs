@@ -524,7 +524,7 @@ impl Selection {
 /// The selection that the array `indices` makes as the positions of `@`, as one selector of `⌷`: major cells for positions, or where its items are vectors, the item or cell at each coordinate.
 pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Span) -> Result<Selection, Error> {
     if right.is_unit() { return Err(Error::new(Kind::Length, "a unit has no major-cell axis")); }
-    // In a batched run, positions written as `[⍵]` hold a batch as an item, which joins into one batch of each cell's positions.
+    // In a batched run, positions written as `[ω]` hold a batch as an item, which joins into one batch of each cell's positions.
     selection(right, &[IndexPart::Axis(crate::batch::joined(indices).unwrap_or_else(|| indices.clone()))], false, span)
 }
 
@@ -594,9 +594,7 @@ impl Value {
     pub fn index_width(&self) -> usize { coordinate_width(self).unwrap_or(1) }
     /// Add keys named by an assignment before resolving its selection. Pick paths add no keys.
     pub fn with_missing_keys(&self, parts: &[IndexPart<Value>]) -> Result<Value, Error> {
-        if paths_part(self.core_layout(), parts)?.is_some() {
-            return Ok(self.clone());
-        }
+        if paths_part(self.core_layout(), parts)?.is_some() { return Ok(self.clone()); }
         let mut wanted = Vec::new();
         for (axis, part) in rustymath::structure::addressed_parts(self.core_layout(), &source_claims(parts), None)? {
             let IndexPart::Axis(i) = part else { continue };

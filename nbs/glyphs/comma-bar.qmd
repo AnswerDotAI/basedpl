@@ -5,8 +5,8 @@ Function. Keys: `Alt-Minus ,`. Hanzi: `接/矩`. Ranks: `∞` monadic, `∞ ∞`
 `⍪Y` makes a matrix: first axis becomes rows, remaining axes become columns.
 
 ```bpl
-⍪1 2 3             ⍝ 3 1⍴1 2 3
-⍴⍪2 3 4⍴0          ⍝ [2 12]ₓ
+⍪1 2 3             ⍝ 3 1ρ1 2 3
+ρ⍪2 3 4ρ0          ⍝ [2 12]ₓ
 ```
 
 `X⍪Y` joins on the first axis. `⍪⍠K` follows [catenate](comma.qmd).
@@ -21,5 +21,5 @@ Function. Keys: `Alt-Minus ,`. Hanzi: `接/矩`. Ranks: `∞` monadic, `∞ ∞`
 
 ```bpl
 ⍪⁻⍪1 2 3             ⍝ 1 2 3
-[1 2]⍪⁻[1 2⋄3 4]   ⍝ [3 4⋄]
+[1 2]⍪⁻[1 2◇3 4]   ⍝ [3 4◇]
 ```

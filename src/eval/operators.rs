@@ -29,14 +29,13 @@ impl<'a> BodyCaller<'a> {
     fn call<L: Argument, R: Argument>(&mut self, left: Option<L>, right: R, span: &Span) -> Result<Binding, Error> {
         let dense = |v: &Value| !v.is_atom() && crate::plan::Desc::describes(v);
         // Value natives observe every argument; a formal trace input has no value to observe.
-        if !matches!(self.f.node(), FunctionNode::System(f) if matches!(&f.call, crate::system::Call::Value(_)))
-            && !session().prototype.get() && dense(right.value()) && left.as_ref().is_none_or(|v| dense(v.value())) {
-            check().at(span)?;
-            if let Some(result) = self.f.programmed(crate::program::trace::Purpose::Call, Some(&mut self.previous),
-                left.as_ref().map(Argument::value), right.value(), span, &|f, x, y| f.call_with(x, y, span)?.array(span)) {
-                return result.map(Binding::Value);
-            }
-        } else { self.previous = None; }
+        if !matches!(self.f.node(), FunctionNode::System(f) if matches!(&f.call, crate::system::Call::Value(_))) && !session().prototype.get()
+            && dense(right.value()) && left.as_ref().is_none_or(|v| dense(v.value())) {
+                check().at(span)?;
+                if let Some(result) = self.f.programmed(
+                    crate::program::trace::Purpose::Call, Some(&mut self.previous), left.as_ref().map(Argument::value), right.value(), span,
+                    &|f, x, y| f.call_with(x, y, span)?.array(span)) { return result.map(Binding::Value); }
+            } else { self.previous = None; }
         self.f.call_with(left, right, span).map(|result| result.value)
     }
 }
@@ -132,7 +131,7 @@ pub(super) fn composition<L: Argument, R: Argument>(f: &Function, left: Option<L
 const ONE_ARGUMENT: &str = "a bound function takes one argument";
 
 /// `a↣f`'s call: `f` on `right`, with `a` as its left argument. It takes one argument.
-// Composition calls this for each bound function. Out of line, even with `#[inline]`, it cost `{(⍵)+⊢ ⍵}` about 50 instructions a call.
+// Composition calls this for each bound function. Out of line, even with `#[inline]`, it cost `{(ω)+⊢ ω}` about 50 instructions a call.
 #[inline(always)]
 fn bound_call(a: &Value, f: &Function, left: bool, right: impl Argument, span: &Span) -> Result<Bound, Error> {
     if left { return Err(Error::new(ErrorKind::Syntax, ONE_ARGUMENT)); }
@@ -147,7 +146,6 @@ pub(super) fn fork_call<L: Argument, R: Argument>(tines: &[Function; 3], left: O
     let x = tines[0].call_with(left, right, span)?.array(span)?;
     tines[1].call_with(Some(x), y, span)
 }
-
 
 /// `operand` called on prototypes, as Each calls it for a frame with no cells. A call that fails gives 0, the prototype of the empty result, as in J. Inside a batched run, a call that fails stops the run, as a guard does (`session::Catch`).
 fn on_prototypes(operand: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {

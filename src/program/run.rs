@@ -38,9 +38,7 @@ pub(crate) fn values(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
 
 /// The program's result. A plan of ordinary nodes can run a lone step on its bound operands directly.
 pub(crate) fn replay(program: &Program, plan: &Plan, inputs: &[&Value], span: &Span) -> Result<Value, Error> {
-    if plan.units.iter().all(|u| matches!(u, Unit::Node(_))) {
-        if let Some(value) = lone(program, inputs, span) { return value; }
-    }
+    if plan.units.iter().all(|u| matches!(u, Unit::Node(_))) { if let Some(value) = lone(program, inputs, span) { return value; } }
     Ok(taken(program, &mut values(program, plan, inputs, span)?, &program.result))
 }
 
@@ -54,8 +52,9 @@ pub(crate) fn lone(program: &Program, inputs: &[&Value], span: &Span) -> Option<
     if !program.nodes.iter().enumerate().all(|(i, _)| i == j || leaf(i).is_some()) { return None; }
     if crate::settings::verifies() { super::verify::check(program); }
     let result = run(step, &program.nodes, &|i| leaf(i).expect("a lone step reads inputs or held values"), None, &node.desc, span);
-    Some(result.and_then(|value| checked(node, j, value, span)).map(|value|
-        if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
+    Some(
+        result.and_then(|value| checked(node, j, value, span))
+            .map(|value| if program.result.view(&program.nodes) { through(&value, &program.result, &program.nodes).into_owned() } else { value }))
 }
 
 /// Stores a completed step at its declared kind and checks the value against its description.
@@ -66,8 +65,8 @@ fn checked(node: &Node, j: usize, value: Value, span: &Span) -> Result<Value, Er
         let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
         let atom = |a: bool| if a { " atom" } else { "" };
         return Err(Error::domain(format!(
-            "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype,
-            planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
+            "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype, planned.fixed,
+            atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
         )).at(span));
     }
     Ok(value)
@@ -89,7 +88,7 @@ impl Replay<'_> {
                 };
                 let value = |i: usize| self.values[i].as_ref().expect("a step's operands have their values");
                 let result = if !self.program.takes(j) && let Some(copy) = copy_read(step, &value, &node.desc, span) { copy }
-                    else { run(step, &self.program.nodes, &value, owned, &node.desc, span) };
+                else { run(step, &self.program.nodes, &value, owned, &node.desc, span) };
                 checked(node, j, result?, span)?
             }
         };
@@ -118,18 +117,14 @@ fn copied_result(value: Value, desc: &Desc) -> Result<Value, crate::ErrorKind> {
     value.relaid(desc.layout.clone())
 }
 
-
 /// An operand Copy is a logical read, not a demand for its expanded storage. Terminal program outputs use `run`, including when a pending copy is forced.
 pub(crate) fn copy_read<'a>(step: &Step, node: &dyn Fn(usize) -> &'a Value, desc: &Desc, span: &Span) -> Option<Result<Value, Error>> {
     let Step::Copy { of, map } = step else { return None; };
-    Some(crate::fusion::copied(node(*of), desc.layout.clone(), map, None)
-        .and_then(|value| copied_result(value, desc)).described("a program's copy").at(span))
+    Some(crate::fusion::copied(node(*of), desc.layout.clone(), map, None).and_then(|value| copied_result(value, desc)).described("a program's copy").at(span))
 }
 
 /// Executes `step` on its operands. A demanded Copy produces stored items; internal copies keep their logical read (`copy_read`). Carried operands go through their call boundary. `owned` gives an accumulation a base whose old value the replay no longer needs.
-pub(crate) fn run<'a>(
-    step: &Step, nodes: &[Node], node: &dyn Fn(usize) -> &'a Value, owned: Option<Value>, desc: &Desc, span: &Span
-) -> Result<Value, Error> {
+pub(crate) fn run<'a>(step: &Step, nodes: &[Node], node: &dyn Fn(usize) -> &'a Value, owned: Option<Value>, desc: &Desc, span: &Span) -> Result<Value, Error> {
     let value = |r: &Read| through(node(r.of), r, nodes);
     match step {
         Step::Map { left, right, plan } => {
@@ -138,7 +133,7 @@ pub(crate) fn run<'a>(
             if desc.atom || carried {
                 let (left, right) = (left.as_ref().map(value), value(right));
                 return if carried { plan.p.call(left.as_deref(), right.as_ref(), span) }
-                    else { plan.p.pervasive_apply(Some(plan), left.as_deref(), right.as_ref(), span, false).at(span) };
+                else { plan.p.pervasive_apply(Some(plan), left.as_deref(), right.as_ref(), span, false).at(span) };
             }
             let agreement = Agreement { layout: desc.layout.clone(), len: desc.layout.count(),
                 left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(nodes)), right: right.pointwise(nodes) };
@@ -149,8 +144,8 @@ pub(crate) fn run<'a>(
             if crate::transform::carried(None, &of) { return crate::derivative::converted(&of, desc.dtype(), span); }
             of.converted(desc.dtype(), *numeric).described("a program's conversion").at(span)
         }
-        Step::Copy { of, map } => crate::fusion::copied_now(node(*of), desc.layout.clone(), map, None)
-            .and_then(|value| copied_result(value, desc)).described("a program's copy").at(span),
+        Step::Copy { of, map } => crate::fusion::copied_now(node(*of), desc.layout.clone(), map, None).and_then(|value| copied_result(value, desc))
+            .described("a program's copy").at(span),
         Step::Structural { inputs, form, params, fill, plan } => {
             let inputs: Vec<Value> = inputs.iter().map(|r| value(r).into_owned()).collect();
             let params: Vec<Value> = params.iter().map(|r| value(r).into_owned()).collect();

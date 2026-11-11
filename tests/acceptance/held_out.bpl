@@ -2,42 +2,42 @@
 ⍝ Four models written for static kinds from the documentation alone, to check the evaluator's rewrite. Each model has a forward pass, a scalar loss, its gradient through ∂, a training step and a loop of steps, in two spellings that compute the same thing. `32•float` makes every data array and parameter record 32-bit under either kinds. Under dynamic kinds, `√e` of the exact `e` and `m÷keep` of the Boolean mask are 64-bit, so attention and the dropped inputs compute at 64 bits there. Costs count copies of n 64-bit floats, about 7.9 µs on the development Mac.
 n←65536
 ⍝ Uniform parameters scaled by the square root of the fan-in, the first axis.
-init←{(¯0.5+¿⍵⍴0)÷√⍵₀}
+init←{(¯0.5+¿ωρ0)÷√ω₀}
 ⍝ The generator that draws the dropout masks.
 gen←•rand 7
 ⍝ Transformer block: B sequences of T tokens with d features, causal attention with H heads of e features and an MLP with f hidden units, each after a layer norm and inside a residual connection.
 [B T d H f]←2 64 64 4 128ₓ
 e←d÷ₓH
-tx←32•float ¯0.5+¿[B T d]⍴0
-ty←32•float ¯0.5+¿[B T d]⍴0
-tp←32•float["wq":init[d d] "wk":init[d d] "wv":init[d d] "wo":init[d d] "ga":d⍴1 "ba":d⍴0 "wu":init[d f] "bu":f⍴0 "wd":init[f d] "bd":d⍴0 "gm":d⍴1 "bm":d⍴0]
-causal←32•float ¯1E9× ⍳T <⊗ ⍳T
+tx←32•float ¯0.5+¿[B T d]ρ0
+ty←32•float ¯0.5+¿[B T d]ρ0
+tp←32•float["wq":init[d d] "wk":init[d d] "wv":init[d d] "wo":init[d d] "ga":dρ1 "ba":dρ0 "wu":init[d f] "bu":fρ0 "wd":init[f d] "bd":dρ0 "gm":dρ1 "bm":dρ0]
+causal←32•float ¯1E9× ιT <⊗ ιT
 mean←+/÷≢
-norm←{c←⍵-mean⍤1⁝⍵ ⋄ c÷√1E¯5+mean⍤1⁝⊼c}
-ln←{[g b]←⍺ ⋄ b(+⍤1)g(×⍤1)norm ⍵}
+norm←{c←ω-mean⍤1⁝ω ◇ c÷√1E¯5+mean⍤1⁝⊼c}
+ln←{[g b]←α ◇ b(+⍤1)g(×⍤1)norm ω}
 heads←[0 2 [1 H;3 ∞]]⍉
 attend←{
-  [wq wk wv wo]←⍺
-  x←⍵
-  [q k v]←{heads x+.×⍵}¨[wq wk wv]
+  [wq wk wv wo]←α
+  x←ω
+  [q k v]←{heads x+.×ω}¨[wq wk wv]
   s←causal(+⍤2) q+.×⍤2 ⍉⍤2⁝k ÷ √e
   w←*s-⌈/s
   (heads⁻ w÷+/w +.×⍤2 v)+.×wo
 }
-mlp←{[wu bu wd bd]←⍺ ⋄ bd(+⍤1)(0⌈bu(+⍤1)⍵+.×wu)+.×wd}
+mlp←{[wu bu wd bd]←α ◇ bd(+⍤1)(0⌈bu(+⍤1)ω+.×wu)+.×wd}
 block←{
-  [wq wk wv wo ga ba wu bu wd bd gm bm]←⍺
-  h←⍵+[wq wk wv wo]attend⁝[ga ba]ln⁝⍵
+  [wq wk wv wo ga ba wu bu wd bd gm bm]←α
+  h←ω+[wq wk wv wo]attend⁝[ga ba]ln⁝ω
   h+[wu bu wd bd]mlp⁝[gm bm]ln⁝h
 }
-tloss←{[x y]←⍺ ⋄ o←⍵ block x ⋄ +/÷≢ ⊼,y-o}
-tstep←{⍵ - 0.2× [tx ty]tloss∂⍵}
+tloss←{[x y]←α ◇ o←ω block x ◇ +/÷≢ ⊼,y-o}
+tstep←{ω - 0.2× [tx ty]tloss∂ω}
 ⍝ The same block in index notation: b sequence, t token, i feature, u the token that t reads, h head, j feature within a head, k hidden unit.
 blocki←{
-  [wq wk wv wo ga ba wu bu wd bd gm bm]←⍺
-  [[b t i] u [h j] k]←•index[⍴⍵ T [H e] f]
-  lnorm←{[g c]←⍺ ⋄ z←⍵-(+/⍠i⁝⍵)÷d ⋄ c.[i]+g.[i]×z÷√1E¯5+(+/⍠i⁝⊼z)÷d}
-  x←⍵.[b t i]
+  [wq wk wv wo ga ba wu bu wd bd gm bm]←α
+  [[b t i] u [h j] k]←•index[ρω T [H e] f]
+  lnorm←{[g c]←α ◇ z←ω-(+/⍠i⁝ω)÷d ◇ c.[i]+g.[i]×z÷√1E¯5+(+/⍠i⁝⊼z)÷d}
+  x←ω.[b t i]
   z←[ga ba]lnorm x
   zu←(:[b t i]⍉⁻z).[b u i]
   q←z+.×⍠i⁝wq.[i j+e×h]
@@ -50,66 +50,66 @@ blocki←{
   m←0⌈bu.[k]+([gm bm]lnorm r)+.×⍠i⁝wu.[i k]
   :[b t i]⍉⁻r+bd.[i]+m+.×⍠k⁝wd.[k i]
 }
-tlossi←{[x y]←⍺ ⋄ o←⍵ blocki x ⋄ +/÷≢ ⊼,y-o}
-tstepi←{⍵ - 0.2× [tx ty]tlossi∂⍵}
+tlossi←{[x y]←α ◇ o←ω blocki x ◇ +/÷≢ ⊼,y-o}
+tstepi←{ω - 0.2× [tx ty]tlossi∂ω}
 ⍝ Convolutional net: N images of S by S pixels, F filters of 3 by 3, a leaky ReLU, 2 by 2 max pooling and a dense layer to K classes, with a cross-entropy loss. `image` handles one image; Rank maps it over the batch.
 [N S K F]←32 16 10 8ₓ
-cx←32•float ¯0.5+¿[N S S]⍴0
-cy←(¿N⍴K) =⊗ ⍳K
-cp←32•float["k":init[9 F] "c":F⍴0 "w":init[49×F ; K] "b":K⍴0]
-lsm←{c←⍵-⌈/⍵ ⋄ c-⍟+/*c}
+cx←32•float ¯0.5+¿[N S S]ρ0
+cy←(¿NρK) =⊗ ιK
+cp←32•float["k":init[9 F] "c":Fρ0 "w":init[49×F ; K] "b":Kρ0]
+lsm←{c←ω-⌈/ω ◇ c-⊛+/*c}
 image←{
-  [k c w b]←⍺
-  a←c(+⍤1)([14 14 9]⍴3 3↕⍵)+.×k
+  [k c w b]←α
+  a←c(+⍤1)([14 14 9]ρ3 3↕ω)+.×k
   r←(0<)⍚[0.01× ⊢]a
-  p←⌈/₂ ₃[[2 2]⋄[2 2]]↕r
+  p←⌈/₂ ₃[[2 2]◇[2 2]]↕r
   b+(,p)+.×w
 }
-closs←{[x y]←⍺ ⋄ z←⍵(image⍤∞ 2)x ⋄ -+/÷≢ +/y×lsm z}
-cstep←{⍵ - 0.1× [cx cy]closs∂⍵}
+closs←{[x y]←α ◇ z←ω(image⍤∞ 2)x ◇ -+/÷≢ +/y×lsm z}
+cstep←{ω - 0.1× [cx cy]closs∂ω}
 ⍝ The same net in index notation over the whole batch: n image, i j output pixel, s t position in the filter, f filter, p q pooled pixel, u v position in the pool, o class.
 convi←{
-  [k c w b]←⍺
-  [[n i j] [s t] f [p q] [u v] o]←•index[[≢⍵ 14 14] [3 3] F [7 7] [2 2] K]
-  a←c.[f]++/⍠[s t]⁝⍵.[n i+s j+t]×k.[t+3×s f]
+  [k c w b]←α
+  [[n i j] [s t] f [p q] [u v] o]←•index[[≢ω 14 14] [3 3] F [7 7] [2 2] K]
+  a←c.[f]++/⍠[s t]⁝ω.[n i+s j+t]×k.[t+3×s f]
   r←(0<)⍚[0.01× ⊢]a
   m←⌈/⍠[u v]⁝(:[n i j f]⍉⁻r).[n u+2×p v+2×q f]
   :[n o]⍉⁻b.[o]++/⍠[p q f]⁝m×w.[f+F×q+7×p o]
 }
-clossi←{[x y]←⍺ ⋄ z←⍵ convi x ⋄ -+/÷≢ +/y×lsm z}
-cstepi←{⍵ - 0.1× [cx cy]clossi∂⍵}
+clossi←{[x y]←α ◇ z←ω convi x ◇ -+/÷≢ +/y×lsm z}
+cstepi←{ω - 0.1× [cx cy]clossi∂ω}
 ⍝ ODE: P damped pendulums, θ'' = -k sin θ - c θ', over M classical Runge-Kutta steps of dt through `⍣`. The loss fits k and c to observed angles. `rkstep` takes the field as its operand; `swing` is the field of every pendulum at once, on a 2 by P state.
 [P M]←128 50ₓ
 dt←0.04
 rkstep←{
-  ka←⍺ ⍶ ⍵
-  kb←⍺ ⍶ ⍵+ka×dt÷2
-  kc←⍺ ⍶ ⍵+kb×dt÷2
-  kd←⍺ ⍶ ⍵+kc×dt
-  ⍵+(dt÷6)×ka+kd+2×kb+kc
+  ka←α ⍶ ω
+  kb←α ⍶ ω+ka×dt÷2
+  kc←α ⍶ ω+kb×dt÷2
+  kd←α ⍶ ω+kc×dt
+  ω+(dt÷6)×ka+kd+2×kb+kc
 }
-swing←{[th om]←⍵ ⋄ [om⋄(-⍺.k×1○th)-⍺.c×om]}
-sa←32•float[¯1+2×¿P⍴0⋄P⍴0]
+swing←{[th om]←ω ◇ [om◇(-α.k×1○th)-α.c×om]}
+sa←32•float[¯1+2×¿Pρ0◇Pρ0]
 truth←32•float["k":4 "c":0.3]
-ot←(⊃truth(swing rkstep⍣(⍳≥M))sa).[: 0]
+ot←(⊃truth(swing rkstep⍣(ι≥M))sa).[: 0]
 op←32•float["k":3 "c":0.1]
-oloss←{[s y]←⍺ ⋄ t←⊃⍵(swing rkstep⍣(⍳≥M))s ⋄ +/÷≢ ⊼,y-t.[: 0]}
-ostep←{⍵ - 10× [sa ot]oloss∂⍵}
+oloss←{[s y]←α ◇ t←⊃ω(swing rkstep⍣(ι≥M))s ◇ +/÷≢ ⊼,y-t.[: 0]}
+ostep←{ω - 10× [sa ot]oloss∂ω}
 ⍝ `pendulum` is the field of one pendulum; Rank maps it over a P by 2 state.
-pendulum←{[th om]←⍵ ⋄ [om ; (-⍺.k×1○th)-⍺.c×om]}
+pendulum←{[th om]←ω ◇ [om ; (-α.k×1○th)-α.c×om]}
 sb←⍉sa
-olossp←{[s y]←⍺ ⋄ t←⊃⍵((pendulum⍤∞ 1)rkstep⍣(⍳≥M))s ⋄ +/÷≢ ⊼,y-t.[: : 0]}
-ostepp←{⍵ - 10× [sb ot]olossp∂⍵}
+olossp←{[s y]←α ◇ t←⊃ω((pendulum⍤∞ 1)rkstep⍣(ι≥M))s ◇ +/÷≢ ⊼,y-t.[: : 0]}
+ostepp←{ω - 10× [sb ot]olossp∂ω}
 ⍝ Logistic regression on R samples of D features, R×D = n, with inverted dropout of the inputs, its mask drawn from `gen` at each step. `xent` is the cross-entropy through the logits, with the mask applied by multiplication. `xentp` works from probabilities, with Agenda picking each sample's log-likelihood by its label, and its step applies the mask by Agenda.
 [R D]←1024 64ₓ
 keep←0.8
-lx←32•float ¯0.5+¿[R D]⍴0
-ly←0<lx+.×¯0.5+¿D⍴0
-lp←32•float["w":D⍴0 "b":0]
-xent←{[x y]←⍺ ⋄ [w b]←⍵ ⋄ z←b+x+.×w ⋄ +/÷≢ (⍟1+*z)-y×z}
-lstep←{m←keep>gen.roll(⍴lx)⍴0 ⋄ ⍵ - 0.5× [lx×m÷keep ; ly]xent∂⍵}
-xentp←{[x y]←⍺ ⋄ p←÷1+*-⍵.b+x+.×⍵.w ⋄ -+/÷≢ y⍚[⍟1-⊢ ⍟]p}
-lstepp←{m←keep>gen.roll(⍴lx)⍴0 ⋄ ⍵ - 0.5× [m⍚[0 ÷↢keep]lx ; ly]xentp∂⍵}
+lx←32•float ¯0.5+¿[R D]ρ0
+ly←0<lx+.×¯0.5+¿Dρ0
+lp←32•float["w":Dρ0 "b":0]
+xent←{[x y]←α ◇ [w b]←ω ◇ z←b+x+.×w ◇ +/÷≢ (⊛1+*z)-y×z}
+lstep←{m←keep>gen.roll(ρlx)ρ0 ◇ ω - 0.5× [lx×m÷keep ; ly]xent∂ω}
+xentp←{[x y]←α ◇ p←÷1+*-ω.b+x+.×ω.w ◇ -+/÷≢ y⍚[⊛1-⊢ ⊛]p}
+lstepp←{m←keep>gen.roll(ρlx)ρ0 ◇ ω - 0.5× [m⍚[0 ÷↢keep]lx ; ly]xentp∂ω}
 
 ⍝⍝ transformer •prefs ["kinds":"static"]
 ⍝ The block's forward pass and mean squared error, in array form.

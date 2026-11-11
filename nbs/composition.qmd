@@ -9,21 +9,21 @@ The [token separator](syntax.qmd#token-separator) `⁝` keeps names and literals
 A run that ends in a function is a train. A train of two functions is an atop: `f⁝g Y` is `f(g Y)`. A train of three functions is a fork: `f⁝g⁝h Y` is `(f Y)g(h Y)`. With a left argument, `X(f g)Y` is `f(X g Y)` and `X(f g h)Y` is `(X f Y)g(X h Y)`. [Trains](evaluation.qmd#trains) gives the rules for longer trains.
 
 ```bpl
-mean←+/÷≢ ⋄ mean 2 4 9       ⍝ 5
+mean←+/÷≢ ◇ mean 2 4 9       ⍝ 5
 1 2 (⊣+⊢) 3 4                ⍝ 4 6
 ```
 
 In a train, a [subject](terms.qmd#term-subject) becomes the left argument of the function after it. `32+1.8×` converts Celsius to Fahrenheit by multiplying by 1.8, then adding 32.
 
 ```bpl
-fahrenheit←32+1.8× ⋄ fahrenheit 100     ⍝ 212
+fahrenheit←32+1.8× ◇ fahrenheit 100     ⍝ 212
 ```
 
 A space keeps a train apart from its argument. `+/÷≢ v` applies the train to `v`. Without the space, the one run `+/÷≢v` reads as `+/÷(≢v)`, the reciprocal of the count `3ₓ`, which [`÷`](glyphs/obelus.qmd) floors to `0ₓ` for machine integers:
 
 ```bpl
-v←2 4 9 ⋄ +/÷≢ v             ⍝ 5
-v←2 4 9 ⋄ +/÷≢v              ⍝ 0ₓ
+v←2 4 9 ◇ +/÷≢ v             ⍝ 5
+v←2 4 9 ◇ +/÷≢v              ⍝ 0ₓ
 ```
 
 ## Identity functions
@@ -38,10 +38,10 @@ In a train, `⊢` stands for the right argument and `⊣` for the left. A fork w
 Where a formula uses its argument more than once, each `⊢` makes the reader track the argument again. A function that removes the repeats reads better. Newton's step towards √2 adds half of `x` to the reciprocal of `x`. `⊽⁻`, the inverse of double, halves:
 
 ```bpl
-n←⊽⁻+÷ ⋄ n 1.5              ⍝ 1.416666667
+n←⊽⁻+÷ ◇ n 1.5              ⍝ 1.416666667
 ```
 
-`0.5×⊢+2÷⊢` gives the same results, but its two `⊢`s hide the formula. Where no clear tacit form exists, a dfn names the argument, as in `{0.5×⍵+2÷⍵}`.
+`0.5×⊢+2÷⊢` gives the same results, but its two `⊢`s hide the formula. Where no clear tacit form exists, a dfn names the argument, as in `{0.5×ω+2÷ω}`.
 
 ## Atop and Over
 
@@ -84,7 +84,7 @@ With two function operands, `↣` and `↢` form monadic hooks. `f↣g Y` is `(f
 For a power, a superscript reads more directly than Self: `x²` rather than `×⍨x`.
 
 ```bpl
-x←3 ⋄ x²                     ⍝ 9
+x←3 ◇ x²                     ⍝ 9
 ```
 
 ## Inverse
@@ -92,7 +92,7 @@ x←3 ⋄ x²                     ⍝ 9
 `f⁻` is the inverse of `f`, as [Superscripts](scripts.ipynb#on-a-function) describes. BPL infers the inverses of most compositions. `fahrenheit⁻` converts back to Celsius:
 
 ```bpl
-fahrenheit←32+1.8× ⋄ fahrenheit⁻ 212   ⍝ 100
+fahrenheit←32+1.8× ◇ fahrenheit⁻ 212   ⍝ 100
 ```
 
 A superscript straight after a number applies to the number. To invert a function that ends in a number, put the function in parentheses:
@@ -120,10 +120,10 @@ Within a run, an operator's right operand is the one [token](terms.qmd#term-toke
 
 ```bpl
 ≥⍣3⁝5                                       ⍝ 8
-m←["r":2 "c":3]⍴⍳6ₓ ⋄ i←"c" ⋄ +/⍠i⁝m         ⍝ ["r":2]⍴[3 12]ₓ
-m←["r":2 "c":3]⍴⍳6ₓ ⋄ i←"c" ⋄ 10÷√1++/⍠i⁝m  ⍝ ["r":2]⍴[5 2.773500981]
+m←["r":2 "c":3]ρι6ₓ ◇ i←"c" ◇ +/⍠i⁝m         ⍝ ["r":2]ρ[3 12]ₓ
+m←["r":2 "c":3]ρι6ₓ ◇ i←"c" ◇ 10÷√1++/⍠i⁝m  ⍝ ["r":2]ρ[5 2.773500981]
 (2×)⍣3⁝5                                    ⍝ 40
-(+/÷≢)⍤1⁝2 3⍴⍳6                              ⍝ 1 4
+(+/÷≢)⍤1⁝2 3ρι6                              ⍝ 1 4
 ```
 
 Add no separator where the tokens already stay distinct. A name never joins a literal strand, as in `f⍣n1`. A vector argument can touch its operand in brackets, as in `≥⍣2[1 2 3]`.
@@ -131,9 +131,9 @@ Add no separator where the tokens already stay distinct. A name never joins a li
 `⁝` works the same way with a left argument. Parentheses around the derived function also show it between its arguments. Use whichever reads better. Compound operands keep their own parentheses:
 
 ```bpl
-w←[1 2⋄3 4⋄5 6] ⋄ 10 20+⍤1⁝w                 ⍝ [11 22⋄13 24⋄15 26]
-w←[1 2⋄3 4⋄5 6] ⋄ 10 20(+⍤1)w                ⍝ [11 22⋄13 24⋄15 26]
-m←2 3⍴⍳6 ⋄ (+/÷≢)⍤1m                         ⍝ 1 4
+w←[1 2◇3 4◇5 6] ◇ 10 20+⍤1⁝w                 ⍝ [11 22◇13 24◇15 26]
+w←[1 2◇3 4◇5 6] ◇ 10 20(+⍤1)w                ⍝ [11 22◇13 24◇15 26]
+m←2 3ρι6 ◇ (+/÷≢)⍤1m                         ⍝ 1 4
 ```
 
 ## Forms that read worse
@@ -142,12 +142,12 @@ Each pair gives the same result.
 
 | Reads worse | Reads better |
 |---|---|
-| `{(+/⍵)÷≢⍵}` | `+/÷≢` |
+| `{(+/ω)÷≢ω}` | `+/÷≢` |
 | `0.5×⊢+2÷⊢` | `⊽⁻+÷` |
-| `{⍵÷+/⍵}` | `⊢÷+/` |
-| `{⍵×10}@[1 3]` | `(10×)@[1 3]` |
-| `{+/⍵}⍠0` | `+/₀` |
-| `{⍵,1}` | `,↢1` |
+| `{ω÷+/ω}` | `⊢÷+/` |
+| `{ω×10}@[1 3]` | `(10×)@[1 3]` |
+| `{+/ω}⍠0` | `+/₀` |
+| `{ω,1}` | `,↢1` |
 | `×⍨x` | `x²` |
 | `≥⍣3⊢5` | `≥⍣3⁝5` |
 | `+/⍠i⊢m` | `+/⍠i⁝m` |

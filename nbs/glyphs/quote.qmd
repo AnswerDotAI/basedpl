@@ -3,9 +3,9 @@
 `'c'` is one character. `"text"` is a string, a vector of characters of any length. `''` and `""` are the empty string.
 
 ```bpl
-⍴'a'               ⍝ ⍬ₓ
-⍴"a"               ⍝ [1]ₓ
-⍴""                ⍝ [0]ₓ
+ρ'a'               ⍝ ⍬ₓ
+ρ"a"               ⍝ [1]ₓ
+ρ""                ⍝ [0]ₓ
 ```
 
 `'''` is the quote character. Inside a string, an apostrophe needs no escaping, and a double quote is written twice.

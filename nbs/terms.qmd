@@ -13,7 +13,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [Mathish types]{#term-mathish-types} | ordinary exact numbers, 64-bit floats and complex numbers with 64-bit parts, under dynamic kinds. Fixed-integer calculations are excluded. [Mathish mode](numbers.qmd#mathish-mode) applies its conventions when enabled |
 | [character]{#term-character} | one Unicode character, written in single quotes: `'a'` |
 | [primitive]{#term-primitive} | a built-in function or operator, written as one glyph: `+` or `/` |
-| [dfn]{#term-dfn} | a function or operator written in braces, as [Dfns](dfns.ipynb) describes: `{⍵+1}` |
+| [dfn]{#term-dfn} | a function or operator written in braces, as [Dfns](dfns.ipynb) describes: `{ω+1}` |
 | [function]{#term-function} | a primitive, train, derived function, or dfn that doesn't use `⍶` or `⍹`, which applies to arguments |
 | [operator]{#term-operator} | a primitive, or a dfn that uses `⍶` or `⍹`, which takes operands and derives a function: `/` derives `+/` from `+` |
 | [derived function]{#term-derived-function} | a function that an operator derives: `+/`, or `2↣×` |
@@ -41,9 +41,9 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [selection]{#term-selection} | values read from an argument together with their places in it, as a list of positions or a function such as `1↓` reads them |
 | [glyph]{#term-glyph} | a symbol for a primitive or for syntax, as the [glyph reference](glyphs.qmd) lists |
 | [name]{#term-name} | a word that refers to a value, as [Syntax](syntax.qmd#names) describes: `x` or `avg` |
-| [statement]{#term-statement} | the code between two newlines or `⋄` separators. Inside brackets and parentheses, these separate rows instead |
+| [statement]{#term-statement} | the code between two newlines or `◇` separators. Inside brackets and parentheses, these separate rows instead |
 | [literal]{#term-literal} | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
-| [group]{#term-group} | brackets, parentheses or braces with what they hold: `(1+2)`, `[a b]` or `{⍵}` |
+| [group]{#term-group} | brackets, parentheses or braces with what they hold: `(1+2)`, `[a b]` or `{ω}` |
 | [token]{#term-token} | a glyph, name, literal or group |
 | [run]{#term-run} | a sequence of tokens with no spaces between them |
 | [token separator]{#term-token-separator} | `⁝` separates tokens without ending a run or continuing a literal strand |
@@ -55,8 +55,8 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [expression]{#term-expression} | a run, group or statement that ends in a subject |
 | [train]{#term-train} | a run, group or statement that ends in a function |
 | [part]{#term-part} | one of the pieces a train is built from: a literal strand, or a token with the operators bound to it, such as `2`, `+/` or `(+×-)` |
-| [fork]{#term-fork} | three parts of a train, `f g h`, giving `(f ⍵) g (h ⍵)` |
+| [fork]{#term-fork} | three parts of a train, `f g h`, giving `(f ω) g (h ω)` |
 | [tine]{#term-tine} | one of the two outer parts of a fork |
-| [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ⍵)` |
+| [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ω)` |
 | [bind]{#term-bind} | a subject directly before a part, fixing that part's left argument: `2×` is `2↣×`, and in `2\|#⊢` the `2` binds `\|` |
-| [fast combination]{#term-fast-combination} | a combination of functions that BPL computes by an algorithm of its own, in any spelling: `10↑⍋v`, `⍟1+x` |
+| [fast combination]{#term-fast-combination} | a combination of functions that BPL computes by an algorithm of its own, in any spelling: `10↑⍋v`, `⊛1+x` |

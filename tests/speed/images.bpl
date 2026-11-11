@@ -1,18 +1,18 @@
 ⍝⍝ setup
-height←2000 size 16 ⋄ width←1500 size 16
-img←¿[height width 3]⍴0
+height←2000 size 16 ◇ width←1500 size 16
+img←¿[height width 3]ρ0
 flat←,img
 n←≢flat
 ⍝⍝ images
 ⍝ A 2000×1500 image with three channels holds 9 million floats, 72 MB an array, several times the largest cache. A fused program reads and writes memory once, about 1 copy, or reads it once, about 0.5, where it ends in a fold, and each of its calls passes over a block in the cache. Natively those passes overlap the pass over memory, adding about 0.25 copies to a program that writes its result; in wasm each adds about 0.4.
-⍝ Expected: 1.25 copies natively for each; in wasm, `0⌈1⌊0.5+1.2×img-0.5` 3 copies, for five calls, `img×1-0.5×img` 2.2, for three, and `0⌈1⌊img×0.5+(⍳height)÷2×height` 2.6, for four.
+⍝ Expected: 1.25 copies natively for each; in wasm, `0⌈1⌊0.5+1.2×img-0.5` 3 copies, for five calls, `img×1-0.5×img` 2.2, for three, and `0⌈1⌊img×0.5+(ιheight)÷2×height` 2.6, for four.
 0⌈1⌊0.5+1.2×img-0.5
 ⍝⍝: 2.5	3.4	4.6	instructions macos 10.002 linux 5.527	allocated macos 40.118 linux 40.118
 
 img×1-0.5×img
 ⍝⍝: 2.5	3.3	3.4	instructions macos 5.719 linux 3.415	allocated macos 24.074 linux 24.074
 
-0⌈1⌊img×0.5+(⍳height)÷2×height
+0⌈1⌊img×0.5+(ιheight)÷2×height
 ⍝⍝: 2.5	3.5	3.5	instructions macos 8.251 linux 4.537	allocated macos 24.222 linux 24.222
 
 ⍝ `×` joins the pending calls on its two sides into one program that runs block by block.
@@ -36,11 +36,11 @@ img-0.5 × img+0.5
 ⍝⍝: 1.2	1.1	1	instructions macos 2.414 linux 1.285	allocated macos 0.16 linux 0.16
 
 ⍝ `+/img` folds each pixel's 3 channels. Each length of lane up to 15 items has a loop of its own. The reshape shares `flat`'s storage.
-⍝ Expected: `+/img` 0.67 copies: one read, and a third as many items written; `+/[1125000 8]⍴flat` 0.56 copies: one read, and an eighth as many items written.
+⍝ Expected: `+/img` 0.67 copies: one read, and a third as many items written; `+/[1125000 8]ρflat` 0.56 copies: one read, and an eighth as many items written.
 +/img
 ⍝⍝: 1.4	1.6	1.9	instructions macos 2.21 linux 1.949	allocated macos 2.764 linux 2.764
 
-+/[n÷8;8]⍴flat
++/[n÷8;8]ρflat
 ⍝⍝: 1.2	1.2	1.3	instructions macos 2.957 linux 2.626	allocated macos 1.109 linux 1.109
 
 ⍝ The comparison's Booleans count into a byte for each pixel.

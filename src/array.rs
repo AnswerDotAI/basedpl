@@ -1044,9 +1044,8 @@ impl Value {
     }
     /// `cells` assembled by trailing-axis agreement into an array whose frame is `frame`, as `Layout::assemble` and `mix` assemble them. The cells' layout is `cell_layout` where the caller knows it, and otherwise the layout that the cells agree on (`Layout::assembled`).
     pub(crate) fn assemble_layout<'a>(
-        frame: &Layout, cells: impl ExactSizeIterator<Item = &'a Self> + Clone, empty_cell: &Self,
-        widening: Widening, chosen: Option<&Value>, cell_layout: Option<&Layout>
-    ) -> Result<Self, ErrorKind> {
+        frame: &Layout, cells: impl ExactSizeIterator<Item = &'a Self> + Clone, empty_cell: &Self, widening: Widening, chosen: Option<&Value>,
+        cell_layout: Option<&Layout>) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
         let Some(first) = cells.clone().next() else {
             return frame.concat(cell_layout.unwrap_or(empty_cell.layout())).collect(vec![], empty_cell.prototype());
@@ -1068,7 +1067,7 @@ impl Value {
             map.spans(0..cell_len, cell.len(), &mut |_, len, run| {
                 match run {
                     Some((first, 1)) => data.extend(cell, first..first + len),
-                    Some((first, stride)) => for j in 0..len { data.push(cell, first.wrapping_add_signed(stride * j as isize)); },
+                    Some((first, stride)) => { for j in 0..len { data.push(cell, first.wrapping_add_signed(stride * j as isize)); } }
                     None => data.fill(&fill, len),
                 }
                 true

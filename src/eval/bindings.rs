@@ -90,7 +90,6 @@ impl Frame {
     }
 }
 
-
 /// The frames of running calls and scopes, innermost last, and the slot stack, which holds each frame's slots after those of the frames below it. A call pushes its slots there and allocates nothing for its names.
 #[derive(Default)]
 struct Stack { frames: Vec<Frame>, slots: Vec<Option<Binding>> }
@@ -108,8 +107,6 @@ impl<'f> Iterator for Chain<'f> {
         Some((i, frame))
     }
 }
-
-
 
 /// Every binding, and where code is running: the frames of running calls and scopes with their slots, each module's names, the current frame, and the module whose top level is running.
 pub(super) struct Bindings {
@@ -178,7 +175,7 @@ impl Bindings {
         None
     }
 
-    /// `f` on the binding of `name` that code sees here, and its place. Lookup tries the current frame, then each frame that it sees names through, then the running module's names. Every call's frame binds `⍺`, to an absent argument where the call has no left argument, so lookup finds the current call's `⍺`. No module holds the six names that a call binds itself. In each frame, a name that has a slot is in its slot or unbound there, and an empty slot sends the lookup on to the next frame, as an unbound name does. In a scope's frame, a key of its record names its item or major cell, after any name that an assignment in the scope binds. The binding stays borrowed while `f` reads it, so `f` evaluates nothing.
+    /// `f` on the binding of `name` that code sees here, and its place. Lookup tries the current frame, then each frame that it sees names through, then the running module's names. Every call's frame binds `α`, to an absent argument where the call has no left argument, so lookup finds the current call's `α`. No module holds the six names that a call binds itself. In each frame, a name that has a slot is in its slot or unbound there, and an empty slot sends the lookup on to the next frame, as an unbound name does. In a scope's frame, a key of its record names its item or major cell, after any name that an assignment in the scope binds. The binding stays borrowed while `f` reads it, so `f` evaluates nothing.
     fn find<T>(&self, name: Name, f: impl FnOnce(Place, &Binding) -> T) -> Option<T> {
         let stack = self.stack.borrow();
         let Stack { frames, slots } = &*stack;
@@ -234,13 +231,11 @@ impl Bindings {
         }
     }
 
-
-    /// The binding of `name` in the current frame's slot, taken out, with its place, for a dfn's last read of a local, `⍵` or `⍺` (`syntax::release`). `None` where that slot holds nothing.
+    /// The binding of `name` in the current frame's slot, taken out, with its place, for a dfn's last read of a local, `ω` or `α` (`syntax::release`). `None` where that slot holds nothing.
     pub(super) fn take(&self, name: Name) -> Option<(Place, Binding)> {
         let s = { let stack = self.stack.borrow(); stack.frames[self.current.get()?].slot(name)? };
         self.take_slot(s)
     }
-
 
     /// The binding in slot `s` of the current frame, taken out, leaving `Binding::Released`. Lookup then stops at the slot, so a later read by text fails there and never finds an outer binding of the name.
     fn take_slot(&self, s: u32) -> Option<(Place, Binding)> {
@@ -251,7 +246,6 @@ impl Bindings {
         if matches!(slot, None | Some(Binding::Released)) { return None; }
         slot.replace(Binding::Released).map(|binding| (Place::Slot(i, s), binding))
     }
-
 
     /// The text of each name that code sees here, once each, sorted: the names of the current frame and of each frame that it sees names through, then the running module's. The six names that a call binds itself, and empty slots, aren't listed.
     pub(super) fn names(&self) -> Vec<String> {
@@ -321,5 +315,4 @@ impl Bindings {
         self.truncate(depth);
         self.current.set(current);
     }
-
 }

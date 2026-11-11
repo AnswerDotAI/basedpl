@@ -126,7 +126,7 @@ pub(crate) fn system(name: &str) -> Error { Error::new(ErrorKind::Unsupported, f
 #[cold]
 #[inline(never)]
 pub(crate) fn two_arguments() -> Error {
-    Error::domain("∂ can't use an attached derivative in a call with two arguments. Bind the left argument first, as in bound←10↣f ⋄ bound∂←g")
+    Error::domain("∂ can't use an attached derivative in a call with two arguments. Bind the left argument first, as in bound←10↣f ◇ bound∂←g")
 }
 
 /// Whether `value`'s numbers are complex, which `∂` doesn't differentiate. A carried value answers from the value its carrier holds (`Carrier::template`): a dual's primal, or a batch's first cell, which has the kind of every cell.
@@ -341,7 +341,9 @@ pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, s
             None if leaf.template().is_exact() => converted(leaf, DType::Float(numeric.width_of([None])), span), None => Ok(leaf.clone())
         }
     })?;
-    if let Some(result) = f.programmed(crate::program::trace::Purpose::Derivative, None, left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
+    if let Some(result) = f.programmed(crate::program::trace::Purpose::Derivative, None, left, right, span, &|g, x, y| derived(g, x, y, span)) {
+        return result;
+    }
     derived(f, left, right, span)
 }
 
@@ -785,7 +787,7 @@ fn coordinate(t: &Value, k: usize) -> Value {
     }
 }
 
-/// A call of `f`, which has a JVP rule `g` that `f∂←g` attached, on an argument with a dual at level `tag`, inside a function that `∂` differentiates. The primal is `f` on the primal argument. `g` runs on the primal with `⍺` a dual of zeros whose tangent is the argument's, so the tangent of its result is the rule applied to that tangent: a value in forward mode, and a record in reverse mode, as JAX transposes a `custom_jvp`. A rule must be linear in `⍺`.
+/// A call of `f`, which has a JVP rule `g` that `f∂←g` attached, on an argument with a dual at level `tag`, inside a function that `∂` differentiates. The primal is `f` on the primal argument. `g` runs on the primal with `α` a dual of zeros whose tangent is the argument's, so the tangent of its result is the rule applied to that tangent: a value in forward mode, and a record in reverse mode, as JAX transposes a `custom_jvp`. A rule must be linear in `α`.
 #[cold]
 #[inline(never)]
 pub(crate) fn attached(f: &Function, g: &Function, right: &Value, tag: u64, span: &Span) -> Result<Value, Error> {

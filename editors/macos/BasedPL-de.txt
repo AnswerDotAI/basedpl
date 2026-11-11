@@ -4,7 +4,7 @@ Chords use the unshifted key label.
 Repeat a prefix chord to type its character, or release modifiers before its next key.
 
 Chord	Output or prefix
-Option-a	⍺
+Option-a	α
 Option-s	⌈
 Option-d	⌊
 Control-Option-d	∆
@@ -17,9 +17,9 @@ Option-c	∩
 Option-v	∪
 Option-b	⊥
 Option-q	quad prefix
-Option-w	⍵
+Option-w	ω
 Option-e	∊
-Option-r	⍴
+Option-r	ρ
 Option-z	⊂
 Option-t	∘
 Option-1	diaeresis prefix
@@ -31,7 +31,7 @@ Option-4	⇄
 Option-Shift-4	⁴
 Control-Option-6	superscript prefix
 Option-Shift-5	subscript prefix
-Option-Shift-´	⋄
+Option-Shift-´	◇
 Option-Shift-9	∨
 Control-Option-Shift-7	¿
 Option-Shift-ß	≢
@@ -42,7 +42,7 @@ Control-Option-Shift-0	≡
 Option-Shift-+	≠
 Option-o	circle prefix
 Option-Shift-u	÷
-Option-i	⍳
+Option-i	ι
 Option-p	π
 Control-Option-p	stile prefix
 Option-Shift-l	↦

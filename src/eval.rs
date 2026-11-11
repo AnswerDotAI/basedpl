@@ -4,8 +4,8 @@ use crate::{
     primitive::{Builtin, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Superscript}, symbols::Notation,
     syntax::{Definition, DefinitionKind, Node, NodeKind, ScriptKind}
 };
-use rustymath::{error::Kind, structure::IndexPart};
 use rustymath::hashing::{HashMap, HashMapExt};
+use rustymath::{error::Kind, structure::IndexPart};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
 
 mod assign;
@@ -41,7 +41,7 @@ fn selections_equal<E>(x: &[IndexPart<Value>], y: &[IndexPart<Value>], values: &
     for (x, y) in x.iter().zip(y) {
         let same = match (x, y) {
             (IndexPart::Axis(a), IndexPart::Axis(b)) => OperandRef::Value(a).equal_by(&OperandRef::Value(b), values)?,
-            _ => x.as_ref().map(|_| ()) == y.as_ref().map(|_| ())
+            _ => x.as_ref().map(|_| ()) == y.as_ref().map(|_| ()),
         };
         if !same { return Ok(false); }
     }
@@ -95,8 +95,7 @@ impl Function {
             (N::Ruled(f, r), N::Ruled(g, s)) => f.equal_by(g, values)? && r.equal_by(s, values)?,
             (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
             (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
-            (N::Selection(x), N::Selection(y)) => selections_equal(x, y, values)?,
-            (N::Array(a), N::Array(b)) => values(a, b, false)?,
+            (N::Selection(x), N::Selection(y)) => selections_equal(x, y, values)?, (N::Array(a), N::Array(b)) => values(a, b, false)?,
             (N::Fork([f, g, h]), N::Fork([x, y, z])) => f.equal_by(x, values)? && g.equal_by(y, values)? && h.equal_by(z, values)?, _ => false
         })
     }
@@ -156,8 +155,8 @@ const FUNCTION_CLASS: i64 = 3;
 const OPERATOR_CLASS: i64 = 4;
 /// The error for arrays side by side before `←`. A strand is not an assignment target.
 const STRAND_TARGET: &str = "a strand can't be assigned: write A.[I]← or (I⌷A)← to assign a selection, or [a b]← to assign several names";
-/// The error for an absent `⍺` used other than as an argument.
-const ABSENT: &str = "⍺ is absent in a call with one argument: it can only be an argument, or get a default from ⍺←";
+/// The error for an absent `α` used other than as an argument.
+const ABSENT: &str = "α is absent in a call with one argument: it can only be an argument, or get a default from α←";
 /// The error for an assignment with no target or no value.
 const NO_TARGET: &str = "assignment needs a target and value";
 /// The error for reading `name`, or assigning to it where it's a system name, when nothing binds it.
@@ -325,9 +324,7 @@ impl Function {
         let FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(s), Operand::Function(f)]) = self.node() else { return None };
         if let FunctionNode::Selection(parts) = s.node() { return Some((f, selection_text(parts, el))); }
         let FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(b)]) = s.node() else { return None };
-        match b.as_primitive()? {
-            Primitive::Mix => crate::keyed::name(a).map(|name| (f, name.to_string())), _ => None
-        }
+        match b.as_primitive()? { Primitive::Mix => crate::keyed::name(a).map(|name| (f, name.to_string())), _ => None }
     }
     pub(crate) fn environment(&self) -> Option<usize> { self.node.environment }
     fn late(&self) -> bool { self.node.late }
@@ -362,8 +359,7 @@ impl Function {
         if let Some((parts, _)) = self.called_parts(dyadic) { return parts.iter().any(|&(f, v)| f.discards(v)); }
         match self.node() {
             N::Primitive(p) => p.discards(dyadic), N::Fold(f, _) => f.discards(true) || matches!(f.node(), N::Primitive(Primitive::Identity(_))),
-            N::Selection(_) => true,
-            N::Ruled(_, Rules { inverse: Some(_), .. }) => false, N::Inverse(f) if f.transposes() => false,
+            N::Selection(_) => true, N::Ruled(_, Rules { inverse: Some(_), .. }) => false, N::Inverse(f) if f.transposes() => false,
             N::Inverse(f) | N::Ruled(f, _) | N::Modified(Each, F(f)) | N::Composed(Power | Rank | Axis, [F(f), V(_)]) => f.discards(dyadic),
             N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
             N::Array(a) => a.elements().any(|e| matches!(e, Value::Function(f) if f.discards(dyadic))),
@@ -436,8 +432,7 @@ impl Function {
         };
         if token { text } else { format!("({text})") }
     }
-    /// Builds a train from right to left. Array tines bind the function after them; unbound pairs make forks.
-    /// For example, `32+1.8×` becomes `(32↣+)∘(1.8↣×)`, not a fork.
+    /// Builds a train from right to left. Array tines bind the function after them; unbound pairs make forks. For example, `32+1.8×` becomes `(32↣+)∘(1.8↣×)`, not a fork.
     fn train(tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
         let mut i = tines.len();
         let mut parts = std::iter::from_fn(|| {
@@ -454,8 +449,7 @@ impl Function {
         let mut result = last?;
         while let Some((f, bound)) = parts.next() {
             result = match if bound { None } else { parts.next() } {
-                Some((g, _)) => Self::new(FunctionNode::Fork([g?, f?, result]), span)?,
-                None => atop(f?, result, span)?,
+                Some((g, _)) => Self::new(FunctionNode::Fork([g?, f?, result]), span)?, None => atop(f?, result, span)?
             };
         }
         Ok(result)
@@ -554,7 +548,7 @@ impl Function {
     /// `call_with` on borrowed arguments.
     #[inline(always)]
     fn call(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> { self.call_with(left, right, span) }
-    /// Calls the function, first growing the stack when it's nearly full, except for a primitive (`call_primitive`). A dfn binds arguments that the caller gives up (`Argument`) to `⍺` and `⍵` without copying them, as the binder gives its own, so the dfn's last read of either leaves its reader the only holder (`syntax::release`). `call`, `call_with`, `dispatch` and `call_array` are always inlined, so that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion. An error that the function's code raised without a span takes the call's span.
+    /// Calls the function, first growing the stack when it's nearly full, except for a primitive (`call_primitive`). A dfn binds arguments that the caller gives up (`Argument`) to `α` and `ω` without copying them, as the binder gives its own, so the dfn's last read of either leaves its reader the only holder (`syntax::release`). `call`, `call_with`, `dispatch` and `call_array` are always inlined, so that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion. An error that the function's code raised without a span takes the call's span.
     #[inline(always)]
     fn call_with<L: Argument, R: Argument>(&self, left: Option<L>, right: R, span: &Span) -> Result<Bound, Error> {
         check().at(span)?;
@@ -605,12 +599,13 @@ impl Function {
     fn ruled(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> { self.call(left, right, span) }
     /// `traced` run, from a program, on this function, or on one with its data replaced (`trace::tacit`), and these arguments, or `None` where no program takes the call and the interpreter runs it. Body reuse and `∂` supply distinct purposes, so their recordings and stops stay separate. A dfn keeps its programs on its definition, which every call of its text shares. Any other function's programs are kept by its structure (`trace::Tacit`).
     pub(crate) fn programmed(
-        &self, purpose: crate::program::trace::Purpose, previous: Option<&mut Option<crate::program::trace::Key>>,
-        left: Option<&Value>, right: &Value, span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>
-    ) -> Option<Result<Value, Error>> {
+        &self, purpose: crate::program::trace::Purpose, previous: Option<&mut Option<crate::program::trace::Key>>, left: Option<&Value>, right: &Value,
+        span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>) -> Option<Result<Value, Error>> {
         match self.node() {
             FunctionNode::Defined(closure) => {
-                crate::program::trace::programmed(closure.definition.programs(), purpose, previous, closure.environment, left, right, span, &[], &|_, x, y| traced(self, x, y))
+                crate::program::trace::programmed(closure.definition.programs(), purpose, previous, closure.environment, left, right, span, &[], &|_, x, y| {
+                    traced(self, x, y)
+                })
             }
             _ => crate::program::trace::tacit(self, purpose, previous, left, right, span, traced),
         }
@@ -846,9 +841,7 @@ struct ArrayBinding { place: Place, value: Value }
 /// An operand of an operator: an array or a function.
 pub enum Operand { Value(Value), Function(Function) }
 impl Operand {
-    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
-        OperandRef::from(self).equal_by(&OperandRef::from(other), values)
-    }
+    fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> { OperandRef::from(self).equal_by(&OperandRef::from(other), values) }
 }
 /// An operand that a node holds, borrowed (`FunctionNode::visit_operands`).
 #[derive(Clone, Copy)]
@@ -990,12 +983,12 @@ impl Operand {
 #[derive(Clone, Debug)]
 pub(crate) enum Binding {
     NoResult,
-    /// `⍺` in a call with one argument. It drops out of the expression that uses it.
+    /// `α` in a call with one argument. It drops out of the expression that uses it.
     Absent,
     Value(Value),
     Function(Function),
     Operator(OperatorNode),
-    /// The slot of a dfn's local, `⍵` or `⍺` after its last read (`syntax::release`). Lookup stops there, and a read of it is a VALUE error.
+    /// The slot of a dfn's local, `ω` or `α` after its last read (`syntax::release`). Lookup stops there, and a read of it is a VALUE error.
     Released,
 }
 impl Binding {

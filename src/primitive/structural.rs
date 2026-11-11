@@ -57,7 +57,7 @@ pub(crate) enum Form {
 }
 
 impl Form {
-    /// Whether atoms copied to a result with no axes stay atoms, as `⌽3` and `⍬↓0` give. A reshape gives an array of the shape it's given, so `⍬⍴5` is a scalar.
+    /// Whether atoms copied to a result with no axes stay atoms, as `⌽3` and `⍬↓0` give. A reshape gives an array of the shape it's given, so `⍬ρ5` is a scalar.
     pub(crate) fn keeps_atoms(&self) -> bool { !matches!(self, Form::Call { p: Primitive::Shape, .. }) }
 }
 
@@ -246,7 +246,7 @@ pub(super) fn placed_cells(mixed: &Value, frame: usize, spec: &Value) -> Result<
     reorder(mixed, &order)
 }
 
-/// The axis names that the shape `dimensions` gives reshape and `⍳`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
+/// The axis names that the shape `dimensions` gives reshape and `ι`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
 pub(super) fn shape_names(dimensions: &Value) -> Vec<Option<std::sync::Arc<str>>> { dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec()) }
 
 pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Value>) -> Result<Value, Error> {
@@ -361,9 +361,7 @@ pub(crate) fn catenate_many(p: Primitive, axis: Option<&Value>, right: &Value) -
     if parts.iter().zip(&views).any(|(part, view)| part.shape().len() != rank || part.fixed_width() != fixed || view.dtype() != views[0].dtype()) {
         return Ok(None);
     }
-    let axis = match axis {
-        Some(axis) => super::single_axis(&p.resolved_axes(None, source, axis)?, rank)?, None => if first { 0 } else { rank - 1 },
-    };
+    let axis = match axis { Some(axis) => super::single_axis(&p.resolved_axes(None, source, axis)?, rank)?, None => { if first { 0 } else { rank - 1 } } };
     let (layout, buffer) = rustymath::array::Array::concatenate(&views, axis)?.into_compact();
     crate::events::taken(crate::events::routes::BulkCatenate, buffer.len());
     Value::from_buffer_at(layout, buffer, fixed).map(Some).described("invalid catenate result")

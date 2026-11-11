@@ -11,18 +11,18 @@ fn check(code: &str, expected: AplValue) { check_in(&Session::new(), code, expec
 fn explicit_output_without_echo() {
     let s = Session::new();
     let quiet = || basedpl::EvalOptions { echo: false, ..basedpl::EvalOptions::default() };
-    let code = r#"1 ⋄ ⎕←2 ⋄ ⍎"3 ⋄ ⎕←4 ⋄ 5" ⋄ 6"#;
+    let code = r#"1 ◇ ⎕←2 ◇ ⍎"3 ◇ ⎕←4 ◇ 5" ◇ 6"#;
     let r = s.eval_with(code, quiet());
     assert!(r.error.is_none());
     assert_eq!(r.output_text(), ["2", "4"]);
     assert_same(r.value, &float(6.0));
     assert_eq!(s.eval(code).output_text(), ["1", "2", "3", "4", "5", "6"]);
-    for code in ["x←7", "+", "f←{⎕←⍵ ⋄ ⍵+1} ⋄ f 8"] {
+    for code in ["x←7", "+", "f←{⎕←ω ◇ ω+1} ◇ f 8"] {
         let r = s.eval_with(code, quiet());
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
         assert_eq!(r.output_text(), if code.starts_with("f←") { vec!["8"] } else { vec![] });
     }
-    let r = s.eval_with("⎕←9 ⋄ 1÷'a'", quiet());
+    let r = s.eval_with("⎕←9 ◇ 1÷'a'", quiet());
     assert_eq!(r.error.as_ref().unwrap().kind.name(), "DOMAIN");
     assert_eq!(r.output_text(), ["9"]);
     for code in ["]Display 1 2", "]help +", "]help f -source"] { assert!(!s.eval_with(code, quiet()).output_text().is_empty()); }
@@ -30,7 +30,7 @@ fn explicit_output_without_echo() {
     let events = streamed.clone();
     let output =
         Arc::new(move |output: &basedpl::Output| events.lock().unwrap().push((matches!(output.kind, basedpl::OutputKind::Explicit), output.text().to_owned())));
-    let r = s.eval_with("1 ⋄ ⎕←2 ⋄ 1÷'a'", basedpl::EvalOptions { output: Some(output), ..basedpl::EvalOptions::default() });
+    let r = s.eval_with("1 ◇ ⎕←2 ◇ 1÷'a'", basedpl::EvalOptions { output: Some(output), ..basedpl::EvalOptions::default() });
     assert_eq!(r.error.as_ref().unwrap().kind.name(), "DOMAIN");
     assert!(r.output_text().is_empty());
     assert_eq!(*streamed.lock().unwrap(), [(false, "1".into()), (true, "2".into())]);
@@ -41,11 +41,11 @@ fn explicit_output_without_echo() {
 #[test]
 fn calls_with_array_arguments() {
     let s = Session::new();
-    s.eval("x←42 ⋄ mean←+/÷≢ ⋄ bad←{⎕←⍵ ⋄ 1÷⍵}");
+    s.eval("x←42 ◇ mean←+/÷≢ ◇ bad←{⎕←ω ◇ 1÷ω}");
     for (function, codes, expected) in [
-        ("mean", vec!["1 2 3"], "2"), ("-", vec!["10ₓ", "[1 2]ₓ"], "[9 8]ₓ"), ("#₀", vec!["1 0", "2 2⍴⍳4"], "[0 1⋄]"),
-        ("⊢", vec![r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#], r#"[1r3 2ₓ;"ab";0 3⍴0ₓ]"#), ("{k←⍵ ⋄ {k+⍵}⍵}", vec!["3ₓ"], "6ₓ"),
-        ("{x←⍵}", vec!["7"], "7"),
+        ("mean", vec!["1 2 3"], "2"), ("-", vec!["10ₓ", "[1 2]ₓ"], "[9 8]ₓ"), ("#₀", vec!["1 0", "2 2ρι4"], "[0 1◇]"),
+        ("⊢", vec![r#"[1r3 2ₓ;"ab";0 3ρ0ₓ]"#], r#"[1r3 2ₓ;"ab";0 3ρ0ₓ]"#), ("{k←ω ◇ {k+ω}ω}", vec!["3ₓ"], "6ₓ"),
+        ("{x←ω}", vec!["7"], "7"),
     ] {
         let args: Vec<_> = codes.iter().map(|c| run(c).unwrap().unwrap()).collect();
         let r = s.call_with(function, &args, basedpl::EvalOptions { echo: false, ..basedpl::EvalOptions::default() });
@@ -58,7 +58,7 @@ fn calls_with_array_arguments() {
     assert!(r.value.is_none() && r.error.is_none() && r.output_text().is_empty());
     for (function, args, kind) in [
         ("+", vec![], "LENGTH"), ("+", vec![float(1.0); 3], "LENGTH"), ("", vec![float(1.0)], "SYNTAX"), ("1", vec![float(1.0)], "SYNTAX"),
-        ("¨", vec![float(1.0)], "SYNTAX"), ("+ ⋄ -", vec![float(1.0)], "SYNTAX"),
+        ("¨", vec![float(1.0)], "SYNTAX"), ("+ ◇ -", vec![float(1.0)], "SYNTAX"),
     ] { assert_eq!(s.call(function, &args).error.unwrap().kind.name(), kind); }
     let r = s.call("bad", &[AplValue::Character('a')]);
     assert_eq!(r.output_text(), ["'a'"]);
@@ -66,7 +66,7 @@ fn calls_with_array_arguments() {
     assert_eq!(e.kind.name(), "DOMAIN");
     assert_eq!(e.calls.last().unwrap().source.text, "bad");
     assert!(e.span.as_ref().unwrap().source.text.contains("bad←"));
-    let r = s.call_with("{∇⍵}", &[float(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
+    let r = s.call_with("{∇ω}", &[float(0.0)], basedpl::EvalOptions { timeout: Some(std::time::Duration::ZERO), ..basedpl::EvalOptions::default() });
     assert!(matches!(r.error.as_ref().unwrap().kind, Timeout));
     equiv_in(&s, "x", "42");
 }
@@ -75,7 +75,7 @@ fn calls_with_array_arguments() {
 fn cancellation_preserves_session_and_unwinds_calls() {
     use std::time::Duration;
     let s = Session::new();
-    let r = s.eval_timeout("keep←42 ⋄ ⎕←7 ⋄ {∞::99 ⋄ (+⍣{0})⍵}0", Duration::from_millis(10));
+    let r = s.eval_timeout("keep←42 ◇ ⎕←7 ◇ {∞::99 ◇ (+⍣{0})ω}0", Duration::from_millis(10));
     assert!(matches!(r.error.as_ref().unwrap().kind, Timeout));
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&s, "keep+1", "43");
@@ -88,7 +88,7 @@ fn cancellation_preserves_session_and_unwinds_calls() {
         std::thread::sleep(Duration::from_millis(10));
         handle.interrupt();
     });
-    let r = s.eval_with("{∇⍵}0", basedpl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..basedpl::EvalOptions::default() });
+    let r = s.eval_with("{∇ω}0", basedpl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..basedpl::EvalOptions::default() });
     cancel.join().unwrap();
     assert!(matches!(r.error.as_ref().unwrap().kind, Interrupt));
     equiv_in(&s, "keep", "42");
@@ -97,14 +97,14 @@ fn cancellation_preserves_session_and_unwinds_calls() {
 #[test]
 fn execute_source_and_session() {
     let s = Session::new();
-    let r = s.eval(r#"a←⍎"1+1 ⋄ 2+2""#);
+    let r = s.eval(r#"a←⍎"1+1 ◇ 2+2""#);
     assert_eq!(r.output_text(), ["2"]);
     assert_same(r.value, &float(4.));
     equiv_in(&s, "a", "4");
-    let failed = s.eval(r#"⍎"⎕←7 ⋄ 1÷'a'""#);
+    let failed = s.eval(r#"⍎"⎕←7 ◇ 1÷'a'""#);
     assert!(failed.value.is_none());
     assert_eq!(failed.output_text(), ["7"]);
-    assert_eq!(failed.error.unwrap().span.as_ref().unwrap().source.text, "⎕←7 ⋄ 1÷'a'");
+    assert_eq!(failed.error.unwrap().span.as_ref().unwrap().source.text, "⎕←7 ◇ 1÷'a'");
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn numeric_constructors() {
     assert_eq!(AplValue::floats(vec![1], basedpl::buffer::FloatWidth::F64, vec![-0.]).unwrap().as_floats().unwrap()[0].to_bits(), (-0f64).to_bits());
     assert_eq!(AplValue::number(num_rational::BigRational::new_raw(1.into(), 0.into())).unwrap_err().name(), "DOMAIN");
     assert_same(number(num_rational::BigRational::new_raw(2.into(), (-4).into())), &exact(-1, 2));
-    assert_eq!(run("+/[1 2 3⋄4 5 6]ₓ").unwrap().unwrap().view().unwrap().dtype(), basedpl::buffer::DType::Integer(basedpl::buffer::Width::U8));
+    assert_eq!(run("+/[1 2 3◇4 5 6]ₓ").unwrap().unwrap().view().unwrap().dtype(), basedpl::buffer::DType::Integer(basedpl::buffer::Width::U8));
 }
 
 #[test]
@@ -131,28 +131,27 @@ fn exact_results_and_readback() {
 }
 #[test]
 fn array_literal_completeness() {
-    for code in ["[1 2 ⋄", "(1 +", "[[{⍵}1;2] ⋄"] { assert!(matches!(parse(Source::new("partial", code)), ParseStatus::Incomplete(_))); }
-    for code in ["[1 ⋄ 2)", "(1 ⋄ 2]", "[⋄]", "(1 ⋄ ⋄ 2)", "[1;2 ⋄ 3]"] {
+    for code in ["[1 2 ◇", "(1 +", "[[{ω}1;2] ◇"] { assert!(matches!(parse(Source::new("partial", code)), ParseStatus::Incomplete(_))); }
+    for code in ["[1 ◇ 2)", "(1 ◇ 2]", "[◇]", "(1 ◇ ◇ 2)", "[1;2 ◇ 3]"] {
         assert!(matches!(parse(Source::new("invalid", code)), ParseStatus::Invalid(_)));
     }
 }
 
-
 #[test]
 fn retained_literals_keep_values_and_preferences() {
     let s = Session::new();
-    equiv_in(&s, "f←{[1ₓ;2ₓ]} ⋄ a←f 0 ⋄ a.[0]←9ₓ ⋄ f 0", "[1 2]ₓ");
-    equiv_in(&s, r#"v←7 ⋄ live←{["a":v]} ⋄ live 0 ⋄ v←8 ⋄ (live 0).a"#, "8");
-    equiv_in(&s, r#"•prefs ["float":64] ⋄ empty←{[]} ⋄ (•storage empty 0).kind"#, r#""float64""#);
-    equiv_in(&s, r#"•prefs ["float":32] ⋄ (•storage empty 0).kind"#, r#""float32""#);
+    equiv_in(&s, "f←{[1ₓ;2ₓ]} ◇ a←f 0 ◇ a.[0]←9ₓ ◇ f 0", "[1 2]ₓ");
+    equiv_in(&s, r#"v←7 ◇ live←{["a":v]} ◇ live 0 ◇ v←8 ◇ (live 0).a"#, "8");
+    equiv_in(&s, r#"•prefs ["float":64] ◇ empty←{[]} ◇ (•storage empty 0).kind"#, r#""float64""#);
+    equiv_in(&s, r#"•prefs ["float":32] ◇ (•storage empty 0).kind"#, r#""float32""#);
 }
 
 #[test]
 fn shy_results_and_signal_messages() {
     let s = Session::new();
     for (code, output) in [
-        ("f←{a←1} ⋄ f 0", vec![]), ("(f 0)", vec!["1"]), ("{2 ⋄ f ⍵}0", vec![]), ("{\"DOMAIN\"::a←7 ⋄ 1÷⍵}'a'", vec![]),
-        ("{f←{a←1} ⋄ (+f+)3}0", vec![]), ("{⎕←7}0", vec!["7"]),
+        ("f←{a←1} ◇ f 0", vec![]), ("(f 0)", vec!["1"]), ("{2 ◇ f ω}0", vec![]), ("{\"DOMAIN\"::a←7 ◇ 1÷ω}'a'", vec![]),
+        ("{f←{a←1} ◇ (+f+)3}0", vec![]), ("{⎕←7}0", vec!["7"]),
     ] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
@@ -171,7 +170,7 @@ fn huge_shapes_saturate() {
     let session = Session::new();
     session.set("a", AplValue::empty(vec![usize::MAX, 0], float(0.)).unwrap()).unwrap();
     equiv_in(&session, "≢a", &format!("{}ₓ", i64::MAX));
-    equiv_in(&session, "⍴a", &format!("[{} 0]ₓ", i64::MAX));
+    equiv_in(&session, "ρa", &format!("[{} 0]ₓ", i64::MAX));
 }
 
 #[test]
@@ -210,26 +209,36 @@ fn structural_completeness_and_source_lifetime() {
 
 #[test]
 fn unicode_names() {
-    equiv("😎←2 ⋄ 中文←3 ⋄ 한글←4 ⋄ 😎+中文+한글", "9");
-    equiv("加←7 ⋄ _語←8 ⋄ 加+_語", "15");
-    equiv("x_1←7 ⋄ x_12←8 ⋄ x_1+x_12", "15");
-    equiv("f←- ⋄ f2", "¯2");
+    equiv("😎←2 ◇ 中文←3 ◇ 한글←4 ◇ 😎+中文+한글", "9");
+    equiv("加←7 ◇ _語←8 ◇ 加+_語", "15");
+    equiv("x_1←7 ◇ x_12←8 ◇ x_1+x_12", "15");
+    equiv("f←- ◇ f2", "¯2");
+}
+
+#[test]
+fn greek_arguments_and_primitives() {
+    equiv("2{α+ω}3", "5");
+    equiv("op←{⍶ω} ◇ +op 3", "3");
+    equiv("ρ[ι3◇3 4 5]", "2ₓ 3ₓ");
+    equiv("⊛1", "0");
+    let s = Session::new();
+    for code in ["{⍺+ω}3", "{⍵}3", "⍳3", "⍴1 2", "⍟2", "1⋄2"] { assert!(s.eval(code).error.is_some(), "{code}"); }
 }
 
 #[test]
 fn token_separator() {
-    equiv("mean←(+/÷≢)⊢ ⋄ w←1 1 2 ⋄ temps←10 20 30 ⋄ w⁝mean⌸temps", "15 30");
+    equiv("mean←(+/÷≢)⊢ ◇ w←1 1 2 ◇ temps←10 20 30 ◇ w⁝mean⌸temps", "15 30");
     equiv("(2×)⍣3⁝5", "40");
-    equiv("(+/÷≢)⍤1⁝2 3⍴⍳6", "1 4");
-    equiv("m←[2 3]⍴⍳6 ⋄ i←1 ⋄ 10÷√1++/⍠i⁝m", "10÷√1+3 12");
-    equiv("m←2 3 4 5⍴⍳120 ⋄ +/⍠2 3⁝3 3↕m", "(+/⍠2 3)3 3↕2 3 4 5⍴⍳120");
+    equiv("(+/÷≢)⍤1⁝2 3ρι6", "1 4");
+    equiv("m←[2 3]ρι6 ◇ i←1 ◇ 10÷√1++/⍠i⁝m", "10÷√1+3 12");
+    equiv("m←2 3 4 5ρι120 ◇ +/⍠2 3⁝3 3↕m", "(+/⍠2 3)3 3↕2 3 4 5ρι120");
 }
 
 #[test]
 fn highlight_classes_and_code_context() {
     let classes = |text: &'static str| basedpl::highlight(text, false).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
-    let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
-    assert_eq!(classes("⍵∘+¨\"a+b\" ⍝ c+d"), expected);
+    let expected = [("ω", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
+    assert_eq!(classes("ω∘+¨\"a+b\" ⍝ c+d"), expected);
     assert_eq!(classes("中文←2"), [("中文", "name"), ("←", "syntax"), ("2", "literal")]);
     // An unclosed string, as while typing, runs to the end of the text.
     assert_eq!(classes("x←1+\"a+"), [("x", "name"), ("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
@@ -286,7 +295,7 @@ fn declared_ranks_match_rank() {
     // Wherever a primitive form succeeds, it gives what Rank gives at the form's declared ranks. A form may also reject arguments that Rank would extend over. No argument is empty, because Rank calls a function on a prototype cell when the frame is empty. `¿` is left out, because it's random. The dfn stops Rank calling the primitive on the whole argument.
     use basedpl::symbols::symbols;
     let s = Session::new();
-    s.eval(r#"n←2 ⋄ v←1 2 3 ⋄ w←3 1 2 ⋄ u←1 0 1 ⋄ m←2 3⍴⍳6 ⋄ q←3 3⍴2 7 6 9 5 1 4 3 8 ⋄ t←2 2 3⍴⍳12 ⋄ c←"abc" ⋄ k←2 3⍴"abcdef" ⋄ e←[1 2;3 4 5]"#);
+    s.eval(r#"n←2 ◇ v←1 2 3 ◇ w←3 1 2 ◇ u←1 0 1 ◇ m←2 3ρι6 ◇ q←3 3ρ2 7 6 9 5 1 4 3 8 ◇ t←2 2 3ρι12 ◇ c←"abc" ◇ k←2 3ρ"abcdef" ◇ e←[1 2;3 4 5]"#);
     fails_in(&s, "LENGTH", &["1 2⌽2", "1 2⊖2"]);
     equiv_in(&s, "[⌽2;1⌽2;[1]⌽2;⌽⊂2]", "[2;2;2;⊂2]");
     let args = ["n", "v", "w", "u", "m", "q", "t", "c", "k", "e"];
@@ -299,15 +308,15 @@ fn declared_ranks_match_rank() {
     for symbol in symbols().iter().filter(|s| s.kind == "function" && s.glyph != "¿") {
         let f = symbol.glyph;
         if !["", "∞"].contains(&symbol.monad_rank.as_str()) {
-            for y in args { compare(format!("{f} {y}"), format!("{{{f} ⍵}}⍤({}) {y}", symbol.monad_rank)); }
+            for y in args { compare(format!("{f} {y}"), format!("{{{f} ω}}⍤({}) {y}", symbol.monad_rank)); }
         }
         if !["", "∞ ∞"].contains(&symbol.dyad_ranks.as_str()) {
-            for x in args { for y in args { compare(format!("{x} {f} {y}"), format!("{x} {{⍺ {f} ⍵}}⍤({}) {y}", symbol.dyad_ranks)); } }
+            for x in args { for y in args { compare(format!("{x} {f} {y}"), format!("{x} {{α {f} ω}}⍤({}) {y}", symbol.dyad_ranks)); } }
         }
     }
     assert!(differ.is_empty(), "these differ from Rank at their declared ranks: {differ:?}");
-    for body in ["{2×⍠⍬⍵}", "{⍵×⍠⍬2}"] { equiv(&format!("({body}⍤0)1 2 3"), "2 4 6"); }
-    equiv("2({⍺×⍠⍬⍵}⍤[0 0])1 2 3", "2 4 6");
+    for body in ["{2×⍠⍬ω}", "{ω×⍠⍬2}"] { equiv(&format!("({body}⍤0)1 2 3"), "2 4 6"); }
+    equiv("2({α×⍠⍬ω}⍤[0 0])1 2 3", "2 4 6");
 }
 
 #[test]
@@ -333,47 +342,47 @@ fn nested_prototypes_and_value_semantics() {
 #[test]
 fn persistent_arrays_and_functions() {
     let s = Session::new();
-    let r = s.eval("v←⍳10");
+    let r = s.eval("v←ι10");
     assert!(r.error.is_none());
     assert!(r.output_text().is_empty());
     assert_eq!(r.value.unwrap().shape(), &[10]);
     equiv_in! { &s;
         "+/v" => "45",
-        "f←+ ⋄ 2 f 3" => "5",
-        "sum←+/ ⋄ sum 1 2 3" => "6",
+        "f←+ ◇ 2 f 3" => "5",
+        "sum←+/ ◇ sum 1 2 3" => "6",
         "f/1 2 3" => "6",
-        "⍴v" => ",10ₓ",
-        "a←v ⋄ v←0 ⋄ +/a" => "45",
+        "ρv" => ",10ₓ",
+        "a←v ◇ v←0 ◇ +/a" => "45",
     }
 }
 
 #[test]
 fn stored_inputs_and_live_proofs() {
     let s = Session::new();
-    equiv_in(&s, "x←2ₓ×⍳3ₓ ⋄ ⎕←x ⋄ (x+240ₓ)≡[240 242 244]ₓ", "$t");
-    equiv_in(&s, "x←10ₓ×⍳3ₓ ⋄ ⎕←x ⋄ (x+240ₓ)≡[240 250 260]ₓ", "$t");
-    equiv_in(&s, "v←¯3 4 ⋄ x←⊼v ⋄ y←√x ⋄ ⎕←x ⋄ y≡3 4", "$t");
+    equiv_in(&s, "x←2ₓ×ι3ₓ ◇ ⎕←x ◇ (x+240ₓ)≡[240 242 244]ₓ", "$t");
+    equiv_in(&s, "x←10ₓ×ι3ₓ ◇ ⎕←x ◇ (x+240ₓ)≡[240 250 260]ₓ", "$t");
+    equiv_in(&s, "v←¯3 4 ◇ x←⊼v ◇ y←√x ◇ ⎕←x ◇ y≡3 4", "$t");
 }
 #[test]
 fn observed_counts_refill_shapes() {
     let s = Session::new();
-    equiv_in(&s, "n←3 4 ⋄ f←{n⍴⍵} ⋄ ∧/(⍴f 1)=[3 4]", "$t");
-    equiv_in(&s, "n←5 6 ⋄ ∧/(⍴f 1)=[5 6]", "$t");
+    equiv_in(&s, "n←3 4 ◇ f←{nρω} ◇ ∧/(ρf 1)=[3 4]", "$t");
+    equiv_in(&s, "n←5 6 ◇ ∧/(ρf 1)=[5 6]", "$t");
 }
 
 #[test]
 fn derivative_replay_tracks_input_layouts() {
     let s = Session::new();
-    assert!(s.eval("f←{+/(w×w)×⍵} ⋄ g←{(+/w×w)×+/⍵}").error.is_none());
+    assert!(s.eval("f←{+/(w×w)×ω} ◇ g←{(+/w×w)×+/ω}").error.is_none());
     for (n, sum) in [(5, 30), (7, 91), (3, 5), (5, 30)] {
-        equiv_in(&s, &format!("w←⍳{n} ⋄ f∂2"), &sum.to_string());
+        equiv_in(&s, &format!("w←ι{n} ◇ f∂2"), &sum.to_string());
         equiv_in(&s, "g∂1 2", &format!("{sum} {sum}"));
-        equiv_in(&s, &format!("g∂⍳{n}"), &format!("{n}⍴{sum}"));
+        equiv_in(&s, &format!("g∂ι{n}"), &format!("{n}ρ{sum}"));
     }
-    equiv_in(&s, "rows←2 ⋄ h←{+/, [rows 2]⍴⍵} ⋄ h∂1 2 3 4", "1 1 1 1");
+    equiv_in(&s, "rows←2 ◇ h←{+/, [rows 2]ρω} ◇ h∂1 2 3 4", "1 1 1 1");
     equiv_in(&s, r#"(•explain "h∂1 2 3 4").programs.event"#, r#"["replayed"]"#);
-    equiv_in(&s, "rows←3 ⋄ h∂1 2 3 4", "2 2 1 1");
-    equiv_in(&s, r#"0<≢(•explain "{+/, [⍵₀ 2]⍴⍵}∂2 3 4 5").stopped"#, "$t");
+    equiv_in(&s, "rows←3 ◇ h∂1 2 3 4", "2 2 1 1");
+    equiv_in(&s, r#"0<≢(•explain "{+/, [ω₀ 2]ρω}∂2 3 4 5").stopped"#, "$t");
 }
 
 #[test]
@@ -384,27 +393,27 @@ fn native_selection_functions_share_array_routes() {
     let selected = basedpl::Function::builtin("⊢").unwrap().selected(vec![IndexPart::Slice(Arc::new(slice))]).unwrap();
     s.set_function("selected", selected).unwrap();
     equiv_in(&s, "selected 10 20 30 40", "20 40");
-    equiv_in(&s, "selected ⍳7", "1 3 5");
+    equiv_in(&s, "selected ι7", "1 3 5");
     equiv_in(&s, "(10×)@selected 1 2 3 4", "1 20 3 40");
     equiv_in(&s, "selected¨[1 2 3 4;5 6 7 8]", "[2 4;6 8]");
-    equiv_in(&s, "loss←{+/selected ⍵} ⋄ loss∂1 2 3 4", "0 1 0 1");
-    equiv_in(&s, "loss∂⍳6", "0 1 0 1 0 1");
-    equiv_in(&s, "h←{+/⊢.[⍺] ⍵} ⋄ [2 0]h∂10 20 30", "1 0 1");
+    equiv_in(&s, "loss←{+/selected ω} ◇ loss∂1 2 3 4", "0 1 0 1");
+    equiv_in(&s, "loss∂ι6", "0 1 0 1 0 1");
+    equiv_in(&s, "h←{+/⊢.[α] ω} ◇ [2 0]h∂10 20 30", "1 0 1");
     equiv_in(&s, "[1 1]h∂10 20 30", "0 2 0");
-    equiv_in(&s, "g←+/∘(⊢.[[2 0]]) ⋄ g∂10 20 30", "1 0 1");
+    equiv_in(&s, "g←+/∘(⊢.[[2 0]]) ◇ g∂10 20 30", "1 0 1");
     equiv_in(&s, r#"(•explain "g∂10 20 30").programs.event"#, r#"["replayed"]"#);
-    equiv_in(&s, "g←+/∘(⊢.[[1 1]]) ⋄ g∂10 20 30", "0 2 0");
+    equiv_in(&s, "g←+/∘(⊢.[[1 1]]) ◇ g∂10 20 30", "0 2 0");
     equiv_in(&s, r#"(•explain "g∂10 20 30").programs.event"#, r#"["replayed"]"#);
 }
 
 #[test]
 fn primitive_bodies_share_fold_facts() {
-    for (body, monad) in [("{⍺+⍵}", Some("+3")), ("{x←⍺ ⋄ x+⍵}", None)] {
+    for (body, monad) in [("{α+ω}", Some("+3")), ("{x←α ◇ x+ω}", None)] {
         let s = Session::new();
         s.eval(&format!("f←{body}"));
-        for argument in ["⍳3", "⍳5"] { equiv_in(&s, &format!("f/{argument}"), &format!("+/{argument}")); }
-        equiv_in(&s, "f\\⍳5", "+\\⍳5");
-        equiv_in(&s, "f/₁2 3⍴⍳6", "+/₁2 3⍴⍳6");
+        for argument in ["ι3", "ι5"] { equiv_in(&s, &format!("f/{argument}"), &format!("+/{argument}")); }
+        equiv_in(&s, "f\\ι5", "+\\ι5");
+        equiv_in(&s, "f/₁2 3ρι6", "+/₁2 3ρι6");
         if let Some(expected) = monad {
             equiv_in(&s, "f/⍬", "+/⍬");
             equiv_in(&s, "f 3", expected);
@@ -414,11 +423,11 @@ fn primitive_bodies_share_fold_facts() {
         }
     }
     let s = Session::new();
-    equiv_in(&s, "g←+ ⋄ f←{⍺ g ⍵} ⋄ f/⍳3", "+/⍳3");
-    equiv_in(&s, "g←× ⋄ f/1+⍳5", "×/1+⍳5");
-    equiv_in(&s, "calls←0 ⋄ f←{calls+←1 ⋄ ⍺+⍵} ⋄ r←f/1 2 3 ⋄ (r=6)∧calls=2", "$t");
-    equiv_in(&s, "h←{⍵} ⋄ h∂←{7×⍺} ⋄ f←{⍺+h ⍵} ⋄ {f/⍵}∂1 2 3", "1 7 49");
-    equiv_in(&s, "f←{1+⍵} ⋄ f/1 2 3", "5");
+    equiv_in(&s, "g←+ ◇ f←{α g ω} ◇ f/ι3", "+/ι3");
+    equiv_in(&s, "g←× ◇ f/1+ι5", "×/1+ι5");
+    equiv_in(&s, "calls←0 ◇ f←{calls+←1 ◇ α+ω} ◇ r←f/1 2 3 ◇ (r=6)∧calls=2", "$t");
+    equiv_in(&s, "h←{ω} ◇ h∂←{7×α} ◇ f←{α+h ω} ◇ {f/ω}∂1 2 3", "1 7 49");
+    equiv_in(&s, "f←{1+ω} ◇ f/1 2 3", "5");
     fails_in(&s, "DOMAIN", &["f/⍬"]);
 }
 
@@ -426,15 +435,15 @@ fn primitive_bodies_share_fold_facts() {
 fn result_output_and_nonexecuting_parse() {
     let s = Session::new();
     equiv_in(&s, "x←2", "2");
-    let r = s.eval("3 ⋄ f←+");
+    let r = s.eval("3 ◇ f←+");
     assert!(r.error.is_none());
     assert!(r.value.is_none());
     assert_eq!(r.output_text(), ["3"]);
-    for _ in 0..2 { assert!(matches!(parse(Source::new("check", "x←99 ⋄ ⎕←8")), ParseStatus::Complete(_))); }
+    for _ in 0..2 { assert!(matches!(parse(Source::new("check", "x←99 ◇ ⎕←8")), ParseStatus::Complete(_))); }
     equiv_in(&s, "x", "2");
     assert!(s.eval("").value.is_none());
     assert!(s.eval("2+2").error.is_none());
-    let r = s.eval("x←5 ⋄ 1÷'a'");
+    let r = s.eval("x←5 ◇ 1÷'a'");
     assert!(r.error.is_some());
     equiv_in(&s, "x", "5");
     // No whole-input transaction.
@@ -444,13 +453,13 @@ fn result_output_and_nonexecuting_parse() {
 fn binding_error_recovery() {
     let s = Session::new();
     s.eval("x←10");
-    let r = s.eval("bad←{local←99 ⋄ 1÷'a'} ⋄ bad 0");
+    let r = s.eval("bad←{local←99 ◇ 1÷'a'} ◇ bad 0");
     assert_eq!(r.error.as_ref().unwrap().kind.name(), "DOMAIN");
     fails_in(&s, "VALUE", &["local"]);
     equiv_in(&s, "x", "10");
-    fails_in(&s, "LIMIT", &["loop←{1+∇⍵} ⋄ loop 0"]);
+    fails_in(&s, "LIMIT", &["loop←{1+∇ω} ◇ loop 0"]);
     equiv_in(&s, "2+2", "4");
-    fails_in(&s, "SYNTAX", &["⍵←1"]);
+    fails_in(&s, "SYNTAX", &["ω←1"]);
 }
 
 #[test]
@@ -459,13 +468,13 @@ fn selective_error_preserves_binding() {
     equiv_in(&s, "x←1 2 3", "1 2 3");
     fails_in(&s, "LENGTH", &["x.[[0 1]]←9 8 7"]);
     equiv_in(&s, "x", "1 2 3");
-    assert!(s.eval("{\"LENGTH\"::x ⋄ x.[[0 1]]←9 8 7}0").error.is_none());
+    assert!(s.eval("{\"LENGTH\"::x ◇ x.[[0 1]]←9 8 7}0").error.is_none());
     equiv_in(&s, "x", "1 2 3");
 }
 
 #[test]
 fn definitions_retain_only_needed_sources() {
-    let source = Source::new("definition.bpl", "bad←{1÷⍵}");
+    let source = Source::new("definition.bpl", "bad←{1÷ω}");
     let weak = Arc::downgrade(&source);
     let s = Session::new();
     assert!(s.eval_source(source, EvalOptions::default()).error.is_none());
@@ -477,7 +486,7 @@ fn definitions_retain_only_needed_sources() {
     assert!(weak.upgrade().is_some());
     drop(error);
     assert!(weak.upgrade().is_none());
-    for _ in 0..2 { assert!(matches!(parse(Source::new("check", "f←{⎕←1\n⍵}")), ParseStatus::Complete(_))); }
+    for _ in 0..2 { assert!(matches!(parse(Source::new("check", "f←{⎕←1\nω}")), ParseStatus::Complete(_))); }
     assert!(s.eval("f").error.is_some());
     assert!(matches!(parse(Source::new("check", "f←{⍝ }\n")), ParseStatus::Incomplete(_)));
 }
@@ -488,8 +497,8 @@ fn operator_categories_and_singleton_replicate() {
 
     // Dyalog 20 binding-strength and replicate documentation; not reference executions.
     let s = Session::new();
-    for _ in 0..2 { equiv_in(&s, "op←{⍶⍵} ⋄ +op 3", "3"); }
-    for code in ["r←/ ⋄ +r 1 2 3", "r←/ ⋄ sum←+r ⋄ sum 1 2 3", "r←/ ⋄ alias←r ⋄ +(alias)1 2 3"] {
+    for _ in 0..2 { equiv_in(&s, "op←{⍶ω} ◇ +op 3", "3"); }
+    for code in ["r←/ ◇ +r 1 2 3", "r←/ ◇ sum←+r ◇ sum 1 2 3", "r←/ ◇ alias←r ◇ +(alias)1 2 3"] {
         let r = s.eval(code);
         assert!(r.error.is_none(), "{code}: {:?}", r.error);
         assert_same(r.value, &float(6.0));
@@ -523,7 +532,7 @@ fn tolerant_equality_agrees_between_array_and_item_paths() {
         let xs: Vec<f64> = ends.into_iter().flat_map(|end| steps(end, f64::next_up).chain(steps(end, f64::next_down)).chain([end])).collect();
         s.set("xs", AplValue::floats(vec![xs.len()], basedpl::buffer::FloatWidth::F64, xs).unwrap()).unwrap();
         s.set("c", float(c)).unwrap();
-        let (array, items) = (s.eval("xs=c").value.unwrap(), s.eval("xs{⍺=⍵}¨c").value.unwrap());
+        let (array, items) = (s.eval("xs=c").value.unwrap(), s.eval("xs{α=ω}¨c").value.unwrap());
         assert!(array.same(&items), "c = {c:e}");
     }
 }
@@ -533,13 +542,12 @@ fn lexical_frames_are_reclaimed() {
     // At most 20,000 lexical frames can be alive at once. Each result below depends on frames being freed: 25,000 calls in one input, 25,000 tail calls, a recursion 15,000 deep in two inputs, and recursion after a LIMIT error. The tail calls in `keep` and `pass` still read `x` from the frame that defined their function.
     let s = Session::new();
     let cases = [
-        ("outer←{x←2 ⋄ add←{x+⍵} ⋄ +/add¨⍵⍴1} ⋄ outer 25000", 75000.), ("+/outer¨25000⍴1", 75000.),
-        ("deep←{⍵=0?0;1+∇⍵-1} ⋄ deep 15000", 15000.), ("deep 15000", 15000.),
-        ("count←{⍺←0 ⋄ ⍵=0?⍺;(⍺+1)∇⍵-1} ⋄ count 25000", 25000.),
-        ("even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even 25000", 1.),
-        ("keep←{x←42 ⋄ loop←{⍵=0?x;∇⍵-1} ⋄ loop ⍵} ⋄ keep 25000", 42.),
-        ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.), ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
-        ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
+        ("outer←{x←2 ◇ add←{x+ω} ◇ +/add¨ωρ1} ◇ outer 25000", 75000.), ("+/outer¨25000ρ1", 75000.),
+        ("deep←{ω=0?0;1+∇ω-1} ◇ deep 15000", 15000.), ("deep 15000", 15000.), ("count←{α←0 ◇ ω=0?α;(α+1)∇ω-1} ◇ count 25000", 25000.),
+        ("even←{ω=0?1;odd ω-1} ◇ odd←{ω=0?0;even ω-1} ◇ even 25000", 1.),
+        ("keep←{x←42 ◇ loop←{ω=0?x;∇ω-1} ◇ loop ω} ◇ keep 25000", 42.),
+        ("pass←{x←42 ◇ op←{ω=0?⍶ ω;∇ω-1} ◇ ({x}op)ω} ◇ pass 25000", 42.), ("loop←{ω=0?a←7;(∇ω-1)} ◇ loop 25000", 7.),
+        ("f←{\"DOMAIN\"::7 ◇ ω=0?1÷'a';∇ω-1} ◇ f 2000", 7.),
     ];
     let skipped = basedpl_testkit::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code))).unwrap();
     for (_, (code, expected)) in cases.into_iter().enumerate().filter(|(index, _)| !skipped.iter().any(|(i, _)| i == index)) {
@@ -556,14 +564,14 @@ fn lexical_frames_are_reclaimed() {
 #[test]
 fn diagnostic_width_and_call_context() {
     let s = Session::new();
-    let error = s.eval("한←1 ⋄\t한÷'a'").error.unwrap();
-    assert_eq!(error.to_string(), "DOMAIN ERROR: expected numeric elements\n --> <input>:1:11\n한←1 ⋄  한÷'a'\n          ^");
-    assert!(s.eval_source(Source::new("old.bpl", "bad←{1÷⍵} ⋄ outer←{bad ⍵}"), EvalOptions::default()).error.is_none());
+    let error = s.eval("한←1 ◇\t한÷'a'").error.unwrap();
+    assert_eq!(error.to_string(), "DOMAIN ERROR: expected numeric elements\n --> <input>:1:11\n한←1 ◇  한÷'a'\n          ^");
+    assert!(s.eval_source(Source::new("old.bpl", "bad←{1÷ω} ◇ outer←{bad ω}"), EvalOptions::default()).error.is_none());
     let e = s.eval("outer 'a'").error.unwrap();
     assert_eq!(&e.span.as_ref().unwrap().source.text[e.span.as_ref().unwrap().range.clone()], "÷");
     assert_eq!(e.calls.iter().map(|s| &s.source.text[s.range.clone()]).collect::<Vec<_>>(), ["bad", "outer"]);
     assert!(e.to_string().contains("called from old.bpl:"));
-    let deep = s.eval("down←{⍵=0?1÷'a';1+down ⍵-1} ⋄ down 100").error.unwrap();
+    let deep = s.eval("down←{ω=0?1÷'a';1+down ω-1} ◇ down 100").error.unwrap();
     assert_eq!(deep.calls.len(), 101);
     assert_eq!(deep.to_string().matches("called from").count(), 6);
     assert!(deep.to_string().contains("95 more calls"));
@@ -580,14 +588,14 @@ fn diagnostic_width_and_call_context() {
 #[test]
 fn numeric_scripts_share_rank_index_and_power() {
     let s = Session::new();
-    assert!(s.eval("a←2 3⍴⍳6").error.is_none());
+    assert!(s.eval("a←2 3ρι6").error.is_none());
     for (code, explicit) in [
         ("+/¹a", "+/⍤1 a"), ("10 20+⁰ ¹a", "10 20(+⍤[0 1])a"), ("↑¹ ⁰ ¹a", "↑⍤[1 0 1]a"), ("⌽⁻¹a", "⌽⍤¯1 a"),
-        ("⍴¹²a", "⍴⍤12 a"), ("⌽⁻ ¹a", "(⌽⁻)⍤1 a"), ("f←+/ ⋄ f¹a", "+/⍤1 a"), ("a₀ ₁", "a.[0 1]"), ("+/₀a", "+/⍠0 a"),
-        ("2 3² ³", "8 729"), ("v←2 3 ⋄ v² ³", "64 729"), ("v←2 4 ⋄ v⁻¹", "0.5 0.25"), ("s←² ⋄ 2 s 99", "4 99"),
+        ("ρ¹²a", "ρ⍤12 a"), ("⌽⁻ ¹a", "(⌽⁻)⍤1 a"), ("f←+/ ◇ f¹a", "+/⍤1 a"), ("a₀ ₁", "a.[0 1]"), ("+/₀a", "+/⍠0 a"),
+        ("2 3² ³", "8 729"), ("v←2 3 ◇ v² ³", "64 729"), ("v←2 4 ◇ v⁻¹", "0.5 0.25"), ("s←² ◇ 2 s 99", "4 99"),
     ] {
         let actual = evaluated(&s, code).unwrap();
-        let wanted = run(&format!("a←2 3⍴⍳6 ⋄ {explicit}")).unwrap_or_else(|e| panic!("{explicit}: {e}")).unwrap();
+        let wanted = run(&format!("a←2 3ρι6 ◇ {explicit}")).unwrap_or_else(|e| panic!("{explicit}: {e}")).unwrap();
         assert!(actual.same(&wanted), "{code}: {actual:?} != {wanted:?}");
     }
     fails_in(&s, "LENGTH", &["+⁰ ¹ ² ³a"]);
@@ -596,11 +604,11 @@ fn numeric_scripts_share_rank_index_and_power() {
     assert!(output.error.is_none());
     assert_eq!(output.output_text(), ["(+↢3)⁻"]);
     equiv_in(&s, "((+↢3)⁻)8", "5");
-    equiv_in(&s, "f←{⍵+3} ⋄ f⁻←{⍵-3} ⋄ f⁻8", "5");
+    equiv_in(&s, "f←{ω+3} ◇ f⁻←{ω-3} ◇ f⁻8", "5");
     for (script, input, expected) in [("²", "2", "4 99"), ("⁻¹", "2", "0.5 99"), ("₁", "10 20", "20 99")] {
         assert!(s.eval(&format!("op←{script}")).error.is_none());
         let shown = s.name_source("op").unwrap();
-        equiv_in(&s, &format!("op←{shown} ⋄ {input} op 99"), expected);
+        equiv_in(&s, &format!("op←{shown} ◇ {input} op 99"), expected);
     }
     let tree = basedpl::syntax_tree("2 3²");
     let strand = &tree.children[0].children[0];

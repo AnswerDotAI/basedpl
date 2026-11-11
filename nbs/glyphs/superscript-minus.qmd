@@ -15,7 +15,7 @@ BPL infers inverses of the primitives and compositions listed under [Power](star
 The minus is bare: no superscript digit follows it. `f⁻¹` means [Rank](jot-diaeresis.qmd) ¯1. `f⁻ ¹` applies the inverse at rank 1. Numeric superscripts on arrays remain powers, including the reciprocal `2⁻¹`.
 
 ```bpl
-⌽⁻ ¹[1 2⋄3 4]   ⍝ [2 1⋄4 3]
+⌽⁻ ¹[1 2◇3 4]   ⍝ [2 1◇4 3]
 ```
 
 An inverse applies to the whole derived function on its left. Use parentheses or a space when that function ends in a number: `(+↢3)⁻10` or `+↢3 ⁻ 10`.

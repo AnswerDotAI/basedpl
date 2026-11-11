@@ -281,7 +281,7 @@ class ReferenceSummary:
                  + '; '.join(f'{m} {c}, {f}, {u}, {n}, {l}' for m, (c, f, u, n, l) in self.modes.items()) + '.' + compared, '',
                  f'{failing} value cases fail. ' + ' '.join(f'{n} of them pass {m}.' for m, n in self.passing.items())
                  + ' By status and kind: ' + ', '.join(f'{k} {n}' for k, n in self.statuses.most_common()) + '.', '', '## Kinds', '']
-        lines += [f'- {kind} ({self.statuses[kind]}): ' + ', '.join(f"{r['id']} `{' ⋄ '.join(r['code'].splitlines())}`" for r in rs) for kind, rs in self.kinds.items()]
+        lines += [f'- {kind} ({self.statuses[kind]}): ' + ', '.join(f"{r['id']} `{' ◇ '.join(r['code'].splitlines())}`" for r in rs) for kind, rs in self.kinds.items()]
         lines += ['', '## Messages, most common', ''] + [f'- {n}: {m}' for m, n in self.messages.most_common(15)]
         lines += ['', '## By file', '', ', '.join(f'{f} {n}' for f, n in self.files.most_common())]
         if self.compared: lines += ['', f'## Runs that {_LOST} ({len(self.lost)} cases)', '', ', '.join(f"{r.get('file')}:{r.get('id') or r.get('line')}" for r in self.lost)]
@@ -399,7 +399,7 @@ class Scaling(list):
         rows = (f'{one:>11,.0f} ps {many:>11,.0f} ps {speedup:>6.2f}x of {least:<4g} {"slow" if speedup < least else "":4}  {code}' for code, one, many, speedup, least in self)
         return '\n'.join([f'1 thread against {self.threads}', *rows])
 
-_SCALING_SETUP = 'pm←¿[1024 1024]⍴0 ⋄ sq←¿[512 512]⍴0 ⋄ hq←sq+⍉sq ⋄ stk←¿[16384 8 8]⍴0 ⋄ img←¿[256 256 16]⍴0 ⋄ cw←[64516 144]⍴3 3↕img ⋄ ck←¿[144 32]⍴0 ⋄ big←¿4194304⍴0 ⋄ n←≢big'
+_SCALING_SETUP = 'pm←¿[1024 1024]ρ0 ◇ sq←¿[512 512]ρ0 ◇ hq←sq+⍉sq ◇ stk←¿[16384 8 8]ρ0 ◇ img←¿[256 256 16]ρ0 ◇ cw←[64516 144]ρ3 3↕img ◇ ck←¿[144 32]ρ0 ◇ big←¿4194304ρ0 ◇ n←≢big'
 _SCALING_THREADS = 4
 # Each case's serial fraction s: the share of its one-thread time that doesn't split across threads. On t threads it should then speed up 1/(s + (1 − s)/t) times, by Amdahl's law. A product, a stack's cells and an elementwise function split into independent pieces. A product of windows splits its rows into one piece for each thread, which gathers its own windows a block at a time. A copy of a view splits its items across threads, but memory bandwidth limits its gain. Its serial fraction comes from measurement: a copy of a convolution's windows gained 1.6 to 1.9 times on 4 threads of an M5 Max (28 October 2026). A serial fraction of 0.5 matches the lower gain. A 512×512 SVD or Hermitian eigendecomposition spends about half its time in matrix products and half in its one-stage reduction. The products split. The reduction's matrix-vector passes over the trailing matrix are mostly too short to split.
 _SCALING = {'pm+.×pm': 0, '"svd"•decompose sq': 0.5, '"eigen"•decompose hq': 0.5, '"qr"•decompose⍤2 stk': 0, 'cw+.×ck': 0, '3 3↕img': 0.5, '*big': 0}
@@ -459,7 +459,7 @@ def _retired(command, bpl, settings, limit):
         if not (count := _RETIRED[sys.platform].search(text)): raise ValueError(f'{counter[0]} returned no instruction count:\n{p.stdout}{p.stderr}{text}')
         return int(count[1])
 
-# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N 0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10ₓ}⍣N 0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
+# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[ω 1]}⍣N 0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10ₓ}⍣N 0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs Nρ"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
 _SETTLE, _SPAN = 5e8, 5e8
 
 # A case's rough count compares 2s steps with s steps, from s = 2, multiplying s by 100, up to 10⁶, until the difference passes this many instructions. Neither the first two calls, which can trace and compile, nor the setup's few million instructions of noise can then stand in for a step's cost.
@@ -490,7 +490,7 @@ def _locked(pool, calls, limit=None):
 
 @delegates(environment)
 def instructions(
-    cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N 0`, or a list of them
+    cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{ω}⍣N 0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
     prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
@@ -500,7 +500,7 @@ def instructions(
     timeout:float=LIMIT, # Seconds of work that the count gets, or a `Limit` to share (`worker.Limit`), spent while its processes run; None: no limit
     **kwargs
 ):
-    "The instructions that each case retires per unit of `N`, on one thread. Each step evaluates the case at top level and forces its value, as the speed suite's timings do (`timing::time`), through the worker's `steps` request; a case that names `N` runs once per process and makes its own repetition. A build without that request, such as the release's, can't be counted. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build is resolved once, as the count starts."
+    "The instructions that each case retires per unit of `N`, on one thread. Each step evaluates the case at top level and forces its value, as the speed suite's timings do (`timing::time`), through the worker's `steps` request; a case that names `N` runs once per process and makes its own repetition. A build without that request, such as the release's, can't be counted. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨Nρ0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build is resolved once, as the count starts."
     cases = listify(cases)
     setup, prefs = _section_setup(section, setup, prefs)
     builds = listify(build) or [None]
@@ -664,7 +664,7 @@ def _estimates(case, setup, prefs, build, seconds, limit, settings, counts, runs
 
 @delegates(environment)
 def profile(
-    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
+    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{ω}⍣N 0`
     setup='', # BPL that defines what the case uses, run before it
     prefs='', # BPL preferences to run before setup
     section:str=None, # A speed file's section, as `time_cases` takes it: that file's setup, after the section's preferences, in place of `setup`
@@ -689,7 +689,7 @@ def profile(
 
 @delegates(environment)
 def profile_diff(
-    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
+    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{ω}⍣N 0`
     base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
     setup='', # BPL that defines what the case uses, run before it
     prefs='', # BPL preferences to run before setup
@@ -777,7 +777,7 @@ _ALLOCATOR = re.compile(r'malloc|^_*free|mfm|xzm|szone|nanov2|__rust_(?:alloc|de
 
 @delegates(environment)
 def call_profile(
-    case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{⍵}⍣N 0`
+    case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{ω}⍣N 0`
     function, # A regex that the demangled name of the function to count matches, such as `binder::derived`. A function that is always inlined has no code of its own and never stops the process
     setup='', # BPL that defines what the case uses, run before it
     prefs='', # BPL preferences to run before setup
@@ -1059,7 +1059,7 @@ def bisect(
         return found[0]
     limit = Limit.of(timeout)
     def printed(b):
-        try: return fresh(f'{setup} ⋄ {case}' if setup else case, prefs=prefs, build=b, timeout=limit)
+        try: return fresh(f'{setup} ◇ {case}' if setup else case, prefs=prefs, build=b, timeout=limit)
         except (BplError, EOFError, TimeoutError) as e:
             limit.left()
             return f'{type(e).__name__}: {e}'
@@ -1131,7 +1131,7 @@ def _explained_by_text(w, case, setup, prefs, sites, limit):
         limit.spend(w.ran)
         return r
     text, opts = '"' + case.replace('"', '""') + '"', '["sites":$t]' if sites else ''
-    for code in filter(None, [prefs, setup, f'(•explain {text}) ⋄ 0']):
+    for code in filter(None, [prefs, setup, f'(•explain {text}) ◇ 0']):
         if (r := run(code))['error']: return r
     r = run(f'1↓{opts}•explain {text}')
     return run(f'1↓•explain {text}') if r['error'] and opts else r
@@ -1150,7 +1150,7 @@ def _paired(old, new):
     return [('-', a, {}) for a in old] + [('+', b, {}) for b in new] + out
 
 def explain_diff(
-    case, # BPL code that `•explain` runs, such as `{+/⍵×⍵}∂ v`
+    case, # BPL code that `•explain` runs, such as `{+/ω×ω}∂ v`
     base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
     setup='', # BPL that defines what the case uses, run first in each worker
     prefs='', # BPL that runs before `setup`, such as `•prefs ["kinds":"static"]`
@@ -1364,7 +1364,7 @@ def _footers(path, data):
     def label(case):
         "The case's label on log lines, as `basedpl_testkit::timing` writes it: the file and the case's id, or its code on one line."
         if case.get('id'): return f'{path.name}:{case["id"]}'
-        return ' ⋄ '.join(l.strip() for l in case['code'].splitlines() if l.strip()).replace('{ ⋄ ', '{').replace(' ⋄ }', '}')
+        return ' ◇ '.join(l.strip() for l in case['code'].splitlines() if l.strip()).replace('{ ◇ ', '{').replace(' ◇ }', '}')
     return [(c['section'], c['code'], label(c), c['budgets'], counts(c.get('counts', [])), c['budget_span']) for c in _reference_file(text)['cases'] if 'budgets' in c]
 
 def _footer(path, code, budgets, counts):

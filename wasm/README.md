@@ -7,7 +7,7 @@ import init, { Session, configure } from 'https://cdn.jsdelivr.net/npm/basedpl/b
 
 await init();
 configure(location.href, message => console.error(message));
-new Session().run('avg←+/÷≢ ⋄ avg 2 4 9', output => console.log(output.data['text/plain']));   // logs 5
+new Session().run('avg←+/÷≢ ◇ avg 2 4 9', output => console.log(output.data['text/plain']));   // logs 5
 ```
 
 [BPL on the web](https://answerdotai.github.io/basedpl/web.html) documents this package: loading it, its outputs, values and JavaScript functions, drawing, the language bar, and how the gallery is built. The [playground](https://answerdotai.github.io/basedpl/playground.html) and [gallery](https://answerdotai.github.io/basedpl/gallery.html) run BPL in your browser. The [BPL documentation](https://answerdotai.github.io/basedpl/) covers the language.

@@ -1,6 +1,6 @@
 //! A traced program's maps in the storage order that their operands and readers need (`ordered`).
 
-use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, forward_axes, through_copies};
+use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, forward_axes, laid_out, through_copies};
 use crate::plan::Desc;
 use crate::{array::Layout, number::Numeric};
 use rustymath::{agreement::{Agreement, Mapping}, gather::counts_up, layout::count, search::inverse_permutation};
@@ -186,8 +186,8 @@ impl<'a> Reordering<'a> {
         };
         let left = match left { Some(l) => Some(operand(l)?), None => None };
         let right = operand(right)?;
-        let agreement = Agreement { layout: new.clone(), len: new.count(),
-            left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(&self.out)), right: right.pointwise(&self.out) };
+        let agreement = Agreement { layout: new.clone(), len: new.count(), left: left.as_ref().map_or(Mapping::Single, |r| r.pointwise(&self.out)),
+            right: right.pointwise(&self.out) };
         let mapped = crate::plan::Mapped { desc: Desc { layout: new, ..node.desc.clone() }, plan: plan.clone(), agreement };
         Some(self.out.mapped(mapped, left, right).of)
     }

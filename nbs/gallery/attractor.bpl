@@ -4,19 +4,19 @@
 ⍝ frame moves 3,000 points one step of the map, all at once as array operations. Each point adds a faint dot to the picture, and
 ⍝ additive blending makes the places the points visit most often glow brightest. The picture stops growing after 1,200 frames.
 options←["background":0;"fade":0;"blend":"add"]
-map←{[a b c d]←⍺ ⋄ [x y]←⍵
+map←{[a b c d]←α ◇ [x y]←ω
   [(1○a×y)+c×2○a×x
    (1○b×x)+d×2○b×y]}
-start←{¯2+4×¿[2 ⍵]⍴0}
-spread←{xy←⍵ map⍣300 start 400 ⋄ ≢∪⍉⌊20×≥xy÷≥|2↓⍵}
-⎕←"params←",⍎⁻ params←{⌊0.5+100×¯2+4×¿4⍴0 ÷ 100}⍣{150≤spread ⍺}⍬
+start←{¯2+4×¿[2 ω]ρ0}
+spread←{xy←ω map⍣300 start 400 ◇ ≢∪⍉⌊20×≥xy÷≥|2↓ω}
+⎕←"params←",⍎⁻ params←{⌊0.5+100×¯2+4×¿4ρ0 ÷ 100}⍣{150≤spread α}⍬
 xy←params map⍣100 start 3000
-[lo hi]←[⌊/xy⋄⌈/xy]
+[lo hi]←[⌊/xy◇⌈/xy]
 scale←460÷⌈/hi-lo
 centre←lo+hi ÷ 2
-glow←2⍴0.012× ≢∪⍉⌊scale×xy÷10 ÷ 830
+glow←2ρ0.012× ≢∪⍉⌊scale×xy÷10 ÷ 830
 frame←{
-  ⍵≥1200ₓ?;
+  ω≥1200ₓ?;
   new←params map xy
   hue←⊢/∧∨⁻⍉new-xy
   colour←0.55+0.45×2○hue+⊗0 2.1 4.2 ,⍤1 glow

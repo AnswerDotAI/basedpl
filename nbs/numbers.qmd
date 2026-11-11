@@ -30,8 +30,8 @@ A plain `e`, `j` or `r` starts a name unless the rest of a number follows it, as
 ¯2+5                 ⍝ 3
 2J3≡2j3              ⍝ $t
 1ᵣ3≡1r3              ⍝ $t
-edges←3 ⋄ 2edges     ⍝ 2 3
-x←2 ⋄ n←3 ⋄ xⱼn      ⍝ 2j3
+edges←3 ◇ 2edges     ⍝ 2 3
+x←2 ◇ n←3 ◇ xⱼn      ⍝ 2j3
 2ₑn                  ⍝ 2000
 ```
 
@@ -46,7 +46,7 @@ Ordinary `ₓ` integers use machine arithmetic, like integer types in C, Rust an
 1ₓ÷ₐ3ₓ                 ⍝ 0.3333333333333333
 ```
 
-Dynamic integer arithmetic computes at the narrowest width that holds every result its arguments' widths can give, and wraps at the 64-bit limit. Explicit fixed-width integers wrap at their declared width. A machine literal outside the supported range raises LIMIT ERROR. A count from `≢` or `⍴` past 64 bits gives the largest 64-bit integer. Arithmetic overflow wraps, including the minimum signed integer divided by minus one. Neither overflow nor division automatically enters unbounded arithmetic:
+Dynamic integer arithmetic computes at the narrowest width that holds every result its arguments' widths can give, and wraps at the 64-bit limit. Explicit fixed-width integers wrap at their declared width. A machine literal outside the supported range raises LIMIT ERROR. A count from `≢` or `ρ` past 64 bits gives the largest 64-bit integer. Arithmetic overflow wraps, including the minimum signed integer divided by minus one. Neither overflow nor division automatically enters unbounded arithmetic:
 
 ```bpl
 9223372036854775807ₓ+1ₓ ⍝ ¯9223372036854775808ₓ
@@ -71,7 +71,7 @@ Select the domain before computing. `÷ₐ` selects float division, and `÷ᵣ` 
 +/÷≢ 1ᵣ 2ᵣ             ⍝ 3ᵣ2
 ```
 
-An exact function keeps unbounded arguments exact where its finite result is rational. `√`, `⍟`, `π`, `○` and monadic `*` give approximate results, whole ones included:
+An exact function keeps unbounded arguments exact where its finite result is rational. `√`, `⊛`, `π`, `○` and monadic `*` give approximate results, whole ones included:
 
 ```bpl
 2ᵣ*¯2ₓ                 ⍝ 1ᵣ4
@@ -91,7 +91,7 @@ Predicates give Booleans. Positions, tally, shape, and monadic `⌊`, `⌈` and 
 Iota and random integer generation keep machine-integer arguments in that domain. With [Mathish](mathish.qmd) on, an argument that must be a whole number, such as an index or a count, accepts a float within `1E¯14` of one. With Mathish off, the float must be exactly whole:
 
 ```bpl
-⍳10×0.1×3              ⍝ 0 1 2
+ι10×0.1×3              ⍝ 0 1 2
 ```
 
 ## Numbers in one array
@@ -99,8 +99,8 @@ Iota and random integer generation keep machine-integer arguments in that domain
 Numbers that an operation puts in one array share a kind. A float among exact integers makes them all floats, and a complex number makes every number complex:
 
 ```bpl
-⍳3ₓ , 0.5            ⍝ 0 1 2 0.5
-⍳2ₓ , 1j2            ⍝ 0 1 1j2
+ι3ₓ , 0.5            ⍝ 0 1 2 0.5
+ι2ₓ , 1j2            ⍝ 0 1 1j2
 1ₓ,0.5 ÷ 2ₓ          ⍝ 0.5 0.25
 ```
 
@@ -117,7 +117,7 @@ Under dynamic kinds, a write keeps each number's exactness too. A float assigned
 r←["a":2ₓ "b":3ₓ]
 r.b←2.5
 r                    ⍝ ["a":2ₓ "b":2.5]
-m←3⍴$f
+m←3ρ$f
 m.[[1]]←1
 m                    ⍝ $f 1 $f
 ```
@@ -127,7 +127,7 @@ Around literals, `[…]ₓ` and `(…)ₓ` make every number a machine integer, 
 ```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
 [[1 2] 3]ₓ≡[1ₓ 2ₓ;3ₓ]   ⍝ $t
-(0 1⋄2 3)ₓ≡[[0 1]ₓ [2 3]ₓ]  ⍝ $t
+(0 1◇2 3)ₓ≡[[0 1]ₓ [2 3]ₓ]  ⍝ $t
 1↑⍬ₓ                 ⍝ [0]ₓ
 ⍕1ₓ ¯2ₓ              ⍝ "[1 ¯2]ₓ"
 ```
@@ -179,16 +179,16 @@ A number read through a name or received as a function body's argument uses its 
 
 Integer `÷` floors at the promoted integer type. `÷ₐ` gives 32-bit floats for `u8` and `i16`, and 64-bit floats for `i32` and `i64`, no wider than the `float` preference. Under static kinds, where the default is 32 bits, `i32` and `i64` use 32-bit floats for `÷ₐ` too. Comparisons give Booleans.
 
-Functions that rearrange or select items keep the fixed type, as sort and `↑` do. So do functions whose results can't exceed a fixed argument: `⍳`, `↦`, roll, deal, `⊤` and monadic `⨸`. Functions built from `+`, `-` and `×` compute at the fixed type and wrap, as `+/` does. These are `⊥`, polynomial evaluation with `⌻`, `!`, the determinant `-.×` and the permanent `+.×`. A result of `∧`, `∨` or `!` that doesn't fit the fixed type wraps, as a sum does. Positions, counts and values that can exceed the argument's range are ordinary integers, such as the results of `⍸`, `⍋`, `≢` and `⍭`. A function with no kernel at the fixed width gives what static kinds give at that width: `○` on `u8` gives complex numbers with 32-bit parts. `⌹` and polar `∧` give fixed integers floats of the width that `÷ₐ` gives. A roll of fixed integers gives fixed integers, and a bound of 0, which rolls a float, is a DOMAIN error.
+Functions that rearrange or select items keep the fixed type, as sort and `↑` do. So do functions whose results can't exceed a fixed argument: `ι`, `↦`, roll, deal, `⊤` and monadic `⨸`. Functions built from `+`, `-` and `×` compute at the fixed type and wrap, as `+/` does. These are `⊥`, polynomial evaluation with `⌻`, `!`, the determinant `-.×` and the permanent `+.×`. A result of `∧`, `∨` or `!` that doesn't fit the fixed type wraps, as a sum does. Positions, counts and values that can exceed the argument's range are ordinary integers, such as the results of `⍸`, `⍋`, `≢` and `⍭`. A function with no kernel at the fixed width gives what static kinds give at that width: `○` on `u8` gives complex numbers with 32-bit parts. `⌹` and polar `∧` give fixed integers floats of the width that `÷ₐ` gives. A roll of fixed integers gives fixed integers, and a bound of 0, which rolls a float, is a DOMAIN error.
 
 ```bpl
-⍳3ₓ₁            ⍝ [0 1 2]ₓ₁
-2ₓ⊥(9⍴1ₓ)ₓ₁     ⍝ 255ₓ₁
+ι3ₓ₁            ⍝ [0 1 2]ₓ₁
+2ₓ⊥(9ρ1ₓ)ₓ₁     ⍝ 255ₓ₁
 [0 1]ₓ₁,9ₓ      ⍝ [0 1 9]ₓ₁
 ⍸[0 1 1]ₓ₁      ⍝ [1 2]ₓ
 ```
 
-`⍳256ₓ₁` fails, because the literal `256ₓ₁` doesn't fit `u8`. `⍳ₓ₁ 256ₓ` gives 0 to 255 as `u8`.
+`ι256ₓ₁` fails, because the literal `256ₓ₁` doesn't fit `u8`. `ιₓ₁ 256ₓ` gives 0 to 255 as `u8`.
 
 Fixed integer literals must fit their type. After a value, a sized suffix converts to that type. Integer narrowing wraps. Float and rational conversion floors, as `⌊` does, then clamps to the target range. NaN converts to zero; infinities convert to the range's bounds. Typed empty vectors use the same suffix, as in `⍬ₓ₁`.
 
@@ -233,13 +233,13 @@ Complex numbers have 64-bit or 32-bit parts. `•storage` gives their kind as `"
 Each operation on 16-bit floats computes in 32 bits and rounds its result to 16 bits. For `+ - × ÷` and `√`, that gives the result of 16-bit arithmetic. Folds, scans and inner products keep their running totals in 32 bits. Only their results round to 16 bits. A 16-bit total of these numbers would stop growing at 256:
 
 ```bpl
-+/ 16•float4096⍴0.1   ⍝ 409.5ₕ
++/ 16•float4096ρ0.1   ⍝ 409.5ₕ
 ```
 
 An exact operand converts straight to 32 bits, not to 16. A count larger than 65,504, the largest 16-bit float, still divides a 16-bit sum:
 
 ```bpl
-h←16 •float 100000⍴1 0
+h←16 •float 100000ρ1 0
 +/÷≢ h                   ⍝ 0.49975586ₕ
 ```
 
@@ -255,30 +255,30 @@ Rustymath's Accuracy page also specifies which results are exact. With Mathish m
 •prefs ["mathish":$f]
 7*5 = 16807          ⍝ $t
 3√27 = 3             ⍝ $t
-10⍟1000 = 3          ⍝ $t
+10⊛1000 = 3          ⍝ $t
 ○π0.5 = 0j1          ⍝ $t
 •prefs ["mathish":$t]
 ```
 
 Floating-point results need not agree bit for bit across platforms, builds, runs, thread counts, array sizes or execution routes. Pervasive functions retain the finite accuracy bounds above, including subnormals. Results involving infinities or NaNs, the choice of NaN and the sign of zero can differ as rustymath's [Accuracy page](https://answerdotai.github.io/rustymath/accuracy.html) describes. FMA and reassociation can overflow differently near the range limits. `⌈` and `⌊` can give either argument where one is NaN or both are zeros of opposite signs. Compare floats from different routes within a tolerance, as Mathish mode's `=` does.
 
-Algebraic reductions such as `+/` promise no association. Floating-point cancellation can make reassociated results differ beyond the last bits. A dfn whose one body is `⍺ p ⍵`, for a primitive `p`, computes as `p`: `{⍺+⍵}/` has `+/`'s freedoms and its identity for an empty axis. Other dfn bodies retain the right-to-left calls specified by [Reduce](glyphs/slash.qmd).
+Algebraic reductions such as `+/` promise no association. Floating-point cancellation can make reassociated results differ beyond the last bits. A dfn whose one body is `α p ω`, for a primitive `p`, computes as `p`: `{α+ω}/` has `+/`'s freedoms and its identity for an empty axis. Other dfn bodies retain the right-to-left calls specified by [Reduce](glyphs/slash.qmd).
 
-Extra accuracy from a rewrite is not promised for literal-only expressions or intermediates already read as values. A form that BPL doesn't recognise as a [fast combination](terms.qmd#term-fast-combination), such as one that names a constant, can give different digits, beyond the last bits where the combination is more accurate. `⍟1+x` computes through `log1p` and keeps the digits of a tiny `x`. `one←1 ⋄ ⍟one+x` computes `⍟` of `1+x`, which loses them.
+Extra accuracy from a rewrite is not promised for literal-only expressions or intermediates already read as values. A form that BPL doesn't recognise as a [fast combination](terms.qmd#term-fast-combination), such as one that names a constant, can give different digits, beyond the last bits where the combination is more accurate. `⊛1+x` computes through `log1p` and keeps the digits of a tiny `x`. `one←1 ◇ ⊛one+x` computes `⊛` of `1+x`, which loses them.
 
 ## Mathish mode
 
-[Mathish mode](mathish.qmd) is on by default. For [Mathish types](terms.qmd#term-mathish-types), floating comparisons use relative tolerance `1E¯14`, measured against the larger magnitude, and `0÷0` and `1⍟1` give zero. Disable it with `•prefs ["mathish":$f]` for exact floating comparisons and NaN at floating zero divided by zero.
+[Mathish mode](mathish.qmd) is on by default. For [Mathish types](terms.qmd#term-mathish-types), floating comparisons use relative tolerance `1E¯14`, measured against the larger magnitude, and `0÷0` and `1⊛1` give zero. Disable it with `•prefs ["mathish":$f]` for exact floating comparisons and NaN at floating zero divided by zero.
 
 The calculation's kind and `kinds` setting decide whether these conventions apply. Explicit 64-bit float suffixes and imported buffers follow the same rule as literals. Static calculations and fixed-integer operations never use Mathish conventions, even when their floating computation uses 64 bits. The narrower floats keep exact comparisons and raw division. Convergence stopping rules are independent of Mathish mode.
 
 ## Infinities and NaN
 
-Floats include `∞`, `¯∞`, NaN and `¯0` besides finite numbers. An undefined result is NaN rather than an error, except for Mathish mode's zero divided by zero. `1÷0` is `∞`, and `⍟0` is `¯∞`. NaN is written `$n`:
+Floats include `∞`, `¯∞`, NaN and `¯0` besides finite numbers. An undefined result is NaN rather than an error, except for Mathish mode's zero divided by zero. `1÷0` is `∞`, and `⊛0` is `¯∞`. NaN is written `$n`:
 
 ```bpl
 [0÷0 ∞-∞]            ⍝ 0 $n
-[1÷0 ⍟0]             ⍝ ∞ ¯∞
+[1÷0 ⊛0]             ⍝ ∞ ¯∞
 ```
 
 Under `=`, NaN equals nothing, as in IEEE. `≡`, search, grade and Key treat NaN as one value, and grade puts it after every other number:
@@ -293,8 +293,8 @@ Complex arithmetic follows the `num_complex` crate. A complex number can have in
 Putting an infinity or NaN into a numeric array uses float storage. Joining one to exact integers makes them floats:
 
 ```bpl
-⍳3ₓ , ∞              ⍝ 0 1 2 ∞
-(•storage ⍳3ₓ , ∞).kind   ⍝ "float64"
+ι3ₓ , ∞              ⍝ 0 1 2 ∞
+(•storage ι3ₓ , ∞).kind   ⍝ "float64"
 ```
 
 CSV and JSON imports give NaN for a missing number. An integer column with gaps then becomes floats. A column that also holds an integer too large for a float to hold exactly keeps each item's kind, in mixed storage.
@@ -334,8 +334,8 @@ Ordinary integers compute at the width that the `int` pref sets, 32 bits by defa
 •prefs ["kinds":"static"]
 2147483647ₓ+1ₓ             ⍝ ¯2147483648ₓ
 [1 2]ₓ₄+1ₓ                 ⍝ [2 3]ₓ
-(•memory ⍳100ₓ).bytes      ⍝ 400ₓ
-(•memory ⍳100ₓ₁).bytes     ⍝ 100ₓ
+(•memory ι100ₓ).bytes      ⍝ 400ₓ
+(•memory ι100ₓ₁).bytes     ⍝ 100ₓ
 (•storage (32•float1 2)×2ₚ).kind    ⍝ "float64"
 (•storage (32•float1 2)×2ₓ).kind    ⍝ "float32"
 •prefs ["kinds":"dynamic"]
@@ -346,28 +346,28 @@ Under static kinds, other invalid numeric inputs give unspecified results instea
 [Performance](performance.qmd) explains why static kinds are the setting for performance work. Code for static kinds gives each integer the width that its values need and gives `•csv` and `•json` a `types` record for their columns. Code written for dynamic kinds can give other results. Dynamic kinds give this total of positions exactly. Static kinds wrap it at the 32-bit range, unless a 64-bit seed widens the sum:
 
 ```bpl
-+/⍳100000ₓ                 ⍝ 4999950000ₓ
++/ι100000ₓ                 ⍝ 4999950000ₓ
 •prefs ["kinds":"static"]
-+/⍳100000ₓ                 ⍝ 704982704ₓ
-0ₓ₈+/⍳100000ₓ              ⍝ 4999950000ₓ₈
++/ι100000ₓ                 ⍝ 704982704ₓ
+0ₓ₈+/ι100000ₓ              ⍝ 4999950000ₓ₈
 •prefs ["kinds":"dynamic"]
 ```
 
 Under static kinds, a write whose items have another kind converts the whole array to the compact type that holds both kinds, where one exists. The array's type then doesn't depend on which items the write selects. Under dynamic kinds, each written item keeps its own kind in mixed storage:
 
 ```bpl
-v←[1 2 3]ₓ₁ ⋄ v.[[1]]←0.5 ⋄ (•storage v).kind    ⍝ "mixed"
+v←[1 2 3]ₓ₁ ◇ v.[[1]]←0.5 ◇ (•storage v).kind    ⍝ "mixed"
 •prefs ["kinds":"static"]
-v←[1 2 3]ₓ₁ ⋄ v.[[1]]←0.5 ⋄ (•storage v).kind    ⍝ "float32"
+v←[1 2 3]ₓ₁ ◇ v.[[1]]←0.5 ◇ (•storage v).kind    ⍝ "float32"
 •prefs ["kinds":"dynamic"]
 ```
 
 Results computed apart join the same way: the cells of a map, such as Each, Rank, an outer product, a stencil or Key, the states that `⍣` keeps for a list of counts, and the cases of a compacting select, such as `⍚` or a guard. Under static kinds the result takes one compact type, so its type doesn't depend on which case each cell picks, or on whether the map ran on all its cells at once. Under dynamic kinds, each cell's result keeps its own kind:
 
 ```bpl
-{(0<⍵)⍚[(1<) (2×)]⍵}¨¯1.5 2 3      ⍝ $f 4 6
+{(0<ω)⍚[(1<) (2×)]ω}¨¯1.5 2 3      ⍝ $f 4 6
 •prefs ["kinds":"static"]
-{(0<⍵)⍚[(1<) (2×)]⍵}¨¯1.5 2 3      ⍝ 0 4 6
+{(0<ω)⍚[(1<) (2×)]ω}¨¯1.5 2 3      ⍝ 0 4 6
 •prefs ["kinds":"dynamic"]
 ```
 
@@ -378,24 +378,24 @@ Results computed apart join the same way: the cells of a map, such as Each, Rank
 ```bpl
 (3j4)ₐ                            ⍝ 3
 (1r3)ₐ                            ⍝ 0.3333333333
-x←(1.5j2 2j3)ₛ ⋄ [xₐ;(•storage xₐ).kind]   ⍝ [[1.5 2]ₛ "float32"]
+x←(1.5j2 2j3)ₛ ◇ [xₐ;(•storage xₐ).kind]   ⍝ [[1.5 2]ₛ "float32"]
 ```
 
-`√`, `⍟`, `*`, `○` and `○⁻` keep their own real-part rule under `ₐ`, as below. After any other pervasive function, `fₐ` converts the arguments to real floats of the width that their float promotion gives, weak literals included, before it calls `f`. `!ₐ25ₓ` is about `1.55ₑ25`, computed in floats rather than in overflowing integers. A complex argument gives its real part first, so `1j2×ₐ1j2` is `1`, and a comparison gives Booleans. After a function that isn't pervasive, `fₐ` converts its results: `≢ₐ` gives the count as a float. Float32 arguments give float32 results, even where `f` itself gives float64 or complex numbers. The width follows from the arguments' kinds and the preferences, never from values. `÷ₐ` selects float division before computing, rather than converting an integer quotient. Outside the real domain a result is the real part of the principal value. `√ₐ¯4` is 0, the real part of `0j2`. With a negative base, `¯8*ₐ÷3` is 1, the real part of the principal root 1+i√3, not `¯2`. The real part of arcsin of 2 is π÷2:
+`√`, `⊛`, `*`, `○` and `○⁻` keep their own real-part rule under `ₐ`, as below. After any other pervasive function, `fₐ` converts the arguments to real floats of the width that their float promotion gives, weak literals included, before it calls `f`. `!ₐ25ₓ` is about `1.55ₑ25`, computed in floats rather than in overflowing integers. A complex argument gives its real part first, so `1j2×ₐ1j2` is `1`, and a comparison gives Booleans. After a function that isn't pervasive, `fₐ` converts its results: `≢ₐ` gives the count as a float. Float32 arguments give float32 results, even where `f` itself gives float64 or complex numbers. The width follows from the arguments' kinds and the preferences, never from values. `÷ₐ` selects float division before computing, rather than converting an integer quotient. Outside the real domain a result is the real part of the principal value. `√ₐ¯4` is 0, the real part of `0j2`. With a negative base, `¯8*ₐ÷3` is 1, the real part of the principal root 1+i√3, not `¯2`. The real part of arcsin of 2 is π÷2:
 
 ```bpl
 √ₐ¯4 9                            ⍝ 0 3
-⍟ₐ¯1                              ⍝ 0
+⊛ₐ¯1                              ⍝ 0
 ¯8*ₐ÷3                            ⍝ 1
 1○⁻ₐ 2                           ⍝ 1.570796327
-x←(4 9)ₛ ⋄ (•storage √ₐx).kind     ⍝ "float32"
+x←(4 9)ₛ ◇ (•storage √ₐx).kind     ⍝ "float32"
 ```
 
-`√ₐ`, `⍟ₐ` and `*ₐ` each run as one kernel, and so do `○ₐ` and `○⁻ₐ` with a constant code. Because their result's kind never depends on values, they fuse and trace under dynamic kinds as they do under static kinds. Under [`∂`](glyphs/partial.qmd), their slopes are the real part's: `√ₐ` has slope 0 at and below 0, `⍟ₐ` has slope 1÷x, and arcsin's real part has slope 0 beyond ¯1 and 1. Other marked pervasive functions convert their arguments before `f` runs, and a marked function that isn't pervasive converts the results that `f` gives. Under static kinds, a NaN that `f` gives outside its domain stays NaN:
+`√ₐ`, `⊛ₐ` and `*ₐ` each run as one kernel, and so do `○ₐ` and `○⁻ₐ` with a constant code. Because their result's kind never depends on values, they fuse and trace under dynamic kinds as they do under static kinds. Under [`∂`](glyphs/partial.qmd), their slopes are the real part's: `√ₐ` has slope 0 at and below 0, `⊛ₐ` has slope 1÷x, and arcsin's real part has slope 0 beyond ¯1 and 1. Other marked pervasive functions convert their arguments before `f` runs, and a marked function that isn't pervasive converts the results that `f` gives. Under static kinds, a NaN that `f` gives outside its domain stays NaN:
 
 ```bpl
-{+/√ₐ⍵}∂¯1 4                      ⍝ 0 0.25
-{+/1○⁻ₐ⍵}∂¯2 0.5                 ⍝ 0 1.154700538
+{+/√ₐω}∂¯1 4                      ⍝ 0 0.25
+{+/1○⁻ₐω}∂¯2 0.5                 ⍝ 0 1.154700538
 ```
 ## Booleans
 

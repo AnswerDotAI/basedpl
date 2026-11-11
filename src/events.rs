@@ -43,8 +43,14 @@ pub(crate) mod routes {
 
 pub fn event_routes() -> impl Iterator<Item = Route> { Route::ALL.iter().chain(routes::ALL).copied() }
 
-macro_rules! detail_value { ($field:ident) => { $field }; ($field:ident, $value:expr) => { $value }; }
-macro_rules! detail_label { () => { false }; (label) => { true }; }
+macro_rules! detail_value {
+    ($field:ident) => { $field };
+    ($field:ident, $value:expr) => { $value };
+}
+macro_rules! detail_label {
+    () => { false };
+    (label) => { true };
+}
 macro_rules! details {
     ($($variant:ident, $table:ident, $name:literal { $($field:ident: $ty:ty => $kind:ident $(($value:expr))? $(@$label:ident)?),* };)+) => {
         #[cfg_attr(web, expect(dead_code, reason = "shared report schema retains native-JIT compile rows"))]
@@ -75,8 +81,8 @@ details! {
 }
 
 pub(crate) const TABLES: &[&Table] = &[
-    &FUSED, &STORED, &FORCED, &PROGRAMS, &rustymath::events::STOPPED, &FAST, &FALLBACKS, &rustymath::events::DECLINED,
-    &ACCUMULATIONS, &MIXED, &COMPILES, &rustymath::events::ROUTES, &ITEMWISE,
+    &FUSED, &STORED, &FORCED, &PROGRAMS, &rustymath::events::STOPPED, &FAST, &FALLBACKS, &rustymath::events::DECLINED, &ACCUMULATIONS, &MIXED, &COMPILES,
+    &rustymath::events::ROUTES, &ITEMWISE,
 ];
 
 #[inline]
@@ -84,8 +90,7 @@ pub(crate) fn emit(make: impl FnOnce(bool) -> Detail) { rustymath::events::emit(
 
 #[inline]
 pub(crate) fn stopped(reason: &'static str, items: usize, site: impl FnOnce() -> Option<String>) {
-    rustymath::events::emit(|sites| Event::Route(Record {
-        kind: EventKind::Stopped, route: routes::Trace, reason, calls: 1, items, site: if sites { site() } else { None },
-    }));
+    rustymath::events::emit(|sites| {
+        Event::Route(Record { kind: EventKind::Stopped, route: routes::Trace, reason, calls: 1, items, site: if sites { site() } else { None } })
+    });
 }
-

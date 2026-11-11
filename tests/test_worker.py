@@ -7,11 +7,11 @@ def test_worker_bindings_calls_and_echo(tmp_path):
     with Worker() as w:
         a = dict(shape=[3], data=[1, 2, 3], prototype=0)
         assert w.request(dict(bindings=dict(x=a)), timeout=2) == dict(value=None, output=[], error=None)
-        r = w.request(dict(code='1 ⋄ ⎕←+/x ⋄ x+1ₓ', echo=False), timeout=2)
+        r = w.request(dict(code='1 ◇ ⎕←+/x ◇ x+1ₓ', echo=False), timeout=2)
         assert r['output'] == [dict(kind='explicit', data={'text/plain':'6ₓ'})] and r['value']['data'] == [2, 3, 4] and r['error'] is None
         r = w.request(dict(call='-', args=[a, a], echo=False), timeout=2)
         assert r['output'] == [] and r['value']['data'] == [0, 0, 0]
-        for code in ['3ₓ', '⊂3ₓ', '⊂⊂3ₓ', "[(2ₓ*100ₓ) 0.5 1r3 1j2 'a']", '[[1 2] "ab" (0 3⍴0ₓ)]', '0⍴⊂1 2', '0⍴⊂0⍴⊂1 2', '0 2⍴""', '∞ ¯∞', '$t $f', '0⍴$f']:
+        for code in ['3ₓ', '⊂3ₓ', '⊂⊂3ₓ', "[(2ₓ*100ₓ) 0.5 1r3 1j2 'a']", '[[1 2] "ab" (0 3ρ0ₓ)]', '0ρ⊂1 2', '0ρ⊂0ρ⊂1 2', '0 2ρ""', '∞ ¯∞', '$t $f', '0ρ$f']:
             original = w.eval(code, timeout=2)
             r = w.request(dict(bindings=dict(v=original['value']), call='⊢', args=[original['value']]), timeout=2)
             assert r == original
@@ -24,16 +24,16 @@ def test_worker_bindings_calls_and_echo(tmp_path):
             dict(code='1', call='+', args=[a]),
             dict(bindings=dict(x=dict(shape=[], data=[{'infinity': 0}], prototype=0))),
         ]: assert w.request(payload, timeout=2)['error']['kind'] == 'REQUEST'
-        r = w.request(dict(call='{⎕←⍵ ⋄ 1÷"a"}', args=[a], echo=False), timeout=2)
+        r = w.request(dict(call='{⎕←ω ◇ 1÷"a"}', args=[a], echo=False), timeout=2)
         assert r['output'] == [dict(kind='explicit', data={'text/plain':'[1 2 3]ₓ'})] and r['error']['kind'] == 'DOMAIN'
-        assert r['error']['calls'][-1]['source']['text'] == '{⎕←⍵ ⋄ 1÷"a"}'
-        assert w.request(dict(call='{∇⍵}', args=[a]), timeout=.01)['error']['kind'] == 'TIMEOUT'
+        assert r['error']['calls'][-1]['source']['text'] == '{⎕←ω ◇ 1÷"a"}'
+        assert w.request(dict(call='{∇ω}', args=[a]), timeout=.01)['error']['kind'] == 'TIMEOUT'
         for value in [float('inf'), float('-inf'), float('nan')]:
             with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))
         assert w.eval('x', timeout=2)['value'] == a
         w.eval('•prefs ["kinds":"static"]')
         assert w.request(dict(bindings=dict(z={'complex': [1, 0]}), code='⎕←(•storage z).kind'))['output'][0]['data']['text/plain'] == '"complex128"'
-    assert fresh('⎕←1 ⋄ 2') == '1\n2'
+    assert fresh('⎕←1 ◇ 2') == '1\n2'
     with pytest.raises(BplError) as e: fresh('1÷"a"')
     assert e.value.kind == 'DOMAIN'
     rows = fresh(['(•prefs ⍬).kinds', '1÷"a"'], prefs='•prefs ["kinds":"static"]')
@@ -49,7 +49,7 @@ def test_worker_keyed_arrays():
         v = w.eval('["b":[1 2] "a":["x":3]]', timeout=2)['value']
         assert v['shape'] == [2] and v['axis_keys'] == [['b', 'a']]
         assert v['data'][1] == dict(shape=[1], data=[3], prototype=0, axis_keys=[['x']])
-        m = w.eval('["north" "south";"west" "east"]:2 2⍴⍳4', timeout=2)['value']
+        m = w.eval('["north" "south";"west" "east"]:2 2ρι4', timeout=2)['value']
         assert m['shape'] == [2, 2] and m['axis_keys'] == [['north', 'south'], ['west', 'east']]
         empty = w.eval('⍬:⍬', timeout=2)['value']
         assert empty['shape'] == [0] and empty['axis_keys'] == [[]]
@@ -70,13 +70,13 @@ def test_worker_cancellation_and_reference_sessions():
         assert result['error']['kind'] == 'TIMEOUT'
         timer = threading.Timer(.05, w.interrupt)
         timer.start()
-        try: result = w.eval('{∇⍵}0', timeout=2)
+        try: result = w.eval('{∇ω}0', timeout=2)
         finally: timer.join()
         assert result['error']['kind'] == 'INTERRUPT'
         timer = threading.Timer(.05, lambda: os.kill(os.getpid(), signal.SIGINT))
         timer.start()
         try:
-            with pytest.raises(KeyboardInterrupt): w.eval('{∇⍵}0', timeout=2)
+            with pytest.raises(KeyboardInterrupt): w.eval('{∇ω}0', timeout=2)
         finally: timer.join()
         assert w.eval('keep+1')['value'] == 43
         result = w.request(dict(case=dict(code='•delay3', expected_code='0')), timeout=5)
@@ -88,9 +88,9 @@ def test_worker_cancellation_and_reference_sessions():
         case = dict(code='∞', expected_code='∞', relative_tolerance=1e-14)
         assert w.request(dict(case=case))['status'] == 'pass'
         assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
-        timed, f = w.request(dict(page=dict(text='```bpl\n{⍵+1}⍣1e9⁝0 ⍝ 0\n1 ⍝ 1\n```\n')), timeout=.2)['failures']
+        timed, f = w.request(dict(page=dict(text='```bpl\n{ω+1}⍣1e9⁝0 ⍝ 0\n1 ⍝ 1\n```\n')), timeout=.2)['failures']
         assert (timed['line'], f['line'], f['status']) == (2, 3, 'unchecked') and 'TIMEOUT' in timed['message']
     bpl.timeout = .01
-    with pytest.raises(BplError) as e: bpl('x←7 ⋄ {∇⍵}0', 'explicit')
+    with pytest.raises(BplError) as e: bpl('x←7 ◇ {∇ω}0', 'explicit')
     assert e.value.kind == 'TIMEOUT'
     assert bpl('x').py == 7

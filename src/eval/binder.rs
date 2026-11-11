@@ -1,8 +1,6 @@
 //! The binder: the right-to-left reduction of a run's items by their categories, and the rewriting of dot access.
 
-use super::{
-    ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, dissect::Expression,
-};
+use super::{ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, dissect::Expression};
 use crate::{
     At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript},
     syntax::{ListForm, Node, NodeKind, ScriptKind}
@@ -14,33 +12,45 @@ impl Session {
     fn sections<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
         let dot = |n: &Node| matches!(n.kind, NodeKind::Operator(OperatorKind::Product));
         let bracket = |n: &Node| n.span.source.text.as_bytes().get(n.span.range.start) == Some(&b'[');
-        let contains = |test: &dyn Fn(&Node) -> bool| nodes.iter().any(|n| match &n.kind {
-            NodeKind::Run(inner) => inner.iter().any(test), _ => test(n)
-        });
+        let contains = |test: &dyn Fn(&Node) -> bool| {
+            nodes.iter().any(|n| match &n.kind { NodeKind::Run(inner) => inner.iter().any(test), _ => test(n) })
+        };
         if !contains(&dot) || !contains(&bracket) { return Cow::Borrowed(nodes); }
         let flat: Vec<_> = nodes.iter().flat_map(|n| match &n.kind { NodeKind::Run(inner) => &inner[..], _ => std::slice::from_ref(n) }).cloned().collect();
         let group = |nodes: Vec<Node>| Node { span: crate::syntax::cover(&nodes), kind: NodeKind::Group(nodes) };
         let (mut out, mut i, mut changed) = (Vec::with_capacity(flat.len()), 0, false);
         while i < flat.len() {
-            let Some(head) = flat.get(i + 1).filter(|_| dot(&flat[i])) else { out.push(flat[i].clone()); i += 1; continue; };
+            let Some(head) = flat.get(i + 1).filter(|_| dot(&flat[i])) else {
+                out.push(flat[i].clone());
+                i += 1;
+                continue;
+            };
             let immediate = bracket(head);
-            let explicit = !crate::syntax::touching(&flat[i], head)
-                || matches!(head.kind, NodeKind::Operator(_) | NodeKind::Script(ScriptKind::Super, _));
+            let explicit = !crate::syntax::touching(&flat[i], head) || matches!(head.kind, NodeKind::Operator(_) | NodeKind::Script(ScriptKind::Super, _));
             if !immediate && !(explicit && self.starts_with_operator(&flat[i + 1..])) {
-                out.push(flat[i].clone()); i += 1; continue;
+                out.push(flat[i].clone());
+                i += 1;
+                continue;
             }
             let Some(end) = flat[i + 1..].iter().take_while(|n| !matches!(n.kind, NodeKind::Assign)).position(bracket).map(|j| i + 1 + j) else {
-                out.push(flat[i].clone()); i += 1; continue;
+                out.push(flat[i].clone());
+                i += 1;
+                continue;
             };
             let prefix = self.members_with(&out);
             let subject = prefix.len().checked_sub(1).and_then(|mut start| {
                 if matches!(prefix[start].kind, NodeKind::Assign) { return None; }
-                while start > 0 && self.static_category(&prefix[start]) == Category::Operator
-                    && crate::syntax::touching(&prefix[start - 1], &prefix[start]) { start -= 1; }
-                self.trailing_operand(&prefix[start..], prefix.len() - start).ok()
-                    .filter(|(_, c)| matches!(c, Category::Value | Category::Function)).map(|(_, c)| (start, c))
+                while start > 0 && self.static_category(&prefix[start]) == Category::Operator && crate::syntax::touching(&prefix[start - 1], &prefix[start]) {
+                    start -= 1;
+                }
+                self.trailing_operand(&prefix[start..], prefix.len() - start).ok().filter(|(_, c)| matches!(c, Category::Value | Category::Function))
+                    .map(|(_, c)| (start, c))
             });
-            if immediate && subject.is_some() { out.push(flat[i].clone()); i += 1; continue; }
+            if immediate && subject.is_some() {
+                out.push(flat[i].clone());
+                i += 1;
+                continue;
+            }
             out = prefix.into_owned();
             let root = subject.map(|(start, category)| (group(out.split_off(start)), category));
             let identity = Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Identity(false))), span: flat[i].span.clone() };
@@ -58,7 +68,6 @@ impl Session {
         if changed { Cow::Owned(crate::syntax::runs(out)) } else { Cow::Borrowed(nodes) }
     }
 
-
     fn has_members(nodes: &[Node]) -> bool {
         nodes.iter().any(|n| matches!(n.kind, NodeKind::Script(ScriptKind::Sub, _) | NodeKind::Joiner(_))) || nodes.windows(2).any(|w| {
             matches!(w[0].kind, NodeKind::Operator(OperatorKind::Product))
@@ -69,8 +78,7 @@ impl Session {
     /// Rewrite a writable target's dot reads and numeric subscripts to selection calls.
     pub(super) fn selection_members<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
         let members = match self.sections(nodes) {
-            Cow::Borrowed(nodes) => self.members_with(nodes),
-            Cow::Owned(nodes) => Cow::Owned(self.members_with(&nodes).into_owned()),
+            Cow::Borrowed(nodes) => self.members_with(nodes), Cow::Owned(nodes) => Cow::Owned(self.members_with(&nodes).into_owned())
         };
         let Some(last) = members.last() else { return members };
         match &last.kind {
@@ -136,9 +144,9 @@ impl Session {
                         (Some((key, function)), _) => Some(NodeKind::Group(vec![
                             key, Node { kind: NodeKind::Function(Builtin::Primitive(function)), span: nodes[i].span.clone() }, root.clone(),
                         ])),
-                        (None, kind) if matches!(kind, NodeKind::Group(_)) || matches!(kind, NodeKind::ArrayLiteral(literal) if literal.form == ListForm::Rows) => {
-                            Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone())))
-                        }
+                        (None, kind)
+                            if matches!(kind, NodeKind::Group(_)) || matches!(kind, NodeKind::ArrayLiteral(literal) if literal.form == ListForm::Rows) =>
+                        { Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone()))) }
                         _ => None,
                     };
                     if let Some(kind) = kind {
@@ -169,8 +177,8 @@ impl Session {
                     && touching(&out[start - 1], &out[start]) { start -= 1; }
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
-                if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1])
-                    || !self.holds_array(&left) || !self.holds_array(&out[i + 1]) { i += 1; continue; }
+                if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1]) || !self.holds_array(&left)
+                    || !self.holds_array(&out[i + 1]) { i += 1; continue; }
                 let joined = joined_term(left, joiner, &out[i].span, out[i + 1].clone());
                 out.splice(start..i + 2, [joined]);
                 i = start + 1;
@@ -272,7 +280,7 @@ pub(super) fn span_of(source: &Arc<Source>, range: &std::ops::Range<u32>) -> Spa
 
 impl Entity {
     /// An entity with `term`, not yet on the binder's stack.
-    // Out of line, `new` built each entity and then copied it out, about 265 instructions for each call of `{x←⍵+1 ⋄ x}`.
+    // Out of line, `new` built each entity and then copied it out, about 265 instructions for each call of `{x←ω+1 ◇ x}`.
     #[inline(always)]
     pub(super) fn new(term: Term, range: std::ops::Range<u32>, shy: bool, expression: Option<Box<Expression>>) -> Self {
         let category = match term {
@@ -300,7 +308,7 @@ impl Entity {
         Ok(match self.term {
             Term::Binding(value) => value, Term::Train(tines) => Binding::Function(self::Function::train(tines, &span())?),
             Term::Left(a, f) => Binding::Function(before(a, f, &span())?),
-            Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| Error::new(k, "invalid strand").at(&span()))?),
+            Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| Error::new(k, "invalid strand").at(&span()))?)
         })
     }
     #[inline(always)]
@@ -351,9 +359,7 @@ fn attached(left: Entity, right: Entity, source: &Arc<Source>) -> Result<(Value,
 /// Separate a call's function and optional bound left argument from the entity before its right argument.
 #[inline]
 fn split_call(left: Entity, source: &Arc<Source>) -> Result<(Option<Value>, Function), Error> {
-    Ok(match left {
-        Entity { term: Term::Left(x, f), .. } => (Some(x), f), left => (None, left.function(source)?)
-    })
+    Ok(match left { Entity { term: Term::Left(x, f), .. } => (Some(x), f), left => (None, left.function(source)?) })
 }
 
 /// What the operator `operator` gives on the operand `operand` (`Rule::Derive`): a derived function, a scalar that holds the function for `ᵘ`, or the call that a power, `ᵀ` or a number marker on an array stands for: of `*`, `⍉`, `⌊ₓ` or `•float`.
@@ -455,7 +461,7 @@ impl Category {
         }
     }
     pub(super) fn of_operator(op: &self::OperatorNode) -> Self { if op.is_dyadic() { Self::DyadicOperator } else { Self::Operator } }
-    /// A name's category from its binding's, as `Bindings::category` gives it: an unbound name counts as an array, and so does an absent `⍺`.
+    /// A name's category from its binding's, as `Bindings::category` gives it: an unbound name counts as an array, and so does an absent `α`.
     pub(super) fn named(found: Option<Self>) -> Self { match found { None | Some(Self::Absent) => Self::Value, Some(category) => category } }
     /// Whether this is an operator's category, as `Some` of whether the operator is dyadic.
     pub(super) fn valence(self) -> Option<bool> { match self { Self::DyadicOperator => Some(true), Self::Operator => Some(false), _ => None } }
@@ -465,7 +471,7 @@ impl Category {
     /// The category that the binder gives `value`. Unlike `of`, it tells an array that holds a function from other arrays (`array`).
     #[inline]
     pub(super) fn bound(value: &Binding) -> Self { match value { Binding::Value(a) => Self::array(a), value => Self::of(value) } }
-    /// How an item of this category binds before the item to its right, which binds as `right`, or with nothing to its right where `right` is `None`. An array that holds a function binds as a function before a subject or an absent `⍺`, and as an array otherwise. Every other category binds as itself.
+    /// How an item of this category binds before the item to its right, which binds as `right`, or with nothing to its right where `right` is `None`. An array that holds a function binds as a function before a subject or an absent `α`, and as an array otherwise. Every other category binds as itself.
     #[inline]
     pub(super) fn before(self, right: Option<Self>) -> Self {
         if self != Self::Callable { return self; }
@@ -481,7 +487,7 @@ impl Rule {
         use Category::*;
         match (left, right) {
             (NoResult, _) | (_, NoResult) => Self::Missing,
-            // An absent `⍺` drops out: `⍺ f ⍵` calls `f` monadically, `f ⍺` is absent too, and `⍺ ⍵` is `⍵`.
+            // An absent `α` drops out: `α f ω` calls `f` monadically, `f α` is absent too, and `α ω` is `ω`.
             (Absent, Function | Train | Left | Value) => Self::Drop,
             (Value, Absent) => Self::DropRight,
             (Function | Train | Left, Absent) => Self::Call,
@@ -579,10 +585,7 @@ impl Binder {
                 cursor -= 1;
                 let i = cursor;
                 let node = &nodes[i];
-                if matches!(node.kind, NodeKind::Assign) {
-                    assignment = Some(i);
-                    None
-                } else {
+                if matches!(node.kind, NodeKind::Assign) { assignment = Some(i); None } else {
                     let range = narrow(&node.span.range);
                     // Each run acts as one token; a trailing dyadic operator takes the next run as its right operand.
                     let entity = if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
@@ -592,24 +595,15 @@ impl Binder {
                         };
                         // The run counts toward the depth limit, like a parenthesized group.
                         Entity::held(Bound { shy: false, ..session.nested(inner, |session| Self::evaluate_seeded(inner, session, right))? }, range)
-                    } else if matches!(node.kind, NodeKind::Group(_) | NodeKind::Run(_)) {
-                        Self::nested(node, session)?
-                    } else {
-                        Entity::held(Bound { shy: false, ..session.resolve(node)? }, range)
-                    };
+                    } else if matches!(node.kind, NodeKind::Group(_) | NodeKind::Run(_)) { Self::nested(node, session)? }
+                    else { Entity::held(Bound { shy: false, ..session.resolve(node)? }, range) };
                     Some(entity)
                 }
             } else { None };
             if let Some(left) = pending.last() {
-                if Self::shifts(left, &binder.stack) {
-                    binder.push(pending.pop().unwrap());
-                    continue;
-                }
+                if Self::shifts(left, &binder.stack) { binder.push(pending.pop().unwrap()); continue; }
             } else if let Some(left) = next {
-                if Self::shifts(&left, &binder.stack) {
-                    binder.push(left);
-                    continue;
-                }
+                if Self::shifts(&left, &binder.stack) { binder.push(left); continue; }
                 pending.push(left);
             } else if binder.stack.len() < 2 {
                 if let Some(i) = assignment.take() {
@@ -639,10 +633,7 @@ impl Binder {
                 if let Some(call) = binder.reduce(session.capture.get(), source)? {
                     // A dfn's final user-defined call returns to the caller's loop instead of adding a Rust frame.
                     let last = assignment.is_none() && cursor == 0 && pending.is_empty() && binder.stack.is_empty();
-                    if tail && last && tails(&call.function) {
-                        session.stacks.borrow_mut().extend([binder.stack, pending]);
-                        return Ok(Reduced::Tail(call));
-                    }
+                    if tail && last && tails(&call.function) { session.stacks.borrow_mut().extend([binder.stack, pending]); return Ok(Reduced::Tail(call)); }
                     let bound = call.function.call_with(call.left.map(Cow::Owned), Cow::Owned(call.right), &call.span)?;
                     let entity = Entity::held(Bound { expression: call.expression, ..bound.given() }, narrow(&call.span.range));
                     binder.push(entity);
@@ -693,9 +684,7 @@ impl Binder {
                 Term::Strand(items)
             }
             Rule::Derive => match derived(left.value(source)?, right.value(source)?, &span())? {
-                Derived::Term(binding) => {
-                    Term::Binding(binding)
-                }
+                Derived::Term(binding) => Term::Binding(binding),
                 Derived::Call(function, x, y) => {
                     let expression = capture.then(|| {
                         let operand = left_expression.map_or_else(|| Expression::array(x.as_ref().unwrap_or(&y)), |e| *e);
@@ -705,10 +694,7 @@ impl Binder {
                     return Ok(Some(Application { function, left: x, right: y, span: span(), unshy: false, expression }));
                 }
             },
-            Rule::BindRight => {
-                let bound = bound_right(left.value(source)?, right.value(source)?);
-                Term::Binding(Binding::Operator(bound))
-            }
+            Rule::BindRight => { let bound = bound_right(left.value(source)?, right.value(source)?); Term::Binding(Binding::Operator(bound)) }
             Rule::Attach => {
                 let (x, f, range) = attached(left, right, source)?;
                 self.push(Entity::new(Term::Left(x, f), range, false, left_expression));

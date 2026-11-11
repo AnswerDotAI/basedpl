@@ -3,9 +3,7 @@
 use super::*;
 
 /// Where a stage's last step writes each run: the slots of its stored value, of the value's type, or the fold, which gets each block with the block's position.
-pub(super) enum Last<'a, 'b> {
-    Output(MapOutput<'a, 'b>), Fold(&'a mut dyn FnMut(usize, Folded<'_>))
-}
+pub(super) enum Last<'a, 'b> { Output(MapOutput<'a, 'b>), Fold(&'a mut dyn FnMut(usize, Folded<'_>)) }
 
 impl<'a, 'b> Last<'a, 'b> {
     pub(super) fn output(&mut self) -> rustymath::buffer::MapOutput<'_, 'b> {

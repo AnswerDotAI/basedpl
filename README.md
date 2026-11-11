@@ -35,11 +35,11 @@ avg 2 4 9
 
     5
 
-Use `bpl -e 'avg←+/÷≢ ⋄ avg 2 4 9'` for a shell command. The [command-line guide](https://answerdotai.github.io/basedpl/cli.html) covers source files and pipes.
+Use `bpl -e 'avg←+/÷≢ ◇ avg 2 4 9'` for a shell command. The [command-line guide](https://answerdotai.github.io/basedpl/cli.html) covers source files and pipes.
 
 ## Interactive use
 
-In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `⍳` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](https://answerdotai.github.io/basedpl/system/prefs.html) changes display settings, such as boxes and how much of a large array shows. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
+In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `ι` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](https://answerdotai.github.io/basedpl/system/prefs.html) changes display settings, such as boxes and how much of a large array shows. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
 
 In Jupyter, select the installed **BasedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%bpl` cells in a Python notebook. See [Using BPL notebooks](https://answerdotai.github.io/basedpl/notebooks.html).
 
@@ -55,10 +55,10 @@ Numbers separated by spaces form a vector. Arithmetic applies to every item:
 
     11 12 13
 
-Operators modify or combine functions. Reduce (`/`) turns addition into summation. `⍳10` generates 0…9:
+Operators modify or combine functions. Reduce (`/`) turns addition into summation. `ι10` generates 0…9:
 
 ``` bpl
-+/⍳10
++/ι10
 ```
 
     45
@@ -134,14 +134,14 @@ Axes can have names, and positions along them can have string keys. Describe the
 
 ``` bpl
 axes←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]
-sales←axes:[10 20 30⋄40 50 60]
+sales←axes:[10 20 30◇40 50 60]
 "LA" "Feb"⌷sales
 +/⍠"month" sales
 ```
 
     50
 
-    ["city":2]⍴["NY":60 "LA":150]
+    ["city":2]ρ["NY":60 "LA":150]
 
 Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](https://answerdotai.github.io/basedpl/keyed.html).
 
@@ -150,7 +150,7 @@ Keys and names travel with axes through operations such as transpose. Arithmetic
 A vector of counts keeps the history: one state for each count, where count 0 is the initial value. Here, double up to four times:
 
 ``` bpl
-2×⍣(⍳5) 1
+2×⍣(ι5) 1
 ```
 
     1 2 4 8 16
@@ -178,7 +178,7 @@ Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/st
 [Polynomials](https://answerdotai.github.io/basedpl/glyphs/quad-jot.html) support coefficients, roots and evaluation. Polynomial functions can be [differentiated](https://answerdotai.github.io/basedpl/glyphs/partial.html): for f(x) = 1 + 2x + 3x², f′(2) = 14.
 
 ``` bpl
-f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ
+f←[1 2 3]ₓ⌻ ◇ f∂2ₓ
 ```
 
     14

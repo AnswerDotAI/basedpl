@@ -6,14 +6,14 @@ Index notation writes the formula for one item of a result, with a named index f
 
 A formula in index notation takes three steps:
 
-1. Make the indices. [`•index`](system/index.qmd) gives `⍳n` along a fresh hidden axis name. It maps over a nested shape, so `[[n i] h]←•index[⍴x ≢b]` makes an index for each axis of `x` and one for the length of `b`.
+1. Make the indices. [`•index`](system/index.qmd) gives `ιn` along a fresh hidden axis name. It maps over a nested shape, so `[[n i] h]←•index[ρx ≢b]` makes an index for each axis of `x` and one for the length of `b`.
 2. Select with them. `x.[n i]` holds the items of `x` along axes named by `n` and `i`.
 3. Name the axis that each fold removes, as in `+/⍠i`.
 
 Indices pair by name. The same index pairs with itself. Different indices build a grid. A matrix product sums along the index that its two operands share. Here `k` pairs the columns of `xu` with the rows of `wu`, and `+/⍠k` sums along it. `b` and `o` build the result's grid. The [inner product](glyphs/dot.qmd) along `k`, `+.×⍠k`, writes the same contraction. The examples below use it:
 
 ```bpl
-xu←[2 3]⍴⍳6ₓ ⋄ wu←[3 4]⍴⍳12ₓ ⋄ [b o k]←•index 2 4 3
+xu←[2 3]ρι6ₓ ◇ wu←[3 4]ρι12ₓ ◇ [b o k]←•index 2 4 3
 y←+/⍠k⁝xu.[b k]×wu.[k o]
 ∧/,y=xu+.×wu                   ⍝ $t
 ∧/,y=xu.[b k]+.×⍠k⁝wu.[k o]     ⍝ $t
@@ -27,22 +27,22 @@ This network has one hidden layer of tanh units (`7○`) and fits `y` from `x` b
 
 ```bpl
 •prefs ["seed":42]
-x←¯0.5+¿[64 8]⍴0 ⋄ y←1○+/x
-p←["w":0.5×¯0.5+¿[8 16]⍴0 "b":16⍴0 "v":0.1×¯0.5+¿16⍴0 "c":0]
+x←¯0.5+¿[64 8]ρ0 ◇ y←1○+/x
+p←["w":0.5×¯0.5+¿[8 16]ρ0 "b":16ρ0 "v":0.1×¯0.5+¿16ρ0 "c":0]
 mlp←{
-  [x y]←⍺ ⋄ [w b v c]←⍵
+  [x y]←α ◇ [w b v c]←ω
   h←7○b(+⍤1)x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
 [x y]mlp p                     ⍝ 0.3262591588
 mlpi←{
-  [x y]←⍺ ⋄ [w b v c]←⍵
-  [[n i] h]←•index[⍴x ≢b]
+  [x y]←α ◇ [w b v c]←ω
+  [[n i] h]←•index[ρx ≢b]
   a←7○b.[h]+x.[n i]+.×⍠i⁝w.[i h]
   +/÷≢ ⊼y.[n]-c+a+.×⍠h⁝v.[h]
 }
 [x y]mlpi p                    ⍝ 0.3262591588
-g←[x y]mlp∂ p ⋄ gi←[x y]mlpi∂ p
+g←[x y]mlp∂ p ◇ gi←[x y]mlpi∂ p
 1E¯12>⌈/,|g.w-gi.w             ⍝ $t
 ```
 
@@ -55,29 +55,29 @@ Attention lets each token of a sequence read from the tokens before it. `x` hold
 In tacit form, two transposes and the reshape in `heads` line the axes up for `+.×` and Rank. In index notation, `b` names the sequence, `t` the token, `d` the feature and `u` the token that `t` reads from. `r` picks the query, key or value, `h` names the head and `j` the feature within a head. Both forms give the same result and the same gradient:
 
 ```bpl
-x←¯0.5+¿[2 4 8]⍴0 ⋄ wqkv←0.3×¯0.5+¿[8 3 2 4]⍴0 ⋄ wo←0.3×¯0.5+¿[8 8]⍴0
-mask←¯1E9× ⍳4 <⊗ ⍳4
-heads←{h←0 2 1 3⍉⍵ ⋄ (¯2↓⍴h , ×/¯2↑⍴h)⍴h}
+x←¯0.5+¿[2 4 8]ρ0 ◇ wqkv←0.3×¯0.5+¿[8 3 2 4]ρ0 ◇ wo←0.3×¯0.5+¿[8 8]ρ0
+mask←¯1E9× ι4 <⊗ ι4
+heads←{h←0 2 1 3⍉ω ◇ (¯2↓ρh , ×/¯2↑ρh)ρh}
 attn←{
-  [wqkv wo]←⍺
-  [q k v]←1 3 0 2 4⍉⍵+.×wqkv
-  s←mask(+⍤2) q+.×⍤2⍉⍤2⁝k ÷ √⊢/⍴q
+  [wqkv wo]←α
+  [q k v]←1 3 0 2 4⍉ω+.×wqkv
+  s←mask(+⍤2) q+.×⍤2⍉⍤2⁝k ÷ √⊢/ρq
   e←*s-⌈/s
   (heads e÷+/e +.×⍤2 v)+.×wo
 }
 attni←{
-  [wqkv wo]←⍺
-  [[b t d] u [r h j]]←•index[⍴⍵ (⍴⍵)₁ 1↓⍴wqkv]
-  [q k v]←:[r b t h j]⍉⁻⍵.[b t d]+.×⍠d⁝wqkv.[d r h j]
+  [wqkv wo]←α
+  [[b t d] u [r h j]]←•index[ρω (ρω)₁ 1↓ρwqkv]
+  [q k v]←:[r b t h j]⍉⁻ω.[b t d]+.×⍠d⁝wqkv.[d r h j]
   s←mask.[t u] + q.[b t h j]+.×⍠j⁝k.[b u h j] ÷ √≢j
   e←*s-⌈/⍠u⁝s
   o←(e÷+/⍠u⁝e)+.×⍠u⁝v.[b u h j]
   :[b t d]⍉⁻+/⍠[h j]o×wo.[j+(≢j)×h d]
 }
-a←[wqkv wo]attn x ⋄ ai←[wqkv wo]attni x
+a←[wqkv wo]attn x ◇ ai←[wqkv wo]attni x
 1E¯12>⌈/,|a-ai                 ⍝ $t
 pa←["wqkv":wqkv "wo":wo]
-g←{+/, ⊼[⍵.wqkv ⍵.wo]attn⁝x}∂ pa ⋄ gi←{+/, ⊼[⍵.wqkv ⍵.wo]attni⁝x}∂ pa
+g←{+/, ⊼[ω.wqkv ω.wo]attn⁝x}∂ pa ◇ gi←{+/, ⊼[ω.wqkv ω.wo]attni⁝x}∂ pa
 1E¯12>⌈/,|g.wqkv-gi.wqkv       ⍝ $t
 ```
 
@@ -96,36 +96,36 @@ This objective scores how well a mixture of Gaussian components fits a set of po
 
 ```bpl
 •prefs ["seed":42]
-gx←¿[50 4]⍴0 ⋄ eye←=⊗⍨⍳4 ⋄ low←>⊗⍨⍳4
-gp←["alpha":¿3⍴0 "mu":¿[3 4]⍴0 "q":0.1×¿[3 4]⍴0 "l":0.1×¿[3 4 4]⍴0]
+gx←¿[50 4]ρ0 ◇ eye←=⊗⍨ι4 ◇ low←>⊗⍨ι4
+gp←["alpha":¿3ρ0 "mu":¿[3 4]ρ0 "q":0.1×¿[3 4]ρ0 "l":0.1×¿[3 4 4]ρ0]
 gmm←{
-  [alpha mu q l]←⍵
+  [alpha mu q l]←ω
   L←l×⍤2 low
   Q←L+(*q)×⍤[1 2]eye
-  sq←+/⊼(⍺(-⍤1)⍤[2 1]mu)+.×⍤2⍉⍤2⁝Q
+  sq←+/⊼(α(-⍤1)⍤[2 1]mu)+.×⍤2⍉⍤2⁝Q
   t←(alpha++/q)-0.5×sq
   m←⌈⌿•detach t
   am←⌈/•detach alpha
-  (+/m+⍟+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am
+  (+/m+⊛+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
 }
 gx gmm gp                      ⍝ ¯0.8795002466
 gmmi←{
-  [alpha mu q l]←⍵
-  [[n d] [k e]]←•index[⍴⍺ ⍴mu]
+  [alpha mu q l]←ω
+  [[n d] [k e]]←•index[ρα ρmu]
   L←l.[k d e]×low.[d e]
   Q←L + *q.[k d] × eye.[d e]
-  sq←+/⍠d⊼Q+.×⍠e⁝⍺.[n e]-mu.[k e]
+  sq←+/⍠d⊼Q+.×⍠e⁝α.[n e]-mu.[k e]
   t←alpha.[k]++/⍠d⁝q.[k d] - 0.5×sq
   m←⌈/⍠k•detach t
   am←⌈/•detach alpha
-  +/m+⍟+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢⍺ × am+⍟+/*alpha-am
+  +/m+⊛+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢α × am+⊛+/*alpha-am
 }
 gx gmmi gp                     ⍝ ¯0.8795002466
-g←gx gmm∂ gp ⋄ h←gx gmmi∂ gp
+g←gx gmm∂ gp ◇ h←gx gmmi∂ gp
 1E¯12>⌈/,|g.l-h.l              ⍝ $t
 ```
 
-Each form reads better in different lines. Rank suits the lines that work on whole components: `⍤2` and `⍤[1 2]` pair each component's matrix and row, and `⌿` folds along the components. Index notation suits `sq`. There `⍺.[n e]-mu.[k e]` pairs every point with every mean by name, where the rank form needs the nested Rank `⍺(-⍤1)⍤[2 1]mu`. `+.×⍠e` also names the axis that the product sums along.
+Each form reads better in different lines. Rank suits the lines that work on whole components: `⍤2` and `⍤[1 2]` pair each component's matrix and row, and `⌿` folds along the components. Index notation suits `sq`. There `α.[n e]-mu.[k e]` pairs every point with every mean by name, where the rank form needs the nested Rank `α(-⍤1)⍤[2 1]mu`. `+.×⍠e` also names the axis that the product sums along.
 
 ## Why it works this way
 

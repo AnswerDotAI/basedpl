@@ -113,6 +113,8 @@ class _Operators:
     def __rsub__(self, other): return _binary('-', other, self)
     def __mul__(self, other): return _binary('×', self, other)
     def __rmul__(self, other): return _binary('×', other, self)
+    def __matmul__(self, other): return _matmul(self, other)
+    def __rmatmul__(self, other): return _matmul(other, self)
     def __truediv__(self, other): return _binary('÷', self, other)
     def __rtruediv__(self, other): return _binary('÷', other, self)
     def __floordiv__(self, other): return _unary('⌊', _binary('÷', self, other))
@@ -135,6 +137,11 @@ class _Operators:
     def __pos__(self): return _unary('+', self)
     def __invert__(self): return _bitwise('~', self)
     def __abs__(self): return _unary('|', self)
+
+class _Expression(_Operators):
+    def __init__(self, *parts): self.parts = parts
+    def __repr__(self): return repr(self.parts)
+    def __bool__(self): raise TypeError('build a BPL expression with fn before testing its truth value')
 
 def _text(raw):
     "The string in an unkeyed character vector, else `None`"
@@ -249,8 +256,6 @@ class Array(_Operators):
         self._inner = self._inner.assign(index, _array(value), _array)
         self._classify()
     def __rustymath_array__(self): return self._inner.__rustymath_array__()
-    def __matmul__(self, other): return _matmul(self, other)
-    def __rmatmul__(self, other): return _matmul(other, self)
     def __array__(self, dtype=None, copy=None):
         result = _numpy(self._inner, dtype=dtype, copy=copy)
         if result is not None: return result

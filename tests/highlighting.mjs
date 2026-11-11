@@ -27,9 +27,9 @@ for (const text of ['¯2ₓ', '1ᵣ3', '1ₑ¯2', '2ⱼ¯4', '255ₓ₁', '⍬�
     assert.ok(scopes(text).every(([, scope]) => scope === 'constant.numeric.bpl'));
 for (const text of ['负2ₓ', '負永', '1ₑ负2', '2j負4', '空ₓ', '1内2', '1內2', '内5'])
     assert.ok(scopes(text, 'hpl').every(([, scope]) => scope === 'constant.numeric.bpl'));
-assert.deepEqual(scopes('+/@⍵²₀').map(([, scope]) => scope), ['support.function.bpl', 'keyword.operator.monadic.bpl',
+assert.deepEqual(scopes('+/@ω²₀').map(([, scope]) => scope), ['support.function.bpl', 'keyword.operator.monadic.bpl',
     'keyword.operator.dyadic.bpl', 'variable.parameter.bpl', 'keyword.operator.monadic.bpl', 'keyword.control.bpl']);
-assert.deepEqual(scopes('+/@⍵²₀', 'hpl'), scopes('+/@⍵²₀'));
+assert.deepEqual(scopes('+/@ω²₀', 'hpl'), scopes('+/@ω²₀'));
 for (const text of ['加总内乙', '加總內乙']) assert.deepEqual(scopes(text, 'hpl').map(([, scope]) => scope),
     ['support.function.bpl', 'keyword.operator.monadic.bpl', 'keyword.operator.dyadic.bpl', 'variable.parameter.bpl']);
 assert.ok(scopes('系prefs', 'hpl').every(([, scope]) => scope === 'support.function.bpl'));

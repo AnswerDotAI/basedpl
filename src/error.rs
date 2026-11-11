@@ -170,7 +170,7 @@ pub(crate) enum Cause {
 pub(crate) enum Kept {
     /// For every later call, because the stop depends only on what the operand does.
     Always,
-    /// While later calls repeat the arguments' kinds and cell shapes, and the frame's shape too where `frame` is set. A branch can depend on a cell's shape, through an observing read of a plain value such as `≢⍵`, so a call with no rule in one branch may not recur for other shapes.
+    /// While later calls repeat the arguments' kinds and cell shapes, and the frame's shape too where `frame` is set. A branch can depend on a cell's shape, through an observing read of a plain value such as `≢ω`, so a call with no rule in one branch may not recur for other shapes.
     Arguments { frame: bool },
     /// Never, because whether the stop recurs depends on the cells' values.
     Never,
@@ -186,9 +186,7 @@ impl Cause {
     }
     /// The cause that `bits` encode, as a stop and a dfn operand's memory of a stop hold it.
     pub(crate) fn from_bits(bits: u64) -> Cause {
-        match bits {
-            0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, _ => Cause::Caught
-        }
+        match bits { 0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, _ => Cause::Caught }
     }
     /// What `•explain` reports in `fallbacks` for a stop for this cause.
     pub(crate) fn reason(self) -> &'static str {

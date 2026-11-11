@@ -7,7 +7,7 @@ from basedpl.ipython import load_ipython_extension
 def test_ipython_inspection_and_completion():
     shell = InteractiveShell.instance()
     load_ipython_extension(shell)
-    source = '{⍝ Double the argument\n⎕←99 ⋄ 2×⍵}'
+    source = '{⍝ Double the argument\n⎕←99 ◇ 2×ω}'
     bpl('twice←'+source)
     f = fn('twice')
     shell.user_ns.update(bpl=bpl, f=f, fn=fn)

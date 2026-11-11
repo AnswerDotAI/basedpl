@@ -14,7 +14,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="alpha" value="⍺" description="⍺" shortcut="TAB">
+  <template name="alpha" value="α" description="α" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -134,7 +134,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="circle-star" value="⍟" description="⍟" shortcut="TAB">
+  <template name="circle-star" value="⊛" description="⊛" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -249,7 +249,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="diamond" value="⋄" description="⋄" shortcut="TAB">
+  <template name="diamond" value="◇" description="◇" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -494,12 +494,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="index-of" value="⍳" description="⍳" shortcut="TAB">
+  <template name="index-of" value="ι" description="ι" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="indices" value="⍳" description="⍳" shortcut="TAB">
+  <template name="indices" value="ι" description="ι" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -539,7 +539,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="iota" value="⍳" description="⍳" shortcut="TAB">
+  <template name="iota" value="ι" description="ι" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -579,7 +579,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="left-argument" value="⍺" description="⍺" shortcut="TAB">
+  <template name="left-argument" value="α" description="α" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -634,7 +634,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="logarithm" value="⍟" description="⍟" shortcut="TAB">
+  <template name="logarithm" value="⊛" description="⊛" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -699,7 +699,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="natural-log" value="⍟" description="⍟" shortcut="TAB">
+  <template name="natural-log" value="⊛" description="⊛" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -749,7 +749,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="omega" value="⍵" description="⍵" shortcut="TAB">
+  <template name="omega" value="ω" description="ω" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -949,7 +949,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="reshape" value="⍴" description="⍴" shortcut="TAB">
+  <template name="reshape" value="ρ" description="ρ" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -969,7 +969,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="rho" value="⍴" description="⍴" shortcut="TAB">
+  <template name="rho" value="ρ" description="ρ" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -979,7 +979,7 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="right-argument" value="⍵" description="⍵" shortcut="TAB">
+  <template name="right-argument" value="ω" description="ω" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
@@ -1069,12 +1069,12 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="separator" value="⋄" description="⋄" shortcut="TAB">
+  <template name="separator" value="◇" description="◇" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="shape" value="⍴" description="⍴" shortcut="TAB">
+  <template name="shape" value="ρ" description="ρ" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

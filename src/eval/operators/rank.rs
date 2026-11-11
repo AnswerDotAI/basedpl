@@ -232,7 +232,7 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, span
 /// - A form that extends, at cell ranks of at least its own. A call on two arguments pairs their frames as Rank does, wherever the call succeeds (`declared_ranks_match_rank` in `tests/core.rs`).
 /// - `⌷`, `⊃` and bracket indexing whose positions or right argument differ by cell select as one bracket selection of the whole (`primitive::paired_select`).
 /// - `∊`, with the same haystack on the right in every cell, searches all the cells of `x` at once, where each cell holds whole needles (`CellRule::Searches`).
-/// - `⍳`, `∊` and `⍸` whose haystack differs from cell to cell search each cell's needles in its own haystack (`primitive::searched_cells`).
+/// - `ι`, `∊` and `⍸` whose haystack differs from cell to cell search each cell's needles in its own haystack (`primitive::searched_cells`).
 /// - `≡` and `≢` compare every pair of cells at once (`CellRule::Matches`).
 ///
 /// `None` for any other form, for frames whose names one whole call would pair otherwise than Rank (`frames_pair`), and where the call fails. The calls on each cell then give the result or the error. Names on cell axes pair in the whole call as calls on cells pair them.
@@ -279,7 +279,7 @@ pub(crate) fn folded_cells(
     Some(fold(&Function::primitive(p), kind, Some(&axes), seed, y, span))
 }
 
-/// What `p` gives a cell laid out by `cell`, where its rule for cells says that depends only on the cell's shape: the cell's length for `≢` and its shape for monadic `⍴`. `None` for any other rule, and for the shape of a cell with named axes, which the names key. Rank lays it over the frame (`primitive_cells`), and a batched run gives it as every cell's result (`batch::call`).
+/// What `p` gives a cell laid out by `cell`, where its rule for cells says that depends only on the cell's shape: the cell's length for `≢` and its shape for monadic `ρ`. `None` for any other rule, and for the shape of a cell with named axes, which the names key. Rank lays it over the frame (`primitive_cells`), and a batched run gives it as every cell's result (`batch::call`).
 pub(crate) fn cell_constant(p: Primitive, cell: &crate::array::Layout) -> Option<Value> {
     use crate::primitive::CellRule;
     let shape = cell.shape();

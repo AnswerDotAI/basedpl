@@ -4,19 +4,19 @@
 ⍝ along the field and draw a short faint line at each step. Their paths build up into a drawing. A particle that leaves the canvas
 ⍝ starts again somewhere new, as do a random few each step. The drawing is finished after 900 frames.
 options←["background":0.97;"fade":0]
-place←{500×∨⁻¿[⍵ 2]⍴0}
+place←{500×∨⁻¿[ω 2]ρ0}
 n←1500
 p←place n
-⎕←"waves←",⍎⁻ waves←50+¿3⍴150
-⎕←"phases←",⍎⁻ phases←100÷⍨¿3⍴628
-angle←{[x y]←⍉∨⍵ ⋄ [u v w]←phases+[x y x+y]÷waves ⋄ π 1○u + 2○v + 1○w}
+⎕←"waves←",⍎⁻ waves←50+¿3ρ150
+⎕←"phases←",⍎⁻ phases←100÷⍨¿3ρ628
+angle←{[x y]←⍉∨ω ◇ [u v w]←phases+[x y x+y]÷waves ◇ π 1○u + 2○v + 1○w}
 style←0.6 0.1 0.15 0.3 0.12
 frame←{
-  ⍵≥900ₓ?;
+  ω≥900ₓ?;
   q←p+0.8×○ angle p
   lines←∨p , ∨q ,⍤1 style
   outside←∨/c≠0⌈500⌊c←∨q
-  restart←outside∨0.005>¿n⍴0
+  restart←outside∨0.005>¿nρ0
   p⊢←q×~restart + restart×place n
   ["lines":lines]
 }

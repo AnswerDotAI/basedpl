@@ -1,10 +1,10 @@
-# `⍵` — Right argument
+# `ω` — Right argument
 
 Argument. Keys: `Alt-w`. Hanzi: `乙`
 
-`⍵` is the current dfn's right argument.
+`ω` is the current dfn's right argument.
 
 ```bpl
-{⍵×⍵}4             ⍝ 16
-{+/⍵ ÷ ≢⍵}2 4 9    ⍝ 5
+{ω×ω}4             ⍝ 16
+{+/ω ÷ ≢ω}2 4 9    ⍝ 5
 ```
