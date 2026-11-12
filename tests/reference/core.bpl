@@ -615,7 +615,7 @@ V←"low" "mid" "high":10 20 30
 
 ⍝ axis-match — Match aligns keys independently on both axes
 M←["alice" "bob";"price" "qty"]:[10 2◇20 4]
-M≡⌽⊖M   ⍝ $t
+M≡⌽⌽₀M   ⍝ $t
 
 ⍝ axis-outer — Outer product keeps each argument's labelled axes
 ("aa" "bb":1 2)+⊗("xx" "yy":10 20)
@@ -769,7 +769,7 @@ g←⊂[1 2 0◇1 0 2]ₓ ↣⌻
 V←"aa" "bb":1 3
 B←"row1" "row2":10 20
 f←(×↢*)⍨
-[(+\)⁻ V;B↣(+⊗)⁻ ⊖B+⊗V;ι₀ f⁻ f V]
+[(+\)⁻ V;B↣(+⊗)⁻ ⌽₀B+⊗V;ι₀ f⁻ f V]
 ⍝ =>
 [["aa":1 "bb":2] ["aa":1 "bb":3] ["aa" "bb"]]
 
@@ -848,7 +848,7 @@ h←{y←ω ◇ [((+/÷≢)+{y}) 1 2 3;(+/{ω×y}) 1 2 3]} ◇ (h 10) (h 20)   �
 p←{+/⍤1 ω} ◇ (p [2 2]ρι4ₓ) (p [2 3]ρι6ₓ)   ⍝ [1 5;3 12]ₓ
 
 ⍝ — An operator bound to a name binds again on each call
-q←{↑,(⊖⍤n)ω} ◇ n←1 ◇ a←q [2 3]ρι6ₓ ◇ n←2 ◇ a (q [2 3]ρι6ₓ)   ⍝ [2 3]ₓ
+q←{↑,(⌽₀⍤n)ω} ◇ n←1 ◇ a←q [2 3]ρι6ₓ ◇ n←2 ◇ a (q [2 3]ρι6ₓ)   ⍝ [2 3]ₓ
 
 ⍝ — A name that switches from a monadic operator to a superscript binds again where the derive's result changes category
 s←⍨ ◇ h←{2 s ω} ◇ a←h 5 ◇ a_2←h 5 ◇ s←² ◇ b←h 5 ◇ b_2←h 5 ◇ a a_2 b b_2   ⍝ [2 2 [4 5] [4 5]]
@@ -1464,7 +1464,7 @@ aggs←["mean":+⌿÷≢ "sum":+⌿] ◇ aggs 1 2 3   ⍝ ["mean":2 "sum":6]
 10 [+ -]   ⍝ [10 [+ -]]
 
 ⍝ — A function before it applies to the call's result
-⊖ [+ -] 1 2   ⍝ [¯1 ¯2◇1 2]
+⌽₀ [+ -] 1 2   ⍝ [¯1 ¯2◇1 2]
 
 ⍝ — Before a function, the array is that function's left argument
 [+ -] , 10   ⍝ [+ - 10]
@@ -1945,7 +1945,7 @@ s←2 3 4ρι24ₓ
 
 ⍝ — Rank's structural functions and reshapes act along the cell axes of the whole argument
 s←2 3 4ρι24ₓ
-[(⊖⍤2 s)≡{⊖ω}⍤2 s;(,⍤2 s)≡{,ω}⍤2 s;((1↑)⍤2 s)≡{1↑ω}⍤2 s;((1 2↑)⍤2 s)≡{1 2↑ω}⍤2 s;((¯1↓)⍤2 s)≡{¯1↓ω}⍤2 s;((1 2↣⌷)⍤2 s)≡{1 2⌷ω}⍤2 s;((1⊖)⍤2 s)≡{1⊖ω}⍤2 s;((4 3ρ)⍤2 s)≡{4 3ρω}⍤2 s]   ⍝ $t $t $t $t $t $t $t $t
+[(⌽₀⍤2 s)≡{⌽₀ω}⍤2 s;(,⍤2 s)≡{,ω}⍤2 s;((1↑)⍤2 s)≡{1↑ω}⍤2 s;((1 2↑)⍤2 s)≡{1 2↑ω}⍤2 s;((¯1↓)⍤2 s)≡{¯1↓ω}⍤2 s;((1 2↣⌷)⍤2 s)≡{1 2⌷ω}⍤2 s;((1⌽₀)⍤2 s)≡{1⌽₀ω}⍤2 s;((4 3ρ)⍤2 s)≡{4 3ρω}⍤2 s]   ⍝ $t $t $t $t $t $t $t $t
 
 ⍝ — Rank's reshape reads each cell's items in order, repeating them where the shape holds more and dropping them where it holds fewer
 s←2 3 4ρι24ₓ
@@ -1957,11 +1957,11 @@ s←2 3 4ρι24ₓ
 
 ⍝ — Rank applies each part of an atop by its own rule
 s←2 3 4ρι24ₓ
-[((+/,)⍤2 s)≡{+/,ω}⍤2 s;((-/,)⍤2 s)≡{-/,ω}⍤2 s;((⌽,)⍤2 s)≡{⌽,ω}⍤2 s;((⊖⊖)⍤2 s)≡{⊖⊖ω}⍤2 s]   ⍝ $t $t $t $t
+[((+/,)⍤2 s)≡{+/,ω}⍤2 s;((-/,)⍤2 s)≡{-/,ω}⍤2 s;((⌽,)⍤2 s)≡{⌽,ω}⍤2 s;((⌽₀⌽₀)⍤2 s)≡{⌽₀⌽₀ω}⍤2 s]   ⍝ $t $t $t $t
 
 ⍝ — Rank's whole-array rules keep the keys and names that a call for each cell keeps
 n←["i":"a" "b";"j":"p" "q" "r"]:[1 2 3◇4 5 6] ◇ m←["r":3 3]ρι9ₓ ◇ i←ι["r":3]
-[(+/⍤1 n)≡{+/ω}⍤1 n;(⊖⍤1 n)≡{⊖ω}⍤1 n;((2↑)⍤1 n)≡{2↑ω}⍤1 n;(≢⍤1 n)≡{≢ω}⍤1 n;(ρ⍤1 n)≡{ρω}⍤1 n;((+/,)⍤1 n)≡{+/,ω}⍤1 n;(([i]⌷)⍤1 m)≡{[i]⌷ω}⍤1 m]   ⍝ $t $t $t $t $t $t $t
+[(+/⍤1 n)≡{+/ω}⍤1 n;(⌽₀⍤1 n)≡{⌽₀ω}⍤1 n;((2↑)⍤1 n)≡{2↑ω}⍤1 n;(≢⍤1 n)≡{≢ω}⍤1 n;(ρ⍤1 n)≡{ρω}⍤1 n;((+/,)⍤1 n)≡{+/,ω}⍤1 n;(([i]⌷)⍤1 m)≡{[i]⌷ω}⍤1 m]   ⍝ $t $t $t $t $t $t $t
 
 ⍝ — Rank's whole-array rules agree with a call for each cell on an empty frame and on windows
 e←0 3 4ρ0 ◇ w←3 3↕4 5ρι20ₓ
@@ -2945,7 +2945,7 @@ ax←0 ◇ +/⍠ax 3 4ρι12ₓ   ⍝ [12 15 18 21]ₓ
 ≢⍠0 (3 4ρι12ₓ)   ⍝ [3 3 3 3]ₓ
 
 ⍝ — Result cells of the selected rank return to the selected axes
-{⌽ω}⍠0 (3 4ρι12ₓ)   ⍝ ⊖3 4ρι12ₓ
+{⌽ω}⍠0 (3 4ρι12ₓ)   ⍝ ⌽₀3 4ρι12ₓ
 
 ⍝ — Other result cells start at the first selected axis
 {,ω}⍠0 1 (2 3 4ρι24ₓ)   ⍝ ,⍠0 1 (2 3 4ρι24ₓ)
@@ -2954,7 +2954,7 @@ ax←0 ◇ +/⍠ax 3 4ρι12ₓ   ⍝ [12 15 18 21]ₓ
 1 0 1 0{α#ω}⍠1 (3 4ρι12ₓ)   ⍝ 1 0 1 0#⍠¯1(3 4ρι12ₓ)
 
 ⍝ —
-1{α⌽ω}⍠0 (3 4ρι12ₓ)   ⍝ 1⊖3 4ρι12ₓ
+1{α⌽ω}⍠0 (3 4ρι12ₓ)   ⍝ 1⌽₀3 4ρι12ₓ
 
 ⍝ — Both arguments supply cells when both have the selected axes
 (2 3ρι6ₓ){α,ω}⍠0 (2 3ρι6ₓ)   ⍝ (2 3ρι6ₓ)⍪2 3ρι6ₓ
@@ -3596,7 +3596,7 @@ p←[1 2;3] ◇ {+/ω₀×ω₁}∂ p   ⍝ [[3 3] 3]
 [{+/3↑ω}∂ 1 2;{+/2⌽ω×ι3ₓ}∂ 1 2 3;{+/2 0 3#ω}∂ 1 2 3;{+/,2↕ω}∂ 1 2 3]   ⍝ [1 1;0 1 2;2 0 3;1 2 1]
 
 ⍝ — Each kind of copy transposes to its adjoint: the dot product of a copy with y equals the dot product of its argument with its gradient against y
-dot←{f←⍶ ◇ r←f ω ◇ y←(ρr)ρ1+ι≢,r ◇ (+/,y×r)=+/,ω×({+/,y×(f ω)}∂ ω)} ◇ x←4 6ρι24ₓ ◇ ∧/[⌽dot x;(1⌽)dot x;⊖dot x;(2 3↑)dot x;(¯1 ¯2↓)dot x;(5 8↑)dot x;⍉dot x;(0 0⍉)dot x;(2 3↕)dot x;(¯3 ¯3↕)dot x;([[2 2]◇[2 2]]↕)dot x;(2 0 1 3#)dot x;{ω,ω}dot x;{+/2↕ω}dot x;{ω+⊗0 0}dot x;{0 0+⊗ω}dot x;{⌽⍉ω}dot x;{2 2↕1↓ω}dot x;{1⌽2↓ω}dot x;{8↑¯7↑ω}dot x;([: [5 0 3]]⌷)dot x;([[2]]⌷)dot x;{[[3]◇[2]]↕,ω}dot x;(3 5↕)dot x;([[2 2]◇[2 2]]↕)dot 0.5×x]   ⍝ $t
+dot←{f←⍶ ◇ r←f ω ◇ y←(ρr)ρ1+ι≢,r ◇ (+/,y×r)=+/,ω×({+/,y×(f ω)}∂ ω)} ◇ x←4 6ρι24ₓ ◇ ∧/[⌽dot x;(1⌽)dot x;⌽₀dot x;(2 3↑)dot x;(¯1 ¯2↓)dot x;(5 8↑)dot x;⍉dot x;(0 0⍉)dot x;(2 3↕)dot x;(¯3 ¯3↕)dot x;([[2 2]◇[2 2]]↕)dot x;(2 0 1 3#)dot x;{ω,ω}dot x;{+/2↕ω}dot x;{ω+⊗0 0}dot x;{0 0+⊗ω}dot x;{⌽⍉ω}dot x;{2 2↕1↓ω}dot x;{1⌽2↓ω}dot x;{8↑¯7↑ω}dot x;([: [5 0 3]]⌷)dot x;([[2]]⌷)dot x;{[[3]◇[2]]↕,ω}dot x;(3 5↕)dot x;([[2 2]◇[2 2]]↕)dot 0.5×x]   ⍝ $t
 
 ⍝ — Under and selective assignment transpose through what they write
 [{+/(10×)@0 2(ω)}∂ 1 2 3;{x←ω ◇ x₁←0 ◇ +/x×x}∂ 1 2 3]   ⍝ [10 1 10;2 0 6]
@@ -3998,8 +3998,8 @@ c←1 2 3 ◇ {+/,c∩ω}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ derivative-moves-reverse — reverse (`⌽`) moves a tangent with its primal, in forward mode and in reverse mode
 [{⌽ω×1 2 3}∂ 1; {+/1 2 3×⌽ω}∂ 2.5 1.5 3.5]   ⍝ [3 2 1;3 2 1]
 
-⍝ derivative-moves-reverse-first — reverse first (`⊖`) moves a tangent with its primal, in forward mode and in reverse mode
-[{⊖ω×[1 2◇3 4]}∂ 1; {+/,[1 2◇3 4]×⊖ω}∂ [1.5 2.5◇3.5 4.5]]   ⍝ [[3 4◇1 2] [3 4◇1 2]]
+⍝ derivative-moves-reverse-first — reverse first (`⌽₀`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⌽₀ω×[1 2◇3 4]}∂ 1; {+/,[1 2◇3 4]×⌽₀ω}∂ [1.5 2.5◇3.5 4.5]]   ⍝ [[3 4◇1 2] [3 4◇1 2]]
 
 ⍝ derivative-moves-transpose — transpose (`⍉`) moves a tangent with its primal, in forward mode and in reverse mode
 [{⍉ω×[1 2◇3 4]}∂ 1; {+/,[1 2◇3 4]×⍉ω}∂ [1.5 2.5◇3.5 4.5]]   ⍝ [[1 3◇2 4] [1 3◇2 4]]
@@ -4046,8 +4046,8 @@ c←1 2 3 ◇ {+/,c∩ω}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ derivative-moves-rotate — rotate (`⌽`) moves a tangent with its primal, in forward mode and in reverse mode
 [{1⌽ω×1 2 3}∂ 1; {+/1 2 3×1⌽ω}∂ 2.5 1.5 3.5]   ⍝ [2 3 1;3 1 2]
 
-⍝ derivative-moves-rotate-first — rotate first (`⊖`) moves a tangent with its primal, in forward mode and in reverse mode
-[{1⊖ω×[1 2◇3 4]}∂ 1; {+/,[1 2◇3 4]×1⊖ω}∂ [1.5 2.5◇3.5 4.5]]   ⍝ [[3 4◇1 2] [3 4◇1 2]]
+⍝ derivative-moves-rotate-first — rotate first (`⌽₀`) moves a tangent with its primal, in forward mode and in reverse mode
+[{1⌽₀ω×[1 2◇3 4]}∂ 1; {+/,[1 2◇3 4]×1⌽₀ω}∂ [1.5 2.5◇3.5 4.5]]   ⍝ [[3 4◇1 2] [3 4◇1 2]]
 
 ⍝ derivative-moves-reorder-axes — reorder axes (`⍉`) moves a tangent with its primal, in forward mode and in reverse mode
 [{0 0⍉ω×[1 2◇3 4]}∂ 1; {+/1 2×0 0⍉ω}∂ [1.5 2.5◇3.5 4.5]]   ⍝ [[1 4] [1 0◇0 2]]
@@ -5877,7 +5877,7 @@ v←1.0×¿160000ρ1000 ◇ mm←160000 2ρv ◇ iv←¿160000ρ100 ◇ cv←160
 $t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ — Structural reads of a pending matrix copy compose with it on both axes, and read what reading a stored copy reads
-m←0.5+600 1000ρι600000ₓ ◇ t←2↓m ◇ [(⊖2↓m)≡⊖t; (400 500↑1 2↓2↓m)≡400 500↑1 2↓t; (3⌽2↓m)≡3⌽t; (¯600↑2↓m)≡¯600↑t; (⌽⊖2↓m)≡⌽⊖t]
+m←0.5+600 1000ρι600000ₓ ◇ t←2↓m ◇ [(⌽₀2↓m)≡⌽₀t; (400 500↑1 2↓2↓m)≡400 500↑1 2↓t; (3⌽2↓m)≡3⌽t; (¯600↑2↓m)≡¯600↑t; (⌽⌽₀2↓m)≡⌽⌽₀t]
 $t $t $t $t $t
 
 ⍝ — A transpose reads through a large take from an empty array, whose items are all fill
@@ -6014,10 +6014,10 @@ check←{
   roots←z≡⌽√v
   z←2○r
   fused←z≡⌽2○v
-  m←256 512ρv ◇ r←⊖m ◇ z←⌊r
-  rows←z≡⊖⌊m
+  m←256 512ρv ◇ r←⌽₀m ◇ z←⌊r
+  rows←z≡⌽₀⌊m
   q←⌽r ◇ z←⌊q
-  composed←z≡⌽⊖⌊m
+  composed←z≡⌽⌽₀⌊m
   [reversed roots fused rows composed]
 }
 check¨32 64   ⍝ [5ρ$t;5ρ$t]
@@ -6984,7 +6984,7 @@ v←⊂1 2 3 ◇ 1⌷↑v   ⍝ 2
 ⌽[1 2 3◇4 5 6]   ⍝ [3 2 1◇6 5 4]
 
 ⍝ —
-⊖[1 2 3◇4 5 6]   ⍝ [4 5 6◇1 2 3]
+⌽₀[1 2 3◇4 5 6]   ⍝ [4 5 6◇1 2 3]
 
 ⍝ — Rotate each row by its own count
 1 2⌽[1 2 3◇4 5 6]   ⍝ [2 3 1◇6 4 5]
@@ -7146,7 +7146,7 @@ x←["b":2 "h":3 "w":4]ρι24ₓ
 [: 0]⌷[{ω=0?1;ω+2}0 3◇4 5]   ⍝ 1 4
 
 ⍝ — Reversing twice, flipping twice, transposing twice and splitting then mixing give back the argument
-{[⌽⌽ω ⊖⊖ω ⍉⍉ω ⊃↓ω]}¨[0 3;3 0;2 3;2 2 3]ρ¨⊂ι12ₓ
+{[⌽⌽ω ⌽₀⌽₀ω ⍉⍉ω ⊃↓ω]}¨[0 3;3 0;2 3;2 2 3]ρ¨⊂ι12ₓ
 {4ρ⊂ω}¨[0 3;3 0;2 3;2 2 3]ρ¨⊂ι12ₓ
 
 ⍝⍝ Pervasive math
@@ -7679,7 +7679,7 @@ v←[1 2] [3] [4 5] [6] ◇ rows←⊂⍤1⁝4 3ρ0.25+ι3 ◇ b←v{+/(⌈/α)+
 
 ⍝ — Each over ragged cells, arrays of one rank and kind with different shapes, runs pervasive calls, reductions, scans, grades, shapes, rotations, takes, drops and character conversion once on the cells' leaf, by each cell's own shape, giving what calls on each item give [batched]
 ⍝⍝⍝ route batching
-v←[1 2] [3 4 5] ⍬ ◇ s←"ab" "cde" "" ◇ m←(2 2ρι4) (3 2ρ10+ι6) ◇ [{-ω}¨v ; 1 2 3 {α+ω}¨ v ; {ω×ω}¨v ; {+/ω}¨v ; {+\ω}¨v ; ×\¨v ; ≢¨s ; ρ¨s ; ⌽¨s ; 2↑¨s ; ¯1↓¨s ; •ucs¨s ; ⍒¨s ; ⊖¨m ; 1↓¨m ; ⍒¨m]
+v←[1 2] [3 4 5] ⍬ ◇ s←"ab" "cde" "" ◇ m←(2 2ρι4) (3 2ρ10+ι6) ◇ [{-ω}¨v ; 1 2 3 {α+ω}¨ v ; {ω×ω}¨v ; {+/ω}¨v ; {+\ω}¨v ; ×\¨v ; ≢¨s ; ρ¨s ; ⌽¨s ; 2↑¨s ; ¯1↓¨s ; •ucs¨s ; ⍒¨s ; ⌽₀¨m ; 1↓¨m ; ⍒¨m]
 ⍝ =>
 ([¯1 ¯2] [¯3 ¯4 ¯5] ⍬◇[2 3] [5 6 7] ⍬◇[1 4] [9 16 25] ⍬◇3 12 0◇[1 3] [3 7 12] ⍬◇[1 2] [3 12 60] ⍬◇2ₓ 3ₓ 0ₓ◇[2]ₓ [3]ₓ [0]ₓ◇"ba" "edc" ""◇"ab" "cd" "  "◇"a" "cd" ""◇[97 98]ₓ [99 100 101]ₓ ⍬ₓ◇[1 0]ₓ [2 1 0]ₓ ⍬ₓ◇[2 3◇0 1] [14 15◇12 13◇10 11]◇[2 3◇] [12 13◇14 15]◇[1 0]ₓ [2 1 0]ₓ)
 

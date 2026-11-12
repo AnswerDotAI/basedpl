@@ -112,7 +112,7 @@ ism,sm
 +/⍉sq
 ⍝⍝: 1	1.1	0.98	instructions macos 3.179 linux 1.791	allocated macos 0.197 linux 0.196
 
-+⌿⊖sq
++⌿⌽₀sq
 ⍝⍝: 1	1.1	1	instructions macos 2.943 linux 1.661	allocated macos 0.181 linux 0.18
 
 +/⌽sv

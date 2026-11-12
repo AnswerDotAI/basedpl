@@ -114,11 +114,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="circle-bar" value="⊖" description="⊖" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="circle-diaeresis" value="⍥" description="⍥" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -964,11 +959,6 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
-  <template name="reverse-first" value="⊖" description="⊖" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
   <template name="rho" value="ρ" description="ρ" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -1030,11 +1020,6 @@
     </context>
   </template>
   <template name="rotate" value="⌽" description="⌽" shortcut="TAB">
-    <context>
-      <option name="OTHER" value="true" />
-    </context>
-  </template>
-  <template name="rotate-first" value="⊖" description="⊖" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

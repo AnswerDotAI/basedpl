@@ -18,6 +18,9 @@ pub(super) fn native_primitive(f: &Function, dyadic: bool) -> Option<(Primitive,
 pub(in crate::eval) fn along_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
     if spec.keys(0).is_some() { return with_options(f, spec, left, right, span); }
     if let FunctionNode::Primitive(p) = f.node() && p.facts(left.is_some()).axes { return Ok(Bound::from(p.call_axes(left, right, spec, span)?)); }
+    if let Some((spec, x, y)) = crate::primitive::extended_axes(spec, left, right, !matches!(f.node(), FunctionNode::Fold(..)))? {
+        return along_axes(f, &spec, x.as_ref(), &y, span);
+    }
     match f.node() {
         FunctionNode::Fold(operand, kind) => Ok(Bound::from(fold(operand, *kind, Some(spec), left, right, span)?)), _ => cell_axes(f, spec, left, right, span)
     }
@@ -47,13 +50,13 @@ fn filled(f: &Function, spec: &Value, fill: &Value, left: Option<&Value>, right:
         N::Composed(Axis, [F(g), V(inner)]) if inner.keys(0).is_some() => with_options(g, inner, left, right, span),
         N::Composed(Axis, [F(g), V(axes)]) => match g.node() {
             N::Primitive(p) if p.facts(left.is_some()).axes => primitive(*p, false, Some(axes)),
-            _ => cell_axes(&Function::new(N::Composed(Axis, [F(g.clone()), V(spec.clone())]), span)?, axes, left, right, span),
+            _ => along_axes(&Function::new(N::Composed(Axis, [F(g.clone()), V(spec.clone())]), span)?, axes, left, right, span),
         },
         _ => Err(Error::domain("this function reads no fill")),
     }
 }
 
-/// Apply `f` to the cells made of the selected axes. The other axes form the frame. The selected axes must exist in the higher-rank argument. An axis given by name is selected wherever each argument's layout puts it, and an axis given by number at the higher-rank argument's position. An argument that lacks one of them is one whole cell.
+/// Apply `f` to the cells made of the selected axes. The other axes form the frame. An axis given by name is selected wherever each argument's layout puts it, and an axis given by number at the higher-rank argument's position. An argument that lacks one of them is one whole cell.
 pub(in crate::eval) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
     let target = match left { Some(x) if x.shape().len() > right.shape().len() => x, _ => right };
     let order = target.shape().len();

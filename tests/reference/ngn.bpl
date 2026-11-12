@@ -1701,22 +1701,22 @@ A←n÷2 ¿ n
 ⌽₀[1 2 3 4 5◇6 7 8 9 0]   ⍝ [6 7 8 9 0◇1 2 3 4 5]
 
 ⍝ ngn:554 —
-⊖1 2 3 4 5 6   ⍝ 6 5 4 3 2 1
+⌽₀1 2 3 4 5 6   ⍝ 6 5 4 3 2 1
 
 ⍝ ngn:555 —
-⊖[1 2;3 4;5 6]   ⍝ [5 6;3 4;1 2]
+⌽₀[1 2;3 4;5 6]   ⍝ [5 6;3 4;1 2]
 
 ⍝ ngn:556 —
-⊖"bob won pots"   ⍝ "stop now bob"
+⌽₀"bob won pots"   ⍝ "stop now bob"
 
 ⍝ ngn:557 —
-⊖[1 2 3 4 5◇6 7 8 9 0]   ⍝ [6 7 8 9 0◇1 2 3 4 5]
+⌽₀[1 2 3 4 5◇6 7 8 9 0]   ⍝ [6 7 8 9 0◇1 2 3 4 5]
 
 ⍝ ngn:558 —
-⊖₁[1 2 3 4 5◇6 7 8 9 0]   ⍝ [5 4 3 2 1◇0 9 8 7 6]
+⌽₁[1 2 3 4 5◇6 7 8 9 0]   ⍝ [5 4 3 2 1◇0 9 8 7 6]
 
 ⍝ ngn:559 —
-1⊖3 3ρι9ₓ   ⍝ [3 4 5◇6 7 8◇0 1 2]ₓ
+1⌽₀3 3ρι9ₓ   ⍝ [3 4 5◇6 7 8◇0 1 2]ₓ
 
 ⍝ ngn:560 —
 +/3   ⍝ 3
@@ -2261,8 +2261,8 @@ S5
 ⍝ ngn/examples/4-life:1 — Conway's game of life This example was inspired by the impressive demo at https://www.youtube.com/watch?v=a9xAKttWgP4 0 1 1 1 1 0 0 1 0; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin 0; Insert spaces before negative vector items
 c←3 3ρι9ₓ ∊ 1 2 3 4 7
 c←3 3ρι9ₓ ∊ 1 3 6 7 8
-b←¯1⊖¯2⌽5 7↑c
-life←{[$t ω]∨.∧3ₓ 4ₓ=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂ω}
+b←¯1⌽₀¯2⌽5 7↑c
+life←{[$t ω]∨.∧3ₓ 4ₓ=⊂+/+⌿1 0 ¯1⌽₀⊗1 0 ¯1⌽¨⊂ω}
 gen←{[(life⍣ω)b]⌷" #"}
 gen¨↦3
 ⍝ =>

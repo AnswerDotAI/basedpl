@@ -6,15 +6,19 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
     use crate::number::{Arithmetic::*, Math::{Circle, Gcd, Lcm, Log, Nor, Pi, Power, Root}};
     use Primitive::*;
     if let Some(axis) = axis {
+        // Unbound enclose/split inverses place assembled cell axes in their result; inverse Mix selects input axes instead.
+        if (bound.is_some() || p == Mix) && let Some((axis, x, y)) = extended_axes(axis, bound.map(|(v, _)| v), right, p.paired_axes())? {
+            return inverse(p, x.as_ref().zip(bound.map(|(_, first)| first)), &y, Some(&axis), span);
+        }
         if axis.shape().len() > 1 { return Err(Error::new(Kind::Rank, "axes must be a unit or vector")); }
         if bound.is_none() {
             return match p {
-                Reverse(_) => p.call_axes(None, right, axis, span), Enclose | Drop => mix_axes(right, axis, span),
+                Reverse => p.call_axes(None, right, axis, span), Enclose | Drop => mix_axes(right, axis, span),
                 Mix => { let axes = axes(axis, right.shape().len())?; enclose_axes(right, &axes) }
                 _ => Err(Error::domain("this axis-qualified primitive has no known inverse"))
             };
         }
-        if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse(_) | Replicate | Ravel | CatenateFirst) {
+        if !matches!(p, Arithmetic(_) | Math(_) | Compare(_) | Reverse | Replicate | Ravel | CatenateFirst) {
             return Err(Error::domain("this axis-qualified primitive has no known inverse"));
         }
     }
@@ -42,7 +46,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Math(Root) => call(Math(Log), Some(right), a),
             Math(Pi) => inverse(p, None, &call(Arithmetic(Times), Some(right), a)?, None, span),
             Math(Log) => call(Math(Root), Some(right), a),
-            Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
+            Reverse if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
             Transpose if first => inverse_transpose(a, right),
             Decode if first => inverse_decode(a, right),
             Identity(left) => {

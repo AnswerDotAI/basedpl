@@ -291,12 +291,25 @@ fn array_invariants() {
 }
 
 #[test]
+fn axis_extension_shares_views_and_keeps_controls() {
+    for (code, expected) in [
+        ("10 20 ,₁ 30 40", "[10 30◇20 40]"), ("2#₁10 20", "[10 10◇20 20]"), ("2↑₁10 20", "[10 0◇20 0]"), ("+/₁10 20", "10 20"),
+        ("+/₁ ₂10 20", "10 20"), ("{ω+1}₁10 20", "2 1ρ11 21"), ("{ω}⍠[¯1 2] 10 20", "2 1 1ρ10 20"),
+        ("(2↑₁)⍠[\"fill\":¯1] 10 20", "[10 ¯1◇20 ¯1]"), (",₁/[10 20;30 40;50 60]", "[10 30 50◇20 40 60]"),
+        ("10 20+₀[1 2 3◇4 5 6]", "[11 12 13◇24 25 26]"), ("⌽₀[1 2 3◇4 5 6]", "[4 5 6◇1 2 3]"), ("⌽₋₁[1 2 3◇4 5 6]", "[3 2 1◇6 5 4]"),
+        ("⌽₀⁻[1 2◇3 4]", "[3 4◇1 2]"), ("(⊂₁)⁻ ⊂₁10 20", "2 1ρ10 20"), ("⊃₁⁻10 20", "⊃⁻₁10 20"),
+        ("{+/,2#₁ω}∂10 20", "2 2"), ("{2#₁ω}¨[10 20;30 40]", "[[10 10◇20 20];[30 30◇40 40]]"),
+    ] { equiv(code, expected); }
+    for code in ["⌽₋₂10 20", "{ω}⍠[¯2 2] 10 20", "{ω}₁ ₁10 20"] { assert!(run(code).is_err(), "{code}"); }
+}
+
+#[test]
 fn declared_ranks_match_rank() {
     // Wherever a primitive form succeeds, it gives what Rank gives at the form's declared ranks. A form may also reject arguments that Rank would extend over. No argument is empty, because Rank calls a function on a prototype cell when the frame is empty. `¿` is left out, because it's random. The dfn stops Rank calling the primitive on the whole argument.
     use basedpl::symbols::symbols;
     let s = Session::new();
     s.eval(r#"n←2 ◇ v←1 2 3 ◇ w←3 1 2 ◇ u←1 0 1 ◇ m←2 3ρι6 ◇ q←3 3ρ2 7 6 9 5 1 4 3 8 ◇ t←2 2 3ρι12 ◇ c←"abc" ◇ k←2 3ρ"abcdef" ◇ e←[1 2;3 4 5]"#);
-    fails_in(&s, "LENGTH", &["1 2⌽2", "1 2⊖2"]);
+    fails_in(&s, "LENGTH", &["1 2⌽2", "1 2⌽₀2"]);
     equiv_in(&s, "[⌽2;1⌽2;[1]⌽2;⌽⊂2]", "[2;2;2;⊂2]");
     let args = ["n", "v", "w", "u", "m", "q", "t", "c", "k", "e"];
     let mut differ = Vec::new();

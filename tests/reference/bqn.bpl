@@ -201,7 +201,7 @@ m←[0 1 0◇¯1 0 0◇0 0 1] ◇ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
 a←["ab"◇"cd"◇"ef"] ◇ ⊣⍀a   ⍝ ["ab"◇"ab"◇"ab"]
 
 ⍝ bqn:leading:90 — Rotate the first axis by 2 and the second by 1
-2⊖1⌽ι[3 5]ₓ
+2⌽₀1⌽ι[3 5]ₓ
 [[2 1] [2 2] [2 3] [2 4] [2 0]◇[0 1] [0 2] [0 3] [0 4] [0 0]◇[1 1] [1 2] [1 3] [1 4] [1 0]]ₓ
 
 ⍝ bqn:leading:94 — Drop applies to the leading axes

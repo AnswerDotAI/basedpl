@@ -26,7 +26,7 @@ sps←ss(+⍤2)16×=⊗⍨ι8
 t←[n÷16 16]ρv
 tq←¿[n÷4 24]ρ0
 z←v+0j1×w
-zm←[(128 size 16) (128 size 16)]↑m+0j1×⊖m
+zm←[(128 size 16) (128 size 16)]↑m+0j1×⌽₀m
 bm←[side side]ρb
 jm←[side side]ρjv
 um←[2×side 2×side]ρ(256×w)ₓ₁
@@ -92,7 +92,7 @@ ux←(¿nρ256)ₓ₁
 ⍝⍝: 12	19	40	instructions macos 16.1 linux 17.508	allocated macos 0.574 linux 0.574
 
 ⍝ Reading one argument and writing each item once.
-⍝ Expected: `-v` and `⌽v` 1 copy: one read and one write per item; `-jv` 0.25 copies: 2-byte reads and writes; `~b`, `∧\b` and `∨\b` 0.13 copies: 1-byte reads and writes; `1⌽v` 1 copy: two contiguous copies; `⊖m` 1 copy: contiguous row copies; `1↓v` 1 copy: one copy; `(n÷2)↑v` 0.5 copies: copies half the items; `nρ0` 0.5 copies: writes 8 bytes an item.
+⍝ Expected: `-v` and `⌽v` 1 copy: one read and one write per item; `-jv` 0.25 copies: 2-byte reads and writes; `~b`, `∧\b` and `∨\b` 0.13 copies: 1-byte reads and writes; `1⌽v` 1 copy: two contiguous copies; `⌽₀m` 1 copy: contiguous row copies; `1↓v` 1 copy: one copy; `(n÷2)↑v` 0.5 copies: copies half the items; `nρ0` 0.5 copies: writes 8 bytes an item.
 -v
 ⍝⍝: 2	1.9	2.1	instructions macos 2.995 linux 1.746	allocated macos 8.06 linux 8.06
 
@@ -115,7 +115,7 @@ ux←(¿nρ256)ₓ₁
 1⌽v
 ⍝⍝: 2	1.8	1.4	instructions macos 3.052 linux 0.852	allocated macos 8.058 linux 8.058
 
-⊖m
+⌽₀m
 ⍝⍝: 2	1.9	1.9	instructions macos 3.306 linux 1.995	allocated macos 8.067 linux 8.067
 
 ⍝ In wasm on CI, `1↓v` varies as `1⌽v` does, for the reason given above `1⌽v`.
@@ -740,7 +740,7 @@ vιw
 ⍝⍝: 87	150	130	instructions macos 75.29 linux 234.546	allocated macos 55.041 linux 41.04
 
 ⍝ Rank calls a fold, a structural function or a fold of a ravel once on the whole stack, along the cells' axes, rather than once for each cell.
-⍝ Expected: `+/⍤1 t` and `(+/,)⍤2 ms` 0.5 copies: one pass reads 8 bytes an item and writes nothing; `(1 1↣⌷)⍤2 ms` 0.02 copies: reads one item of each cell; `⊖⍤2 ms` and `⌽⍤1 ms` 1 copy: one read and one write per item.
+⍝ Expected: `+/⍤1 t` and `(+/,)⍤2 ms` 0.5 copies: one pass reads 8 bytes an item and writes nothing; `(1 1↣⌷)⍤2 ms` 0.02 copies: reads one item of each cell; `⌽₀⍤2 ms` and `⌽⍤1 ms` 1 copy: one read and one write per item.
 ⍝ `+/⍤1 t` measures 0.71 on macOS: float sums fold rows of 16 to 63 items eight rows side by side (`Reduction::rows` in rustymath), where a call of `slice` for each row cost about 4.5 ns.
 +/⍤1 t
 ⍝⍝: 1	1.3	1.2	instructions macos 5.457 linux 3.845	allocated macos 0.788 linux 0.788
@@ -752,8 +752,8 @@ vιw
 (1 1↣⌷)⍤2 ms
 ⍝⍝: 0.5	0.5	0.54	instructions macos 3.621 linux 2.494	allocated macos 0.434 linux 0.434
 
-⍝ `⊖⍤2 ms` measures 1.45 on macOS since short cells copy each run of adjacent items as one block (22 October 2026), down from 2.65 to 3.55. In wasm it measured 1.14 to 1.25 in seven CI runs from 22 October 2026. CI measured 1.08 on Linux on 22 October 2026.
-⊖⍤2 ms
+⍝ `⌽₀⍤2 ms` measures 1.45 on macOS since short cells copy each run of adjacent items as one block (22 October 2026), down from 2.65 to 3.55. In wasm it measured 1.14 to 1.25 in seven CI runs from 22 October 2026. CI measured 1.08 on Linux on 22 October 2026.
+⌽₀⍤2 ms
 ⍝⍝: 2	2.2	2.9	instructions macos 4.282 linux 2.661	allocated macos 8.135 linux 8.135
 
 ⌽⍤1 ms

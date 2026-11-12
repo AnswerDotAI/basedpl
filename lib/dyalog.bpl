@@ -11,7 +11,7 @@ segs←{~ω∊α ⊆ ω}  ⍝ Separator-delimited segments.
 m_91←{ω>100ₓ?ω-10ₓ;∇ ∇ ω+11ₓ}  ⍝ McCarthy's M91 function.
 
 ⍝ From https://dfns.dyalog.com/c_life.htm
-life←{[$t ω]∨.∧3ₓ 4ₓ=¨⊂+/,¯1 0 1⊖⊗¯1 0 1⌽⊗⊂ω}
+life←{[$t ω]∨.∧3ₓ 4ₓ=¨⊂+/,¯1 0 1⌽₀⊗¯1 0 1⌽⊗⊂ω}
 
 ⍝ From https://dfns.dyalog.com/c_rmcm.htm
 rmcm←{  ⍝ Replace comments with blanks.
@@ -864,7 +864,7 @@ packH←{                      ⍝ Huffman packing.
          0ₓ=⍹?α(⍶ ci⌷⊢)ω;
          1ₓ=⍹?⊃α(⍶¨⊂₀)ω;
          ¯1ₓ=⍹?⊃ α ⍶∘(1↣↓)¨⊂₀ ω;
-         2ₓ=⍹?α (⍶∘⊖⍢1)Under⊖ ω;
+         2ₓ=⍹?α (⍶∘(⌽₀)⍢1)Under(⌽₀) ω;
          ¯2ₓ=⍹?α ⍶∘(¯1↣↓)⍢2 ω;
          3ₓ=⍹?αtiω (⍶⍢0)⍤2 ∞ ω;
          ¯3ₓ=⍹?αtjω (⍶⍢0)⍤2 ∞ ω

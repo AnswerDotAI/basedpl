@@ -75,7 +75,7 @@ async def kernel_story():
         _, messages = await kc.exec_ok(']help ?')
         assert '(dfns.ipynb)' in displayed(messages)[0][1]
         _, messages = await kc.exec_ok(']help ⌽')
-        assert '(glyphs/circle-bar.qmd)' in displayed(messages)[0][1]
+        assert 'count per column' in displayed(messages)[0][1]
         _, messages = await kc.exec_ok('¿1')
         assert displayed(messages) == [('execute_result', '0')]
         _, messages = await kc.exec_ok('¿¿')

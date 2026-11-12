@@ -76,7 +76,7 @@ def test_macos_follows_the_mapping_rules():
         if len(start) == 1: sequences += [start + [('key', start[0][1])]]
         sequences += [start + [('space',), ('key', 'x')], start + [('key', 'x')], start + [('delete',), ('key', 'a')], start + [('option', 'h')]]
     for presses in sequences: assert simulate(parsed, codes(presses)) == expected(presses), presses
-    assert expected([('option', 'o'), ('key', '-')]) == '⊖'
+    assert expected([('option', 'o'), ('key', '\\')]) == '⍉'
     assert expected([('option', '6'), ('key', '-'), ('key', '1')]) == '⁻¹'
     assert expected([('option', 'o'), ('space',), ('key', '|')]) == '○|'
     assert expected([('option', 'q'), ('key', 'x')]) == '⎕x'
