@@ -32,7 +32,7 @@ ss ← {  ⍝ Approx alternative to xutils' ss.
 
 ssmat ← {  ⍝ Matrix search/replace.
   [cmat find repl]←ω  ⍝ Char matrix, find & replace vectors.
-  {ss[ω find repl]}⍤1 cmat
+  {ss[ω find repl]}¹ cmat
 }
 
 ⍝ From http://dfns.dyalog.com/c_squeeze.htm

@@ -9,7 +9,7 @@ speed←0.06× 30÷r * 1.5
 [warm cool]←[1 0.6 0.2◇0.3 0.5 1]
 glow←0.9 0
 colour←⍉[1-t◇t] +.× [warm◇cool]
-style←colour ,⍤1 glow
+style←colour ,¹ glow
 frame←{
   z←250ⱼ250+r×○start+ω×speed
   ["points":(∨z),3,style]

@@ -22,7 +22,7 @@ Each lane starts from the whole seed. Use Rank for separate seeds per cell.
 
 ```bpl
 M←[1 2 3◇4 5 6]
-10 20+\⍤0 1 M      ⍝ [11 13 16◇24 29 35]
+10 20+\⁰ ¹ M      ⍝ [11 13 16◇24 29 35]
 [10]+\1 2 3        ⍝ [[11] [13] [16]]
 ```
 

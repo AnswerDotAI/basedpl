@@ -9,7 +9,7 @@ p←∨0,+\○π0.5×heading
 [lo hi]←[⌊⌿p◇⌈⌿p]
 scale←440÷⌈/hi-lo
 centre←lo+hi ÷ 2
-lines←,⍤2 ↕250+scale×p-⍤1 centre
+lines←,² ↕250+scale×p-¹ centre
 t←ιn ÷ n←≢lines
 colour←0.5+0.5×2○ π 2×t+⊗0 0.33 0.67
 segments←lines,1.2,colour,0.9

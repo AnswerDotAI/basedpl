@@ -197,7 +197,7 @@ b←•explain "[h.roll 1ρ6;h.roll 3ρ6]"
 •prefs ["seed":7]
 x←{¿6}¨ι4
 •prefs ["seed":7]
-y←({¿6}⍤0)ι4
+y←({¿6}⁰)ι4
 x≡y   ⍝ $t
 
 ⍝ distribution:batched-draws — A batched draw reproduces its whole result when reseeded and called with the same spelling

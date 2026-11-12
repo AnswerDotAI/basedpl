@@ -86,7 +86,7 @@ s←["ab";"cd";"ef";"gh";"ij";"kl";"mn";"op"] ◇ t←32ρs,⊂"zz"
 [$t;$t;$t;$t;[1 8 2 3 4 5 0 8 6 7]ₓ;[7 7]ₓ]
 
 ⍝ — Interval index in each cell's own boundaries, and index of within the tolerance
-[({ω⍸2.5}⍤1)[2 3]ρ1 2 3 0 5 10 ; ({ωι0.3}⍤1)[2 3]ρ0.1 0.2 0.30000000000000004 0.3 0.1 0.2]   ⍝ [[2 1]ₓ ; [2 0]ₓ]
+[({ω⍸2.5}¹)[2 3]ρ1 2 3 0 5 10 ; ({ωι0.3}¹)[2 3]ρ0.1 0.2 0.30000000000000004 0.3 0.1 0.2]   ⍝ [[2 1]ₓ ; [2 0]ₓ]
 
 ⍝ — `≡` compares a batch's exact-integer or Boolean cells with a float constant on the batch's whole, within the tolerance [batched]
 m←3 2ρι6ₓ ◇ b←2 2ρ$t $f $f $t ◇ c←2 3.0000000000000004

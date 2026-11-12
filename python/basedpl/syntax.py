@@ -47,7 +47,7 @@ def parse(text):
     return node(*_parse(text))
 
 def linear(text):
-    "Show BPL's structural grouping. Literal strands are in brackets and multi-token runs in parentheses, except beside a run-ending dot. Multi-token bracket items use ` ; `. A literal touching a name, as in `x1`, is parenthesized. Operator-stage `∘` stays explicit: operator names resolve at evaluation."
+    "Show BPL's structural grouping. Literal strands are in brackets and multi-token runs in parentheses, except beside a run-ending dot. Multi-token bracket items use ` ; `. A literal touching a name, as in `x1`, is parenthesized."
     dotted = lambda n: n and n.kind == 'Run' and n.children[-1].text == "."
     def form(n, before=None):
         if n.kind in ('Comment', 'Error'): return n.text

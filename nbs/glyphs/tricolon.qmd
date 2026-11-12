@@ -9,4 +9,4 @@ h←- ◇ m←5 ◇ h⁝m             ⍝ ¯5
 ≥⍣3⁝5                       ⍝ 8
 ```
 
-`h⁝m` is `h(m)`, and `≥⍣3⁝5` is `(≥⍣3)5`. A space also groups runs, as [Syntax](../syntax.qmd#runs) describes. `⁝` leaves the grouping unchanged. Before an operator, [`∘`](jot.qmd#before-an-operator) finishes the current run as its left operand. Parentheses still group compound operands and nested trains. [Composing functions](../composition.qmd#separating-an-operand-from-its-argument) gives examples.
+`h⁝m` is `h(m)`, and `≥⍣3⁝5` is `(≥⍣3)5`. A space also groups runs, as [Syntax](../syntax.qmd#runs) describes: `⊂⊢ ⌸` gives Key the whole train `⊂⊢` as its operand. `⁝` leaves the grouping unchanged. Parentheses still group compound operands and nested trains. [Composing functions](../composition.qmd#separating-an-operand-from-its-argument) gives examples.

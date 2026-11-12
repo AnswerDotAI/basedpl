@@ -28,13 +28,14 @@ v←2 4 9 ◇ +/÷≢v              ⍝ 0ₓ
 
 ## Operators on trains
 
-Before an operator, `∘` finishes the current run as that operator's left operand. `⊂⊢∘⌸` is `(⊂⊢)⌸`, and `+/÷≢∘⍤1` is `(+/÷≢)⍤1`. The right operand of a dyadic operator follows as usual:
+A run that starts with an operator takes the whole preceding run as its left operand. A space can therefore replace parentheses around a short train: `⊂⊢ ⌸` is `(⊂⊢)⌸`, and `+/÷≢ ¹` is `(+/÷≢)¹`.
 
 ```bpl
-m←2 3ρι6 ◇ +/÷≢∘⍤1m        ⍝ 1 4
+m←2 3ρι6 ◇ +/÷≢ ¹m        ⍝ 1 4
+0 1 0 ⊂⊢ ⌸ "abc"           ⍝ "ac" "b"
 ```
 
-The boundary includes the whole run on its left. Keep a left argument or an earlier function outside that run with spaces or parentheses. Named operators work the same way as glyphs. Before a function, `∘` remains [Atop](#atop-and-over).
+The preceding run is the whole operand, including any prefix. Keep a left argument or an earlier function outside it with spaces or parentheses. With both arguments, separate the operand, operator and right argument as above; `0 1 0 ⊂⊢ ⌸"abc"` instead evaluates the rightmost run first. Named operators work the same way as glyphs. Keep parentheses where they show nested structure more clearly.
 
 ## Identity functions
 
@@ -78,10 +79,10 @@ The two-function train `⌊÷` divides, then rounds down:
 -↢10⁝3                      ⍝ ¯7
 ```
 
-With two function operands, `↣` and `↢` form monadic hooks. `f↣g Y` is `(f Y)g Y` and `f↢g Y` is `Y f(g Y)`. Two-function trains in BPL are atops. `(3<)↣# Y` is `(3<Y)#Y`. It keeps the items of `Y` that are greater than 3:
+With two function operands, `↣` and `↢` form monadic hooks. `f↣g Y` is `(f Y)g Y` and `f↢g Y` is `Y f(g Y)`. Two-function trains in BPL are atops. `3< ↣# Y` is `(3<Y)#Y`. It keeps the items of `Y` that are greater than 3:
 
 ```bpl
-(3<)↣# 2 7 1 8               ⍝ 7 8
+3< ↣# 2 7 1 8               ⍝ 7 8
 ```
 
 ## Self and Commute
@@ -110,17 +111,17 @@ fahrenheit←32+1.8× ◇ fahrenheit⁻ 212   ⍝ 100
 A superscript straight after a number applies to the number. To invert a function that ends in a number, finish the function before `⁻`:
 
 ```bpl
-+↢3∘⁻10                     ⍝ 7
++↢3 ⁻ 10                    ⍝ 7
 ```
 
-`(+↢3)⁻10` and `+↢3 ⁻ 10` also give `7`. Without a boundary, `+↢3⁻` tries to invert the number `3`, which is a `DOMAIN` error. The signed superscript `3⁻¹` still means one third; `f⁻¹` on a function now means rank ¯1.
+`(+↢3)⁻10` also gives `7`. Without grouping, `+↢3⁻` tries to invert the number `3`, which is a `DOMAIN` error. The signed superscript `3⁻¹` still means one third; `f⁻¹` on a function now means rank ¯1.
 
 ## Under
 
-[Under](glyphs/at.qmd), `f@g`, applies `f` to what `g` selects and writes the result back. `10×∘@[1 3]` multiplies items 1 and 3 by 10. `⌊@(10×)` rounds down to tenths: it scales by 10, rounds down, then scales back.
+[Under](glyphs/at.qmd), `f@g`, applies `f` to what `g` selects and writes the result back. `10× @[1 3]` multiplies items 1 and 3 by 10. `⌊@(10×)` rounds down to tenths: it scales by 10, rounds down, then scales back.
 
 ```bpl
-10×∘@[1 3] 1 2 3 4          ⍝ 1 20 3 40
+10× @[1 3] 1 2 3 4          ⍝ 1 20 3 40
 ⌊@(10×)1.25 2.78             ⍝ 1.2 2.7
 ```
 
@@ -134,8 +135,8 @@ Within a run, an operator's right operand is the one [token](terms.qmd#term-toke
 ≥⍣3⁝5                                       ⍝ 8
 m←["r":2 "c":3]ρι6ₓ ◇ i←"c" ◇ +/⍠i⁝m         ⍝ ["r":2]ρ[3 12]ₓ
 m←["r":2 "c":3]ρι6ₓ ◇ i←"c" ◇ 10÷√1++/⍠i⁝m  ⍝ ["r":2]ρ[5 2.773500981]
-2×∘⍣3⁝5                                    ⍝ 40
-+/÷≢∘⍤1⁝2 3ρι6                              ⍝ 1 4
+2× ⍣3⁝5                                    ⍝ 40
++/÷≢ ⍤1⁝2 3ρι6                              ⍝ 1 4
 ```
 
 Add no separator where the tokens already stay distinct. A name never joins a literal strand, as in `f⍣n1`. A vector argument can touch its operand in brackets, as in `≥⍣2[1 2 3]`.
@@ -145,7 +146,7 @@ Add no separator where the tokens already stay distinct. A name never joins a li
 ```bpl
 w←[1 2◇3 4◇5 6] ◇ 10 20+⍤1⁝w                 ⍝ [11 22◇13 24◇15 26]
 w←[1 2◇3 4◇5 6] ◇ 10 20(+⍤1)w                ⍝ [11 22◇13 24◇15 26]
-m←2 3ρι6 ◇ +/÷≢∘⍤1m                         ⍝ 1 4
+m←2 3ρι6 ◇ +/÷≢ ¹m                         ⍝ 1 4
 ```
 
 ## Forms that read worse
@@ -157,7 +158,7 @@ Each pair gives the same result with one argument.
 | `{(+/ω)÷≢ω}` | `+/÷≢` |
 | `0.5×⊢+2÷⊢` | `⊽⁻+÷` |
 | `{ω÷+/ω}` | `÷↢ +/` |
-| `{ω×10}@[1 3]` | `10×∘@[1 3]` |
+| `{ω×10}@[1 3]` | `10× @[1 3]` |
 | `{+/ω}⍠0` | `+/₀` |
 | `{ω,1}` | `,↢1` |
 | `×⍨x` | `x²` |

@@ -25,11 +25,11 @@ With [axes](quad-colon.qmd), `⊂⍠K Y` encloses cells on axes `K`.
 1 0 1⊂3 2ρι6ₓ       ⍝ [[0 1◇2 3] [4 5◇]]ₓ
 ```
 
-A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠K Y` partitions along axis `K` instead. `N⊂⍤1 Y` partitions each row.
+A mark greater than 1 starts extra empty partitions. Unit marks extend. `N⊂⍠K Y` partitions along axis `K` instead. `N⊂¹Y` partitions each row.
 
 ```bpl
 1 0 1⊂₁2 3ρι6ₓ       ⍝ [[0 1◇3 4] [[2]◇[5]]]ₓ
-1 0 1⊂⍤1 (2 3ρι6ₓ)  ⍝ [[0 1] [2]◇[3 4] [5]]ₓ
+1 0 1⊂¹(2 3ρι6ₓ)  ⍝ [[0 1] [2]◇[3 4] [5]]ₓ
 ```
 
 See also [`⊆`](left-shoe-underbar.qmd).

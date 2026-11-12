@@ -83,7 +83,7 @@ h←0.2×3 2 2ρ5ₓ|ι12ₓ
 0.2×3 2 2 1ρ5ₓ|ι12ₓ
 
 ⍝ image-delay — delay sets each frame's seconds, stored exactly as 1/n for a whole rate n, otherwise in milliseconds or seconds
-delays←{t←⍸"fcTL"⍷•ucs ω ◇ {256⊥2 2ρω}⍤1 (⊂t+⊗24ₓ+ι4ₓ)⌷ω}
+delays←{t←⍸"fcTL"⍷•ucs ω ◇ {256⊥2 2ρω}¹ (⊂t+⊗24ₓ+ι4ₓ)⌷ω}
 delays ["delay":[1÷24 0.04 1.6 100]]•image⁻ 4 2 2ρ0.2
 ⍝ =>
 [1 24◇1 25◇1600 1000◇100 1]

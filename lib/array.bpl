@@ -79,7 +79,7 @@ disp ← { α←⍬  ⍝ Boxed sketch of nested array.
   join←{  ⍝ Join of gap-separated sub-planes.
     sep←≢ω ÷ 1ₓ⌈≢α  ⍝ sub plane separation.
     split←0ₓ=sep|ι≢ω ⊂₀ ω
-    ⊂⍤¯1α plane¨ split  ⍝ sub-plane join.
+    ⊂⁻¹α plane¨ split  ⍝ sub-plane join.
   }
   outer←{  ⍝ Outer decoration.
     sizes←1 0{↑↓ ⍉⍣α ω}¨seprρ¨ω
@@ -320,12 +320,12 @@ match ← {  ⍝ Wildcard match.
   ↑{
     [[lh lm] [und rm]]←[α ω]  ⍝ left and right hits and masks.
     [lh∧rm lm]  ⍝ right-masked left hits.
-  }/↓⍉⊃⊂⍤¯1¨[h m]
+  }/↓⍉⊃⊂⁻¹¨[h m]
 }
 
 ⍝ From http://dfns.dyalog.com/s_match.htm
 
-showmatch ← {marks←[(α match ω)]⌷" ¯" ◇ ,⍠ ιρρω ω {[α◇ω]}⍤1 marks}
+showmatch ← {marks←[(α match ω)]⌷" ¯" ◇ ,⍠ ιρρω ω {[α◇ω]}¹ marks}
 
 ⍝ From http://dfns.dyalog.com/n_nlines.htm
 
@@ -398,7 +398,7 @@ dscan ← {  ⍝ Divide scan
 ascan ← {  ⍝ Associative scan.
   2ₓ>0ₓ⊥ρω?ω;  ⍝ few items: done.
   lane←⍶{⌽⍶{[(↑ω)⍶α],ω}/⌽[⊂↑ω],1↓ω}  ⍝ one lane: builds the results newest first, then reverses them.
-  lane⍤1 ω
+  lane¹ ω
 }
 
 ⍝ From http://dfns.dyalog.com/c_ascana.htm
@@ -433,7 +433,7 @@ subs ← {  ⍝ Vector substitution.
   fm⍷ω {  ⍝ hits mask
     ~$t∊α?ω;  ⍝ early out if no match
     ts↓,/{to,fs↓ω}¨(lead,α)⊂fm,ω
-  }⍤1 ω  ⍝ apply to vectors
+  }¹ ω  ⍝ apply to vectors
 }
 
 ⍝ From http://dfns.dyalog.com/c_lcase.htm and http://dfns.dyalog.com/c_ucase.htm

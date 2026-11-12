@@ -15,10 +15,10 @@ Float and complex `+.×` read a large operand that is a transpose, or windows of
 
 Where `g` is a dfn, `X f.g Y` calls it once on all the pairings together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each pairing.
 
-[Rank](jot-diaeresis.qmd) and [Axis](quad-colon.qmd) can give `f.g` cells of rank 1. Where `g` is pervasive, `g` pairs the cells' items in one call and `f` folds along them. `X+.×⍤1Y` gives the dot product of each pair of rows at the cost of `+/X×Y`. Axis selects an axis that [`•index`](../system/index.qmd) names wherever each argument holds it. The other named axes pair by name. `xu.[b k]+.×⍠k⁝wu.[k o]` is then the matrix product in [index notation](../index-notation.qmd). A large one runs as one product.
+[Rank](jot-diaeresis.qmd) and [Axis](quad-colon.qmd) can give `f.g` cells of rank 1. Where `g` is pervasive, `g` pairs the cells' items in one call and `f` folds along them. `X+.×¹Y` gives the dot product of each pair of rows at the cost of `+/X×Y`. Axis selects an axis that [`•index`](../system/index.qmd) names wherever each argument holds it. The other named axes pair by name. `xu.[b k]+.×⍠k⁝wu.[k o]` is then the matrix product in [index notation](../index-notation.qmd). A large one runs as one product.
 
 ```bpl
-X←[1 2 3◇4 5 6] ◇ X+.×⍤1X             ⍝ 14 77
+X←[1 2 3◇4 5 6] ◇ X+.×¹X             ⍝ 14 77
 xu←[2 3]ρι6ₓ ◇ wu←[3 4]ρι12ₓ ◇ [b o k]←•index 2 4 3 ◇ ∧/,(xu.[b k]+.×⍠k⁝wu.[k o])=xu+.×wu   ⍝ $t
 ```
 
@@ -64,7 +64,7 @@ After a function, `.name` and `.[I]` read from the function's result, as they re
 v←10 20 30 40
 .[[1 3]] v              ⍝ 20 40
 1 2 3 4 +.[[0 2]] v     ⍝ 11 33
-10×∘@.[[1 3]]v          ⍝ 10 200 30 400
+10× @.[[1 3]]v          ⍝ 10 200 30 400
 T←["a":1 "x":[10 20 30]]
 ⊢.a¨[T T]               ⍝ 1 1
 ⊢.x.[[2 0]] T           ⍝ 30 10

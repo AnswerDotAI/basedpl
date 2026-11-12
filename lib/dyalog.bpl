@@ -37,7 +37,7 @@ lsys←{  ⍝ Lindenmayer L-system expansion.
 ⍝ From https://dfns.dyalog.com/c_rr.htm
 rr←{  ⍝ Round-robin tournament.
   v←ιn←0ₓ⌈≤ω
-  ≥(ω÷2)↑₋₁m{[α◇ω]}⍤1⌽m←0ₓ,v⌽≥[n n]ρv
+  ≥(ω÷2)↑₋₁m{[α◇ω]}¹⌽m←0ₓ,v⌽≥[n n]ρv
 }
 
 ⍝ From https://dfns.dyalog.com/c_easter.htm
@@ -112,7 +112,7 @@ date←{  ⍝ Timestamp from day number (Meeus).
 ⍝ From https://dfns.dyalog.com/c_days.htm
 days←{  ⍝ Days since 1899-12-31 (Meeus).
   α←17520902ₓ
-  1ₓ<≢ρω?α ∇⍤0 1 ω;
+  1ₓ<≢ρω?α ∇⁰ ¹ ω;
   [yy mm dd h m s ms]←7↑ω
   D←dd + [0 60 60 1000]ₓ⊥[h m s ms] ÷ 86400000ₓ
   [Y M]←[yy mm]+[¯1 12]ₓ×mm≤2ₓ
@@ -465,7 +465,7 @@ refmt←{  ⍝ Indent code and align comments.
     rlb←{∨\' '≠ω # ω}
     clean←⌽ rlb ⌽ rlb code
     [clean coms]
-  }⍤1 ⊃ω
+  }¹ ⊃ω
   dents←{
     toks←unqtω {α#⁻α#ω} ω
     dvec←-⌿0 1⌽+\"{}"=⊗toks
@@ -577,7 +577,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
   fmt←{
     chars←[(⊃ω)=⊗ια]⌷"·⊛"
     expd←1↓,⊃αρ⊂0 1
-    ⊂⍤2 expd#⁻₋₁chars
+    ⊂² expd#⁻₋₁chars
   }
   squares←[ι⌈ω÷2],1↓ωρ⊂ιω
   ω fmt ⍬ search squares
@@ -670,7 +670,7 @@ von←{  ⍝ Capitalise names, preserving prefixes and user-supplied exceptions.
     q←¯1•c{2ₓ>≡ω?,⊂,ω;ω}α
     1↓∊∨/q⍶¨⊂' ',ω
   }
-  b←¯1↓∊∨/q⍷¨⊂' ',tx < $t,>/⌽⍤1↕~tx∊" -:;.,!?'""/)("
+  b←¯1↓∊∨/q⍷¨⊂' ',tx < $t,>/⌽¹↕~tx∊" -:;.,!?'""/)("
   b∨←pre(∆pre ∆fix)tx
   b>←not(∆not ∆fix)tx
   ¯1↓(1↣•c)@(⍸b) tx
@@ -1181,7 +1181,7 @@ tc←{  ⍝ Trace function application.
      }
 
      reshape←{                       ⍝ α-col reshape of ω.
-         α=0ₓ?max↑⍤1 col ω;          ⍝ item too wide: truncated single col.
+         α=0ₓ?max↑¹ col ω;          ⍝ item too wide: truncated single col.
          nr←⌈ni÷ₐα                    ⍝ number of rows.
          matr←[α nr]ρ(α×nr)↑ω,α#' '  ⍝ matrix blank-padded to whole no of cols.
          pads←⊃nr#↓gap#' '           ⍝ inter-column padding.
@@ -1314,7 +1314,7 @@ ratsum←{
         [lmrs wids reps]←⍉⊃trans¨[α ω]
         mpads←-wids-⊂⌈/wids
         rpads←2#⊂∧¨/reps
-        padded←pad⍤1 ⍉[lmrs◇mpads◇rpads]
+        padded←pad¹ ⍉[lmrs◇mpads◇rpads]
         ⊃¨↓⍉padded
     }
     trans←{

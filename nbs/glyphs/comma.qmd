@@ -16,12 +16,12 @@ Function. Hanzi: `连` (`連`). Ranks: `∞` monadic, `∞ ∞` dyadic
 1 2,3 4            ⍝ 1 2 3 4
 ```
 
-There is no laminate. `[x◇y]` has `x` and `y` as its major cells, along a new leading axis. `x,⍤0 y` pairs the items of `x` and `y` along a new last axis.
+There is no laminate. `[x◇y]` has `x` and `y` as its major cells, along a new leading axis. `x,⁰y` pairs the items of `x` and `y` along a new last axis.
 
 ```bpl
 x←1 2 ◇ y←3 4
 [x◇y]            ⍝ [1 2◇3 4]
-x,⍤0 y             ⍝ [1 3◇2 4]
+x,⁰y             ⍝ [1 3◇2 4]
 ```
 
 ## Inverse
@@ -31,5 +31,5 @@ x,⍤0 y             ⍝ [1 3◇2 4]
 ```bpl
 ,⁻1 2 3           ⍝ 1 2 3
 1 2,⁻1 2 3 4      ⍝ 3 4
-,↢3 4∘⁻1 2 3 4    ⍝ 1 2
+,↢3 4 ⁻ 1 2 3 4   ⍝ 1 2
 ```

@@ -222,7 +222,7 @@ alt ← {  ⍝ Alternant.
   [r c]←ρω  ⍝ matrix ω
   0ₓ=r?⍹⌿,ω;
   1ₓ≥c?⍶⌿,ω;
-  M←(ιr)~⍤1⍪ιr  ⍝ minors
+  M←(ιr)~¹⍪ιr  ⍝ minors
   ω.[: 0]⍶.⍹∇¨⊂₁ ₂[M 1↓ιc]⌷ω
 }
 
@@ -277,7 +277,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
   α←≢ω #₋₁ [2 1]ρ0 1  ⍝ Default is unit k-cell.
   b←,⍠(2ₓ=ρρα # 0)α
   p←(2⌊ρρα ↓ 1 1,ρω)ρω  ⍝ Points to evaluate.
-  d←,⍶⌿ ⍤1 ⍉×-b,.-p
+  d←,⍶⌿ ¹ ⍉×-b,.-p
   ⍶/⍬?⌈/d;5ₓ⊥d
 }
 
@@ -309,7 +309,7 @@ stdev ← {√(+/÷≢ ω²)-(+/÷≢ ω)²}  ⍝ Standard deviation.
 
 NormRand ← {                                 ⍝ Random numbers with a normal distribution
   depth←10*9                                 ⍝ randomness depth
-  [x y]←⊂⍤¯1 ≥¿depthρ⍨2,ω ÷ depth          ⍝ two random variables within ]0;1]
+  [x y]←⊂⁻¹ ≥¿depthρ⍨2,ω ÷ depth          ⍝ two random variables within ]0;1]
   (¯2×⊛x * 0.5)×1○π2×y                       ⍝ Box-Muller distribution
 }
 
@@ -375,7 +375,7 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
   pol_car←{  ⍝ polar from cartesian (default).
     radius←{√+⌿ω²}  ⍝ radius (pythagorus).
     angle←{  ⍝ phase angle.
-      [x y]←⊂⍤¯1 ω  ⍝ x and y coordinates.
+      [x y]←⊂⁻¹ ω  ⍝ x and y coordinates.
       [on off]←$t $f=⊂0=x  ⍝ points on/off y axis.
       atan←3○⁻y÷x+on  ⍝ arctan y÷x (avoiding y÷0).
       qne←off×atan + on×π0.5×2-×y
@@ -386,7 +386,7 @@ polar ← {  ⍝ Polar from/to cartesian coordinates.
     radiusω lam angleω  ⍝ (2,···) array of polar coordinates.
   }
   car_pol←{  ⍝ cartesian from polar.
-    [r o]←⊂⍤¯1 ω  ⍝ radius and phase angle.
+    [r o]←⊂⁻¹ ω  ⍝ radius and phase angle.
     r×2○o lam r×1○o  ⍝ r×cos(ø), r×sin(ø).
   }
   lam←{⊃[α ω]}

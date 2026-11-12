@@ -29,5 +29,5 @@ Characters shift by code point. Character differences are exact integers.
 
 ```bpl
 10-⁻3     ⍝ 7
--↢3∘⁻7    ⍝ 10
+-↢3 ⁻ 7   ⍝ 10
 ```

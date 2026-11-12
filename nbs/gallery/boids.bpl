@@ -15,7 +15,7 @@ frame←{
   speed←|v
   v×←turn× 1.5⌈3⌊speed ÷ speed
   p⊢←∨⁻ 500|∨p+v
-  corners←,⍤2∨ p + v÷|v ×⊗ [11 5×○2.5 5×○¯2.5]
+  corners←,²∨ p + v÷|v ×⊗ [11 5×○2.5 5×○¯2.5]
   heading←⊢/∧v
   colour←0.45+0.35×2○heading+⊗0 2.1 4.2
   ["triangles":corners,colour,0.9]

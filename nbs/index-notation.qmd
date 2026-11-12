@@ -23,7 +23,7 @@ Each index has its length from the start. BPL doesn't infer a range from the rea
 
 ## A neural network
 
-This network has one hidden layer of tanh units (`7○`) and fits `y` from `x` by mean squared error. `p` holds its parameters. `mlp` is the tacit form, where `b(+⍤1)` adds the bias to each row. In the index form, `mlpi`, `n` names the samples, `i` the inputs and `h` the hidden units. Each line of `mlpi` gives its formula for one sample and one unit. `a` is the tanh of the bias at `h` plus the sum over `i` of `x` at `n i` times `w` at `i h`. Both forms give the same loss and the same gradient:
+This network has one hidden layer of tanh units (`7○`) and fits `y` from `x` by mean squared error. `p` holds its parameters. `mlp` is the tacit form, where `b(+¹)` adds the bias to each row. In the index form, `mlpi`, `n` names the samples, `i` the inputs and `h` the hidden units. Each line of `mlpi` gives its formula for one sample and one unit. `a` is the tanh of the bias at `h` plus the sum over `i` of `x` at `n i` times `w` at `i h`. Both forms give the same loss and the same gradient:
 
 ```bpl
 •prefs ["seed":42]
@@ -31,7 +31,7 @@ x←¯0.5+¿[64 8]ρ0 ◇ y←1○+/x
 p←["w":0.5×¯0.5+¿[8 16]ρ0 "b":16ρ0 "v":0.1×¯0.5+¿16ρ0 "c":0]
 mlp←{
   [x y]←α ◇ [w b v c]←ω
-  h←7○b(+⍤1)x+.×w
+  h←7○b(+¹)x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
 [x y]mlp p                     ⍝ 0.3262591588
@@ -61,9 +61,9 @@ heads←{h←0 2 1 3⍉ω ◇ (¯2↓ρh , ×/¯2↑ρh)ρh}
 attn←{
   [wqkv wo]←α
   [q k v]←1 3 0 2 4⍉ω+.×wqkv
-  s←mask(+⍤2) q+.×⍤2⍉⍤2⁝k ÷ √(ρq)₋₁
+  s←mask(+²) q+.×²⍉²k ÷ √(ρq)₋₁
   e←*s-⌈/s
-  (heads e÷+/e +.×⍤2 v)+.×wo
+  (heads e÷+/e +.×² v)+.×wo
 }
 attni←{
   [wqkv wo]←α
@@ -92,7 +92,7 @@ Line by line, in `attni`:
 
 This objective scores how well a mixture of Gaussian components fits a set of points, with a prior on each component's precision. `gp` holds each component's log weight `alpha` and mean `mu`. Its precision factor has the exponentials of `q` on its diagonal and `l` below it. `low` masks `l` to the part below the diagonal. `eye` is the identity matrix. `•detach` makes the log-sum-exp shifts constants to `∂`.
 
-`gmm` is the rank form. `l×⍤2 low` masks each component's matrix, `(*q)×⍤[1 2]eye` puts each component's row of `*q` on a diagonal, `⍉⍤2` transposes each component's factor, and `⌿` folds along the first axis, the components. In the index form, `gmmi`, `n` names the points, `k` the components, and `d` and `e` the dimensions. Both forms give the same objective and the same gradient:
+`gmm` is the rank form. `l×² low` masks each component's matrix, `(*q)×¹ ²eye` puts each component's row of `*q` on a diagonal, `⍉²` transposes each component's factor, and `⌿` folds along the first axis, the components. In the index form, `gmmi`, `n` names the points, `k` the components, and `d` and `e` the dimensions. Both forms give the same objective and the same gradient:
 
 ```bpl
 •prefs ["seed":42]
@@ -100,13 +100,13 @@ gx←¿[50 4]ρ0 ◇ eye←=⊗⍨ι4 ◇ low←>⊗⍨ι4
 gp←["alpha":¿3ρ0 "mu":¿[3 4]ρ0 "q":0.1×¿[3 4]ρ0 "l":0.1×¿[3 4 4]ρ0]
 gmm←{
   [alpha mu q l]←ω
-  L←l×⍤2 low
-  Q←L+(*q)×⍤[1 2]eye
-  sq←+/⊼(α(-⍤1)⍤[2 1]mu)+.×⍤2⍉⍤2⁝Q
+  L←l×² low
+  Q←L+(*q)×¹ ²eye
+  sq←+/⊼(α(-¹)² ¹mu)+.×²⍉²Q
   t←(alpha++/q)-0.5×sq
   m←⌈⌿•detach t
   am←⌈/•detach alpha
-  (+/m+⊛+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
+  (+/m+⊛+⌿*t-¹m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
 }
 gx gmm gp                      ⍝ ¯0.8795002466
 gmmi←{
@@ -125,7 +125,7 @@ g←gx gmm∂ gp ◇ h←gx gmmi∂ gp
 1E¯12>⌈/,|g.l-h.l              ⍝ $t
 ```
 
-Each form reads better in different lines. Rank suits the lines that work on whole components: `⍤2` and `⍤[1 2]` pair each component's matrix and row, and `⌿` folds along the components. Index notation suits `sq`. There `α.[n e]-mu.[k e]` pairs every point with every mean by name, where the rank form needs the nested Rank `α(-⍤1)⍤[2 1]mu`. `+.×⍠e` also names the axis that the product sums along.
+Each form reads better in different lines. Rank suits the lines that work on whole components: `²` and `¹ ²` pair each component's matrix and row, and `⌿` folds along the components. Index notation suits `sq`. There `α.[n e]-mu.[k e]` pairs every point with every mean by name, where the rank form needs the nested Rank `α(-¹)² ¹mu`. `+.×⍠e` also names the axis that the product sums along.
 
 ## Why it works this way
 

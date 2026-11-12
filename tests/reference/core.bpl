@@ -1725,7 +1725,7 @@ k←0 2 1 2 ◇ k⍚[- ⊢ 10×] 1 2 3 4   ⍝ ¯1 20 3 40
 (0<⊣/)⍚[1 ⊢] [¯1 2◇3 4]   ⍝ [1 1◇3 4]
 
 ⍝ — A result of one item spreads across each of its cells, even where other cases' cells differ in shape
-0 1 2⍚[5 (1↓)⍤1 ⊢] [1 2 3◇4 5 6◇7 8 9]   ⍝ [5 5 5◇5 6 0◇7 8 9]
+0 1 2⍚[5 (1↓)¹ ⊢] [1 2 3◇4 5 6◇7 8 9]   ⍝ [5 5 5◇5 6 0◇7 8 9]
 
 ⍝ agenda:singleton-fill — A one-item list fills a cell even when only one cell picks its case
 0 1⍚[[5] ⊢] [1 2 3◇4 5 6]   ⍝ [5 5 5◇4 5 6]
