@@ -133,7 +133,7 @@ um←(300000ρι200ₓ)ₓ₁ ◇ jv←300000ρι200ₓ ◇ g←∊(•explain "
 [$t $t $t]
 
 ⍝ — `∂` of a dfn under static kinds runs from a program that holds the whole call, its value and its derivative together. The first call with given argument types and shapes builds the program by tracing the call, later calls replay it, and both give what `∂` of a train gives, which runs without a program. Each of the three calls runs from a program
-f←{+/α+ω×ω} ◇ i←+/∘(⊣+⊢×⊢) ◇ e←•explain "[3 f∂ 1.5 2.5 ; 3 f∂ 1.5 2.5 ; 3ₓ f∂ [1 2]ₓ]" ◇ [e.value ; e.value≡[3 i∂ 1.5 2.5 ; 3 i∂ 1.5 2.5 ; 3ₓ i∂ [1 2]ₓ] ; ≢e.programs.event]
+f←{+/α+ω×ω} ◇ i←+/+↢⊼ ◇ e←•explain "[3 f∂ 1.5 2.5 ; 3 f∂ 1.5 2.5 ; 3ₓ f∂ [1 2]ₓ]" ◇ [e.value ; e.value≡[3 i∂ 1.5 2.5 ; 3 i∂ 1.5 2.5 ; 3ₓ i∂ [1 2]ₓ] ; ≢e.programs.event]
 [[3 5 ; 3 5 ; 2 4] ; $t ; 3ₓ]
 
 ⍝ — A program's logical functions on Booleans run on the Boolean table's kernels, as the interpreter's do. The mask that `∨` and `~` give is the gradient of `ω×` it. Both calls run from the program

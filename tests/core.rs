@@ -511,6 +511,25 @@ fn operator_categories_and_singleton_replicate() {
 }
 
 #[test]
+fn operator_stage_boundaries() {
+    let s = Session::new();
+    s.eval("w←1 2 3 ◇ m←2 3ρι6 ◇ op←⌸ ◇ ops←[\"key\":⌸]");
+    for (stage, grouped) in [
+        ("0 1 0 ⊂⊢∘⌸ \"abc\"", "0 1 0 (⊂⊢)⌸ \"abc\""), ("+/÷≢∘⍤1⁝m", "(+/÷≢)⍤1⁝m"), ("+/÷≢∘¹m", "(+/÷≢)¹m"),
+        ("+↢3∘⁻10", "(+↢3)⁻10"), ("+/w×∘∂ 4 5 6", "(+/w×)∂ 4 5 6"), ("custom←{⍶ω} ◇ -÷∘custom 2", "(-÷){⍶ω} 2"),
+        ("0 1 0 ⊂⊢∘op \"abc\"", "0 1 0 (⊂⊢)op \"abc\""), ("0 1 0 ⊂⊢∘ops.key \"abc\"", "0 1 0 (⊂⊢)ops.key \"abc\""),
+        ("+/÷≢∘⍤1∘¨[m m]", "((+/÷≢)⍤1)¨[m m]"), ("-÷∘∘+ 2", "(-÷)∘+ 2"), ("+/÷≢∘ ⍤1⁝m", "(+/÷≢)⍤1⁝m"),
+        ("+/÷≢ ∘⍤1⁝m", "(+/÷≢)⍤1⁝m"), ("f←+/÷≢∘⍤1 ◇ f m", "(+/÷≢)⍤1⁝m"), ("√ +/÷≢∘⍤1⁝m", "√ (+/÷≢)⍤1⁝m"),
+        ("≢ -÷ ∘ ¨ 1 4 9", "3ₓ"), ("≢ +/÷≢ ∘ ⍤ 1 m", "2ₓ"), ("T←[1 2;3 4] ◇ i←[0] ◇ ≢ -÷∘¨T.¨[i]", "2ₓ"),
+    ] {
+        let expected = evaluated(&s, grouped).unwrap();
+        assert_same(evaluated(&s, stage), &expected);
+    }
+    equiv_in(&s, "√∘+/1 3 5", "(√+)/1 3 5");
+    assert!(s.eval("∘⌸").error.is_some());
+}
+
+#[test]
 fn long_assignment_chains() { assert_same(Session::new().eval(&format!("{}7", "a←".repeat(10_000))).value, &float(7.0)); }
 
 #[test]

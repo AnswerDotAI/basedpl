@@ -6,7 +6,7 @@ Use spaces to show the top-level structure of an expression. Keep parentheses wh
 
 A function between two runs takes a space on each side, as in `a×b + c`. A space on one side only changes the grouping: `a×b +c` is the strand `[a×b ; +c]`, and `a×b+ c` applies the train `a×b+` to `c`.
 
-`⁝` separates a derived function's operand from its right argument where a boundary is needed: `f⍣3⁝0`, `10÷√1++/⍠i⁝m`, `(+/÷≢)⍤1⁝2 3ρι6`. It stops literal stranding without grouping the expression before it. A vector argument can touch the operand in brackets: `≥⍣2[1 2 3]`. Add nothing where tokens already stay distinct, as in `+/⍤1m` or `(+/÷≢)⍠d⊼n`.
+`⁝` separates a derived function's operand from its right argument where a boundary is needed: `f⍣3⁝0`, `10÷√1++/⍠i⁝m`, `+/÷≢∘⍤1⁝2 3ρι6`. It stops literal stranding without grouping the expression before it. A vector argument can touch the operand in brackets: `≥⍣2[1 2 3]`. Add nothing where tokens already stay distinct, as in `+/⍤1m` or `+/÷≢∘⍠d⊼n`.
 
 With a left argument as well, `⁝` works the same way, as in `Q+.×⍠e⁝r`. Parentheses around the derived function also show it between its arguments: `10 20(+⍤1)m`. Use whichever reads better. Keep parentheses where a compound operand or nested train needs grouping, as in `⌊@(10×)x`.
 
@@ -16,7 +16,7 @@ Lowercase `j` reads most clearly in complex literals, as in `3j4`. Uppercase `J`
 
 Brackets build a list from names or expressions. A bare literal list, such as `1 2 3`, is a shorthand. In brackets, a list of names reads as a list at a glance, as in `[a b]`, even where `a b` would also work. `[n 2]ρ0`, `[x],y`, `[a◇b]` and `f⍤1 m` read more directly than APL's `(n,2)ρ0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. Where no item of a bracket list contains a space, spaces separate the items more lightly than `;`: `[i j]` rather than `[i;j]`.
 
-An operand often reads best touching its operator, with parentheses around a compound operand, as in `⌊@(10×)x` and `(≢⊢)⌸x`. Spacing also makes a run into an operand: after a dyadic operator and a space, the whole next run is the operand, as in `⌊@ 10× x`. When both operands are compound, parentheses around each show the grouping: `(•ucs 9)@(⍸tabs)ω`. An operand keeps its parentheses when a left argument comes before it, as in `tree (α⍢)/ next`. Report any case where none of these forms reads well.
+Before an operator, `∘` finishes the whole current run as its left operand: `≢⊢∘⌸x`, `+/÷≢∘⍤1m`. Keep parentheses where they show nested structure more clearly. A compound right operand keeps its grouping, as in `⌊@(10×)x`. Spacing also makes a run into an operand: after a dyadic operator and a space, the whole next run is the operand, as in `⌊@ 10× x`. When both operands are compound, parentheses around each show the grouping: `(•ucs 9)@(⍸tabs)ω`. An operand can keep its parentheses when a left argument comes before it, as in `tree (α⍢)/ next`. Report any case where none of these forms reads well.
 
 A train reads more directly than naming an argument twice: `+/÷≢ v` rather than `+/v ÷ ≢v`. A tacit form usually reads more directly than a dfn. A dfn reads better where the tacit form would be longer or clearly awkward.
 

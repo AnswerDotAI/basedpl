@@ -1502,7 +1502,7 @@ N←3 1 3 2 3 ◇ ⌈⌿↣=N   ⍝ $t $f $t $f $t
 ⍝ aplcart/table.tsv:745 — Duplicate Y cells where indicated by Av
 Av←1 0 1
 Y←3 2ρι6ₓ
-Av+↢1↣#Y   ⍝ [0 1◇0 1◇2 3◇4 5◇4 5]ₓ
+(Av+1)#Y   ⍝ [0 1◇0 1◇2 3◇4 5◇4 5]ₓ
 
 ⍝ aplcart/table.tsv:746 — Using Boolean array A for expanding Yv (Yv's elements at 1s in A)
 A←$t $f $t $f $t
@@ -1510,7 +1510,7 @@ Yv←[2 3 4]ₓ
 Yv@[⊢] +A   ⍝ [2 0 3 0 4]ₓ
 
 ⍝ aplcart/table.tsv:747 — Initialise a matrix with Js columns and no rows
-Js←4 ◇ 0↣,↣ρJs   ⍝ 0 4ρ0
+Js←4 ◇ [0 Js]ρ0   ⍝ 0 4ρ0
 
 ⍝ aplcart/table.tsv:748 — Are any true?
 B←[1 0 0◇0 0 0] ◇ ∨/∘,B   ⍝ 1
@@ -1530,7 +1530,7 @@ Y←[1 2;3 4]
 [X]⌷⊃Y   ⍝ 2 3
 
 ⍝ aplcart/table.tsv:753 — Continued fraction convergents with terms N; Reduce each prefix to preserve right association
-N←2 3 4 ◇ (+↢÷/)¨,\N   ⍝ 2 2.333333333333333 2.307692307692307
+N←2 3 4 ◇ +↢÷/∘¨,\N   ⍝ 2 2.333333333333333 2.307692307692307
 
 ⍝ aplcart/table.tsv:754 — Turn off all 1s before first 0 (remove leading 1s)
 B←1 1 0 1 0 1 0 ◇ ∧\↣<B   ⍝ $f $f $f $t $f $t $f
@@ -1551,7 +1551,7 @@ B←1 1 0 1 0 1 0 ◇ ≠⍀↣>B   ⍝ $f $f $f $f $t $f $f
 ⍝ aplcart/table.tsv:759 — Transpose matrix Ym on condition Bs
 Bs←$t
 Ym←2 3ρι6ₓ
-Bs⌽↢0 1↣⍉Ym   ⍝ [0 3◇1 4◇2 5]ₓ
+(Bs⌽0 1)⍉Ym   ⍝ [0 3◇1 4◇2 5]ₓ
 
 ⍝ aplcart/table.tsv:760 — Count of occurrences of each unique major cell
 Y←3 1 3 2 ◇ ⊢↢≢⌸Y   ⍝ [2 1 1]ₓ
@@ -1576,10 +1576,10 @@ Yv←4 5 6
 [Xv◇Yv]   ⍝ [1 2 3◇4 5 6]
 
 ⍝ aplcart/table.tsv:766 — Are characters of D lowercase?
-D←"Abc 19 Σς!"  ◇ 1↣•c↣≠D   ⍝ $f $t $t $f $f $f $f $f $t $f
+D←"Abc 19 Σς!"  ◇ 1•c≠⊢ D   ⍝ $f $t $t $f $f $f $f $f $t $f
 
 ⍝ aplcart/table.tsv:767 — Are characters of D uppercase?
-D←"Abc 19 Σς!"  ◇ ¯1↣•c↣≠D   ⍝ $t $f $f $f $f $f $f $t $f $f
+D←"Abc 19 Σς!"  ◇ ¯1•c≠⊢ D   ⍝ $t $f $f $f $f $f $f $t $f $f
 
 ⍝ aplcart/table.tsv:768 — Apply Z as constant function if array, but like normal dyadic function if function
 X←1
@@ -1962,7 +1962,7 @@ Ym←2 3ρι6ₓ ◇ ι∘≢↣,Ym   ⍝ [0 0 1 2◇1 3 4 5]ₓ
 ⍝ aplcart/table.tsv:870 — Starting points for Y in indices pointed by Iv
 Iv←2 1
 Y←3 1 3 2
-Iv∊↢ι↢≢Y   ⍝ $t $t
+Iv∊ι≢Y   ⍝ $t $t
 
 ⍝ aplcart/table.tsv:871 — Sort Ascending
 Y←3 1 3 2 ◇ ⊂∘⍋↣⌷Y   ⍝ 1 2 3 3
@@ -1992,7 +1992,7 @@ Ym←2 3ρι6ₓ ◇ ⌽∘⍉∘⌽Ym   ⍝ [5 2◇4 1◇3 0]ₓ
 ⍝ aplcart/table.tsv:881 — Matrix with Is rows, each consisting of Yv
 Is←2
 Yv←4 5 6
-Is#↢⍉↢⍪Yv   ⍝ [4 5 6◇4 5 6]
+Is#⍉⍪Yv   ⍝ [4 5 6◇4 5 6]
 
 ⍝ aplcart/table.tsv:882 — Number of occurrences of scalar Xs in array Y
 Xs←9
@@ -2378,7 +2378,7 @@ J←3 8 15 ◇ 2↣⊥⁻J   ⍝ [0 0 1 1◇1 0 0 0◇1 1 1 1]
 Nm←[0 1◇¯1 0] ◇ ⍉≡⌹ Nm   ⍝ $t
 
 ⍝ aplcart/table.tsv:985 — Show all digits of integer Js (unknown digits as “_”)
-[3.41252E10;(0↣⍕) 3.41252E10]   ⍝ 34125200000 "34125200000"
+[3.41252E10;0↣⍕ 3.41252E10]   ⍝ 34125200000 "34125200000"
 
 ⍝ aplcart/table.tsv:986 — Vertically stack digits of ιIs (helps locating column positions); optional {X} instantiated as dyadic use
 Js←4 ◇ (1 0⍕⍉∘(10 10⊤ι))Js   ⍝ ["0000"◇"0123"]
@@ -2474,7 +2474,7 @@ N←4 9 16 ◇ π4×*↢2 N
 201.06192982974676 1017.8760197630929 3216.990877275948
 
 ⍝ aplcart/table.tsv:1022 — Cube Root
-N←4 9 16 ◇ *↢÷↢3 N
+N←4 9 16 ◇ 3√N
 1.5874010519681994 2.080083823051904 2.5198420997897464
 
 ⍝ aplcart/table.tsv:1023 — Probabilistic NOR
@@ -2683,7 +2683,7 @@ Bv←$f $f $t $t $f ◇ ⊥⍨0=⌽ Bv   ⍝ 2ₓ
 ⍝ aplcart/table.tsv:1078 — Future value of cash flows N at interest Ms
 Ms←0.1
 N←100 200 300
-Ms 1↣+↣⊥ N   ⍝ 641
+(1+Ms)⊥N   ⍝ 641
 
 ⍝ aplcart/table.tsv:1079 — Base-Is digit sum
 Is←10
@@ -2697,7 +2697,7 @@ Is +/⊥⁻ J   ⍝ 6 9 7
 ⍝ aplcart/table.tsv:1081 — Decoding numeric codes J packed with field widths Iv (ZYYYZZZ:1 3 2)
 Iv←1 3 2
 J←123456 987654
-Iv 10↣*↣⊤ J   ⍝ [1 234 56◇9 876 54]
+(10*Iv)⊤J   ⍝ [1 234 56◇9 876 54]
 
 ⍝ aplcart/table.tsv:1086 — Convert letters to their positions in the alphabet
 D←"Abc 19 Σς!"  ◇ ($aι1↣•c)D   ⍝ [0 1 2 26 26 26 26 26 26 26]ₓ
@@ -2797,10 +2797,10 @@ r←1=↢¿ρ↢2 Jv
 Jv≡ρr ∧ ∧/,r∊0 1   ⍝ $t
 
 ⍝ aplcart/table.tsv:1110 — Jacobsthal-Lucas number
-Js←4 ◇ 2↣*+¯1↣* Js   ⍝ 17
+Js←4 ◇ 2*+¯1* Js   ⍝ 17
 
 ⍝ aplcart/table.tsv:1111 — Hartley kernel
-N←4 9 16 ◇ 1↣○+2↣○ N
+N←4 9 16 ◇ 1○+2○ N
 ¯1.4104461161715403 ¯0.49901177664292035 ¯1.24556279698845
 
 ⍝ aplcart/table.tsv:1112 — Residue after dividing N by M but replacing 0 with M
@@ -3025,7 +3025,7 @@ Y←2 3ρι6ₓ ◇ -∘≢↑¯1↣↓ Y   ⍝ [0 0 0◇0 1 2]ₓ
 ⍝ aplcart/table.tsv:1173 — Resign: Transfer of sign from M to N
 M←¯1 0 1
 N←2 ¯3 4
-M ×↢×⍨↢| N   ⍝ ¯2 0 4
+×M × |N   ⍝ ¯2 0 4
 
 ⍝ aplcart/table.tsv:1174 — Normalisation by Infinity-norm
 (⊢÷⌈⌿∘|) 3 4   ⍝ 0.75 1
@@ -3287,7 +3287,7 @@ Is ×ρ(1↑⍨↢-⊢) Js   ⍝ 0 0 0 1 0 0 0 1
 ⍝ aplcart/table.tsv:1248 — Increasing absolute value without change of sign
 M←1
 N←¯3 0 2
-M ⊢↢××+↢| N   ⍝ ¯4 0 3
+×N × M+|N   ⍝ ¯4 0 3
 
 ⍝ aplcart/table.tsv:1249 — Jacobsthal number
 Js←4 ◇ 3÷⍨(2↣*-¯1↣*) Js   ⍝ 5
@@ -3941,9 +3941,9 @@ Yv←ι6ₓ
 Is ⍉⊢ρ⍨≢↣÷⍨,⊣ Yv   ⍝ [0 2 4◇1 3 5]ₓ
 
 ⍝ aplcart/table.tsv:1424 — Distribute major cells of Y into Is (default Is:≢Y) groups as evenly as possible
-UnZip ← |↢ι↢≢⊢↢⊂⌸⊢
+UnZip ← |↢(ι≢) ⊂⊢∘⌸ ⊢
 var ← "abcdef"
-[1 UnZip var;2 UnZip var;3 UnZip var;4 UnZip var;5 UnZip var;6 UnZip var;7 UnZip var;8 UnZip var;(|∘ι∘≢⊢↢⊂⌸⊢) var]
+[1 UnZip var;2 UnZip var;3 UnZip var;4 UnZip var;5 UnZip var;6 UnZip var;7 UnZip var;8 UnZip var;(ι≢ ⊂⊢∘⌸ ⊢) var]
 ⍝ =>
 [["abcdef"] ["ace" "bdf"] ["ad" "be" "cf"] ["ae" "bf" "c" "d"] ["af" "b" "c" "d" "e"] ["a" "b" "c" "d" "e" "f"] ["a" "b" "c" "d" "e" "f"] ["a" "b" "c" "d" "e" "f"] ["a" "b" "c" "d" "e" "f"]]
 
@@ -7803,7 +7803,7 @@ Ym←[1 "ab"◇2 "cd"◇3 "ef"]  ◇ ⊂₀Ym
 [1 2 3;"ab" "cd" "ef"]
 
 ⍝ aplcart/tt.tsv:362 — Corner element of a (non-empty) array Y[1;1;1…]
-Y←1+2 3ρι6ₓ ◇ ↑∘,Y   ⍝ 1
+Y←1+2 3ρι6ₓ ◇ ↑,Y   ⍝ 1
 
 ⍝ aplcart/tt.tsv:376 — Count of trailing ones
 Bv←$t $f $t $t ◇ ⊥⍨Bv   ⍝ 2ₓ
@@ -7881,10 +7881,14 @@ Y←[1 [2 3] 4] ◇ ,¨Y   ⍝ [[1] [2 3] [4]]
 ⍝ aplcart/tt.tsv:530 — Euclidean distance between two points in N-space
 Mv←1 2 3
 Nv←4 6 3
-Mv *↢÷↢2∘(1↣⊥)∘(*↢2)∘- Nv   ⍝ 5
+distance←√+/ ⊼-
+Mv distance Nv   ⍝ 5
 
 ⍝ aplcart/tt.tsv:532 — Euclidean distance table for points in N-space (one point per row)
-Nm←[0 0◇3 0◇3 4] ◇ (*↢÷↢2∘(1↣⊥)∘(*↢2)∘-)⍤1⍤1 99⍨Nm
+distance←√+/ ⊼-
+Nm←[0 0◇3 0◇3 4]
+distance⍤1⍤1 99⍨Nm
+⍝ =>
 [0 3 5◇3 0 4◇5 4 0]
 
 ⍝ aplcart/tt.tsv:536 — Euler's totient function (fastest up to about 1000)
@@ -8137,7 +8141,7 @@ Bm←[$f $t $f◇$f $f $t◇$t $f $f] ◇ ~0∊,∘ ×∘|≤≤⊗⍨∘ι∘�
 Bm←[$f $t $f◇$f $f $t◇$t $f $f] ◇ ~0∊,∘ ×∘|≤<⊗⍨∘ι∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:898 — Is Dv a palindrome?
-Dv←"racecar" ◇ ⌽≡⊢ Dv   ⍝ $t
+Dv←"racecar" ◇ ≡↢⌽ Dv   ⍝ $t
 
 ⍝ aplcart/tt.tsv:921 — Is Js a deficient number?; Reuse concrete inputs from aplcart/table.tsv:1384; execute this alternate recipe independently
 Js←8 ◇ +⍨>(1⊥↢∪⊢∨ι) Js   ⍝ $t
@@ -8426,7 +8430,7 @@ N←¯2 0 3 ◇ 0↣≥N   ⍝ $t $t $f
 N←¯2 0 3 ◇ 0↣≠N   ⍝ $t $f $t
 
 ⍝ aplcart/tt.tsv:1268 — Normalisation by Infinity-norm
-N←¯3 4 ◇ ⊢÷⌈⌿∘| N   ⍝ ¯0.75 1
+N←¯3 4 ◇ ÷↢(⌈⌿|) N   ⍝ ¯0.75 1
 
 ⍝ aplcart/tt.tsv:1270 — Normalisation by Is-norm
 Is←2
@@ -8434,7 +8438,7 @@ N←3 4
 Is ⊢÷⊣*↢÷⍨(1⊥*⍨↢|) N   ⍝ 0.6 0.8
 
 ⍝ aplcart/tt.tsv:1274 — Normalise N so that sum is 1
-N←4 9 16 ◇ ⊢÷+⌿ N
+N←4 9 16 ◇ ÷↢(+⌿) N
 0.1379310344827586 0.3103448275862069 0.5517241379310345
 
 ⍝ aplcart/tt.tsv:1280 — Not all true?
@@ -8609,16 +8613,16 @@ Y←3 1 3 2
 f⍨↢g⍨Y   ⍝ 5 4 4 5
 
 ⍝ aplcart/tt.tsv:1564 — Rotate 180°
-Ym←2 3ρι6ₓ ◇ ⌽∘⊖Ym   ⍝ [5 4 3◇2 1 0]ₓ
+Ym←2 3ρι6ₓ ◇ ⌽⊖Ym   ⍝ [5 4 3◇2 1 0]ₓ
 
 ⍝ aplcart/tt.tsv:1566 — Rotate 90° clockwise
-Ym←2 3ρι6ₓ ◇ ⌽∘⍉Ym   ⍝ [3 0◇4 1◇5 2]ₓ
+Ym←2 3ρι6ₓ ◇ ⌽⍉Ym   ⍝ [3 0◇4 1◇5 2]ₓ
 
 ⍝ aplcart/tt.tsv:1568 — Rotate 90° counter-clockwise
-Ym←2 3ρι6ₓ ◇ ⍉∘⌽Ym   ⍝ [2 5◇1 4◇0 3]ₓ
+Ym←2 3ρι6ₓ ◇ ⍉⌽Ym   ⍝ [2 5◇1 4◇0 3]ₓ
 
 ⍝ aplcart/tt.tsv:1590 — Rounding to nearest integer (favouring up)
-N←¯2.5 ¯1.2 0.5 2.5 ◇ ⌊0.5+⊢ N   ⍝ [¯2 ¯1 1 3]ₓ
+N←¯2.5 ¯1.2 0.5 2.5 ◇ ⌊0.5+N   ⍝ [¯2 ¯1 1 3]ₓ
 
 ⍝ aplcart/tt.tsv:1591 — Rounding to nearest odd number (favouring away from 0)
 N←¯4 ¯2 0 2 4 ◇ ××↢⌊|+(1>2||) N   ⍝ [¯5 ¯3 0 3 5]ₓ
@@ -9540,11 +9544,11 @@ f2021 1 1 12 34 56 123
 2020 53 5 12 34 56 123000
 
 ⍝ aplcart/table.tsv:653 — Convert (⎕TS-style or Dyalog date number) date-times to microsecond precision ⎕TS-style time-stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
-(1000↣×)@6 [2024 2 29 12 34 56 123]
+1000↣×∘@6 [2024 2 29 12 34 56 123]
 2024 2 29 12 34 56 123000
 
 ⍝ aplcart/table.tsv:655 — Convert (⎕TS-style or Dyalog date number) date-times to nanosecond precision ⎕TS-style time-stamps; Prepared existing-array arithmetic with independently captured date components; Explicit timestamp: ISO week uses the year of its Thursday; subsecond components are rescaled arithmetically; No clock or general date-conversion API needed
-(1000000↣×)@6 [2024 2 29 12 34 56 123]
+1000000↣×∘@6 [2024 2 29 12 34 56 123]
 2024 2 29 12 34 56 123000000
 
 ⍝ aplcart/table.tsv:2188 — Trace of function application; Prepared tracing dop using first-class function values and explicit output; no function-source introspection required; Trace ordinary function values rather than reconstructing a function name through ⎕OR. Preserve monadic/dyadic calls and return the operand result
@@ -9676,7 +9680,7 @@ T←•csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 {⍬:⍬}¨ι3ₓ   ⍝ [(⍬:⍬) (⍬:⍬) (⍬:⍬)]
 
 ⍝ aplcart/table.tsv:1515 — Header-row matrix to records
-{K←↑ω ◇ (K↣:)¨↓1↓ω}["Name" "Age" "Zipcode"◇"Bob" "21" "30102"◇"Sally" "32" "43001"]
+{K←↑ω ◇ K↣:∘¨↓1↓ω}["Name" "Age" "Zipcode"◇"Bob" "21" "30102"◇"Sally" "32" "43001"]
 [["Name":"Bob" "Age":"21" "Zipcode":"30102"] ["Name":"Sally" "Age":"32" "Zipcode":"43001"]]
 
 ⍝ aplcart/table.tsv:1891 — Name–value pairs to a keyed record
@@ -9741,7 +9745,7 @@ T.[["aa" "bb"]]←1 2
 T   ⍝ "aa" "bb":1 2
 
 ⍝ aplcart/table.tsv:2167 — Apply a function to every record value
-(×↢2)¨["price":[10 20] "qty":[2 4]]   ⍝ ["price":[20 40] "qty":[4 8]]
+×↢2∘¨["price":[10 20] "qty":[2 4]]   ⍝ ["price":[20 40] "qty":[4 8]]
 
 ⍝ aplcart/table.tsv:2320 — Apply a function stored in a record
 T←["increment":{ω+1}] ◇ T.increment 5   ⍝ 6

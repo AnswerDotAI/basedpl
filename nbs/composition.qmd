@@ -26,6 +26,16 @@ v←2 4 9 ◇ +/÷≢ v             ⍝ 5
 v←2 4 9 ◇ +/÷≢v              ⍝ 0ₓ
 ```
 
+## Operators on trains
+
+Before an operator, `∘` finishes the current run as that operator's left operand. `⊂⊢∘⌸` is `(⊂⊢)⌸`, and `+/÷≢∘⍤1` is `(+/÷≢)⍤1`. The right operand of a dyadic operator follows as usual:
+
+```bpl
+m←2 3ρι6 ◇ +/÷≢∘⍤1m        ⍝ 1 4
+```
+
+The boundary includes the whole run on its left. Keep a left argument or an earlier function outside that run with spaces or parentheses. Named operators work the same way as glyphs. Before a function, `∘` remains [Atop](#atop-and-over).
+
 ## Identity functions
 
 In a train, `⊢` stands for the right argument and `⊣` for the left. A fork with `⊢` reads well where the argument appears once. `⊢÷+/` divides each item by the sum:
@@ -45,11 +55,13 @@ n←⊽⁻+÷ ◇ n 1.5              ⍝ 1.416666667
 
 ## Atop and Over
 
-[Atop](glyphs/jot.qmd), `f∘g`, applies `g` and then `f`. `X f∘g Y` is `f(X g Y)`. `⌊∘÷` divides, then rounds down:
+The two-function train `⌊÷` divides, then rounds down:
 
 ```bpl
-7 ⌊∘÷ 2                      ⍝ 3ₓ
+7 ⌊÷ 2                       ⍝ 3ₓ
 ```
+
+[Atop](glyphs/jot.qmd), `∘`, writes this composition explicitly. `f∘g` applies `g` and then `f`, as the train `f g` does. `X f∘g Y` is `f(X g Y)`.
 
 [Over](glyphs/circle-diaeresis.qmd), `f⍥g`, applies `g` to each argument before `f`. `X f⍥g Y` is `(g X)f(g Y)`. `=⍥≢` tests whether two lists have the same length:
 
@@ -95,20 +107,20 @@ x←3 ◇ x²                     ⍝ 9
 fahrenheit←32+1.8× ◇ fahrenheit⁻ 212   ⍝ 100
 ```
 
-A superscript straight after a number applies to the number. To invert a function that ends in a number, put the function in parentheses:
+A superscript straight after a number applies to the number. To invert a function that ends in a number, finish the function before `⁻`:
 
 ```bpl
-(+↢3)⁻ 10                   ⍝ 7
++↢3∘⁻10                     ⍝ 7
 ```
 
-Without the parentheses, `+↢3⁻` tries to invert the number `3`, which is a `DOMAIN` error. A space also groups the bound function: `+↢3 ⁻ 10` gives `7`. The signed superscript `3⁻¹` still means one third; `f⁻¹` on a function now means rank ¯1.
+`(+↢3)⁻10` and `+↢3 ⁻ 10` also give `7`. Without a boundary, `+↢3⁻` tries to invert the number `3`, which is a `DOMAIN` error. The signed superscript `3⁻¹` still means one third; `f⁻¹` on a function now means rank ¯1.
 
 ## Under
 
-[Under](glyphs/at.qmd), `f@g`, applies `f` to what `g` selects and writes the result back. `(10×)@[1 3]` multiplies items 1 and 3 by 10. `⌊@(10×)` rounds down to tenths: it scales by 10, rounds down, then scales back.
+[Under](glyphs/at.qmd), `f@g`, applies `f` to what `g` selects and writes the result back. `10×∘@[1 3]` multiplies items 1 and 3 by 10. `⌊@(10×)` rounds down to tenths: it scales by 10, rounds down, then scales back.
 
 ```bpl
-(10×)@[1 3] 1 2 3 4          ⍝ 1 20 3 40
+10×∘@[1 3] 1 2 3 4          ⍝ 1 20 3 40
 ⌊@(10×)1.25 2.78             ⍝ 1.2 2.7
 ```
 
@@ -122,8 +134,8 @@ Within a run, an operator's right operand is the one [token](terms.qmd#term-toke
 ≥⍣3⁝5                                       ⍝ 8
 m←["r":2 "c":3]ρι6ₓ ◇ i←"c" ◇ +/⍠i⁝m         ⍝ ["r":2]ρ[3 12]ₓ
 m←["r":2 "c":3]ρι6ₓ ◇ i←"c" ◇ 10÷√1++/⍠i⁝m  ⍝ ["r":2]ρ[5 2.773500981]
-(2×)⍣3⁝5                                    ⍝ 40
-(+/÷≢)⍤1⁝2 3ρι6                              ⍝ 1 4
+2×∘⍣3⁝5                                    ⍝ 40
++/÷≢∘⍤1⁝2 3ρι6                              ⍝ 1 4
 ```
 
 Add no separator where the tokens already stay distinct. A name never joins a literal strand, as in `f⍣n1`. A vector argument can touch its operand in brackets, as in `≥⍣2[1 2 3]`.
@@ -133,19 +145,19 @@ Add no separator where the tokens already stay distinct. A name never joins a li
 ```bpl
 w←[1 2◇3 4◇5 6] ◇ 10 20+⍤1⁝w                 ⍝ [11 22◇13 24◇15 26]
 w←[1 2◇3 4◇5 6] ◇ 10 20(+⍤1)w                ⍝ [11 22◇13 24◇15 26]
-m←2 3ρι6 ◇ (+/÷≢)⍤1m                         ⍝ 1 4
+m←2 3ρι6 ◇ +/÷≢∘⍤1m                         ⍝ 1 4
 ```
 
 ## Forms that read worse
 
-Each pair gives the same result.
+Each pair gives the same result with one argument.
 
 | Reads worse | Reads better |
 |---|---|
 | `{(+/ω)÷≢ω}` | `+/÷≢` |
 | `0.5×⊢+2÷⊢` | `⊽⁻+÷` |
-| `{ω÷+/ω}` | `⊢÷+/` |
-| `{ω×10}@[1 3]` | `(10×)@[1 3]` |
+| `{ω÷+/ω}` | `÷↢ +/` |
+| `{ω×10}@[1 3]` | `10×∘@[1 3]` |
 | `{+/ω}⍠0` | `+/₀` |
 | `{ω,1}` | `,↢1` |
 | `×⍨x` | `x²` |

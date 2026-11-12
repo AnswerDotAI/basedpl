@@ -21,6 +21,9 @@ def test_expression_parts():
     assert fn(mean, [2., 4., 9.]).py == 5.
     assert fn(plus.reduce, divide, b.tally, b.space, [2., 4., 9.]).py == 5.
     assert fn(plus.reduce, divide, b.tally, [2., 4., 9.]).py == 0
+    stage = b.bpl('∘')
+    matrix = b.Array(np.array([[2., 4.], [6., 8.]]))
+    teq(fn(plus.reduce, divide, b.tally, stage, b.rank, 1, matrix).py, [3., 7.])
     table = b.Array(a=[1, 2, 3], b=[4, 5, 6])
     selected = fn(table, b.dot, [[1, 0]])
     assert selected.keys == (('b', 'a'),)

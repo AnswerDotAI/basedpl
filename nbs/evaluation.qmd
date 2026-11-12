@@ -49,6 +49,8 @@ Operators bind before functions apply. An operator's left [operand](terms.qmd#te
 
 Each run counts as one token, as a parenthesised group does. An operator at the end of a run takes the next run as its right operand, as it takes a touching token: in `⌊@ 10× x`, the right operand of `@` is the run `10×`. An operator at the start of a run takes the previous run as its left operand: in `≢⊢ ⌸x`, the left operand of `⌸` is the run `≢⊢`. Names that hold operators count in both places.
 
+Before an operator, `∘` finishes the whole current run as its left operand: `⊂⊢∘⌸` is `(⊂⊢)⌸`. Spaces keep earlier functions and left arguments outside that run. Before a function, `∘` remains Atop. [Operators on trains](composition.qmd#operators-on-trains) gives examples.
+
 ```bpl
 m←2 3ρι6ₓ ◇ +/⍤1 m               ⍝ [3 12]ₓ
 m←2 3ρι6ₓ ◇ +/⍤1m                ⍝ [3 12]ₓ

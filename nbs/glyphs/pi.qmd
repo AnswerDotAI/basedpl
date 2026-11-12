@@ -25,5 +25,5 @@ Use [`○`](circle.qmd) to turn an angle into a unit-circle point.
 ```bpl
 π⁻π2      ⍝ 2
 2π⁻4      ⍝ π0.5
-(π↢2)⁻4   ⍝ 8÷π1
+π↢2∘⁻4    ⍝ 8÷π1
 ```

@@ -34,7 +34,7 @@ An integer divided by zero gives the integer limit of its sign: i64's under dyna
 
 ```bpl
 12÷⁻4     ⍝ 3
-(÷↢4)⁻3   ⍝ 12
+÷↢4∘⁻3    ⍝ 12
 ```
 
 ## Errors

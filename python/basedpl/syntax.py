@@ -47,7 +47,7 @@ def parse(text):
     return node(*_parse(text))
 
 def linear(text):
-    "The full linear form of BPL `text`: the ordinary APL that BPL reads. Literal strands are in brackets. Runs of several tokens are in parentheses, except beside a run-ending dot. A bracket list whose items hold several tokens has ` ; ` between its items. A literal that touches the name before it, as the `1` in `x1` does, is in parentheses."
+    "Show BPL's structural grouping. Literal strands are in brackets and multi-token runs in parentheses, except beside a run-ending dot. Multi-token bracket items use ` ; `. A literal touching a name, as in `x1`, is parenthesized. Operator-stage `∘` stays explicit: operator names resolve at evaluation."
     dotted = lambda n: n and n.kind == 'Run' and n.children[-1].text == "."
     def form(n, before=None):
         if n.kind in ('Comment', 'Error'): return n.text

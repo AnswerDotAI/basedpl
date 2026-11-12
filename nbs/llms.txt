@@ -40,7 +40,7 @@ Entry: Dyalog diff, example, defining page. Index, not reference: read a feature
 - [Glyphs](glyphs.html.md): every glyph, name. page `glyphs/<name>.html.md`: read before use.
 - [Removed](glyphs.html.md#language-wide-differences-from-dyalog-apl): `Y[I]` indexing, `f[A]` axes, `∘.f`, windowed reduce, laminate.
 - [`@`](glyphs/at.html.md) Under: `f@g`: `f` on `g`'s selection, written back (BQN `⌾`, not Dyalog `@`): `⌊@(10×)1.25 2.78`→`1.2 2.7`. positions/`[p]`: left arg aligns with right by position, by key if both keyed: `10 20 30 +@[0 2] 1 2 3`→`11 2 33`.
-- [`∘`](glyphs/jot.html.md) atop: `α f∘g ω`≡`f α g ω` (BQN; Dyalog `α f g ω`): `10 -∘| ¯3`→`¯7`.
+- [`∘`](glyphs/jot.html.md) atop: `α f∘g ω`≡`f α g ω` (BQN; Dyalog `α f g ω`): `10 -∘| ¯3`→`¯7`. Before an operator, finishes the whole current run as its left operand: `⊂⊢∘⌸`≡`(⊂⊢)⌸`, `+/÷≢∘⍤1`≡`(+/÷≢)⍤1`. Spaces keep earlier functions and left arguments outside that run.
 - [`⍤`](glyphs/jot-diaeresis.html.md) rank, only: `+/¹m` (`+/⍤1 m`) row sums. fn right operand computes ranks.
 - [`⍠`](glyphs/quad-colon.html.md) axis: along axes by number or name: `+/⍠0 m`, `+/⍠"month" sales`. options record sets fill: `5↑⍠["fill":¯1] 1 2`→`1 2 ¯1 ¯1 ¯1`.
 - [`⌺`](glyphs/quad-diamond.html.md) stencil: Rank over centred windows: `f⌺3 v`≡`f⍤¯1 [¯3]↕v`; `life⌺[3 3] g`≡`life⍤¯2 [¯3 ¯3]↕g`. `f` gets each window alone, no `α` (J `;._3`). fn right operand computes window from args.
