@@ -62,7 +62,7 @@ cfract¯2.3   ⍝ [¯3 1 2 3]ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:211 — Real rational recovery uses the first continued-fraction convergent within relative error 1e-14. Pi recovers 5419351/1725033, whose canonical continued fraction ends in 4. April's 14-column float-round-trip expectation is retained separately; 0+ makes coefficients approximate
 [cfract: rational:]←•load "lib/numeric.bpl"
-rational +↢÷∘/¨,\ 0+(0 cfract π1)
+rational +↢÷ /¨,\ 0+(0 cfract π1)
 ⍝ =>
 [3 22 333 355 103993 104348 208341 312689 833719 1146408 5419351◇1 7 106 113 33102 33215 66317 99532 265381 364913 1725033]
 

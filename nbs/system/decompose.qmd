@@ -4,7 +4,7 @@
 
 | `kind` | Fields | Factors |
 |---|---|---|
-| `"svd"` | `u`, `s`, `v` | `m` is `u×⍤1s +.× +⍉v`, with the singular values `s` in descending order |
+| `"svd"` | `u`, `s`, `v` | `m` is `u×¹s +.× +⍉v`, with the singular values `s` in descending order |
 | `"qr"` | `q`, `r` | `m` is `q+.×r`, with orthonormal columns in `q`, and `r` upper triangular |
 | `"eigen"` | `values`, `vectors` | each column of `vectors` is an eigenvector of `m`, for the eigenvalue at the same position in `values` |
 | `"cholesky"` | `l` | `m` is `l+.×+⍉l`, with `l` lower triangular |
@@ -41,7 +41,7 @@ d←0 0⍉f.u
 +/⊛|d                     ⍝ 0.6931471805599453
 ```
 
-`kind •decompose⁻ factors` multiplies a record of factors back into the matrix, as the table shows. For `"eigen"`, the matrix is `vectors×⍤1values +.× ⌹vectors`, and for `"lu"` it's `[⍋p]⌷l+.×u`. Eigenvectors that aren't independent, such as those of the defective matrix `[1 1◇0 1]`, can't determine the matrix.
+`kind •decompose⁻ factors` multiplies a record of factors back into the matrix, as the table shows. For `"eigen"`, the matrix is `vectors×¹values +.× ⌹vectors`, and for `"lu"` it's `[⍋p]⌷l+.×u`. Eigenvectors that aren't independent, such as those of the defective matrix `[1 1◇0 1]`, can't determine the matrix.
 
 ```bpl
 f←"cholesky" •decompose [4 2◇2 3]

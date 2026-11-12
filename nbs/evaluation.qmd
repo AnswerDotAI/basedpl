@@ -49,7 +49,7 @@ Operators bind before functions apply. An operator's left [operand](terms.qmd#te
 
 Each run counts as one token, as a parenthesised group does. An operator at the end of a run takes the next run as its right operand, as it takes a touching token: in `⌊@ 10× x`, the right operand of `@` is the run `10×`. An operator at the start of a run takes the previous run as its left operand: in `≢⊢ ⌸x`, the left operand of `⌸` is the run `≢⊢`. Names that hold operators count in both places.
 
-Before an operator, `∘` finishes the whole current run as its left operand: `⊂⊢∘⌸` is `(⊂⊢)⌸`. Spaces keep earlier functions and left arguments outside that run. Before a function, `∘` remains Atop. [Operators on trains](composition.qmd#operators-on-trains) gives examples.
+A space can therefore group a short function operand: `⊂⊢ ⌸` is `(⊂⊢)⌸`. With two arguments, `0 1 0 ⊂⊢ ⌸ "abc"` keeps the operand and each argument in its own run. [Operators on trains](composition.qmd#operators-on-trains) gives examples.
 
 ```bpl
 m←2 3ρι6ₓ ◇ +/⍤1 m               ⍝ [3 12]ₓ
@@ -179,7 +179,7 @@ A guard that reads a cell's value stops batching. The map then calls its operand
 
 A fold or scan by a dfn of an array with more than one lane, such as one along each row of a matrix, makes one batched call for each stage. The call at position `j` runs on item `j` of every lane. `{α-ω}/m` folds every row of `m` from the right with one call for each column, rather than one for each item. In `x f.g y` with a dfn `g`, one batched call runs `g` on every pairing of a row of `x`, a position along the contraction and a column of `y`. `f` then folds along the contraction. Where its batched call stops, a fold or inner product calls its operand once for each item, for the same reasons as a map, below.
 
-`∂` in the operand differentiates with respect to all the cells in one batched call, cells that are arrays included: `{{+/ω*2}∂ω}⍤1 m` gives every row's gradient at once.
+`∂` in the operand differentiates with respect to all the cells in one batched call, cells that are arrays included: `{{+/ω*2}∂ω}¹ m` gives every row's gradient at once.
 
 The map calls its operand once for each cell instead where the operand:
 

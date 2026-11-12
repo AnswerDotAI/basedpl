@@ -6,7 +6,7 @@ Dyadic operator. Keys: `Alt-q Backtick`. Hanzi: `邻` (`鄰`)
 
 ```bpl
 +/⌺3 [1 2 3 4]                      ⍝ 3 6 9 7
-(+/⌺3 [1 2 3 4])≡+/⍤¯1 [¯3]↕[1 2 3 4]   ⍝ $t
+(+/⌺3 [1 2 3 4])≡+/⁻¹ [¯3]↕[1 2 3 4]   ⍝ $t
 ```
 
 A two-row specification gives sizes, then movements. An options record, as `↕` takes, can also name an edge mode, which a window's positions past an end read by. The edge mode is fill unless the record names another. Its `fill` gives the item that padding with fill reads.

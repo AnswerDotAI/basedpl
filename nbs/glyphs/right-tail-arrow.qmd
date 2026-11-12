@@ -30,6 +30,6 @@ See [After](left-tail-arrow.qmd), [Atop / Rank](jot-diaeresis.qmd) and [Over](ci
 With an array operand, `(X↣f)⁻Y` is `X f⁻ Y`. With two functions, `X(f↣g)⁻Y` inverts `g` with `f X` fixed on the left.
 
 ```bpl
-2↣×∘⁻6     ⍝ 3
+2↣× ⁻ 6    ⍝ 3
 3(-↣+)⁻7   ⍝ 10
 ```

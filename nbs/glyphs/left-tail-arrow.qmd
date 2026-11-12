@@ -29,6 +29,6 @@ See [Before](right-tail-arrow.qmd), [Atop / Rank](jot-diaeresis.qmd) and [Over](
 With an array operand, `(f↢X)⁻Y` inverts `f` with `X` fixed on the right. With two functions, `X(f↢g)⁻Y` inverts `f` with `X` fixed, then applies `g⁻`. The hook `(×↢*)⁻` gives the Lambert W function.
 
 ```bpl
--↢3∘⁻7    ⍝ 10
-×↢*∘⁻1    ⍝ 0.567143290409784
+-↢3 ⁻ 7   ⍝ 10
+×↢* ⁻ 1   ⍝ 0.567143290409784
 ```

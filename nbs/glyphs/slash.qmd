@@ -27,7 +27,7 @@ A dfn that reduces several lanes, such as each row of a matrix, runs each stage 
 10-/1 2 3          ⍝ ¯8
 10+/2 3ρι6ₓ         ⍝ [13 22]
 ⊂10 +/ 1 2 3       ⍝ ⊂16
-10 20 +/⍤0 1 [2 3]ρι6ₓ ⍝ [13 32]
+10 20 +/⁰ ¹ [2 3]ρι6ₓ ⍝ [13 32]
 ```
 
 Fixed-width integer reductions keep the promoted fixed type. A wider seed selects a wider accumulator without widening the stored input array:

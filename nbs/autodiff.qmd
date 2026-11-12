@@ -33,11 +33,11 @@ t←1 0 ◇ {f x+ω×t}∂0         ⍝ 3 1
 u←1 0 ◇ {+/u×fω}∂ x         ⍝ 3 2
 ```
 
-For a function that works item by item, such as the sine `1○`, `f∂⍤0` gives the derivative at each item. Differentiating along one number gives the same values in one pass:
+For a function that works item by item, such as the sine `1○`, `f∂⁰` gives the derivative at each item. Differentiating along one number gives the same values in one pass:
 
 ```bpl
 x←0 0.5 1
-1○∂⍤0 x                     ⍝ 1 0.8775825619 0.5403023059
+1○∂⁰ x                     ⍝ 1 0.8775825619 0.5403023059
 {1○x+ω}∂0                   ⍝ 1 0.8775825619 0.5403023059
 ```
 
@@ -125,14 +125,14 @@ Without a program, `∂` builds its duals or its record afresh on every call, th
 
 ```bpl
 x←ι64 ÷ 63 ◇ y←1○3×x
-loss←{[x y]←α ◇ [w b v c]←ω ◇ h←7○b(+⍤1)x×⊗w ◇ +/÷≢ ⊼y-c+h+.×v}
+loss←{[x y]←α ◇ [w b v c]←ω ◇ h←7○b(+¹)x×⊗w ◇ +/÷≢ ⊼y-c+h+.×v}
 p←["w":1○ι16 "b":16ρ0 "v":0.1×2○ι16 "c":0]
 [x y] loss p                ⍝ 0.5232276475
 p←{ω - 0.1× [x y]loss∂ω}⍣200p
 [x y] loss p                ⍝ 0.07655752909
 ```
 
-`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. A map in the function, such as Rank in `+/{⊼1○+/w×ω}⍤1 X`, calls its dfn once on all its cells, as it does outside a trace. Each call in the dfn then adds one step for all the cells. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
+`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. A map in the function, such as Rank in `+/{⊼1○+/w×ω}¹ X`, calls its dfn once on all its cells, as it does outside a trace. Each call in the dfn then adds one step for all the cells. The derivative's records and transposes add their steps to the same program. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
 
 Later calls with the same argument types and shapes replay the program on their arguments, without running the function. The replay runs the program's steps as ordinary calls. Chains of elementwise steps then run as one stage, a block of items at a time, as they do outside a program. A stage folds its last step's items as it computes them. Its intermediate results exist only one block at a time. Once a stage is large enough, or runs again, BPL compiles it to machine code with Cranelift, if its steps can compile. The browser build has no compiler. It runs every stage on the interpreter's kernels. `•explain` shows whether a call built a program or replayed one:
 
@@ -209,7 +209,7 @@ JAX, Dex and tinygrad are the role models. Futhark, Dex and Julia set the standa
 | tinygrad | Lazy arrays: a call on a large array gives a pending array, and a read of its items runs the calls it needs, fused. Derivative code that fuses as other code does. Copies, such as a transpose or a slice, whose transposes are copies, not scatters. A program replayed as `TinyJit` replays its kernels. |
 | Futhark | One table of partial derivatives for both modes, which BPL's table was mapped from. The rules for folds by `×`, `⌈` and `⌊`. Accumulation as the transpose of a gather. |
 | ForwardDiff | Dual numbers with tags, which keep nested derivatives apart. |
-| J | `D.`, which gives a Jacobian, and `d.`, which gives the derivative at each item. `f∂` and `f∂⍤0` do these jobs. |
+| J | `D.`, which gives a Jacobian, and `d.`, which gives the derivative at each item. `f∂` and `f∂⁰` do these jobs. |
 
 BPL also differs from all of them. `∂` strips its tags from values that escape it, where JAX raises an error when a leaked tracer is used. One operator picks the mode, where JAX offers `jvp`, `vjp`, `jacfwd` and `jacrev`. A Jacobian takes its keys, axis names and records from the rules of outer products. Futhark differentiates its program before running it and recomputes values in reverse mode. BPL differentiates the calls that `f` makes as it runs. It keeps their linear steps instead of recomputing values.
 

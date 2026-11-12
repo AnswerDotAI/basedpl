@@ -27,11 +27,11 @@ fn←"rtd"ι↑ ⍚[⌽ 1↑ 1↓ ⊢] ◇ [fn "r123";fn "d123";fn "123"]
 +\@∊ [3 1 0] [2 5] [0 0 6]   ⍝ (3 4 4◇6 11◇11 11 17)
 
 ⍝ bqn:under:61 — Rotate the first column
-a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽∘@(↑⍤1) a
+a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽ @(↑¹) a
 [3 1 2◇6 4 5◇9 7 8◇0 10 11]
 
 ⍝ bqn:under:69 — Reverse the first half of a list
-⌽@(2÷⍨≢∘↣↑)"abcdef"   ⍝ "cbadef"
+⌽@(2÷⍨≢ ↣↑)"abcdef"   ⍝ "cbadef"
 
 ⍝ bqn:under:73 — Add 10 to the elements below 5, with the mask computed from the argument
 10+@[5>] 3 8 2 2 6   ⍝ 13 8 12 12 6
@@ -43,7 +43,7 @@ a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽∘@(↑⍤1) a
 +/÷≢ @(×⍨) 2 3 4 5   ⍝ 3.6742346141747673
 
 ⍝ bqn:under:99 — An arithmetic progression up to a limit, through an inverted transformation
-ι∘⌈@(4+3×⊢∘⁻) 20   ⍝ 4 7 10 13 16 19
+ι∘⌈@(4+3×⊢ ⁻) 20   ⍝ 4 7 10 13 16 19
 
 ⍝ bqn:under:109 — Replace selected positions with the same positions of the left argument
 "abcd" ⊣@([[1 2]]⌷) "0123"   ⍝ "0bc3"
@@ -56,7 +56,7 @@ a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽∘@(↑⍤1) a
 ["ab" "cde" "fg"] ⊣@∊ ["---" "----"]   ⍝ "abc" "defg"
 
 ⍝ bqn:under:123 — Add to the selected elements, keeping the others
-1 2 3+∘@(1 1 0 1#) 10 20 30 40   ⍝ 11 22 30 43
+1 2 3+ @(1 1 0 1#) 10 20 30 40   ⍝ 11 22 30 43
 
 ⍝⍝ Undo
 
@@ -67,7 +67,7 @@ a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽∘@(↑⍤1) a
 ×⍨⁻ ×⍨ ¯3   ⍝ 3
 
 ⍝ bqn:undo:36 — Undo multiplication by a bound left argument
-3×∘⁻ 12   ⍝ 4
+3× ⁻12   ⍝ 4
 
 ⍝ bqn:undo:51 — Undo Left accepts arguments that already match
 3 ⊣⁻ 3   ⍝ 3
@@ -78,7 +78,7 @@ a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽∘@(↑⍤1) a
 3 (+⍣2) 7   ⍝ 13
 
 ⍝ bqn:repeat:39 — Halve the numbers above 6, using a computed count of 0 or 1
-{÷↢2∘⍣(6<ω)ω}¨ 3 7 2 1 8   ⍝ 3 3.5 2 1 4
+{÷↢2 ⍣(6<ω)ω}¨ 3 7 2 1 8   ⍝ 3 3.5 2 1 4
 
 ⍝ bqn:repeat:49 — A negative count applies the inverse
 1 (⌽⍣¯1) "abcde"   ⍝ "eabcd"
@@ -167,7 +167,7 @@ c   ⍝ 9
 ⍝⍝ Rank
 
 ⍝ bqn:rank:92 — Join the strings in each row
-s←["words" "go" "here"◇"some" "other" "words"] ◇ ⊂∘∊⍤1 s
+s←["words" "go" "here"◇"some" "other" "words"] ◇ ⊂∘∊¹ s
 "wordsgohere" "someotherwords"
 
 ⍝ bqn:rank:146 — Rank 2 on an array with empty cells keeps the frame and the cell shape
@@ -187,10 +187,10 @@ m←[0 1 0◇¯1 0 0◇0 0 1] ◇ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
 ⍝⍝ Fold
 
 ⍝ bqn:fold:115 — A continued fraction for e
-+↢÷∘/2 1 2 1 1 4 1 1   ⍝ 2.7183098591549295
++↢÷ /2 1 2 1 1 4 1 1   ⍝ 2.7183098591549295
 
 ⍝ bqn:fold:139 — A seeded fold starts from the right end
-"STOP" ⌽↣,∘/ ["ABCDE" "012" "abcd"]   ⍝ "EDCBA210dcbaSTOP"
+"STOP" ⌽↣, / ["ABCDE" "012" "abcd"]   ⍝ "EDCBA210dcbaSTOP"
 
 ⍝ bqn:fold:158 — Reducing an empty first axis gives one identity per cell
 +⌿0 4ρ0   ⍝ 0 0 0 0

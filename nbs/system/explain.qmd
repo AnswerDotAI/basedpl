@@ -71,7 +71,7 @@ s←2×y+1 ◇ (•explain "5↑s").forced.items      ⍝ [5]ₓ
 r←⌽y ◇ (•explain "r₀←0").forced.function   ⍝ ["←"]
 (•explain "(10↑)∘⍋ y").fast.rule             ⍝ ["partial grade"]
 x←¿1000ρ0 ◇ p←¿1000ρ1000
-(•explain "{+/, 3↕ω (×⍤1) 1 2 1}∂ x").accumulations.items  ⍝ ⍬ₓ
+(•explain "{+/, 3↕ω (×¹) 1 2 1}∂ x").accumulations.items  ⍝ ⍬ₓ
 (•explain "{+/ω.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ "path":["in place"]]
 z←1000ρ0ₓ ◇ (•explain "z.[p]+←1ₓ").accumulations.path  ⍝ ["on a copy"]
 (•explain "{2(×⍣ω)1}¨ι5ₓ").fallbacks  ⍝ ["reason":["a cell's value"] "items":[5]ₓ]

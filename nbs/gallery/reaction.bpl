@@ -5,7 +5,7 @@
 ⍝ 60 more steps of the simulation as you watch, and the animation stops after 400 frames.
 n←250
 ⎕←"centres←",⍎⁻ centres←40+¿[≥¿4 2]ρ170
-seed←∨⌿{8>|ω₀-ιn ∧⊗ 8>|ω₁-ιn}⍤1 centres
+seed←∨⌿{8>|ω₀-ιn ∧⊗ 8>|ω₁-ιn}¹ centres
 lap←{1⌽ω + ¯1⌽ω + 1⊖ω + ¯1⊖ω - 4×ω}
 [feed kill]←0.0545 0.062
 step←{

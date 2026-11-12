@@ -7,11 +7,6 @@ use crate::{
 };
 use std::{borrow::Cow, sync::Arc};
 
-fn stage_marker(node: &Node) -> bool {
-    matches!(node.kind, NodeKind::Operator(OperatorKind::Atop))
-        || matches!(&node.kind, NodeKind::Embedded(Value::Operator(op)) if matches!(*op.0, OperatorNode::Primitive(OperatorKind::Atop)))
-}
-
 impl Session {
     /// Lower selector sections and data-first operator tails before runs bind their operands.
     fn sections<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
@@ -113,25 +108,9 @@ impl Session {
             _ => members,
         }
     }
-    /// Finish the current run before an operator: `⊂⊢∘⌸` is `(⊂⊢)⌸`. Names and dot paths use their resolved categories.
-    fn stages<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
-        let boundary = |i: usize| stage_marker(&nodes[i]) && nodes.get(i + 1).is_some_and(|next| self.static_category(next).valence().is_some());
-        if !(1..nodes.len()).any(&boundary) { return Cow::Borrowed(nodes); }
-        let (mut out, mut start) = (Vec::with_capacity(nodes.len()), 0);
-        for (i, node) in nodes.iter().enumerate() {
-            // Selector lowering can flatten runs; an operator still takes the run before it as its operand.
-            if i > 0 && !crate::syntax::touching(&nodes[i - 1], node) && self.static_category(node).valence().is_none() { start = out.len(); }
-            if boundary(i) && out.len() > start {
-                let inner = out.split_off(start);
-                out.push(Node { span: crate::syntax::cover(&inner), kind: NodeKind::Group(inner) });
-            } else { out.push(node.clone()); if matches!(node.kind, NodeKind::Assign) { start = out.len(); } }
-        }
-        Cow::Owned(out)
-    }
-
-    /// Rewrite dot reads and operator-stage boundaries.
+    /// Rewrite dot reads.
     pub(super) fn members_with<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
-        if !Self::has_members(nodes) { return self.stages(nodes); }
+        if !Self::has_members(nodes) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         // Whether the last node in `out` is the right operand of a `.` after a function.
         let (mut i, mut on_function) = (0, false);
@@ -211,7 +190,7 @@ impl Session {
                 node.kind = NodeKind::Operator(OperatorKind::Super(Superscript::Mark(crate::number::Mark::Rational)));
             }
         }
-        match self.stages(&out) { Cow::Borrowed(_) => Cow::Owned(out), Cow::Owned(staged) => Cow::Owned(staged) }
+        Cow::Owned(out)
     }
 
     /// Whether a run ends in a dyadic operator, which then takes the next run as its right operand.
@@ -227,25 +206,15 @@ impl Session {
     /// Join each run that starts with an operator to the node before it, as the run's first token: `≢⊢ ⌸x` reads as `(≢⊢)⌸x`. A run before it joins as a group. A joined run that still starts with an operator joins again: `+ / ¨x` reads as `+/¨x`. No join reaches across `←`.
     fn joined<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
         let starts = |node: &Node| matches!(&node.kind, NodeKind::Run(inner) if self.starts_with_operator(inner));
-        let joins = |before: &Node, node: &Node| {
-            starts(node)
-                || matches!(&before.kind, NodeKind::Run(inner) if inner.last().is_some_and(stage_marker)) && self.static_category(node).valence().is_some()
-        };
-        if !nodes.windows(2).any(|w| joins(&w[0], &w[1])) { return Cow::Borrowed(nodes); }
+        if !nodes.iter().skip(1).any(starts) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         for node in nodes {
             let mut node = node.clone();
-            while out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign) && joins(before, &node)) {
+            while out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign)) && starts(&node) {
                 let before = out.pop().expect("a node is before this run");
                 let span = Span { source: before.span.source.clone(), range: before.span.range.start..node.span.range.end };
-                let before = match before.kind {
-                    NodeKind::Run(mut run) => {
-                        if run.last().is_some_and(stage_marker) { run.pop(); }
-                        Node { span: crate::syntax::cover(&run), kind: NodeKind::Group(run) }
-                    }
-                    _ => before,
-                };
-                let inner = match node.kind { NodeKind::Run(inner) => inner, _ => vec![node] };
+                let before = match before.kind { NodeKind::Run(run) => Node { kind: NodeKind::Group(run), span: before.span }, _ => before };
+                let NodeKind::Run(inner) = node.kind else { unreachable!() };
                 node = Node { kind: NodeKind::Run(std::iter::once(before).chain(inner).collect()), span };
             }
             out.push(node);

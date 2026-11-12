@@ -19,7 +19,7 @@ frame←{
   ω≥1200ₓ?;
   new←params map xy
   hue←⊢/∧∨⁻⍉new-xy
-  colour←0.55+0.45×2○hue+⊗0 2.1 4.2 ,⍤1 glow
+  colour←0.55+0.45×2○hue+⊗0 2.1 4.2 ,¹ glow
   xy⊢←new
   pos←⍉250+scale×xy-centre
   ["points":pos,0.8,colour]

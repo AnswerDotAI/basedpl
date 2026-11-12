@@ -15,7 +15,7 @@ cart←{[r t]←ω ◇ [r×2○t r×1○t]} ◇ -.×cart∂ 2 0.5    ⍝ 2
 
 ```bpl
 ⊼∂3ₓ                                 ⍝ 6
-p←["a":1 "b":2] ◇ ⊢.a×⊢.b∘∂ p       ⍝ ["a":2 "b":1]
+p←["a":1 "b":2] ◇ ⊢.a×⊢.b ∂ p       ⍝ ["a":2 "b":1]
 -∂3ₓ₁                                ⍝ ¯1ₛ
 ```
 
@@ -23,7 +23,7 @@ For the derivative at each item of a function that works item by item, different
 
 ```bpl
 x←0 0.5 1
-1○∂⍤0 x     ⍝ 1 0.8775825619 0.5403023059
+1○∂⁰ x     ⍝ 1 0.8775825619 0.5403023059
 {1○x+ω}∂0   ⍝ 1 0.8775825619 0.5403023059
 ```
 
@@ -41,7 +41,7 @@ f←[1 2 3]ₓ⌻ ◇ f∂2ₓ   ⍝ 14
 {ω⌻2ₓ}∂ [1 2 3]ₓ    ⍝ 1 2 4
 ```
 
-`∂` runs `f` once. With more than one number in `X`, it records the linear steps of the derivative as `f` runs, then reads the Jacobian from that record: once for each result item, or once for each number in `X`, whichever is fewer. A gradient therefore costs a small multiple of one run of `f`, however many numbers `X` holds. `∂` differentiates a [map](../terms.qmd#term-map) inside `f` through the map's [batched call](../evaluation.qmd#functions-and-effects), on whole arrays. So does `∂` inside a map, as in `f∂⍤1`, with one batched call for all the cells. The gradient of a structural copy or a selection, such as a reversal, a transpose or windows, adds each item's gradient back where the item came from in its source. [`•explain`](../system/explain.qmd) reports each such accumulation, apart from one that adds a single ascending run of positions as a block, as the gradients of take and drop do. The record keeps the values those steps need until `∂` finishes. Its memory grows with the work that `f` does. A value that `f` writes to an outer name loses its tangents when `∂` returns. [Automatic differentiation](../autodiff.qmd) explains how `∂` works.
+`∂` runs `f` once. With more than one number in `X`, it records the linear steps of the derivative as `f` runs, then reads the Jacobian from that record: once for each result item, or once for each number in `X`, whichever is fewer. A gradient therefore costs a small multiple of one run of `f`, however many numbers `X` holds. `∂` differentiates a [map](../terms.qmd#term-map) inside `f` through the map's [batched call](../evaluation.qmd#functions-and-effects), on whole arrays. So does `∂` inside a map, as in `f∂¹`, with one batched call for all the cells. The gradient of a structural copy or a selection, such as a reversal, a transpose or windows, adds each item's gradient back where the item came from in its source. [`•explain`](../system/explain.qmd) reports each such accumulation, apart from one that adds a single ascending run of positions as a block, as the gradients of take and drop do. The record keeps the values those steps need until `∂` finishes. Its memory grows with the work that `f` does. A value that `f` writes to an outer name loses its tangents when `∂` returns. [Automatic differentiation](../autodiff.qmd) explains how `∂` works.
 
 No derivative flows back through a value that [`•detach`](../system/detach.qmd) gives.
 

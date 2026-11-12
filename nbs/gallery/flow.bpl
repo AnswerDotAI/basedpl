@@ -14,7 +14,7 @@ style←0.6 0.1 0.15 0.3 0.12
 frame←{
   ω≥900ₓ?;
   q←p+0.8×○ angle p
-  lines←∨p , ∨q ,⍤1 style
+  lines←∨p , ∨q ,¹ style
   outside←∨/c≠0⌈500⌊c←∨q
   restart←outside∨0.005>¿nρ0
   p⊢←q×~restart + restart×place n

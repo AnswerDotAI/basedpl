@@ -60,7 +60,7 @@ A literal strand can appear on each side. In `+/⍠2 3⁝3 3↕m`, the operand o
 
 ## Runs
 
-Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. The operator rules below can join runs or finish an operand within one. Each completed run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
+Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. The operator rules below can join runs. Each completed run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
 
 BPL reads a statement in three steps:
 
@@ -74,7 +74,7 @@ A call's result binds where a subject would, whatever it returns, and so do a fi
 
 A run that ends in a dyadic operator takes the next run as its right operand: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. A run that starts with an operator takes the previous run as its left operand: `≢⊢ ⌸x` is `(≢⊢)(⌸x)`, where `≢⊢` is the operand of `⌸`. [Evaluation](evaluation.qmd) explains operands.
 
-Before an operator, `∘` finishes the current run as its left operand: `⊂⊢∘⌸` is `(⊂⊢)⌸`. This depends on what the next item holds, like the operator rules that join runs. Before a function, `∘` remains Atop. [Composing functions](composition.qmd#operators-on-trains) gives examples.
+A space can thus replace parentheses around a short function operand: `⊂⊢ ⌸` is `(⊂⊢)⌸`. Keep the arguments outside that operand's run: `0 1 0 ⊂⊢ ⌸ "abc"`. [Composing functions](composition.qmd#operators-on-trains) gives examples.
 
 ```bpl
 a←1 ◇ b←2 ◇ c←3 ◇ d←4 ◇ a+b × c+d   ⍝ 21
