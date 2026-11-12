@@ -292,7 +292,7 @@ queensX ← {  ⍝ Exact cover N-Queens.
   dm←-/¨ι2#ω  ⍝ diagonals.
   du←<∪,dm  ⍝ unique diagonals.
   x←dm =⊗ du
-  y←⊖dm =⊗ du
+  y←⌽₀dm =⊗ du
   m←,₀ ₁x,y,r,f  ⍝ constraints matrix.
   d←~ ι1↓ρm ∊ ι⊽ρdu  ⍝ mask of required cols.
   [ω ω]ρ d X m  ⍝ exact cover - matrix of queens.

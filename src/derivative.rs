@@ -748,7 +748,7 @@ fn decode(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Err
         .map_err(|e| Error::from(e).at(span))?;
     let len = crate::primitive::decode_length(xlen, ylen)?;
     if base.shape().len() > 1 { return Err(Error::new(ErrorKind::Unsupported, "∂ differentiates ⊥ only with a scalar or vector base")); }
-    let reverse = |v: &Value, span: &Span| Primitive::Reverse(false).call(None, v, span);
+    let reverse = |v: &Value, span: &Span| Primitive::Reverse.call(None, v, span);
     let digits = if ylen == len { right.clone() } else {
         let d = if right.shape().is_empty() { Primitive::Ravel.call(None, right, span)? } else { right.clone() };
         Primitive::Replicate.call_axis(Some(&Value::integer(len as i64)), &d, Some(d.shape().len() - 1), span)?

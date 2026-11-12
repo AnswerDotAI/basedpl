@@ -61,7 +61,7 @@ disp ← { α←⍬  ⍝ Boxed sketch of nested array.
     sizes←⌈/rows ,⊗ ⌈⌿cols
     ctd=0?sizes↑¨ω;  ⍝ top-left alignment.
     [v h]←sepr⌈0.5×⊃(ρ¨ω)-sizes
-    v⊖¨h⌽¨sizes↑¨ω  ⍝ centred aligned subarrays.
+    v⌽₀¨h⌽¨sizes↑¨ω  ⍝ centred aligned subarrays.
   }
   gaps←{  ⍝ Gap-separated sub-planes.
     α≤2ₓ?ω;  ⍝ lowish rank: done.

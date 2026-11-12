@@ -255,7 +255,7 @@ det ← {  ⍝ Determinant of square matrix.
 gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
   elim←{  ⍝ elimination of row/col α
     p←α+↑⍒|α↓[: α]⌷ω
-    swap←⊖@[α p] ω  ⍝ αth and pth rows exchanged
+    swap←⌽₀@[α p] ω  ⍝ αth and pth rows exchanged
     mat←swap.[α α]÷⍨@α swap  ⍝ col diagonal reduced to 1
     mat - mat.[: α]×α≠ι≢ω ×⊗ α⌷mat
   }

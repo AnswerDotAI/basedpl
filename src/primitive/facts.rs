@@ -75,8 +75,6 @@ pub(crate) enum Origin { Left, Right, Both }
 pub(crate) enum CellRule {
     /// No rule: Rank calls the form once for each cell.
     No,
-    /// The form along each cell's first axis: monadic `⊖`, and dyadic `⊖` with a scalar left argument.
-    First,
     /// The form along each cell's first axis, with a left argument of any shape that applies along that axis: dyadic `#`.
     Along,
     /// The form along all of each cell's axes, which it joins into one: monadic `,`.
@@ -209,7 +207,7 @@ impl Dyad {
 }
 
 impl Primitive {
-    const ALL: [Self; 61] = {
+    const ALL: [Self; 60] = {
         use {Arithmetic::*, Comparison::*, Math::*};
         [
             Self::Arithmetic(Plus), Self::Arithmetic(Minus), Self::Arithmetic(Times), Self::Arithmetic(Divide), Self::Math(Ceiling), Self::Math(Floor),
@@ -217,9 +215,9 @@ impl Primitive {
             Self::Math(Lcm), Self::Math(Gcd), Self::Math(Nand), Self::Math(Nor), Self::Math(Not), Self::Compare(Equal), Self::Compare(NotEqual),
             Self::Compare(Less), Self::Compare(LessEqual), Self::Compare(Greater), Self::Compare(GreaterEqual), Self::Iota, Self::Range, Self::Keys,
             Self::Shape, Self::Tally, Self::Depth, Self::Ravel, Self::CatenateFirst, Self::Enclose, Self::Mix, Self::Nest, Self::Member, Self::Union,
-            Self::Intersection, Self::Grade(false), Self::Grade(true), Self::Take, Self::Drop, Self::Reverse(false), Self::Reverse(true), Self::Transpose,
-            Self::Encode, Self::Decode, Self::Execute, Self::Format, Self::Index, Self::MatrixDivide, Self::Replicate, Self::Windows, Self::Prime, Self::Factor,
-            Self::Polynomial, Self::Where, Self::Find, Self::Identity(false), Self::Identity(true), Self::Random,
+            Self::Intersection, Self::Grade(false), Self::Grade(true), Self::Take, Self::Drop, Self::Reverse, Self::Transpose, Self::Encode, Self::Decode,
+            Self::Execute, Self::Format, Self::Index, Self::MatrixDivide, Self::Replicate, Self::Windows, Self::Prime, Self::Factor, Self::Polynomial,
+            Self::Where, Self::Find, Self::Identity(false), Self::Identity(true), Self::Random,
         ]
     };
     /// This primitive's row in the glyph table, built once, at compile time.
@@ -423,18 +421,11 @@ impl Primitive {
                         dyad("drop", [1, W], MOVES.cellwise().axes().planned().selects(Part).cells(CellRule::Leading)))
                 }
             }
-            Self::Reverse(false) => {
+            Self::Reverse => {
                 &const {
                     row(
                         "⌽", "circle-stile", monad("reverse", 1, MOVES.axes().planned().selects(Whole).cells(CellRule::Same)),
                         dyad("rotate", [0, 1], MOVES.axes().planned().selects(Whole)).identity(Identity::Number(0)))
-                }
-            }
-            Self::Reverse(true) => {
-                &const {
-                    row(
-                        "⊖", "circle-bar", monad("reverse-first", W, MOVES.axes().planned().selects(Whole).cells(CellRule::First)),
-                        dyad("rotate-first", [W, W], MOVES.axes().planned().selects(Whole).cells(CellRule::First)).identity(Identity::Number(0)))
                 }
             }
             Self::Transpose => {

@@ -50,7 +50,6 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `,` [comma](glyphs/comma.qmd) | | ravel | catenate | |
 | `⍪` [comma-bar](glyphs/comma-bar.qmd) | Alt-Minus , | table | catenate-first | |
 | `⌽` [circle-stile](glyphs/circle-stile.qmd) | Alt-2 | reverse | rotate | |
-| `⊖` [circle-bar](glyphs/circle-bar.qmd) | Alt-o Minus | reverse-first | rotate-first | |
 | `⍉` [circle-backslash](glyphs/circle-backslash.qmd) | Alt-o Backslash | transpose | reorder-axes | |
 | `↑` [up-arrow](glyphs/up-arrow.qmd) | Alt-k | first | take | Monad takes first major cell |
 | `↓` [down-arrow](glyphs/down-arrow.qmd) | Alt-j | split | drop | |
@@ -158,6 +157,7 @@ System names start with `•`. [System functions](system-functions.qmd) lists th
 - [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ᵣ÷3ᵣ` is `1ᵣ3`, while `1ₓ÷3ₓ` floors to `0ₓ`. Predicates, positions, tally and shape are exact. See [Mathish mode](numbers.qmd#mathish-mode) for comparison and zero-division conventions.
 - [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `2 3ρι6 + 10 20` is `[10 11 12◇23 24 25]`.
 - [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
+- [Reverse and rotate](glyphs/circle-stile.qmd): `⌽₀` selects the first axis, replacing `⊖`; plain `⌽` selects the last. [Axis](glyphs/quad-colon.qmd) also extends data with trailing length-1 axes when a nonnegative axis does not yet exist.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.
 - [Dfns](dfns.ipynb): BPL has dfns, with no tradfns and no colon control structures such as `:If`.

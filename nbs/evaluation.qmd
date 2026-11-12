@@ -122,7 +122,7 @@ m←[1 2 3◇4 5 6] ◇ [: 1]⌷m       ⍝ 2 5
 Some functions have a default axis:
 
 - `/ \ ⌽ ,` work along the last axis.
-- `⌿ ⍀ ⊖ ⍪` work along the first axis.
+- `⌿ ⍀ ⍪` work along the first axis; `⌽₀` reverses or rotates it.
 - Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the first axis.
 - Encode `⊤` puts its digits on the last axis. Decode `⊥` reads them from the last axis.
 

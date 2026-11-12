@@ -12,6 +12,16 @@ ax←0 ◇ +/⍠ax m            ⍝ [3 5 7]ₓ
 
 Numeric [subscripts](../scripts.ipynb#subscripts) give literal axes: `+/₀` is `+/⍠0`, and `+/₁ ₂` is `+/⍠[1 2]`. Use `⍠` for names, computed axes and options records.
 
+`⌽₀` reverses the first axis; `⌽₋₁` reverses the last, as plain `⌽` does. A nonnegative axis beyond the data's rank adds trailing length-1 axes as views before applying the function. For example, axis 1 views a vector of shape `[2]` as `[2 1]`. The rule is shared by axis-aware functions, without copying the items:
+
+```bpl
+10 20 ,₁ 30 40            ⍝ [10 30◇20 40]
+2#₁10 20                  ⍝ [10 10◇20 20]
+2↑₁10 20                  ⍝ [10 0◇20 0]
+```
+
+Negative axes select existing axes from the end, not new axes. With two data arguments, existing mixed-rank agreement still applies when the selected axes exist in the higher-rank argument. Counts and selectors, such as `2` in `2#₁10 20`, keep their ordinary meaning. An atom has no axes, so selecting axis 0 first makes a length-1 vector.
+
 Rank is the case that selects the last `r` axes. So `⍤1` and `⍠¯1` both select the last axis.
 
 ```bpl
@@ -60,7 +70,7 @@ A primitive with its own axis meaning keeps it:
 - Multi-axis reduce, including seeded reduce. `+/⍠1 2` flattens each cell before reducing.
 - Partitioned enclose and partition. `1 0 1 0⊂⍠1` and `1 1 2 2⊆⍠1` cut the whole matrix into blocks along axis 1. `⊂⍠K` matches Dyalog. Dyalog's `⊆[K]` partitions each lane instead, which is `{α⊆ω}⍠K` here.
 - Rotate with a count array. `1 2 3 4⌽⍠0` pairs one count with each column.
-- Mix. `⊃⍠A` places the cell axes among the frame axes.
+- Mix. `⊃⍠A` places the assembled cell axes among the frame axes; it does not extend the nested input's axes.
 - Axis selectors. `ι⍠A` returns the keys or positions of the selected axes.
 
 ```bpl
@@ -112,4 +122,4 @@ A call checks the fill when it starts, against each argument that it could fill,
 ## Errors
 
 - `RANK`: an axis operand that is not a unit or vector
-- `DOMAIN`: axes that aren't whole, repeated axes, axes outside the higher-rank argument, an options record with a key other than `fill`, a function that fills no position, Windows or Stencil, or a fill that doesn't keep its value as the data's type
+- `DOMAIN`: axes that aren't whole, repeated axes, negative axes outside the higher-rank argument, an options record with a key other than `fill`, a function that fills no position, Windows or Stencil, or a fill that doesn't keep its value as the data's type

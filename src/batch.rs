@@ -285,8 +285,8 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64, 
 /// `p` along cell axis `axis` of batched run `level`, as one call along that axis of the batch's whole, past its frame. Only forms that act along one axis and treat every other axis alike take this route: `⌽` and `⊖` with no left argument or a scalar one, and `#` with the same counts for every cell. A larger left argument of `⌽` or `⊖` would pair with the frame's axes in the whole call. Any other call along an axis stops the run, because no rule moves the axis past the frame.
 fn along(p: Primitive, axis: usize, x: Option<Arg<'_>>, y: Arg<'_>, level: u64, span: &Span) -> Option<Result<Value, Error>> {
     let routed = match (p, x) {
-        (Primitive::Reverse(_), None) | (Primitive::Replicate, Some(Arg::Constant(_))) => true,
-        (Primitive::Reverse(_), Some(Arg::Constant(c))) => c.shape().is_empty(), _ => false
+        (Primitive::Reverse, None) | (Primitive::Replicate, Some(Arg::Constant(_))) => true,
+        (Primitive::Reverse, Some(Arg::Constant(c))) => c.shape().is_empty(), _ => false
     };
     let (true, Arg::Batched(b)) = (routed, y) else { return stop(Stop::refusing(level, p)) };
     Some(p.call_axis(x.map(Arg::all), &b.whole, Some(axis + b.frame), span).and_then(|whole| result(level, whole, b.frame, || true, Stop::refusing(level, p))))

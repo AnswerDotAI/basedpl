@@ -57,7 +57,7 @@ Rank calls each of these functions once on the whole argument, with the same res
 - a pervasive function, as in `m +⍤1 v`, where no frame axis has a name
 - a fold or scan by a pervasive primitive on a simple array, as in `+/⍤1 m`, which runs as `+/m` does
 - a monadic primitive at its own rank or above, such as `⌽⍤1 m`, except `ι`, `↦` and `⍎`
-- `⊖`, `,`, `↑`, `↓`, `⌷`, `⍉` and `#` along the cells' axes, `≢` and `ρ`, and a reshape that keeps each cell's items in order
+- `⌽₀`, `,`, `↑`, `↓`, `⌷`, `⍉` and `#` along the cells' axes, `≢` and `ρ`, and a reshape that keeps each cell's items in order
 - dyadic `,` and `⍪`, joining each pair of cells, where the two arguments' frames match
 - a dyadic primitive at its own ranks or above, where the two arguments' frames match, such as `v ⌽⍤0 1 m`, except `↦`, `:`, `⊂`, `⊃`, `⊆` and `⍕`
 - `+.×`, `⌹`, `-.×` and [`•decompose`](../system/decompose.qmd) on a stack of matrices

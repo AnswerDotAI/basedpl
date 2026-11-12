@@ -232,6 +232,8 @@ impl Back<'_> {
     /// Adds `u` at the walk `base`, `steps` of the node that `read` reads. A broadcast's cotangent sums along the axes it repeats over (step 0) first, and only the remaining axes write back. A repeated axis reads one offset of its source, its start, which joins the base.
     fn add_walked(&mut self, read: &Read, base: usize, steps: &[Steps], u: Value) -> Result<(), Error> {
         if !self.live(read.of) { return Ok(()); }
+        // A read may split one logical result axis into several walk axes, as replicate does. Fold repeats in that walk's shape.
+        let u = u.with_shape(steps.iter().map(Steps::len).collect::<Vec<_>>()).described("a cotangent has its read's walk shape")?;
         let starts: Vec<(usize, usize)> = steps.iter().enumerate().filter_map(|(a, s)| match *s {
             Steps::Stride { start, len, step: 0 } if len > 1 => Some((a, start)), _ => None
         }).collect();
@@ -470,7 +472,7 @@ fn spread(u: &Value, along: usize, layout: &Layout, span: &Span) -> Result<Value
 
 /// The cotangent of a running `+` along `axis` from `u`, its cotangent: the running sum from the far end.
 fn reversed_scan(kind: FoldKind, axis: usize, u: &Value, span: &Span) -> Result<Value, Error> {
-    let flip = |v: &Value| Primitive::Reverse(false).call_axis(None, v, Some(axis), span);
+    let flip = |v: &Value| Primitive::Reverse.call_axis(None, v, Some(axis), span);
     flip(&Operation::Fold(PLUS, kind).call(Pairing::Axis(Some(axis)), None, &flip(u)?, span)?)
 }
 

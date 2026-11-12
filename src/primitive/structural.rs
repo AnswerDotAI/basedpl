@@ -114,7 +114,7 @@ fn core_plan(form: &Form, params: &[Value], inputs: &[&Layout]) -> Result<(CoreL
             let axis = axis.unwrap_or(0);
             planned(if inverse { structure::expand(layout, axis, &counts) } else { structure::repeat(layout, axis, &counts) }?)
         }
-        Form::Call { p: Primitive::Reverse(_), axis, .. } => {
+        Form::Call { p: Primitive::Reverse, axis, .. } => {
             let axis = axis.expect("a rotation resolves its axis");
             let numbers = params.first().map(|a| a.as_items().integers().described("invalid rotation count")).transpose()?;
             let counts = params.first().zip(numbers.as_deref()).map(|(a, ns)| (a.shape(), ns));
@@ -295,7 +295,7 @@ fn replication_counts(counts: &Value) -> Result<std::borrow::Cow<'_, [i64]>, Err
 }
 
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize) -> Result<Value, Error> {
-    crate::fusion::copy(&Form::Call { p: Primitive::Reverse(false), axis: Some(axis), inverse: false, fill: false }, counts.cloned().as_slice(), &[right], None)
+    crate::fusion::copy(&Form::Call { p: Primitive::Reverse, axis: Some(axis), inverse: false, fill: false }, counts.cloned().as_slice(), &[right], None)
 }
 
 /// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one axis fewer gains `axis`, with one position.
@@ -361,7 +361,10 @@ pub(crate) fn catenate_many(p: Primitive, axis: Option<&Value>, right: &Value) -
     if parts.iter().zip(&views).any(|(part, view)| part.shape().len() != rank || part.fixed_width() != fixed || view.dtype() != views[0].dtype()) {
         return Ok(None);
     }
-    let axis = match axis { Some(axis) => super::single_axis(&p.resolved_axes(None, source, axis)?, rank)?, None => { if first { 0 } else { rank - 1 } } };
+    let axis = match axis {
+        Some(axis) => match super::single_axis(&p.resolved_axes(None, source, axis)?, rank) { Ok(axis) => axis, Err(_) => return Ok(None) },
+        None => { if first { 0 } else { rank - 1 } }
+    };
     let (layout, buffer) = rustymath::array::Array::concatenate(&views, axis)?.into_compact();
     crate::events::taken(crate::events::routes::BulkCatenate, buffer.len());
     Value::from_buffer_at(layout, buffer, fixed).map(Some).described("invalid catenate result")

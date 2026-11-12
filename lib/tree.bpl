@@ -7,11 +7,11 @@
 hang ← {  ⍝ node label α with formatted subtrees ω hung below it.
   key_val←α
   null←0 0ρ""  ⍝ format of null tree.
-  fmts←{⊖ω}\"┌└"{  ⍝ hang subtrees by ┌─ ─┐ branches.
+  fmts←{⌽₀ω}\"┌└"{  ⍝ hang subtrees by ┌─ ─┐ branches.
     [0 0]ₓ≡ρω?ω;  ⍝ null: done.
     mask←∧\' '=↑↓⌽ωᵀ
     ⍉⌽⊃[⌽α,mask#'│'],↓⌽ωᵀ
-  }¨{⊖ω}\ω  ⍝ formatted subtrees.
+  }¨{⌽₀ω}\ω  ⍝ formatted subtrees.
   case←~[null null]≡¨fmts  ⍝ non-null subtree cases.
   join←⊥case ⊃ "∘┐┘┤"
   join≡'∘'?⊃,↓key_val;
