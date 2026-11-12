@@ -1,0 +1,15 @@
+
+
+# `⍶` — Left operand
+
+Argument. Keys: `Alt-Minus a`. Hanzi: `丙`
+
+In a defined operator, `⍶` denotes its left operand: function or
+subject.
+
+``` bpl
+apply←{⍶ ω} ◇ -apply 3 ⍝ ¯3
+add←{⍶+ω} ◇ 10 add 3 ⍝ 13
+```
+
+`α` and `ω` remain the derived function’s arguments.

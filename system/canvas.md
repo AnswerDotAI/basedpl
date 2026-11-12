@@ -1,0 +1,26 @@
+
+
+# `•canvas` — Drawing with JavaScript
+
+`•canvas source` returns a drawing function made from `source`, the
+source of a JavaScript function such as `(ctx, data, options) => …`.
+`options draw data` gives a record of the source, the options and the
+data, which notebooks and the [playground](../playground.qmd) display as
+a canvas. Displaying it calls the JavaScript function with the canvas’s
+2D context, the data and the options. Without options, it gets an empty
+object. The values cross into JavaScript as [`•js`](js.qmd) describes.
+
+Where there is no canvas, as in the REPL, the record shows as one line
+of text: `canvas: N frames` when the options give `fps` and the data is
+a vector of `N` frames, and `canvas` otherwise.
+
+BPL computes the data, and the JavaScript decides how to show it,
+including the canvas’s size, which it sets through `ctx.canvas`:
+
+``` bpl
+bars←•canvas "(ctx, d, o) => { ctx.canvas.width = o.width; d.data.forEach((v, i) => ctx.fillRect(20 * i, 100 - v, 15, v)); }"
+chart←["width":80] bars 30 80 55 100
+chart.options.width   ⍝ 80
+```
+
+Errors: `DOMAIN` when the options or data hold a function.

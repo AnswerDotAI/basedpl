@@ -1,0 +1,390 @@
+# Computational foundations
+
+
+## How the core fits together
+
+BPL evaluates functions through shared primitive calls. Basedpl owns
+language rules, scalar domains, function values and transformations.
+Rustymath owns numerical algorithms, array geometry and mathematical
+facts, including partial derivatives. A primitive’s plan selects
+computing kinds, agreement and numerical settings before its kernel
+runs. Where input kinds determine the result kind, the plan records it
+too. Calls whose results need actual values run eagerly. Eligible array
+calls build a typed `Program` and return a pending value that retains it
+and its inputs.
+
+Reading a pending value gathers compatible programs. The planner groups
+elementwise calls and supported reductions into cache-sized block
+stages. A stage uses rustymath kernels or JIT-compiled arithmetic
+according to its execution policy. Deferred work and traced recordings
+use the same `Program`, steps and executor. Tracing is a separate
+collection policy on symbolic inputs, not an extra pass over every
+ordinary function call. Eligible ordinary Power bodies also reuse
+compatible recordings.
+
+Autodiff and batching intercept primitive calls through tagged
+transformation levels. Forward AD propagates primal values and tangents.
+Reverse AD records linear calls into a `Program` through its tape
+driver, then transposes those calls. Batching calls a function on many
+cells together where its operations support that transformation.
+Unsupported recording or batching returns to ordinary evaluation.
+
+## Why owning the language helps
+
+BPL controls parsing, function structure, numeric domains and array
+execution together. A glyph call, a tacit function and a dfn can reach
+the same primitive without a Python operator-overload protocol in
+between. Python is another frontend to these function values and arrays.
+Its bindings should call the BPL operation rather than implement a
+second selection, promotion or numerical rule.
+
+Function values describe how they were built. A train or bound function
+retains its operands; a dfn retains its definition and lexical
+environment. A recording can distinguish that structure from the current
+arrays it reads. Reusing construction need not mean retaining old
+captured data inside compiled code. Existing replay validates captures
+and binds the inputs it recorded. Changed assumptions require another
+recording or ordinary execution. [JAX’s function
+caching](https://github.com/jax-ml/jax/blob/main/docs/jit-compilation.md#jit-and-caching)
+illustrates why callable identity and captured data need deliberate
+ownership.
+
+The language can also keep numerical domains useful and simple. Ordinary
+`ₓ` integers use machine arithmetic and integer floor division. Dynamic
+results widen within machine widths, then wrap at the maximum width.
+Unbounded integers and fractions use the explicit `ᵣ` domain, retained
+even at denominator 1. Ordinary arithmetic does not promote to BigInt
+because a result grew or division produced a fraction. This removes an
+execution-domain change without removing dynamic kinds.
+[Numbers](numbers.qmd) owns the full rules, including weak literals and
+symbolic infinities.
+
+Array operators are the performance target. Each, Rank, Power,
+broadcasts, folds, scans, Agenda and meaningful differentiated uses
+expose repeated or whole-array work to the runtime. Scalar interactive
+latency, Fibonacci and guarded-dfn throughput are not reasons to
+complicate the foundation. Removing repeated interpretation or setup
+inside an analytical operator matters; shortening an unrelated top-level
+call does not establish that benefit.
+
+## Known kinds and fast forms
+
+Static kinds determine result kinds from argument kinds. Explicit
+approximate forms provide fast real-valued operations where an unmarked
+dynamic operation can choose real or complex results from its data.
+`√ₐ`, `*ₐ`, `⊛ₐ`, `○ₐ` and `○⁻ₐ` select the real part of the principal
+value at the promoted float width. [Numbers](numbers.qmd) describes
+their domains and conversions.
+
+The value-dependent dynamic forms of these operations have no speed,
+fusion or recording requirement. They remain useful for interactive
+analysis. An already known domain can make an individual call eligible,
+but the runtime needs no extra value-specialization framework to
+accelerate the excluded cases. Dfn guards that read traced values also
+run correctly outside the tracing contract. Ordinary dynamic work
+otherwise aims to cost at most four times the corresponding static
+calculation.
+
+Ordinary dynamic integer widening can likewise prevent a result kind
+being fixed before execution. A fixed-width or static calculation can
+use a typed fused stage. An eager call can rerun a kernel at a wider
+width when needed. Both use the same language kind rules and rustymath’s
+arithmetic. A compiled stage’s declared input and output types still
+have to agree with its actual buffers; shared construction alone does
+not enforce that contract.
+
+Known complex storage remains complex without scanning results for zero
+imaginary parts. Explicit real-part conversion is available when wanted.
+An outer conversion of an arbitrary function’s result does not authorize
+replacing every complex intermediate with a real one.
+
+## Deferred execution and native kernels
+
+A pending array retains a `Program`, its result description, captured
+numeric settings and the inputs needed to compute its items. Eligible
+deferred calls use `fusion::pending_program` for shared step-budget and
+input-retention accounting. Shape and prototype queries need no item
+read. Eligible calls can remain pending across assignment and function
+returns. Calls outside the deferred subset execute normally.
+
+For a suitable real float vector `x`, `loss←+/⊼ ◇ y←loss x` squares the
+items and sums them. A pending square can feed the reduction without
+storing a whole vector of squares. Where another value also needs that
+vector, the same pass can retain it as an output. A small selection can
+compute only selected work when its mapping and producer support that
+read. Other readers use the pending value’s cached stored result. The
+selection relationship and the computed buffer are different facts.
+
+Forcing gathers pending programs. A single step over input or held
+values can run through the normal step executor directly. Block
+scheduling prepares input geometry for grouped stages. A stage with one
+native operation and no intermediates calls its kernel once per assigned
+range. Multi-operation native stages keep intermediates in cache-sized
+blocks. An always-compile request can select compiled execution even for
+one operation. Native parts call rustymath kernels. Compiled parts run
+arithmetic steps in one generated loop and can keep intermediates in
+registers. The JIT improves some fused chains, not every numerical
+operation. Matrix products and substantial power/root algorithms already
+have whole-array native implementations.
+
+Structural operations describe how a result reads its sources through
+rustymath mappings. Consumers can read transposes, windows and
+selections through those maps instead of first making dense copies.
+Correct geometry alone does not ensure efficient execution: preserve
+mapped reads until the bulk executor chooses their traversal rather than
+splitting them early. Reading in place is not always cheapest; a copied
+or converted chunk can enable a faster kernel.
+
+The planner already groups some elementwise producers with a terminal
+fold. Geometry and stage limits determine whether the compiled loop
+accumulates directly or writes a cache-sized block for rustymath to
+fold. This does not imply every indexed reduction is one accumulator
+loop, or that a full broadcast grid is always materialized. [Futhark’s
+fusion and
+views](https://github.com/diku-dk/futhark/blob/master/docs/performance.rst)
+supplies the producer-consumer model. BPL’s named index arrays preserve
+axes for agreement and contraction recognition.
+
+[tinygrad’s realization and
+execution](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/engine/realize.py)
+and
+[TinyJit](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/engine/jit.py)
+are references for keeping construction, execution and code reuse
+distinct. BPL retains an eager base rather than requiring every call to
+enter a lazy graph.
+
+## Recordings and replay validity
+
+A traced value describes a kind and layout without providing its array
+items. Supported calls add typed steps. A successful recording executes
+through the same planner and executor used by deferred work. A later
+compatible call binds current inputs without interpreting the function
+body again. Recording outcomes belong to the function’s program cache;
+compiled machine code belongs to the JIT code table.
+
+Built recordings currently require exact argument and captured layouts,
+alongside numeric and execution-size settings, kinds and other recorded
+assumptions. A length change retraces. Stopped outcomes can reuse length
+classes `0`, `1` and `other`; that does not mean a built program can run
+at any length in the class. Kernels already take concrete lengths at
+runtime. Reusing a program at different lengths also requires its
+descriptions, maps, dimensions and result layouts to bind current
+lengths. Guarding a length is not rebinding it.
+
+Opaque data inputs supply kind bounds rather than narrower numeric
+contracts inferred from observed extrema. Keyed literals and facts
+derived from operations can support proofs inside a recording. A
+pervasive plan owns observed scalar constants and the result kind and
+range derived from them. Stored descriptions include their dtype bounds;
+mathematical range predictions can exceed a provisional type to support
+checked widening. Extracting a representative scalar preserves the
+application’s original array/atom and strong-kind context. Verification
+checks the declared plan: normalization hiding an observed constant does
+not erase that proof, and exposing another constant does not require a
+new specialization. A shape query can be represented as an operation,
+but a count that changes how many body calls are unrolled changes the
+recorded structure. Runtime kernel lengths and structural iteration
+counts are different responsibilities.
+
+A known weak integer keeps the minimum width that holds its value. A
+computed weak integer’s provisional dtype is not proof of that width;
+promotion keeps the uncertainty instead of guessing that a narrow fixed
+type will fit. Replay likewise compares an observed capture’s kind-class
+as well as its numeric value: equal numbers can imply different
+integer/float promotion. These facts belong to shared numeric planning
+and capture validation, not checks added by each caller.
+
+Recording stops before effects, random draws, unsupported observations
+and value-dependent kinds it cannot describe. The whole call then runs
+normally. Stopping before visible work avoids rollback or replaying
+effects. Reading a guard predicate from a traced argument is one such
+observation. Reads of ordinary eager values remain normal execution.
+[Autodiff](autodiff.qmd) owns the supported operations and trace-stop
+list.
+
+Eligible ordinary dense-array bodies can reuse compatible recordings in
+Power with a single finite count, per-cell map fallbacks and generic
+fold/scan fallbacks. Each, Rank and outer products try batching first.
+Replay binds current inputs and captures under the existing exact
+guards. Valid cache hits apply immediately. A miss waits for matching
+keys on consecutive calls within that operator invocation before
+building. Unsupported or ineligible bodies use ordinary calls. Power’s
+count arrays, histories and until forms keep their existing call paths.
+Deferred calls and the tracer emit the same `Program` steps but collect
+concrete pending inputs and symbolic traced inputs under different
+policies. Sharing the representation does not require tracing every
+top-level call. Further consolidation has to remove responsibilities
+without losing first-call fusion, selective reads or safe replay.
+
+## Transformations keep whole-array work
+
+Each and Rank try to apply a function once to a batch of cells. A cell
+is the part of an argument supplied to one mapped call. A successful
+batch transforms the body’s operations into operations on whole
+arguments. Nested maps can combine frames; folds across many rows can
+call a dfn once per column rather than once per numeric item.
+
+Nested and ragged arrays keep their existing representation. Each can
+batch items that share compatible plain layouts, and Key can batch
+equal-length groups from compact plain arrays, in either valence. Both
+reuse the dense batch evaluator and assemble results in their original
+order. If a reordered batch draws random numbers, it restores the
+generators before falling back to the original call order. Unsupported
+bodies and layouts take the ordinary path. This saves calls without
+adding a segmented storage format.
+
+A guard that reads a cell’s data stops batching and runs normally per
+cell. Constant and shape guards can remain batched. Guarded-dfn
+throughput has no budget or optimization requirement; Agenda and Under
+express intentional whole-array branching. Ordinary unguarded per-cell
+analytical work remains a performance target.
+
+Transformation tags select the newest active level among a call’s
+arguments. A batch can contain a dual, and a derivative can encounter
+earlier derivative levels. Calls made by a rule enter normal dispatch
+again, preserving these nesting relationships. Each level has a scoped
+lifetime: normal returns and errors perform its semantic exits; a panic
+restores the outer transformation state without running language work.
+Code reading actual items asks the transformation boundary to observe
+them. Item kernels should consume the buffer, slice or storage view they
+operate on rather than require unrelated callers to pass a proof
+wrapper.
+
+[JAX’s interpreter stack, lifting and
+batching](https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-1-transformations-as-interpreters-standard-evaluation-jvp-and-vmap)
+provides the model for composing transformations around primitive calls.
+BPL controls its evaluator and function values, including ordinary
+fallback when a transformation stops.
+
+## Differentiation and iteration
+
+For one differentiated number, forward mode runs the function with a
+seeded tangent. For more, the AD driver linearizes the executed
+calculation once. A tape value represents a linear dependency without
+numerical tangent items. The tape uses the shared `Program` and `Tracer`
+with a tape role. Reverse mode transposes it from result sensitivities;
+forward evaluation of the tape is also available. The Jacobian uses
+whichever direction needs fewer runs.
+
+Derivative rules obtain pervasive partials from rustymath’s mathematical
+objects and apply them through primitive calls. The tape/transposition
+driver remains a separate AD responsibility, not a second scalar
+arithmetic evaluator. Transposed operations can defer and fuse normally.
+Coefficients retain values needed from the actual primal computation.
+Structural reads transpose to read mappings where possible and to
+accumulation where several reads used the same source position. They
+need no one-hot array per selected item.
+
+[JAX’s linearization and
+transposition](https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-4-linearize-and-vjp-and-grad),
+[Dex’s
+linearization](https://github.com/google-research/dex-lang/blob/main/src/lib/Linearize.hs)
+and
+[transposition](https://github.com/google-research/dex-lang/blob/main/src/lib/Transpose.hs),
+and [Futhark’s bulk-array
+differentiation](https://github.com/diku-dk/futhark/blob/master/src/Futhark/AD/Rev/SOAC.hs)
+guide this choice. [tinygrad’s movement
+gradients](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/mixin/gradient.py)
+illustrate read-based transposes such as reversing a pad with a shrink.
+
+Power and generic folds/scans use ordinary body calls in their existing
+iteration algorithms. Differentiation follows the calls that execute.
+Recording those calls unrolls the computation and can make the program
+grow with the count. Unrolling itself does not imply cubic execution;
+repeated whole-program work can cause that avoidable cost.
+
+Known algebraic folds keep rustymath’s bulk algorithms and reassociation
+freedoms. Generic bodies retain their language-defined ordering and
+effects. An equivalent primitive body can use the primitive route where
+existing admission rules establish that equivalence. Last-bit agreement
+between routes is not a reason to duplicate numerical algorithms.
+
+Compact loops, loop-specific AD and checkpointing are possible later
+additions, not prerequisites for correct eager iteration. [JAX’s loop
+transformations](https://github.com/jax-ml/jax/blob/main/jax/_src/lax/control_flow/loops.py)
+shows the distinction between unrolling calls and representing a loop as
+one operation. Add such machinery only for a demonstrated workload
+benefit.
+
+## Math ownership, reads and errors
+
+Rustymath owns formulas, range facts, derivative facts, repair
+algorithms and array kernels. Basedpl owns language domains and
+promotion, function structure, transformation drivers, evaluation and
+frontend behavior. Shared array agreement and read mappings belong in
+rustymath; attaching language meaning to keys, fills, options and
+assignment belongs in basedpl. Co-design the boundary rather than add
+adapters around incompatible accounts of the same fact.
+
+Rustymath serves as BPL’s math core; its independently useful core has a
+thin Python API. Change the core and bindings together without
+preserving old Rust/Python signatures or adding compatibility layers.
+Python compatibility does not constrain co-design. Discuss a dramatic
+loss of the Python API’s independent usefulness before proceeding.
+
+A formula over `Ops` describes arithmetic for native and generated
+execution. Specialized native slice forms can implement a substantial
+algorithm more efficiently. Power and root retain their table-and-repair
+algorithms together with cheap constant-exponent and exact cases. A
+native algorithm need not be translated into the JIT before programs can
+call it. Native execution capability and derivative capability are
+separate facts.
+
+Lowering retains immutable read recipes. Basedpl binds values and slots,
+schedules stages and packs the JIT ABI. Rustymath’s `Read` and `Binding`
+read current storage and chunk windows; `Walked` constructs cycle
+backings or mapped buffers before parallel execution. Native maps,
+explicit conversions and elementwise selection (`Choose`) share operand
+reads and the output writer. Conversion scratch is reused across blocks
+within one execution. Row probes query existing geometry without general
+view/export normalization. Compiled input preparation preserves each
+bound array’s actual storage dtype and declines an incompatible buffer.
+Semantic conversion, including float-to-integer flooring and tolerance,
+stays separate from exact input casts.
+
+Pending items are observed at the storage/read boundary. A read can
+force pending work under the settings captured by its calls. Language
+shape, kind, name and host-operation checks remain with their owners.
+Recording stops are internal control flow, distinct from user errors.
+Glyph pages define individual operations’ results and errors; this page
+adds no new exceptional-input guarantees.
+
+Default fills, explicit fills, an empty result’s prototype and write
+destinations are different facts. They can share lower-level operations
+without becoming interchangeable. Reads and writes should consume
+established selection geometry instead of reconstructing it from a
+stored result. A copied value does not by itself retain the relationship
+needed for assignment. Python array brackets and function-result
+selection share native selector operations whose slice bounds resolve
+against the selected array’s actual layout.
+
+Keep hot numerical bodies inlinable, and dispatch once per block or
+whole call where appropriate. Retain a simple native path for the
+browser, which has no BPL JIT. Share the mathematical algorithm instead
+of creating a BPL-specific numerical implementation or a blanket
+vector-call ABI.
+
+## Development and measurements
+
+[`DEV.md`](https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md)
+documents build profiles, commands and contributor contracts.
+
+Measure completed analytical operators, including final forcing and work
+repeated inside their loops. Report first recording/compilation
+separately. Use calibrated tools or measured slopes to separate fixed
+outer setup, never an estimated blanket subtraction. Compare matching
+numeric modes, input layouts, build profiles and hardware.
+
+Main `.bpl` reference tests and substantive speed/count tests run with
+Mathish off. Dedicated `*_mathish.bpl` files preserve deliberate Mathish
+stories and a few cheap regression canaries. This is a test policy, not
+a change to the user-facing Mathish default. Pages and notebooks
+exercise the language-default mode. Mathish is useful optional behavior,
+not a performance target requiring more machinery.
+
+Give each fact one home and each job one mechanism. A type is useful
+when it narrows what an actual consumer accepts; passing it through
+unrelated code adds an obligation. Prefer a small substantive test or
+ratchet when static enforcement would spread through the codebase.
+Before adding substantial machinery, identify owners, affected callers,
+state and code it removes.

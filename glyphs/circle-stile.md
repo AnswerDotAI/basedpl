@@ -1,0 +1,39 @@
+
+
+# `⌽` — Reverse / Rotate
+
+Function. Keys: `Alt-2`. Hanzi: `转` (`轉`). Ranks: `1` monadic, `0 1`
+dyadic
+
+`⌽Y` reverses the last axis. [Axis](quad-colon.qmd) selects another:
+`⌽₀` reverses the first axis, and `⌽₋₁` selects the last. `⌽₀` replaces
+Dyalog’s `⊖`.
+
+``` bpl
+⌽1 2 3             ⍝ 3 2 1
+⌽₀2 2ρι4ₓ           ⍝ [2 3◇0 1]ₓ
+```
+
+`N⌽Y` rotates left by `N` places; negative `N` rotates right. Whole
+counts cycle modulo axis length.
+
+``` bpl
+1⌽"abcd"           ⍝ "bcda"
+¯1⌽"abcd"          ⍝ "dabc"
+```
+
+A count array supplies counts for the unrotated axes: one count per
+column when rotating a matrix’s first axis.
+
+``` bpl
+1⌽₀3 2ρι6ₓ          ⍝ [2 3◇4 5◇0 1]ₓ
+0 1 2⌽₀[1 2 3◇4 5 6◇7 8 9]   ⍝ [1 5 9◇4 8 3◇7 2 6]
+```
+
+## Inverse
+
+`⌽⁻Y` is `⌽Y`. `X⌽⁻Y` rotates `Y` back by `X`.
+
+``` bpl
+1⌽⁻2 3 1   ⍝ 1 2 3
+```

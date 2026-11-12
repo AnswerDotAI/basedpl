@@ -1,0 +1,32 @@
+
+
+# `⍪` — Table / Catenate first
+
+Function. Keys: `Alt-Minus ,`. Hanzi: `接/矩`. Ranks: `∞` monadic, `∞ ∞`
+dyadic
+
+`⍪Y` makes a matrix: first axis becomes rows, remaining axes become
+columns.
+
+``` bpl
+⍪1 2 3             ⍝ 3 1ρ1 2 3
+ρ⍪2 3 4ρ0          ⍝ [2 12]ₓ
+```
+
+`X⍪Y` joins on the first axis. `⍪⍠K` follows [catenate](comma.qmd).
+
+``` bpl
+1 2⍪3 4            ⍝ 1 2 3 4
+```
+
+## Inverse
+
+`⍪⁻Y` gives the vector that a one-column matrix holds, and gives back
+any other matrix. `X⍪⁻Y` removes the fixed major cells `X` from the
+front of `Y`. With the right argument fixed, `(⍪↢X)⁻Y` removes them from
+the end.
+
+``` bpl
+⍪⁻⍪1 2 3             ⍝ 1 2 3
+[1 2]⍪⁻[1 2◇3 4]   ⍝ [3 4◇]
+```

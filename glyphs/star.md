@@ -1,0 +1,79 @@
+
+
+# `*` — Exponential / Exponent
+
+Function. Hanzi: `幂` (`冪`). Ranks: `0` monadic, `0 0` dyadic
+
+`*Y`: e<sup>Y</sup>. Pervasive.
+
+``` bpl
+*0                ⍝ 1
+```
+
+`X*Y`: X<sup>Y</sup>. Whole powers of integers give integers, and whole
+powers of rationals (`ᵣ`) give rationals. An integer with a negative
+exponent floors, as integer [`÷`](obelus.qmd) does:
+
+``` bpl
+2ₓ*3ₓ             ⍝ 8ₓ
+2ₓ*¯3ₓ            ⍝ 0ₓ
+¯2ₓ*¯3ₓ           ⍝ ¯1ₓ
+2ᵣ*¯3ₓ            ⍝ 1ᵣ8
+```
+
+This holds in both modes and at every width. Base `1ₓ` gives `1ₓ`, base
+`¯1ₓ` gives `1ₓ` or `¯1ₓ` as the exponent is even or odd, and base `0ₓ`
+gives the largest integer: i64’s under dynamic kinds, where integers
+widen, and the width’s own for fixed widths and under static kinds.
+
+Other powers use principal complex branches where needed.
+
+``` bpl
+¯1*0.5            ⍝ 0j1
+```
+
+See also function [power `⍣`](star-diaeresis.qmd).
+
+## Inverse
+
+`*⁻` is `⊛`. With the right argument fixed, `(*↢X)⁻Y` is `Y*÷X`.
+
+``` bpl
+2*⁻8      ⍝ 3
+*↢2 ⁻ 9   ⍝ 3
+```
+
+## Fast combinations
+
+BPL computes this combination by an algorithm of its own, in any
+spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL
+recognises.
+
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Combination</th>
+<th>Applies to</th>
+<th>Benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>¯1+*Y</code> or <code>(*Y)-1</code></td>
+<td>real <code>Y</code></td>
+<td>expm1 keeps the digits of a small <code>Y</code> that subtracting 1
+from <code>*Y</code> cancels</td>
+</tr>
+</tbody>
+</table>
+
+On complex numbers, `¯1+*Y` computes `*Y`, then subtracts 1.
+
+``` bpl
+f←¯1+* ◇ f 1E¯17         ⍝ 1ₑ¯17
+```

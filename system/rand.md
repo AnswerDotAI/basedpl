@@ -1,0 +1,35 @@
+
+
+# `•rand` — Generator
+
+`•rand seed` returns a generator: a keyed vector of two functions that
+draw random numbers. The seed is a nonnegative whole number. The same
+seed gives the same draws.
+
+- `roll Y` works like `¿Y`.
+- `X deal Y` works like `X¿Y`.
+
+A distribution’s `sample` takes a generator on its left, as in
+`g d.sample 3`. Each draw takes the generator’s next stream when it
+runs. A draw’s numbers depend on the seed and on how many draws came
+before it, not on how many numbers those draws produced. Copies of a
+generator share its count.
+
+A [map](../terms.qmd#term-map) draws for each cell separately, in cell
+order, whether or not it runs as a [batched
+call](../evaluation.qmd#functions-and-effects), so both give the same
+numbers. A guard that splits the cells is the exception: each side of
+the guard draws for its own cells in turn. A whole-array draw and a map
+of draws over the same items take different streams, so `¿v` and `¿¨v`
+give different numbers.
+
+``` bpl
+g←•rand 3 ◇ h←•rand 3 ◇ (g.roll 4ρ6)≡h.roll 4ρ6    ⍝ $t
+```
+
+`¿` draws from the session’s own generator, which
+[`•prefs ["seed":n]`](prefs.qmd) seeds.
+
+Errors: `DOMAIN` for a seed that is not a nonnegative whole number, or a
+left argument to `sample` that is not a generator; `LENGTH` or `RANK`
+for more than one seed; `SYNTAX` for a dyadic call to `•rand`.

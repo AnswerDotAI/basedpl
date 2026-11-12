@@ -1,0 +1,38 @@
+
+
+# `⊘` — Valences
+
+Dyadic operator. Keys: `Alt-o /`. Hanzi: `兼`
+
+`f⊘g` calls `f` when it has one argument, and `g` when it has two.
+Either side can be a dfn with any number of statements.
+
+``` bpl
+f←(2×)⊘+
+f 5                ⍝ 10
+3 f 5              ⍝ 8
+```
+
+A dfn can also serve both cases, because an absent `α` drops out of the
+expression that uses it: `{α-ω}3` is `¯3`. See
+[dfns](../dfns.ipynb#arguments).
+
+An array operand that holds no function acts as a constant function.
+`α 0⊘1 ω` uses that to test for a left argument. It gives `1` in a call
+with two arguments and `0` in a call with one.
+
+``` bpl
+{α 0⊘1 ω}5         ⍝ 0
+3{α 0⊘1 ω}5        ⍝ 1
+```
+
+APL difference: Dyalog has no Valences operator. BQN writes it as `⊘`
+too.
+
+## Inverse
+
+`(f⊘g)⁻` inverts `f` with one argument and `g` with two.
+
+``` bpl
+(÷⊘-)⁻4   ⍝ 0.25
+```

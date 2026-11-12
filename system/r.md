@@ -1,0 +1,26 @@
+
+
+# `•r` — Regular expressions
+
+`text •r pattern` gives a table of the matches of the regular expression
+`pattern` in `text`, as a record of columns: `text`, the matched text;
+`position`, its position in characters from 0; and `groups`, the text of
+each group, which is empty for a group that took no part.
+[`•replace`](replace.qmd) replaces matches. BPL keeps the 16 patterns it
+compiled last, so a loop that uses one pattern compiles it once.
+
+Natively the pattern uses [fancy-regex’s
+syntax](https://docs.rs/fancy-regex/latest/fancy_regex/#syntax),
+including lookaround and backreferences. Flags go in the pattern, as in
+`(?i)`. A search that exceeds the engine’s backtracking limit raises
+`DOMAIN`. In the browser the pattern is a JavaScript regular expression,
+with [JavaScript’s
+syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions).
+[Regular expressions](../regex.ipynb) covers matching and replacing.
+
+``` bpl
+"ab12 cd3" •r "([a-z]+)([0-9]+)"   ⍝ ["text":["ab12" "cd3"] "position":[0 5]ₓ "groups":("ab" "12"◇"cd" "3")]
+```
+
+Errors: `DOMAIN` for invalid patterns and non-text arguments; `SYNTAX`
+for the wrong valence; `LIMIT` for oversized results.

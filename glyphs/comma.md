@@ -1,0 +1,43 @@
+
+
+# `,` — Ravel / Catenate
+
+Function. Hanzi: `连` (`連`). Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`,Y` makes a vector of the items. With [axes](quad-colon.qmd), `,⍠K Y`
+ravels consecutive axes and `,⍠⍬ Y` appends an axis of length 1.
+
+``` bpl
+,[1 2◇3 4]       ⍝ 1 2 3 4
+ρ,7                ⍝ [1]ₓ
+ρ,₁ ₂ 2 3 4ρι24ₓ    ⍝ [2 12]ₓ
+```
+
+`X,Y` joins on the last axis. `X,⍠K Y` joins on axis `K`. Other axes
+agree, with unit and adjacent-rank extension.
+
+``` bpl
+1 2,3 4            ⍝ 1 2 3 4
+```
+
+There is no laminate. `[x◇y]` has `x` and `y` as its major cells, along
+a new leading axis. `x,⁰y` pairs the items of `x` and `y` along a new
+last axis.
+
+``` bpl
+x←1 2 ◇ y←3 4
+[x◇y]            ⍝ [1 2◇3 4]
+x,⁰y             ⍝ [1 3◇2 4]
+```
+
+## Inverse
+
+`,⁻Y` gives back `Y` when it’s a vector. `X,⁻Y` removes the fixed `X`
+from the front of `Y`. With the right argument fixed, `(,↢X)⁻Y` removes
+it from the end.
+
+``` bpl
+,⁻1 2 3           ⍝ 1 2 3
+1 2,⁻1 2 3 4      ⍝ 3 4
+,↢3 4 ⁻ 1 2 3 4   ⍝ 1 2
+```

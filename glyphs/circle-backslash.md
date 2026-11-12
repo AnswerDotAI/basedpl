@@ -1,0 +1,118 @@
+
+
+# `⍉` — Transpose / Reorder axes
+
+Function. Keys: `Alt-o Backslash`. Hanzi: `翻`. Ranks: `∞` monadic,
+`1 ∞` dyadic
+
+`⍉Y` reverses axis order.
+
+``` bpl
+⍉2 3ρι6ₓ            ⍝ [0 3◇1 4◇2 5]ₓ
+```
+
+In `A⍉Y`, each item of `A` is a number that gives the result axis for
+the corresponding leading axis of `Y`. The axes of `Y` that `A` doesn’t
+reach fill the unused result axes in order, as in BQN. Together, the
+selected and filled axes run from 0 with no gaps. A key on an item names
+its result axis. A name in place of a number gives DOMAIN ERROR. To
+select axes by name, use `⍉⁻`.
+
+``` bpl
+1 0⍉2 3ρι6ₓ         ⍝ [0 3◇1 4◇2 5]ₓ
+ρ1⍉2 3 4ρι24ₓ       ⍝ [3 2 4]ₓ
+["rows":1 "cols":0]⍉2 3ρι6ₓ
+⍝ ["cols":3 "rows":2]ρ[0 3◇1 4◇2 5]ₓ
+```
+
+Repeated destinations select diagonals, taking the smallest
+participating dimension. A diagonal keeps the keys and name that its
+axes agree on, as mix does.
+
+``` bpl
+0 0⍉3 3ρι9ₓ         ⍝ [0 4 8]ₓ
+ρ["i":0 0]⍉3 3ρι9ₓ  ⍝ ["i":3]ₓ
+```
+
+A left argument of higher rank transposes `Y` once for each row, and
+stacks the results.
+
+``` bpl
+[0 1◇1 0]⍉2 3ρι6ₓ     ⍝ [[0 1 2◇3 4 5]◇[0 3◇1 4◇2 5]]ₓ
+```
+
+## Split and route
+
+A nested list splits one input axis. Each of its items is a
+`[destination size]` pair, optionally keyed by the new axis’s name. One
+size can be `∞`, which `⍉` infers. The sizes must multiply to exactly
+the input axis’s length. Unlike `ρ`, a split never cycles or truncates
+data.
+
+``` bpl
+x←2 3 8ρι48ₓ
+ρ[0 2 [1 2;3 ∞]]⍉x   ⍝ [2 2 3 4]ₓ
+```
+
+The last axis splits into sizes `2 4`, which go to result axes `1 3`.
+This turns `batch tokens packed` into `batch heads tokens features`. A
+key on an unsplit item names its result axis. Keys within a group name
+the factors. A key on a group names the axis that the inverse merges.
+
+``` bpl
+x←["b":2 "t":3 "d":8]ρι48ₓ
+f←["b":0 "t":2 "d":["h":1 2;"f":3 ∞]]⍉
+ρf x                      ⍝ ["b":2 "h":2 "t":3 "f":4]ₓ
+f⁻f⁝x ≡ x                ⍝ $t
+```
+
+Keys only name axes. Item `i` still describes input axis `i`, whatever
+its key.
+
+## Inverse
+
+`⍉⁻Y` is `⍉Y`. In `X⍉⁻Y`, `X` lists the source axes in output order, as
+einops does. A numeric `X` reverses `X⍉`. A name in `X` selects that
+axis of `Y`, and so does a named index, such as one from `ι⍠` or
+[`•index`](../system/index.qmd).
+
+``` bpl
+2 0 1⍉⁻2 0 1⍉2 3 4ρι24ₓ   ⍝ 2 3 4ρι24ₓ
+ρ2⍉⁻2 3 4ρι24ₓ            ⍝ [4 2 3]ₓ
+x←["b":2 "h":3 "w":4]ρι24ₓ
+ρ["w" "b" "h"]⍉⁻x       ⍝ ["w":4 "b":2 "h":3]ₓ
+w←ι⍠"w" x ◇ b←ι⍠"b" x
+ρ[w b]⍉⁻x               ⍝ ["w":4 "b":2 "h":3]ₓ
+```
+
+A nested list merges the axes it selects, in that order. Its items can
+also be `[source size]` pairs, as a split’s are. Each size must match
+its axis’s length. A size of `∞` matches any length. The inverse of a
+bound split reads its pairs this way.
+
+``` bpl
+x←2 3 8ρι48ₓ
+f←[0 2 [1 2;3 ∞]]⍉
+f⁻f⁝x ≡ x                 ⍝ $t
+[0 2 [1 3]]⍉⁻f x          ⍝ 2 3 8ρι48ₓ
+```
+
+Names let `⍉⁻` reorder and merge the factors of a split. For 16 by 16
+image patches, split height and width into patch and pixel axes, then
+merge them into one patch axis and one pixel axis:
+
+``` bpl
+images←["b":8 "h":224 "w":224 "c":3]ρ0
+patches←["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉images
+ρpatches                  ⍝ ["b":8 "i":14 "j":14 "y":16 "x":16 "c":3]ₓ
+ρ["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻patches
+⍝ ["b":8 "patch":196 "pixel":768]ₓ
+```
+
+Splitting or merging drops position keys on the changed axes. A changed
+axis takes its name from a key in the left argument, and has none
+without one. Untouched axes keep their keys and names, unless a key
+renames them. A named `X⍉⁻` doesn’t record the original axis order.
+Inverting it gives DOMAIN ERROR. A numeric left argument inverts in both
+directions when each group is a list of pairs with sizes. Under writes
+back through every form of `⍉` and `⍉⁻`.

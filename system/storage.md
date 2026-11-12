@@ -1,0 +1,27 @@
+
+
+# `•storage` — Storage
+
+`•storage Y` gives a record of how the items of `Y` are held. It reads
+no items, and a pending call stays pending.
+
+- `kind` names the storage: `"bool"`, `"integer"`, `"float64"`,
+  `"float32"`, `"float16"`, `"complex128"`, `"complex64"`, `"character"`
+  or `"mixed"`. Under static kinds, integer names include their width,
+  such as `"int32"`. An unbounded exact number gives `"rational"`; a
+  function gives `"function"`. Compact storage holds items of one kind.
+  Mixed storage keeps each item’s kind.
+  [Storage](../numbers.qmd#storage) describes the two forms.
+- `pending` is `$t` while the call that computes the items is pending.
+- `view` is `$t` for a pending selection/read relationship, or for
+  completed shared-buffer storage. A pending view need not have a stored
+  base or execute without copying.
+- `active` counts the levels of `∂` whose tags `Y` carries. Under `∂`,
+  `kind` names the storage of the primal value.
+
+``` bpl
+•storage 1.5 2.5
+(•storage 2 3ρι6ₓ).view       ⍝ $t
+y←1.5+¿200000ρ0
+(•storage y).pending         ⍝ $t
+```

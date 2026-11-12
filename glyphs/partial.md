@@ -1,0 +1,121 @@
+
+
+# `∂` — Derivative
+
+Monadic operator. Keys: `Alt-f`. Hanzi: `导/梯` (`導/梯`)
+
+`f∂X` gives the Jacobian of `f` at `X`, with the keys, axis names and
+nesting of `(f X)×⊗X`. For a number result, that’s the gradient, in
+`X`’s structure. `W f∂ X` differentiates `W f X` with respect to `X`. In
+the examples, `⊼` squares its argument.
+
+``` bpl
+⊼∂3                                                  ⍝ 6
++/⊼ ∂ 1 2 3                                         ⍝ 2 4 6
+cart←{[r t]←ω ◇ [r×2○t r×1○t]} ◇ -.×cart∂ 2 0.5    ⍝ 2
+3 {α×ω×ω}∂ 2                                         ⍝ 12
+```
+
+`∂` differentiates through the primitives that `f` calls, inside dfns,
+trains and operators alike. Its derivatives are floats, whatever the
+kind of its argument, and a record argument gives a record gradient.
+Integers that wrap, at a fixed width or under static kinds, give floats
+of the width that `÷ₐ` gives them:
+
+``` bpl
+⊼∂3ₓ                                 ⍝ 6
+p←["a":1 "b":2] ◇ ⊢.a×⊢.b ∂ p       ⍝ ["a":2 "b":1]
+-∂3ₓ₁                                ⍝ ¯1ₛ
+```
+
+For the derivative at each item of a function that works item by item,
+differentiate at rank 0, or along a unit argument in one pass:
+
+``` bpl
+x←0 0.5 1
+1○∂⁰ x     ⍝ 1 0.8775825619 0.5403023059
+{1○x+ω}∂0   ⍝ 1 0.8775825619 0.5403023059
+```
+
+`f∂∂` differentiates `f∂`, so nested `∂` gives higher and mixed
+derivatives:
+
+``` bpl
+{ω×ω×ω}∂∂∂2     ⍝ 6
+{ω₀×ω₁}∂∂ 2 3   ⍝ [0 1◇1 0]
+```
+
+`C⌻` differentiates with respect to the point and to the coefficients
+`C`. `C⌻` is a train that binds `C`, the same as `C↣⌻`.
+
+``` bpl
+f←[1 2 3]ₓ⌻ ◇ f∂2ₓ   ⍝ 14
+{ω⌻2ₓ}∂ [1 2 3]ₓ    ⍝ 1 2 4
+```
+
+`∂` runs `f` once. With more than one number in `X`, it records the
+linear steps of the derivative as `f` runs, then reads the Jacobian from
+that record: once for each result item, or once for each number in `X`,
+whichever is fewer. A gradient therefore costs a small multiple of one
+run of `f`, however many numbers `X` holds. `∂` differentiates a
+[map](../terms.qmd#term-map) inside `f` through the map’s [batched
+call](../evaluation.qmd#functions-and-effects), on whole arrays. So does
+`∂` inside a map, as in `f∂¹`, with one batched call for all the cells.
+The gradient of a structural copy or a selection, such as a reversal, a
+transpose or windows, adds each item’s gradient back where the item came
+from in its source. [`•explain`](../system/explain.qmd) reports each
+such accumulation, apart from one that adds a single ascending run of
+positions as a block, as the gradients of take and drop do. The record
+keeps the values those steps need until `∂` finishes. Its memory grows
+with the work that `f` does. A value that `f` writes to an outer name
+loses its tangents when `∂` returns. [Automatic
+differentiation](../autodiff.qmd) explains how `∂` works.
+
+No derivative flows back through a value that
+[`•detach`](../system/detach.qmd) gives.
+
+Arithmetic, the mathematical glyphs, the circle codes, `⌈` and `⌊`,
+structural and selection glyphs, Under, sorting, folds and scans, `+.×`,
+outer products, `⌻`, `⊥`, monadic `∨` and `∧` on real numbers, and
+[`•float`](../system/float.qmd) all differentiate, and so does any
+operator whose operands do. `x↦y` differentiates with respect to its
+start `x`. `⌹` and the determinant `-.×` differentiate at an invertible
+matrix, and `B⌹A` differentiates with respect to `B` for any matrix `A`.
+`X!Y` differentiates with respect to `Y` wherever it is defined, and
+with respect to `X` except at a negative whole `X` or `Y`, where it
+gives NaN. Comparisons, floor, ceiling, grade, `ι`, `⍸`, `⊤`, `¿` and
+`ᵇ` give no tangent. A count, a position, a circle code and the end of a
+range read their plain value, and `⍕` and `•json⁻` write it. `∂` doesn’t
+differentiate complex numbers.
+
+`f∂←g` attaches `g` as the derivative of the function that `f` names, as
+[assignment](../assignment.ipynb#inverses-and-derivatives) describes.
+`g` is a JVP rule: `T g X` gives the derivative of `f` at `X` along the
+direction `T`, which has `X`’s structure. `g` must be linear in `T`. `f`
+still applies itself, and `∂` uses `g` wherever `f` is called with one
+argument, alone or inside another function. For a gradient, `∂`
+transposes the steps that `g` takes on `T`. A rule describes a function
+of one argument, so `∂` through a call of `f` with two arguments gives
+an error. Bind the left argument first, as in `bound←10↣f ◇ bound∂←g`.
+`⁻` inverts `f`, and [`⇄`](right-left-arrows.qmd) takes its derivatives
+through `∂`.
+
+``` bpl
+r←{ω×ω} ◇ r∂←{α×2×ω}
+r 3                                    ⍝ 9
+r∂3                                    ⍝ 6
+{1+r ω}∂3                              ⍝ 6
+s←{+/ω×ω} ◇ s∂←{+/α×2×ω} ◇ s∂ 1 2 3   ⍝ 2 4 6
+```
+
+## Errors
+
+- `DOMAIN`: an argument or a result that isn’t numeric, a nested result
+  for an array argument, or a call with two arguments of a function that
+  has an attached derivative
+- `UNSUPPORTED`: a glyph or system function that `∂` can’t
+  differentiate, such as cis, a derivative of `⌹` or `-.×` with respect
+  to a matrix that [`⌹`](domino.qmd) counts as singular, in a stack or
+  alone, or a complex argument
+- `SYNTAX`: a left argument for a function that takes only one argument,
+  such as `C↣⌻`

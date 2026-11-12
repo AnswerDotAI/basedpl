@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.11.9">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="BPL’s eager evaluator, deferred programs, batching and autodiff, and what owning the language makes possible">
+
+<title>Computational foundations – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/scrollable-regions/scrollable-regions.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-63b5708e65d6cd79cd7618c58d0c21e7.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-69961562f744cce4bc22a2c84bdc0b21.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Computational foundations – BasedPL">
+<meta property="og:description" content="BPL’s eager evaluator, deferred programs, batching and autodiff, and what owning the language makes possible">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="Computational foundations – BasedPL">
+<meta name="twitter:description" content="BPL’s eager evaluator, deferred programs, batching and autodiff, and what owning the language makes possible">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark" aria-label="Site">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+            <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav" aria-label="Toolbar">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./overview.html">Explanations</a></li><li class="breadcrumb-item"><a href="./foundations.html">Computational foundations</a></li></ol></nav>
+        <a class="flex-grow-1" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto" aria-label="Section">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./playground.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Playground</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./gallery.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gallery</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./web.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL on the web</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-controls="quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-1-label">Reference</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+      </div>
+      <ul id="quarto-sidebar-section-1" aria-labelledby="quarto-sidebar-section-1-label" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Keyboard map</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./hanzi-notation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hanzi as notation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./hanzi-notation-zh.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">汉字 BPL：让记号参与思考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-controls="quarto-sidebar-section-2" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-2-label">Explanations</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+      </div>
+      <ul id="quarto-sidebar-section-2" aria-labelledby="quarto-sidebar-section-2-label" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyphs Study Guide</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./foundations.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Computational foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Performance</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./principles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./indexing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Indexing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./mathish.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mathish mode</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./composition.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Composing functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules and namespaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./autodiff.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Automatic differentiation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index-notation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Models in index notation</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" aria-controls="quarto-sidebar-section-3" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-3-label">Working with data</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+      </div>
+      <ul id="quarto-sidebar-section-3" aria-labelledby="quarto-sidebar-section-3-label" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" aria-controls="quarto-sidebar-section-4" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-4-label">Tooling</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+      </div>
+      <ul id="quarto-sidebar-section-4" aria-labelledby="quarto-sidebar-section-4-label" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" aria-labelledby="toc-title" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#how-the-core-fits-together" id="toc-how-the-core-fits-together" class="nav-link active" data-scroll-target="#how-the-core-fits-together">How the core fits together</a></li>
+  <li><a href="#why-owning-the-language-helps" id="toc-why-owning-the-language-helps" class="nav-link" data-scroll-target="#why-owning-the-language-helps">Why owning the language helps</a></li>
+  <li><a href="#known-kinds-and-fast-forms" id="toc-known-kinds-and-fast-forms" class="nav-link" data-scroll-target="#known-kinds-and-fast-forms">Known kinds and fast forms</a></li>
+  <li><a href="#deferred-execution-and-native-kernels" id="toc-deferred-execution-and-native-kernels" class="nav-link" data-scroll-target="#deferred-execution-and-native-kernels">Deferred execution and native kernels</a></li>
+  <li><a href="#recordings-and-replay-validity" id="toc-recordings-and-replay-validity" class="nav-link" data-scroll-target="#recordings-and-replay-validity">Recordings and replay validity</a></li>
+  <li><a href="#transformations-keep-whole-array-work" id="toc-transformations-keep-whole-array-work" class="nav-link" data-scroll-target="#transformations-keep-whole-array-work">Transformations keep whole-array work</a></li>
+  <li><a href="#differentiation-and-iteration" id="toc-differentiation-and-iteration" class="nav-link" data-scroll-target="#differentiation-and-iteration">Differentiation and iteration</a></li>
+  <li><a href="#math-ownership-reads-and-errors" id="toc-math-ownership-reads-and-errors" class="nav-link" data-scroll-target="#math-ownership-reads-and-errors">Math ownership, reads and errors</a></li>
+  <li><a href="#development-and-measurements" id="toc-development-and-measurements" class="nav-link" data-scroll-target="#development-and-measurements">Development and measurements</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="foundations.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content" tabindex="-1">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./overview.html">Explanations</a></li><li class="breadcrumb-item"><a href="./foundations.html">Computational foundations</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Computational foundations</h1>
+</div>
+
+<div>
+  <div class="description">
+    BPL’s eager evaluator, deferred programs, batching and autodiff, and what owning the language makes possible
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="how-the-core-fits-together" class="level2">
+<h2 class="anchored" data-anchor-id="how-the-core-fits-together">How the core fits together</h2>
+<p>BPL evaluates functions through shared primitive calls. Basedpl owns language rules, scalar domains, function values and transformations. Rustymath owns numerical algorithms, array geometry and mathematical facts, including partial derivatives. A primitive’s plan selects computing kinds, agreement and numerical settings before its kernel runs. Where input kinds determine the result kind, the plan records it too. Calls whose results need actual values run eagerly. Eligible array calls build a typed <code>Program</code> and return a pending value that retains it and its inputs.</p>
+<p>Reading a pending value gathers compatible programs. The planner groups elementwise calls and supported reductions into cache-sized block stages. A stage uses rustymath kernels or JIT-compiled arithmetic according to its execution policy. Deferred work and traced recordings use the same <code>Program</code>, steps and executor. Tracing is a separate collection policy on symbolic inputs, not an extra pass over every ordinary function call. Eligible ordinary Power bodies also reuse compatible recordings.</p>
+<p>Autodiff and batching intercept primitive calls through tagged transformation levels. Forward AD propagates primal values and tangents. Reverse AD records linear calls into a <code>Program</code> through its tape driver, then transposes those calls. Batching calls a function on many cells together where its operations support that transformation. Unsupported recording or batching returns to ordinary evaluation.</p>
+</section>
+<section id="why-owning-the-language-helps" class="level2">
+<h2 class="anchored" data-anchor-id="why-owning-the-language-helps">Why owning the language helps</h2>
+<p>BPL controls parsing, function structure, numeric domains and array execution together. A glyph call, a tacit function and a dfn can reach the same primitive without a Python operator-overload protocol in between. Python is another frontend to these function values and arrays. Its bindings should call the BPL operation rather than implement a second selection, promotion or numerical rule.</p>
+<p>Function values describe how they were built. A train or bound function retains its operands; a dfn retains its definition and lexical environment. A recording can distinguish that structure from the current arrays it reads. Reusing construction need not mean retaining old captured data inside compiled code. Existing replay validates captures and binds the inputs it recorded. Changed assumptions require another recording or ordinary execution. <a href="https://github.com/jax-ml/jax/blob/main/docs/jit-compilation.md#jit-and-caching">JAX’s function caching</a> illustrates why callable identity and captured data need deliberate ownership.</p>
+<p>The language can also keep numerical domains useful and simple. Ordinary <code>ₓ</code> integers use machine arithmetic and integer floor division. Dynamic results widen within machine widths, then wrap at the maximum width. Unbounded integers and fractions use the explicit <code>ᵣ</code> domain, retained even at denominator 1. Ordinary arithmetic does not promote to BigInt because a result grew or division produced a fraction. This removes an execution-domain change without removing dynamic kinds. <a href="./numbers.html">Numbers</a> owns the full rules, including weak literals and symbolic infinities.</p>
+<p>Array operators are the performance target. Each, Rank, Power, broadcasts, folds, scans, Agenda and meaningful differentiated uses expose repeated or whole-array work to the runtime. Scalar interactive latency, Fibonacci and guarded-dfn throughput are not reasons to complicate the foundation. Removing repeated interpretation or setup inside an analytical operator matters; shortening an unrelated top-level call does not establish that benefit.</p>
+</section>
+<section id="known-kinds-and-fast-forms" class="level2">
+<h2 class="anchored" data-anchor-id="known-kinds-and-fast-forms">Known kinds and fast forms</h2>
+<p>Static kinds determine result kinds from argument kinds. Explicit approximate forms provide fast real-valued operations where an unmarked dynamic operation can choose real or complex results from its data. <code>√ₐ</code>, <code>*ₐ</code>, <code>⊛ₐ</code>, <code>○ₐ</code> and <code>○⁻ₐ</code> select the real part of the principal value at the promoted float width. <a href="./numbers.html">Numbers</a> describes their domains and conversions.</p>
+<p>The value-dependent dynamic forms of these operations have no speed, fusion or recording requirement. They remain useful for interactive analysis. An already known domain can make an individual call eligible, but the runtime needs no extra value-specialization framework to accelerate the excluded cases. Dfn guards that read traced values also run correctly outside the tracing contract. Ordinary dynamic work otherwise aims to cost at most four times the corresponding static calculation.</p>
+<p>Ordinary dynamic integer widening can likewise prevent a result kind being fixed before execution. A fixed-width or static calculation can use a typed fused stage. An eager call can rerun a kernel at a wider width when needed. Both use the same language kind rules and rustymath’s arithmetic. A compiled stage’s declared input and output types still have to agree with its actual buffers; shared construction alone does not enforce that contract.</p>
+<p>Known complex storage remains complex without scanning results for zero imaginary parts. Explicit real-part conversion is available when wanted. An outer conversion of an arbitrary function’s result does not authorize replacing every complex intermediate with a real one.</p>
+</section>
+<section id="deferred-execution-and-native-kernels" class="level2">
+<h2 class="anchored" data-anchor-id="deferred-execution-and-native-kernels">Deferred execution and native kernels</h2>
+<p>A pending array retains a <code>Program</code>, its result description, captured numeric settings and the inputs needed to compute its items. Eligible deferred calls use <code>fusion::pending_program</code> for shared step-budget and input-retention accounting. Shape and prototype queries need no item read. Eligible calls can remain pending across assignment and function returns. Calls outside the deferred subset execute normally.</p>
+<p>For a suitable real float vector <code>x</code>, <code>loss←+/⊼ ◇ y←loss x</code> squares the items and sums them. A pending square can feed the reduction without storing a whole vector of squares. Where another value also needs that vector, the same pass can retain it as an output. A small selection can compute only selected work when its mapping and producer support that read. Other readers use the pending value’s cached stored result. The selection relationship and the computed buffer are different facts.</p>
+<p>Forcing gathers pending programs. A single step over input or held values can run through the normal step executor directly. Block scheduling prepares input geometry for grouped stages. A stage with one native operation and no intermediates calls its kernel once per assigned range. Multi-operation native stages keep intermediates in cache-sized blocks. An always-compile request can select compiled execution even for one operation. Native parts call rustymath kernels. Compiled parts run arithmetic steps in one generated loop and can keep intermediates in registers. The JIT improves some fused chains, not every numerical operation. Matrix products and substantial power/root algorithms already have whole-array native implementations.</p>
+<p>Structural operations describe how a result reads its sources through rustymath mappings. Consumers can read transposes, windows and selections through those maps instead of first making dense copies. Correct geometry alone does not ensure efficient execution: preserve mapped reads until the bulk executor chooses their traversal rather than splitting them early. Reading in place is not always cheapest; a copied or converted chunk can enable a faster kernel.</p>
+<p>The planner already groups some elementwise producers with a terminal fold. Geometry and stage limits determine whether the compiled loop accumulates directly or writes a cache-sized block for rustymath to fold. This does not imply every indexed reduction is one accumulator loop, or that a full broadcast grid is always materialized. <a href="https://github.com/diku-dk/futhark/blob/master/docs/performance.rst">Futhark’s fusion and views</a> supplies the producer-consumer model. BPL’s named index arrays preserve axes for agreement and contraction recognition.</p>
+<p><a href="https://github.com/tinygrad/tinygrad/blob/master/tinygrad/engine/realize.py">tinygrad’s realization and execution</a> and <a href="https://github.com/tinygrad/tinygrad/blob/master/tinygrad/engine/jit.py">TinyJit</a> are references for keeping construction, execution and code reuse distinct. BPL retains an eager base rather than requiring every call to enter a lazy graph.</p>
+</section>
+<section id="recordings-and-replay-validity" class="level2">
+<h2 class="anchored" data-anchor-id="recordings-and-replay-validity">Recordings and replay validity</h2>
+<p>A traced value describes a kind and layout without providing its array items. Supported calls add typed steps. A successful recording executes through the same planner and executor used by deferred work. A later compatible call binds current inputs without interpreting the function body again. Recording outcomes belong to the function’s program cache; compiled machine code belongs to the JIT code table.</p>
+<p>Built recordings currently require exact argument and captured layouts, alongside numeric and execution-size settings, kinds and other recorded assumptions. A length change retraces. Stopped outcomes can reuse length classes <code>0</code>, <code>1</code> and <code>other</code>; that does not mean a built program can run at any length in the class. Kernels already take concrete lengths at runtime. Reusing a program at different lengths also requires its descriptions, maps, dimensions and result layouts to bind current lengths. Guarding a length is not rebinding it.</p>
+<p>Opaque data inputs supply kind bounds rather than narrower numeric contracts inferred from observed extrema. Keyed literals and facts derived from operations can support proofs inside a recording. A pervasive plan owns observed scalar constants and the result kind and range derived from them. Stored descriptions include their dtype bounds; mathematical range predictions can exceed a provisional type to support checked widening. Extracting a representative scalar preserves the application’s original array/atom and strong-kind context. Verification checks the declared plan: normalization hiding an observed constant does not erase that proof, and exposing another constant does not require a new specialization. A shape query can be represented as an operation, but a count that changes how many body calls are unrolled changes the recorded structure. Runtime kernel lengths and structural iteration counts are different responsibilities.</p>
+<p>A known weak integer keeps the minimum width that holds its value. A computed weak integer’s provisional dtype is not proof of that width; promotion keeps the uncertainty instead of guessing that a narrow fixed type will fit. Replay likewise compares an observed capture’s kind-class as well as its numeric value: equal numbers can imply different integer/float promotion. These facts belong to shared numeric planning and capture validation, not checks added by each caller.</p>
+<p>Recording stops before effects, random draws, unsupported observations and value-dependent kinds it cannot describe. The whole call then runs normally. Stopping before visible work avoids rollback or replaying effects. Reading a guard predicate from a traced argument is one such observation. Reads of ordinary eager values remain normal execution. <a href="./autodiff.html">Autodiff</a> owns the supported operations and trace-stop list.</p>
+<p>Eligible ordinary dense-array bodies can reuse compatible recordings in Power with a single finite count, per-cell map fallbacks and generic fold/scan fallbacks. Each, Rank and outer products try batching first. Replay binds current inputs and captures under the existing exact guards. Valid cache hits apply immediately. A miss waits for matching keys on consecutive calls within that operator invocation before building. Unsupported or ineligible bodies use ordinary calls. Power’s count arrays, histories and until forms keep their existing call paths. Deferred calls and the tracer emit the same <code>Program</code> steps but collect concrete pending inputs and symbolic traced inputs under different policies. Sharing the representation does not require tracing every top-level call. Further consolidation has to remove responsibilities without losing first-call fusion, selective reads or safe replay.</p>
+</section>
+<section id="transformations-keep-whole-array-work" class="level2">
+<h2 class="anchored" data-anchor-id="transformations-keep-whole-array-work">Transformations keep whole-array work</h2>
+<p>Each and Rank try to apply a function once to a batch of cells. A cell is the part of an argument supplied to one mapped call. A successful batch transforms the body’s operations into operations on whole arguments. Nested maps can combine frames; folds across many rows can call a dfn once per column rather than once per numeric item.</p>
+<p>Nested and ragged arrays keep their existing representation. Each can batch items that share compatible plain layouts, and Key can batch equal-length groups from compact plain arrays, in either valence. Both reuse the dense batch evaluator and assemble results in their original order. If a reordered batch draws random numbers, it restores the generators before falling back to the original call order. Unsupported bodies and layouts take the ordinary path. This saves calls without adding a segmented storage format.</p>
+<p>A guard that reads a cell’s data stops batching and runs normally per cell. Constant and shape guards can remain batched. Guarded-dfn throughput has no budget or optimization requirement; Agenda and Under express intentional whole-array branching. Ordinary unguarded per-cell analytical work remains a performance target.</p>
+<p>Transformation tags select the newest active level among a call’s arguments. A batch can contain a dual, and a derivative can encounter earlier derivative levels. Calls made by a rule enter normal dispatch again, preserving these nesting relationships. Each level has a scoped lifetime: normal returns and errors perform its semantic exits; a panic restores the outer transformation state without running language work. Code reading actual items asks the transformation boundary to observe them. Item kernels should consume the buffer, slice or storage view they operate on rather than require unrelated callers to pass a proof wrapper.</p>
+<p><a href="https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-1-transformations-as-interpreters-standard-evaluation-jvp-and-vmap">JAX’s interpreter stack, lifting and batching</a> provides the model for composing transformations around primitive calls. BPL controls its evaluator and function values, including ordinary fallback when a transformation stops.</p>
+</section>
+<section id="differentiation-and-iteration" class="level2">
+<h2 class="anchored" data-anchor-id="differentiation-and-iteration">Differentiation and iteration</h2>
+<p>For one differentiated number, forward mode runs the function with a seeded tangent. For more, the AD driver linearizes the executed calculation once. A tape value represents a linear dependency without numerical tangent items. The tape uses the shared <code>Program</code> and <code>Tracer</code> with a tape role. Reverse mode transposes it from result sensitivities; forward evaluation of the tape is also available. The Jacobian uses whichever direction needs fewer runs.</p>
+<p>Derivative rules obtain pervasive partials from rustymath’s mathematical objects and apply them through primitive calls. The tape/transposition driver remains a separate AD responsibility, not a second scalar arithmetic evaluator. Transposed operations can defer and fuse normally. Coefficients retain values needed from the actual primal computation. Structural reads transpose to read mappings where possible and to accumulation where several reads used the same source position. They need no one-hot array per selected item.</p>
+<p><a href="https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-4-linearize-and-vjp-and-grad">JAX’s linearization and transposition</a>, <a href="https://github.com/google-research/dex-lang/blob/main/src/lib/Linearize.hs">Dex’s linearization</a> and <a href="https://github.com/google-research/dex-lang/blob/main/src/lib/Transpose.hs">transposition</a>, and <a href="https://github.com/diku-dk/futhark/blob/master/src/Futhark/AD/Rev/SOAC.hs">Futhark’s bulk-array differentiation</a> guide this choice. <a href="https://github.com/tinygrad/tinygrad/blob/master/tinygrad/mixin/gradient.py">tinygrad’s movement gradients</a> illustrate read-based transposes such as reversing a pad with a shrink.</p>
+<p>Power and generic folds/scans use ordinary body calls in their existing iteration algorithms. Differentiation follows the calls that execute. Recording those calls unrolls the computation and can make the program grow with the count. Unrolling itself does not imply cubic execution; repeated whole-program work can cause that avoidable cost.</p>
+<p>Known algebraic folds keep rustymath’s bulk algorithms and reassociation freedoms. Generic bodies retain their language-defined ordering and effects. An equivalent primitive body can use the primitive route where existing admission rules establish that equivalence. Last-bit agreement between routes is not a reason to duplicate numerical algorithms.</p>
+<p>Compact loops, loop-specific AD and checkpointing are possible later additions, not prerequisites for correct eager iteration. <a href="https://github.com/jax-ml/jax/blob/main/jax/_src/lax/control_flow/loops.py">JAX’s loop transformations</a> shows the distinction between unrolling calls and representing a loop as one operation. Add such machinery only for a demonstrated workload benefit.</p>
+</section>
+<section id="math-ownership-reads-and-errors" class="level2">
+<h2 class="anchored" data-anchor-id="math-ownership-reads-and-errors">Math ownership, reads and errors</h2>
+<p>Rustymath owns formulas, range facts, derivative facts, repair algorithms and array kernels. Basedpl owns language domains and promotion, function structure, transformation drivers, evaluation and frontend behavior. Shared array agreement and read mappings belong in rustymath; attaching language meaning to keys, fills, options and assignment belongs in basedpl. Co-design the boundary rather than add adapters around incompatible accounts of the same fact.</p>
+<p>Rustymath serves as BPL’s math core; its independently useful core has a thin Python API. Change the core and bindings together without preserving old Rust/Python signatures or adding compatibility layers. Python compatibility does not constrain co-design. Discuss a dramatic loss of the Python API’s independent usefulness before proceeding.</p>
+<p>A formula over <code>Ops</code> describes arithmetic for native and generated execution. Specialized native slice forms can implement a substantial algorithm more efficiently. Power and root retain their table-and-repair algorithms together with cheap constant-exponent and exact cases. A native algorithm need not be translated into the JIT before programs can call it. Native execution capability and derivative capability are separate facts.</p>
+<p>Lowering retains immutable read recipes. Basedpl binds values and slots, schedules stages and packs the JIT ABI. Rustymath’s <code>Read</code> and <code>Binding</code> read current storage and chunk windows; <code>Walked</code> constructs cycle backings or mapped buffers before parallel execution. Native maps, explicit conversions and elementwise selection (<code>Choose</code>) share operand reads and the output writer. Conversion scratch is reused across blocks within one execution. Row probes query existing geometry without general view/export normalization. Compiled input preparation preserves each bound array’s actual storage dtype and declines an incompatible buffer. Semantic conversion, including float-to-integer flooring and tolerance, stays separate from exact input casts.</p>
+<p>Pending items are observed at the storage/read boundary. A read can force pending work under the settings captured by its calls. Language shape, kind, name and host-operation checks remain with their owners. Recording stops are internal control flow, distinct from user errors. Glyph pages define individual operations’ results and errors; this page adds no new exceptional-input guarantees.</p>
+<p>Default fills, explicit fills, an empty result’s prototype and write destinations are different facts. They can share lower-level operations without becoming interchangeable. Reads and writes should consume established selection geometry instead of reconstructing it from a stored result. A copied value does not by itself retain the relationship needed for assignment. Python array brackets and function-result selection share native selector operations whose slice bounds resolve against the selected array’s actual layout.</p>
+<p>Keep hot numerical bodies inlinable, and dispatch once per block or whole call where appropriate. Retain a simple native path for the browser, which has no BPL JIT. Share the mathematical algorithm instead of creating a BPL-specific numerical implementation or a blanket vector-call ABI.</p>
+</section>
+<section id="development-and-measurements" class="level2">
+<h2 class="anchored" data-anchor-id="development-and-measurements">Development and measurements</h2>
+<p><a href="https://github.com/AnswerDotAI/basedpl/blob/main/DEV.md"><code>DEV.md</code></a> documents build profiles, commands and contributor contracts.</p>
+<p>Measure completed analytical operators, including final forcing and work repeated inside their loops. Report first recording/compilation separately. Use calibrated tools or measured slopes to separate fixed outer setup, never an estimated blanket subtraction. Compare matching numeric modes, input layouts, build profiles and hardware.</p>
+<p>Main <code>.bpl</code> reference tests and substantive speed/count tests run with Mathish off. Dedicated <code>*_mathish.bpl</code> files preserve deliberate Mathish stories and a few cheap regression canaries. This is a test policy, not a change to the user-facing Mathish default. Pages and notebooks exercise the language-default mode. Mathish is useful optional behavior, not a performance target requiring more machinery.</p>
+<p>Give each fact one home and each job one mechanism. A type is useful when it narrows what an actual consumer accepts; passing it through unrelated code adds an obligation. Prefer a small substantive test or ratchet when static enforcement would spread through the codebase. Before adding substantial machinery, identify owners, affected callers, state and code it removes.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+      window.quartoDecorateExternalLinks = function (root) {
+     var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+          if (!link.classList.contains('no-external-icon')) {
+          }
+        }
+      }
+      };
+      window.quartoDecorateExternalLinks(window.document);
+    // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+    // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+    const hideOnEscAndFocusOut = {
+      name: 'hideOnEscAndFocusOut',
+      defaultValue: true,
+      fn(instance) {
+        const dismiss = () => {
+          // A show scheduled by the trigger delay would otherwise reopen it
+          instance.clearDelayTimeouts();
+          instance.hide();
+        };
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+          // except an open reveal.js slide menu, which Esc should close too.
+          // The menu handles keys only when its keyboard option is on.
+          const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+            window.Reveal.getConfig().menu?.keyboard !== false;
+          if (!menuHandlesEsc) {
+            event.stopPropagation();
+          }
+          if (instance.popper.contains(window.document.activeElement)) {
+            // Disabled while refocusing so the focus trigger does not reopen it
+            instance.disable();
+            instance.reference.focus();
+            instance.enable();
+          }
+          dismiss();
+        };
+        const onFocusOut = (event) => {
+          const target = event.relatedTarget;
+          if (target && !instance.reference.contains(target) &&
+              !instance.popper.contains(target)) {
+            dismiss();
+          }
+        };
+        // On the trigger too: a click trigger (code-annotations: select) has no
+        // blur handling. Attached for the instance's lifetime so leaving the
+        // trigger also cancels a show still pending on the trigger delay.
+        instance.reference.addEventListener('focusout', onFocusOut);
+        return {
+          onShow() {
+            window.document.addEventListener('keydown', onKeyDown, true);
+            instance.popper.addEventListener('focusout', onFocusOut);
+          },
+          onHide() {
+            window.document.removeEventListener('keydown', onKeyDown, true);
+            instance.popper.removeEventListener('focusout', onFocusOut);
+          },
+          onDestroy() {
+            instance.reference.removeEventListener('focusout', onFocusOut);
+          },
+        };
+      },
+    };
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+        plugins: [hideOnEscAndFocusOut],
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          // Each band is positioned against its own containing block, which is
+          // not the offsetParent of the lines, so place it from client rects.
+          const placeBand = (band, firstEl, lastEl, codeBlock) => {
+            const container = band.offsetParent;
+            if (container === null) {
+              return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            // Reveal.js scales slides with a transform, so convert client
+            // pixels back to the CSS pixels of the container.
+            const scale = containerRect.height / container.offsetHeight || 1;
+            const firstRect = firstEl.getBoundingClientRect();
+            const lastRect = lastEl.getBoundingClientRect();
+            const top = (firstRect.top - containerRect.top) / scale - container.clientTop + container.scrollTop;
+            const height = (lastRect.bottom - firstRect.top) / scale;
+            band.style.top = top - 2 + "px";
+            band.style.height = height + 4 + "px";
+            if (codeBlock) {
+              // Without the copy button wrapper, the containing block is wider
+              // than the code block, so span the code block explicitly.
+              const blockRect = codeBlock.getBoundingClientRect();
+              band.style.left = (blockRect.left - containerRect.left) / scale - container.clientLeft + container.scrollLeft + "px";
+              band.style.width = blockRect.width / scale + "px";
+            }
+          };
+          if (lineIds.length > 0) {
+            const el = window.document.getElementById(lineIds[0]);
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const parent = el.parentElement.parentElement;
+            // cook up a div (if necessary) and position it
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            placeBand(div, el, lastEl, parent.closest("div.sourceCode") || parent);
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            placeBand(gutterDiv, el, lastEl);
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+  <script type="application/javascript">
+  window.quartoScrollableRegionsLabels = {"code":"Scrollable code","output":"Scrollable output"};
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

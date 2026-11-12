@@ -1,0 +1,51 @@
+
+
+# `ρ` — Shape / Reshape
+
+Function. Keys: `Alt-r`. Hanzi: `形`. Ranks: `∞` monadic, `1 ∞` dyadic
+
+`ρY` gives axis lengths.
+
+``` bpl
+ρ2 3ρ0             ⍝ [2 3]ₓ
+```
+
+The shape is keyed by the axis names. An unnamed axis gives an unkeyed
+entry. See [named axes](../keyed.ipynb#named-axes).
+
+``` bpl
+M←["city":2 "month":3]ρι6ₓ
+ρM                 ⍝ ["city":2 "month":3]ₓ
+"month"⌷ρM         ⍝ 3ₓ
+```
+
+`SρY` reshapes, cycling or truncating the ravel of `Y`. Dimensions are
+nonnegative whole numbers. Empty `Y` supplies fill, which
+[`⍠`](quad-colon.qmd#fill) can choose.
+
+``` bpl
+2 3ρ1 2            ⍝ [1 2 1◇2 1 2]
+3ρ""               ⍝ "   "
+```
+
+An empty shape makes a rank-zero array.
+
+``` bpl
+⍬ρ1 2              ⍝ ⊂1
+```
+
+A keyed `S` names the axes of the result. An unkeyed `S` gives no names.
+When `S` matches the shape of `Y`, the result keeps the position keys of
+`Y`.
+
+``` bpl
+ρ["city":2 3]ρι6ₓ   ⍝ ["city":2 3]ₓ
+```
+
+## Inverse
+
+`Sρ⁻Y` ravels `Y`, which must have shape `S`.
+
+``` bpl
+2 3ρ⁻2 3ρι6ₓ   ⍝ [0 1 2 3 4 5]ₓ
+```

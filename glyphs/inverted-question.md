@@ -1,0 +1,36 @@
+
+
+# `¿` — Roll / Deal
+
+Function. Keys: `Alt-/`. Hanzi: `掷/抽` (`擲/抽`). Ranks: `0` monadic,
+`0 0` dyadic
+
+`¿N`: uniform draw from `ιN`. `¿0`: U(0,1). Pervasive.
+
+``` bpl
+¿6 ∊ ι6ₓ           ⍝ $t
+```
+
+`M¿N`: `M` draws without replacement from `ιN`.
+
+``` bpl
+≢3¿10             ⍝ 3ₓ
+≢∪3¿10            ⍝ 3ₓ
+```
+
+Bounds are nonnegative whole numbers; `M≤N`. Exact arguments give exact
+integer draws. Where integers wrap, under static kinds or at a fixed
+width, a roll of integers gives integers, and a bound of 0, which rolls
+a float, is a DOMAIN error. A float bound of 0 still rolls a float, as
+`¿0` does. Dyalog APL writes Roll and Deal as `?`, which BPL uses for
+[predicates](question.qmd).
+
+`¿` draws from the session’s generator, which the operating system keys
+when the session starts. [`•prefs ["seed":n]`](../system/prefs.qmd)
+seeds it with the nonnegative whole number `n`.
+[`•rand`](../system/rand.qmd) makes a separate generator and describes
+how draws advance its stream, including in maps.
+
+``` bpl
+•prefs ["seed":42] ◇ a←¿6 6 6 ◇ •prefs ["seed":42] ◇ a≡¿6 6 6    ⍝ $t
+```
