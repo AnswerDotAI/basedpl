@@ -24,7 +24,7 @@ Function. Keys: `Alt-3`. Hanzi: `根`. Ranks: `0` monadic, `0 0` dyadic
 ```bpl
 √⁻3       ⍝ 9
 3√⁻2      ⍝ 8
-(√↢8)⁻2   ⍝ 3
+√↢8∘⁻2    ⍝ 3
 ```
 
 ## Errors

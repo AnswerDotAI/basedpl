@@ -274,7 +274,7 @@ s←⍉[0 $n ; :]⌷⍠["fill":2]3 100ρ1
 [3 ; $t ; 3]
 
 ⍝ fill-option-under — Under passes its function the chosen fill at each position that its selection fills, and writes back only the positions that the selection reads from its argument. A take after another selection reads its own fill, and two takes that choose different fills each give theirs
-[(⊢-+/)@(5↑⍠["fill":9]) 1 2 3 ; (⊢-+/)@(5↑⍠["fill":8]⌽) 1 2 3 ; (⊢-+/)@{7↑⍠["fill":20] 5↑⍠["fill":9] ω} 1 2 3]
+[(-↢ +/)@(5↑⍠["fill":9]) 1 2 3 ; (-↢ +/)@(5↑⍠["fill":8]⌽) 1 2 3 ; (-↢ +/)@{7↑⍠["fill":20] 5↑⍠["fill":9] ω} 1 2 3]
 ⍝ =>
 [¯23 ¯22 ¯21 ; ¯21 ¯20 ¯19 ; ¯63 ¯62 ¯61]
 
@@ -418,7 +418,7 @@ a←["k":3 "n":2]ρι6ₓ ◇ k←ι["k":3] ◇ [+/⍠k a;ρι⍠"n" a]   ⍝ [[
 f←{i←"r"•index≢ω ◇ ω.[i]×2} ◇ e←•explain "[f∂1 2 3 ; f∂1 2 3]" ◇ n←{↑(ι₀)ρω}¨e.value ◇ [(1↓e.programs.event)≡,⊂"replayed" ; 3↑¨n ; ≢∪n]   ⍝ [$t ["_r·" "_r·"] 2ₓ]
 
 ⍝ fresh-index-map — a map calls a dfn that selects and computes by `•index` once on all its cells, which share each name that it draws. Where the dfn's result holds a drawn name, the map calls it once for each cell, and each cell's result has a name of its own. A selection by an index named for an axis of the cells keeps the cells' order of axes
-m←3 4ρι12 ◇ f←{i←•index≢ω ◇ +/ω.[i]×1+i} ◇ e←•explain "f⍤1 m" ◇ r←{•index 3}¨1 2 ◇ [n j k]←•index 2 3 4 ◇ y←(2 3 4ρι24).[n j k] ◇ [e.value ; ≢e.fallbacks.reason ; ≢ρ(0⊃r)+1⊃r ; (ρ{ω.[k]}⍤2⊢y)≡ρy]   ⍝ [[20 60 100] 0ₓ 2ₓ $t]
+m←3 4ρι12 ◇ f←{i←•index≢ω ◇ +/ω.[i]×1+i} ◇ e←•explain "f⍤1 m" ◇ r←{•index 3}¨1 2 ◇ [n j k]←•index 2 3 4 ◇ y←(2 3 4ρι24).[n j k] ◇ [e.value ; ≢e.fallbacks.reason ; ≢ρ(0⊃r)+1⊃r ; (ρ{ω.[k]}⍤2y)≡ρy]   ⍝ [[20 60 100] 0ₓ 2ₓ $t]
 
 ⍝ program-record — `∂` of a dfn on a record of arrays runs from a program: each of the record's arrays is one of its inputs, and the gradient is a record with the same keys. The second call replays it
 p←["w":1 2 3 ; "b":4] ◇ f←{+/(⊼ω.w)+ω.b} ◇ e←•explain "[f∂p ; f∂p]" ◇ [(1↓e.programs.event)≡,⊂"replayed" ; e.value≡2ρ⊂["w":2 4 6 ; "b":3]]   ⍝ $t $t
@@ -534,7 +534,7 @@ f←{ω×ρ•index⁝3} ◇ (f∂2)≡f∂2   ⍝ $f
 v←1 2 3 ◇ f←+/×⍨ ◇ g←+/(2×)⁻ ◇ ef←•explain "[f∂v ; f∂v ; f∂v]" ◇ eg←•explain "[g∂v ; g∂v ; g∂v]" ◇ [(↑⌽ef.programs.event)≡"replayed" ; (↑⌽eg.programs.event)≡"replayed" ; ↑ef.value ; ↑eg.value]   ⍝ [$t $t [2 4 6] [0.5 0.5 0.5]]
 
 ⍝ program-tacit-data — a train built afresh at each call, because it reads a name, runs from its structure's program. Each array that it binds as an argument is an input, as a free name of a dfn is, so a replay takes each call's new values
-v←1 2 3 ◇ g←{w←α ◇ (+/w×⊢)∂ω} ◇ e←•explain "[4 5 6 g v ; 7 8 9 g v ; 1 1 1 g v]" ◇ [(↑⌽e.programs.event)≡"replayed" ; e.value]   ⍝ [$t (4 5 6◇7 8 9◇1 1 1)]
+v←1 2 3 ◇ g←{w←α ◇ +/w× ∂ω} ◇ e←•explain "[4 5 6 g v ; 7 8 9 g v ; 1 1 1 g v]" ◇ [(↑⌽e.programs.event)≡"replayed" ; e.value]   ⍝ [$t (4 5 6◇7 8 9◇1 1 1)]
 
 ⍝ program-positions — `∂` of a dfn that selects at positions from its left argument runs from a program, which reads the positions again at each replay. A pick from each row, as `⌷⍤[0 1]` makes it, selects every row at once. No trace stops
 v←0.5×ι10 ◇ m←0.1×3 4ρι12 ◇ p←[3 5 3]ₓ ◇ q←[1 2 2]ₓ ◇ r←[0 3 1]ₓ ◇ s←[2 2 0]ₓ ◇ f←{+/(ω.[α])*2} ◇ g←{+/(α⌷⁰ ¹ω)*2} ◇ e←•explain "[p f∂ v ; q f∂ v ; r g∂ m ; s g∂ m]" ◇ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[0 0 0 6 0 5 0 0 0 0] [0 1 4 0 0 0 0 0 0 0] [0 0 0 0◇0 0 0 1.4◇0 1.8 0 0] [0 0 0.4 0◇0 0 1.2 0◇1.6 0 0 0] 4ₓ 0ₓ]
@@ -3719,7 +3719,7 @@ m←[1 2◇3 4] ◇ {⎕←(•storage ω).view ◇ +/ω}∂ ,m
 •float¨[{ω}∂3ₓ₁ ; {ω}∂3ₓ₂ ; {ω}∂3ₓ₄ ; {ω}∂3ₓ₈ ; {+/ω×ω}∂[2 3]ₓ₄]   ⍝ [32 32 64 64 64]ₓ
 
 ⍝ — Under with a predicate differentiates through the selection
-{+/(2×)@[0<⊢] ω}∂ ¯1 2 3   ⍝ 1 2 2
+{+/(2×)@[0<] ω}∂ ¯1 2 3   ⍝ 1 2 2
 
 ⍝ — Under with positions differentiates through the selection
 {+/(2×)@[1 2] ω}∂ 5 5 5   ⍝ 1 2 2
@@ -4444,7 +4444,7 @@ a←¿[256 256 4]ρ0 ◇ j←(¿[130 130 2]ρ100)ₓ ◇ r←¿[16 64 64 4]ρ0 �
 w←¿1000ρ0 ◇ t←⌊10×w ◇ ∧/[({+/,⌈/50↕ω}∂ w)≡{+/,⌈/1×50↕ω}∂ w;({+/,⌊/50↕ω}∂ t)≡{+/,⌊/1×50↕ω}∂ t;({+/,⌈/3↕ω}∂ t)≡{+/,⌈/1×3↕ω}∂ t]   ⍝ $t
 
 ⍝ window-sum-gradient-slides — Under `∂`, a sum along the windows' axis gives each item the sum of the cotangents of the windows that read it, at both ends and along a matrix's first axis, as summing built windows does
-x←1.0×ι10 ◇ m←[6 4]ρ1.0×ι24 ◇ c←[4 4]ρ1.0+ι16 ◇ [{+/(1+ι8)×+/3↕ω}∂ x ; ({+/,c×+/⍠1⊢3↕ω}∂ m)≡{+/,c×+/⍠1⊢1×3↕ω}∂ m ; ({+/(1+ι6)×+/5↕ω}∂ x)≡{+/(1+ι6)×+/1×5↕ω}∂ x]   ⍝ [[1 3 6 9 12 15 18 21 15 8] $t $t]
+x←1.0×ι10 ◇ m←[6 4]ρ1.0×ι24 ◇ c←[4 4]ρ1.0+ι16 ◇ [{+/(1+ι8)×+/3↕ω}∂ x ; ({+/,c×+/⍠1⁝3↕ω}∂ m)≡{+/,c×+/⍠1⁝1×3↕ω}∂ m ; ({+/(1+ι6)×+/5↕ω}∂ x)≡{+/(1+ι6)×+/1×5↕ω}∂ x]   ⍝ [[1 3 6 9 12 15 18 21 15 8] $t $t]
 
 ⍝ — With an edge mode in an options record, every windowed axis is centred, and its edges read by that mode
 ["size":3 "edge":"wrap"]↕1 2 3 4   ⍝ [4 1 2◇1 2 3◇2 3 4◇3 4 1]
@@ -5843,7 +5843,7 @@ key←997|(7×i×i)+3×i←ι256ₓ ◇ y←(1+2×16|⍋key)÷32 ◇ x←(4↑y)
 m←16 16ρx ◇ s←32•float m
 t←{v←4096×64•float,ω ◇ +/(1ₓ+ι≢v)×⌊ₓv}
 [t +/0.5<m;t +⌿0.5<m;t ∨/m>0.95;t +/0⌈1⌊0.5+1.25×m-0.5;t ⌈⌿m-0.5;t +/0.5ₛ<s;t +/y×2;t +⌿s×2;t +/(m-0.5)×m+0.5]
-[t (⊢÷+/) 0.5×y;t (⌈/-+/) 0.5×y;t (+/-+/) 0.5×y]
+[t (÷↢ +/) 0.5×y;t (⌈/-+/) 0.5×y;t (+/-+/) 0.5×y]
 ⍝ =>
 [4608000 4272128 446464 4600800 252160 4608000 1048576 8830976 836000]ₓ
 [541400 ¯260160 0]ₓ

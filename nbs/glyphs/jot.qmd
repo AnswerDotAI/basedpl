@@ -9,6 +9,16 @@ Dyadic operator. Keys: `Alt-t`. Hanzi: `承`
 ```
 See [Rank](jot-diaeresis.qmd) for applying a function to cells of a chosen rank.
 
+## Before an operator
+
+`∘` before an operator finishes the current run as its left operand. `⊂⊢∘⌸` is `(⊂⊢)⌸`; `+/÷≢∘⍤1` applies the mean train at rank 1. Named operators have the same behavior. Spaces or parentheses keep any earlier function or left argument outside the run.
+
+```bpl
+m←2 3ρι6 ◇ +/÷≢∘⍤1m   ⍝ 1 4
+```
+
+Before a function, `∘` still means Atop. [Composing functions](../composition.qmd#operators-on-trains) describes both uses.
+
 ## Inverse
 
 `(f∘g)⁻Y` is `g⁻ f⁻ Y`. `X(f∘g)⁻Y` is `X g⁻ f⁻ Y`.

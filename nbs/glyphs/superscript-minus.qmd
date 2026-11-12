@@ -7,7 +7,7 @@ Monadic operator. Keys: `Alt-_`. Hanzi: `反`
 ```bpl
 *⁻1           ⍝ 0
 2×⁻10         ⍝ 5
-(+↢3)⁻10      ⍝ 7
++↢3∘⁻10       ⍝ 7
 ```
 
 BPL infers inverses of the primitives and compositions listed under [Power](star-diaeresis.qmd). `f⁻←g` [attaches an inverse](../assignment.ipynb#inverses-and-derivatives) to a named function.
@@ -18,6 +18,6 @@ The minus is bare: no superscript digit follows it. `f⁻¹` means [Rank](jot-di
 ⌽⁻ ¹[1 2◇3 4]   ⍝ [2 1◇4 3]
 ```
 
-An inverse applies to the whole derived function on its left. Use parentheses or a space when that function ends in a number: `(+↢3)⁻10` or `+↢3 ⁻ 10`.
+An inverse applies to the whole derived function on its left. Use `∘` before `⁻` when that function ends in a number: `+↢3∘⁻10`. Parentheses or a space also group the function: `(+↢3)⁻10` or `+↢3 ⁻ 10`.
 
 Errors: `DOMAIN` for an unknown inverse or an array operand.

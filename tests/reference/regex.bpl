@@ -30,7 +30,7 @@ m←"abc" •r "(z)"
 "ab:12:$ cd:3:$"
 
 ⍝ regex:each — A bound pattern composes and works with Each
-f←≢∘("text"↣⊃)∘(•r↢"(?i)cat")
+f←≢"text"⊃ •r↢"(?i)cat"
 f¨"Cat cat" "dog"   ⍝ [2 0]ₓ
 
 ⍝ regex:badpattern — Compile errors are located DOMAIN errors

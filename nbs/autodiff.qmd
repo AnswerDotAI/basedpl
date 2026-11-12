@@ -4,7 +4,7 @@
 
 ```bpl
 ⊼∂3                          ⍝ 6
-(+/⊼)∂ 1 2 3                 ⍝ 2 4 6
++/⊼ ∂ 1 2 3                 ⍝ 2 4 6
 ```
 
 The [`∂` page](glyphs/partial.qmd) lists what `∂` differentiates and the errors it gives.
@@ -96,10 +96,10 @@ ste←{⌊ω} ◇ ste∂←{α}
 {+/steω×2}∂ 1.5 2.5         ⍝ 2 2
 ```
 
-`•detach X` gives `X` with every derivative removed. `∂` then treats it as a constant, as JAX treats the result of `stop_gradient`. `⊢×•detach` multiplies its argument by a detached copy of itself. Its derivative at 3 is the copy's value, 3, where `⊼∂3` gives 6:
+`•detach X` gives `X` with every derivative removed. `∂` then treats it as a constant, as JAX treats the result of `stop_gradient`. `×↢•detach` multiplies its argument by a detached copy of itself. Its derivative at 3 is the copy's value, 3, where `⊼∂3` gives 6:
 
 ```bpl
-(⊢×•detach)∂3                ⍝ 3
+×↢•detach ∂3                ⍝ 3
 ```
 
 A value that `f` writes to a name outside itself loses its derivatives when `∂` returns. A function gives the same values with and without `∂`.
@@ -144,11 +144,11 @@ sq←{+/⊼ω} ◇ g←sq∂ 1 2 3
 
 The second call replays the program that the first call built. Four numbers need a program of their own.
 
-A dfn keeps its programs with its definition. Any other function, such as a train, keeps them by its structure for the rest of the session. The structure leaves out the arrays that the function binds, which become inputs, as a dfn's free names do. So `+/w×⊢` replays its program when `w` holds new values of the same type and shape:
+A dfn keeps its programs with its definition. Any other function, such as a train, keeps them by its structure for the rest of the session. The structure leaves out the arrays that the function binds, which become inputs, as a dfn's free names do. So `+/w×` replays its program when `w` holds new values of the same type and shape:
 
 ```bpl
-w←1 2 3 ◇ g←(+/w×⊢)∂ 4 5 6
-w←7 8 9 ◇ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
+w←1 2 3 ◇ g←+/w× ∂ 4 5 6
+w←7 8 9 ◇ (•explain "+/w× ∂ 4 5 6").programs.event   ⍝ ["replayed"]
 ```
 
 ### What stops a trace

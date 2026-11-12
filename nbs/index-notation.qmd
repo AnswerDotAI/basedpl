@@ -61,7 +61,7 @@ heads←{h←0 2 1 3⍉ω ◇ (¯2↓ρh , ×/¯2↑ρh)ρh}
 attn←{
   [wqkv wo]←α
   [q k v]←1 3 0 2 4⍉ω+.×wqkv
-  s←mask(+⍤2) q+.×⍤2⍉⍤2⁝k ÷ √⊢/ρq
+  s←mask(+⍤2) q+.×⍤2⍉⍤2⁝k ÷ √(ρq)₋₁
   e←*s-⌈/s
   (heads e÷+/e +.×⍤2 v)+.×wo
 }

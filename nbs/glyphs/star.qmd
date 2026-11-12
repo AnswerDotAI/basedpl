@@ -33,7 +33,7 @@ See also function [power `⍣`](star-diaeresis.qmd).
 
 ```bpl
 2*⁻8      ⍝ 3
-(*↢2)⁻9   ⍝ 3
+*↢2∘⁻9    ⍝ 3
 ```
 
 ## Fast combinations
