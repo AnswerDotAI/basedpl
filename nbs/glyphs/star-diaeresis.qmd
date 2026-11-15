@@ -2,21 +2,21 @@
 
 Dyadic operator. Keys: `Alt-1 8`. Hanzi: `次/止`
 
-`f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the left argument stays fixed. The [separator `⁝`](tricolon.qmd) keeps a literal count apart from a literal argument, as in `⊽⍣3⁝1`. With a left argument, parentheses show the derived function between its arguments, as in `2(+⍣3)1`.
+`f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the left argument stays fixed. The [separator `⁝`](tricolon.qmd) keeps a literal count apart from a literal argument, as in `⊽⍣3⁝1`. With a left argument, put parentheses around the derived function, as in `2(+⍣3)1`.
 
 ```bpl
 ⊽⍣3⁝1             ⍝ 8
 2(+⍣3)1            ⍝ 7
 ```
 
-Negative counts apply the known inverse. Bare [`⁻`](superscript-minus.qmd) writes `f⍣¯1` as `f⁻`. Repeat with `f⍣2`; `f²` instead means rank 2.
+For a negative count, Power applies the known inverse of `f`. [`f⁻`](superscript-minus.qmd) is `f⍣¯1`. Repeat with `f⍣2`; `f²` instead means rank 2.
 
 ```bpl
 ⊽⍣¯1⁝10           ⍝ 5
 10 -\⍣¯1 [9 7 4]     ⍝ 1 2 3
 ```
 
-Inverses propagate through Atop, dyadic After and Before, bound arguments, Each, rank, dyadic Commute and scans. Primitive inverses include arithmetic bindings, exp/log, circle, axis permutations, encode/decode, enclosure/mix/split, Where and [replicate](hash.qmd#expand). Square roots and logs select branches.
+Inverses propagate through Atop, dyadic After and Before, bound arguments, Each, Rank, dyadic Commute and scans. Primitive inverses include arithmetic bindings, exp/log, circle, axis permutations, encode/decode, enclosure/Mix/Split, Where and [Replicate](hash.qmd#expand). An inverse that takes a square root or a log gives the principal branch.
 
 `f⍣g Y` iterates until `new g old` is true, returning `new`.
 
@@ -36,11 +36,11 @@ A vector of counts gives one item for each count, holding the state after that m
 ⊽⍣(⊂3) 1               ⍝ ⊂8
 ```
 
-Positive counts run first, then negative counts run the inverse, also from `Y`. A repeated count reuses its state. Empty counts give an empty result with the counts' shape.
+Power runs `f` for the positive counts first, then the inverse for the negative counts, also from `Y`. Repeated counts are not recomputed. Empty counts give an empty result with the counts' shape.
 
 ## Fixed point
 
-A count of `∞` runs until the state stops changing, the same test as `⍣≡`. `¯∞` runs the inverse until it converges. `∞` can sit in a vector of counts. Here `n` is Newton's step towards √2. It gives half of its argument (`⊽⁻`, the inverse of double) plus the argument's reciprocal (`÷`).
+`f⍣∞` iterates until the state stops changing, the same test as `f⍣≡`. `f⍣¯∞` iterates the inverse until the state stops changing. A vector of counts can include `∞`. Here `n` is Newton's step towards √2. It gives half of its argument (`⊽⁻`, the inverse of double) plus the argument's reciprocal (`÷`).
 
 ```bpl
 n←⊽⁻+÷

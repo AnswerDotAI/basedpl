@@ -9,6 +9,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [value]{#term-value} | a number, character, function, operator or array |
 | [atom]{#term-atom} | a value that isn't an array: a number, character, function or operator |
 | [number]{#term-number} | an approximate real or complex number, or an exact integer or rational, as [Numbers](numbers.qmd) describes |
+| [bare number]{#term-bare-number} | a number written without a suffix, which is approximate: `0.5`, whereas `3ₓ` and `1ᵣ3` are exact |
 | [whole]{#term-whole} | with no fractional part. Integers are whole, as are floats such as `3.0` and `¯3.0` |
 | [Mathish types]{#term-mathish-types} | ordinary exact numbers, 64-bit floats and complex numbers with 64-bit parts, under dynamic kinds. Fixed-integer calculations are excluded. [Mathish mode](numbers.qmd#mathish-mode) applies its conventions when enabled |
 | [character]{#term-character} | one Unicode character, written in single quotes: `'a'` |
@@ -19,6 +20,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [derived function]{#term-derived-function} | a function that an operator derives: `+/`, or `2↣×` |
 | [pervasive function]{#term-pervasive-function} | a function that applies to each atom of its arguments, through any nesting: `≥[2 ⊂3]` is `[3 ⊂4]` |
 | [array]{#term-array} | a rectangular collection of values along zero or more axes |
+| [simple array]{#term-simple-array} | an array whose items are all atoms: `1 2 3`, `"abc"` and `⊂5` are simple, and `[1 [2 3]]` is not |
 | [rank]{#term-rank} | the number of axes: a vector has rank 1, and atoms and scalars have rank 0 |
 | [vector]{#term-vector} | an array of rank 1 |
 | [matrix]{#term-matrix} | an array of rank 2 |
@@ -37,11 +39,13 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [assembly]{#term-assembly} | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
 | [function array]{#term-function-array} | an array with a function as an item. [Evaluation](evaluation.qmd#binding) gives the rule for calling one: `2 [+ ×] 3` is `5 6` |
 | [map]{#term-map} | a call of Each, Rank, an outer product or a stencil, which applies its operand at each position of a frame: to each item, cell, pair of items or window. These are the map's cells. [Evaluation](evaluation.qmd#functions-and-effects) describes how a map calls its operand |
-| [fill]{#term-fill} | the value an operation uses where an array has no item, as when `5↑1 2` gives `1 2 0 0 0`. It comes from the array's prototype: its first item with each number made 0, each character made a space, and each function kept. A call can choose its own fill through [`⍠`](glyphs/quad-colon.qmd#fill)'s options record |
+| [prototype]{#term-prototype} | the value an array supplies as its own fill: its first item with each number made 0, each character made a space, and each function kept. An empty array keeps its prototype: `↑0ρ"ab"` is `' '` |
+| [fill]{#term-fill} | the value an operation uses where an array has no item, as when `5↑1 2` gives `1 2 0 0 0`. It is the array's [prototype](#term-prototype), unless the call chooses a fill through [`⍠`](glyphs/quad-colon.qmd#fill)'s options record |
 | [selection]{#term-selection} | values read from an argument together with their places in it, as a list of positions or a function such as `1↓` reads them |
 | [glyph]{#term-glyph} | a symbol for a primitive or for syntax, as the [glyph reference](glyphs.qmd) lists |
 | [name]{#term-name} | a word that refers to a value, as [Syntax](syntax.qmd#names) describes: `x` or `avg` |
 | [statement]{#term-statement} | the code between two newlines or `◇` separators. Inside brackets and parentheses, these separate rows instead |
+| [shy]{#term-shy} | giving a result that isn't displayed unless the code asks for it: an assignment is shy, and `⎕←x←3` displays its value |
 | [literal]{#term-literal} | a number, character, string, `∞`, `⍬`, or a constant: `$t` true, `$f` false or `$n` NaN |
 | [group]{#term-group} | brackets, parentheses or braces with what they hold: `(1+2)`, `[a b]` or `{ω}` |
 | [token]{#term-token} | a glyph, name, literal or group |
@@ -52,6 +56,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [operand]{#term-operand} | a value an operator applies to |
 | [monadic]{#term-monadic} | taking one argument, or for an operator, one operand: `-5` is a monadic call |
 | [dyadic]{#term-dyadic} | taking two arguments, or for an operator, two operands: `3-5` is a dyadic call |
+| [ambivalent]{#term-ambivalent} | callable with one argument or with two: `-` negates with one argument and subtracts with two |
 | [expression]{#term-expression} | a run, group or statement that ends in a subject |
 | [train]{#term-train} | a run, group or statement that ends in a function |
 | [part]{#term-part} | one of the pieces a train is built from: a literal strand, or a token with the operators bound to it, such as `2`, `+/` or `(+×-)` |
@@ -59,4 +64,23 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [tine]{#term-tine} | one of the two outer parts of a fork |
 | [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ω)` |
 | [bind]{#term-bind} | a subject directly before a part, fixing that part's left argument: `2×` is `2↣×`, and in `2\|#⊢` the `2` binds `\|` |
-| [fast combination]{#term-fast-combination} | a combination of functions that BPL computes by an algorithm of its own, in any spelling: `10↑⍋v`, `⊛1+x` |
+| [hook]{#term-hook} | a function that [Before](glyphs/right-tail-arrow.qmd) or [After](glyphs/left-tail-arrow.qmd) derives from two functions. With one argument, a hook uses that argument twice: `f↢g Y` is `Y f(g Y)`, and `f↣g Y` is `(f Y)g Y` |
+| [fast combination]{#term-fast-combination} | a combination of functions that BPL computes with a dedicated algorithm: `10↑⍋v`, `⊛1+x` |
+
+## Internals terms
+
+These terms describe how BPL runs code. [Performance](performance.qmd) explains what they mean for the speed of a program. [`•explain`](system/explain.qmd), [`•storage`](system/storage.qmd), [`•memory`](system/memory.qmd) and [`•prefs`](system/prefs.qmd) report them.
+
+| Term | Meaning |
+|---|---|
+| [pending]{#term-pending} | not yet computed. A call on a large array can return a pending array, and BPL computes the items when a later call reads them, as [Calls that wait](performance.qmd#calls-that-wait) describes. `(•storage y).pending` is `$t` for a pending array |
+| [fused group]{#term-fused-group} | the pending calls that BPL computes together, block by block, in one pass over their arrays. Each of those calls is [fused]{#term-fused}. The `fused` field of `•explain` has a row for each fused group that ran |
+| [forced]{#term-forced} | computed because a call needed the items in memory: `⍋` and display each force a pending array that they read. The `forced` field of `•explain` has a row for each call that forced one |
+| [compiled loop]{#term-compiled-loop} | machine code that BPL makes while a process runs, for the calls and types of one fused group, as [Compiled loops](performance.qmd#compiled-loops) describes. `•explain` records each run of one as a `"compiled"` route |
+| [kernel]{#term-kernel} | a built-in loop that computes one primitive on whole arrays of given types, such as `+` on two arrays of 64-bit floats. A call that isn't part of a compiled loop runs on its kernel |
+| [trace]{#term-trace} | to record the calls that a function makes as the steps of a program. A trace stops at a call that a program can't hold, as [What stops a trace](autodiff.qmd#what-stops-a-trace) lists |
+| [program]{#term-program} | the typed steps that a trace records. BPL runs the program in place of the function on later calls whose arguments have the same types and shapes. The `programs` field of `•explain` has a row for each program built or replayed |
+| [batched call]{#term-batched-call} | one call of a [map](#term-map)'s operand on all the map's cells together, in place of one call for each cell, as [Evaluation](evaluation.qmd#functions-and-effects) describes |
+| [compact storage]{#term-compact-storage} | storage that holds items of one type side by side, as an array of floats or of characters does. [Storage](numbers.qmd#storage) describes it |
+| [mixed storage]{#term-mixed-storage} | storage that keeps each item's kind with the item, for an array whose items no one compact type can hold: `(•storage 1ₓ 2.5).kind` is `"mixed"` |
+| [view]{#term-view} | an array that shares another array's items without copying them, as a reshape or a cell from Rank does. A view keeps all of that other array's items alive |

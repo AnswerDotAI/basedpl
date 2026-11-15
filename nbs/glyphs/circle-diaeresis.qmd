@@ -18,7 +18,7 @@ Compare [After](left-tail-arrow.qmd), which transforms only the right argument.
 
 ## Inverse
 
-With an argument fixed, `X(f⍥g)⁻Y` inverts `f` with `g X` fixed, then applies `g⁻`.
+`X(f⍥g)⁻Y` is `g⁻((g X)f⁻Y)`.
 
 ```bpl
 1(+⍥⊽)⁻8   ⍝ 3

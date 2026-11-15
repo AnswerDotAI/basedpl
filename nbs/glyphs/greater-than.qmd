@@ -9,7 +9,7 @@ Function. Hanzi: `大`. Ranks: `∞` monadic, `0 0` dyadic
 >"b" "a" "c"        ⍝ "c" "b" "a"
 ```
 
-`X>Y` tests X > Y for reals, and for characters by code point. A number is less than any character, as [`⍋`](delta-stile.qmd) orders them. Pervasive; tolerant.
+`X>Y` tests X > Y for reals, and for characters by code point. A number is less than any character, as [`⍋`](delta-stile.qmd) orders them. Pervasive; [tolerant](../evaluation.qmd#equality-and-ordering).
 
 ```bpl
 1 2 3>2            ⍝ $f $f $t
@@ -17,11 +17,11 @@ Function. Hanzi: `大`. Ranks: `∞` monadic, `0 0` dyadic
 'a'>3              ⍝ $t
 ```
 
-See [`<`](less-than.qmd) to sort up, and [`⍒`](del-stile.qmd) for the indices that sort.
+See [`<`](less-than.qmd) to sort up, and [`⍒`](del-stile.qmd) for the positions that sort.
 
 ## Fast combinations
 
-BPL computes each of these combinations by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+BPL computes each of these combinations with a dedicated algorithm. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
 
 | Combination | Applies to | Benefit |
 |---|---|---|

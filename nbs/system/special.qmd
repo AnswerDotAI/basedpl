@@ -1,6 +1,6 @@
 # `•special` — Special functions
 
-`•special name` returns the special function called `name`, as SciPy names it, with SciPy's order of arguments. A list of names gives a list of functions.
+`•special name` returns the special function called `name`, as SciPy names it, with SciPy's order of arguments. For a list of names, `•special` returns a list of functions.
 
 ```bpl
 [erf gammaln]←•special "erf" "gammaln"
@@ -8,7 +8,7 @@ erf 0.5                ⍝ 0.5204998778
 gammaln 5              ⍝ 3.17805383
 ```
 
-Each function works item by item on real numbers and gives floats, as `⊛` does. Exact numbers and integers convert to floats. A value that a function leaves undefined, such as digamma at a negative whole number, is NaN.
+Each function works item by item on real numbers and gives floats, as `⊛` does. Exact numbers and integers are converted to floats.
 
 | Name | Call | Result |
 |---|---|---|
@@ -31,7 +31,7 @@ Each function works item by item on real numbers and gives floats, as `⊛` does
 [2 3◇4 5] bi¹ ⁰ 0.5 0.25     ⍝ 0.6875 0.1138153076
 ```
 
-`∂` differentiates each function in its last argument. The slope of `gammaln` is digamma, digamma's is `1 polygamma`, and each polygamma's is the next order's. `beta` also differentiates in a. The order of `polygamma`, the a of `gammainc` and the pair of `betainc` have no slope, and `∂` gives `UNSUPPORTED` for them:
+`∂` differentiates each function with respect to its last argument. The slope of `gammaln` is digamma, the slope of digamma is `1 polygamma`, and the slope of `n polygamma` is `(n+1) polygamma`. `∂` also differentiates `beta` with respect to a. `∂` raises `UNSUPPORTED` for a slope with respect to the order of `polygamma`, the a of `gammainc` or the pair of `betainc`:
 
 ```bpl
 [erf bi]←•special "erf" "betainc"
@@ -39,7 +39,9 @@ erf∂ 0.5                ⍝ 0.8787825789
 {[2 3] bi ω}∂ 0.5       ⍝ 1.5
 ```
 
-For an order n from 1, `polygamma` gives NaN for an x from 0 down and for an n above 170.
+`0 polygamma x` is digamma. For a whole n from 1 to 170, `n polygamma x` has a result for any x above 0. A result too large for its float kind is `∞` or `¯∞`, as `170 polygamma 0.5` is.
 
-Errors: `DOMAIN` for an unknown name, a name that isn't a string, or a complex argument; `SYNTAX` for a call with the wrong number of arguments; `LENGTH` for a left argument of `betainc` that isn't one pair.
+An unknown name, a name that isn't a string or a complex argument raises `DOMAIN`. A call with the wrong number of arguments raises `SYNTAX`. A left argument of `betainc` that isn't one pair raises `LENGTH`.
+
+Under dynamic kinds, `digamma`, `polygamma`, `erfinv`, `beta`, `gammainc` and `betainc` raise `DOMAIN` when non-NaN arguments produce NaN. This includes digamma at a negative integer and incomplete beta outside its domain. Under [static kinds](../numbers.qmd#static-kinds), these numeric checks are disabled and NaN is returned. Infinite results do not raise an error.
 

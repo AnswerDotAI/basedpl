@@ -11,14 +11,14 @@ Monadic operator. Hanzi: `累`
 
 `S f\ Y` uses the seed `S` as the previous result for the first item. The result doesn't include the seed.
 
-A dfn that scans several lanes, such as each row of a matrix, runs each stage on every lane at once, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as scanning each lane in turn.
+A dfn that scans several cells, such as the rows of a matrix, runs on every cell at once, in one [batched call](../evaluation.qmd#functions-and-effects) for each position along the axis. The result is the same as scanning each cell in turn.
 
 ```bpl
 10-\1 2 3          ⍝ 9 7 4
 100+\10 20         ⍝ 110 130
 ```
 
-Each lane starts from the whole seed. Use Rank for separate seeds per cell.
+Each cell starts from the whole seed. Use Rank for separate seeds per cell.
 
 ```bpl
 M←[1 2 3◇4 5 6]

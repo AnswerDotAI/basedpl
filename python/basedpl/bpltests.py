@@ -174,7 +174,7 @@ def _load(path): return parse(path.read_text())
 
 def add(ids, output='tests/reference', directory='provenance'):
     "Append reviewed cases, then mark their inventory records active."
-    output = Path(output)
+    output = Path(output).expanduser()
     existing = {case.id for path in output.glob('*.bpl') for case in _load(path) if case.id}
     if len(set(ids))!=len(ids) or existing.intersection(ids): raise ValueError('duplicate case ID in selection or destination')
     corpus = Corpus(directory)
@@ -218,7 +218,7 @@ def check_file(
 ):
     "Check `path` in the native reference queue. Return failures in file and line order, route obligations and counts by mode under `accounting`."
     if isinstance(ids, (int, str)): ids = [ids]
-    spec = dict(path=str(Path(path).resolve()), ids=ids, child=str(resolved(build).resolve()))
+    spec = dict(path=str(Path(path).expanduser().resolve()), ids=ids, child=str(resolved(build).resolve()))
     result = _check(dict(check=spec), None, timeout, cwd)
     for key in ('failures', 'obligations'):
         for failure in result[key]: failure['linear'] = linear(failure['code'])
@@ -233,7 +233,7 @@ def check_page(
     timeout:float=LIMIT # Seconds of work that the check gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
-    text = Path(path).read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
+    text = Path(path).expanduser().read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
     line = text.count('\n') - 1
     failures = _check(dict(page=dict(text=text, batch=False if unbatched else None)), build, timeout)['failures']
     if not any(f.get('status') == 'unchecked' for f in failures):
@@ -247,7 +247,7 @@ def _kind(r):
 
 def _records(x):
     "Case records: `x` itself, or those in the JSON file at path `x`."
-    return x if isinstance(x, list) else json.loads(Path(x).read_text())
+    return x if isinstance(x, list) else json.loads(Path(x).expanduser().read_text())
 
 def _identity(r):
     "A case's identity across records: its file and id, or, for a case without an id, its file, section and code."
@@ -1335,7 +1335,7 @@ def set_budgets(
     if isinstance(sections, str): sections = [sections]
     for code, cost in expected.items():
         if not math.isfinite(cost) or cost < 0: raise ValueError(f'{code} should cost {cost}')
-    path = Path(path)
+    path = Path(path).expanduser()
     if path.is_dir(): return Budgets(row for p in sorted(path.glob('*.bpl')) for row in set_budgets(expected, p, builds, sections, estimate))
     data = path.read_bytes()
     records = _footers(path, data)
@@ -1403,7 +1403,7 @@ def set_counts(
     "Write each case's counts that `log` gives (`logged_counts`) into its footer's `platform` column, leaving its time budgets and its other columns unchanged; return the changed counts. A footer's counts are measurements: the speed tests apply the margin (`rustymath_timing::Count::over`)."
     platform = platform or _platform()
     if platform not in _BUDGETS[:2]: raise ValueError(f'counts have no column {platform}')
-    counted, path = log if isinstance(log, dict) else logged_counts(log), Path(path)
+    counted, path = log if isinstance(log, dict) else logged_counts(log), Path(path).expanduser()
     if path.is_dir(): return CountChanges(row for p in sorted(path.glob('*.bpl')) for row in set_counts(counted, p, platform))
     data, changes, edits = path.read_bytes(), CountChanges(), []
     for section, code, label, budgets, counts, span in _footers(path, data):

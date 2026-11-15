@@ -9,7 +9,7 @@ Function. Keys: `Alt-'`. Hanzi: `右`. Ranks: `∞` monadic, `∞ ∞` dyadic
 1 2⊢3 4            ⍝ 3 4
 ```
 
-Both arguments evaluate.
+Both arguments are evaluated.
 
 ## Inverse
 

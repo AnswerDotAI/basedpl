@@ -2,13 +2,13 @@
 
 Function. Keys: `Alt-e`. Hanzi: `属/展` (`屬/展`). Ranks: `∞` monadic, `∞ ∞` dyadic
 
-`∊Y` recursively ravels all nested leaves.
+`∊Y` gives the vector of every atom in `Y`, at any depth.
 
 ```bpl
 ∊[[1 2] 3 [4 5]]    ⍝ 1 2 3 4 5
 ```
 
-`X∊Y` marks each cell of `X` found among the major cells of `Y`, using tolerant matching. The cells of `X` have the rank of a major cell of `Y`. Against a vector, each item of `X` is one query. A single query returns an atom. Batch axes follow the leading axes of `X`.
+`X∊Y` marks each cell of `X` found among the major cells of `Y`, using [tolerant matching](../evaluation.qmd#equality-and-ordering). The cells of `X` have the rank of a major cell of `Y`. Against a vector, each item of `X` is one query. A single query returns an atom. Otherwise the result has the leading axes of `X`.
 
 ```bpl
 1 2 3∊2 4          ⍝ $f $t $f

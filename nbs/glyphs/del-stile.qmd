@@ -2,14 +2,14 @@
 
 Function. Keys: `Alt-Backslash g`. Hanzi: `降`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
-`⍒Y` gives indices that sort major cells descending. Stable, with the same [ordering](delta-stile.qmd) as Grade up.
+`⍒Y` gives positions that sort major cells descending. Stable, with the same [ordering](delta-stile.qmd) as Grade up.
 
 ```bpl
 ⍒30 10 20          ⍝ [0 2 1]ₓ
 ⍒2 1 2 1           ⍝ [0 2 1 3]ₓ
 ```
 
-`C⍒Y` uses character collation `C`.
+`C⍒Y` orders characters by their position in `C`, with characters absent from `C` first.
 
 ```bpl
 "cba"⍒"abc"        ⍝ [0 1 2]ₓ
@@ -19,7 +19,7 @@ See [`>`](greater-than.qmd) to sort.
 
 ## Fast combinations
 
-BPL computes each of these combinations by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+BPL computes each of these combinations with a dedicated algorithm. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
 
 | Combination | Applies to | Benefit |
 |---|---|---|
@@ -36,7 +36,7 @@ v←30 10 20 50 40 60 70 80 90 0
 
 ## Inverse
 
-`⍒⁻P` gives an array whose descending grade is the permutation `P`. Any other `P` is a `DOMAIN` error.
+`⍒⁻P` gives an array whose descending grade is the permutation `P`. Any other `P` raises a `DOMAIN` error.
 
 ```bpl
 ⍒⁻2 0 1   ⍝ [1 0 2]ₓ

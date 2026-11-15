@@ -275,7 +275,9 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     let mut guard = None;
     for (i, node) in nodes.iter().enumerate() {
         if matches!(node.kind, NodeKind::ErrorGuard) {
-            if i == 0 { return Err(invalid(&node.span, "error guard needs error numbers")); }
+            if i == 0 {
+                return Err(invalid(&node.span, "an error guard needs error kinds before ::, as in \"DOMAIN\"::, or ∞:: to catch every kind"));
+            }
             if guard.is_some() { return Err(invalid(&node.span, "a statement can contain only one error guard")); }
             guard = Some(i);
         }

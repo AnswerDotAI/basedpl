@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-=`. Hanzi: `同/深`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
-`≡Y` gives nesting depth: 0 for an atom, and otherwise 1 more than the deepest item. An empty array takes the depth of its prototype.
+`≡Y` gives nesting depth: 0 for an atom, and otherwise 1 more than the deepest item. An empty array has the depth of its [prototype](../terms.qmd#term-prototype).
 
 ```bpl
 ≡1 2 3             ⍝ 1ₓ
@@ -17,7 +17,7 @@ Function. Keys: `Alt-=`. Hanzi: `同/深`. Ranks: `∞` monadic, `∞ ∞` dyadi
 1≡,1               ⍝ $f
 ```
 
-Axes match as arithmetic pairs them. An axis matches another with the same name, or one with no name, but never one with a different name. When both axes have keys, they must hold the same keys in any order, and items compare by key. An axis without keys matches any keys. Search functions such as [`ι`](iota.qmd) match cells by the same rule.
+Axes match as arithmetic pairs them. An axis matches another with the same name, or one with no name, but never one with a different name. When both axes have keys, they must hold the same keys in any order, and items are compared by key. An axis without keys matches any keys. Search functions such as [`ι`](iota.qmd) match cells by the same rule.
 
 ```bpl
 ι["i":3] ≡ ι3ₓ                  ⍝ $t

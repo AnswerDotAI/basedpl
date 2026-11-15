@@ -226,7 +226,7 @@ impl<T, E: Into<Error>> At<T> for Result<T, E> { fn at(self, span: &Span) -> Res
 fn display_text(text: &str) -> String {
     let mut rendered = String::new();
     for part in text.split_inclusive('\t') {
-        let plain = part.strip_suffix('\t').unwrap_or(part);
+        let plain = part.trim_suffix('\t');
         for c in plain.chars() { if c.is_control() { rendered.extend(c.escape_default()); } else { rendered.push(c); } }
         if part.ends_with('\t') { rendered.push_str(&" ".repeat(4 - rendered.width() % 4)); }
     }

@@ -15,7 +15,7 @@ basedpl-install
 bpl
 ```
 
-The setup command installs the Jupyter kernel and BPL fonts for your user. On macOS it also installs a native [keyboard layout](https://answerdotai.github.io/basedpl/keyboard.html#macos-installation).
+`basedpl-install` installs the Jupyter kernel and BPL fonts for your user. On macOS it also installs a native [keyboard layout](https://answerdotai.github.io/basedpl/keyboard.html#macos-installation).
 
 Each release also has a standalone `bpl` that needs no Python, for macOS on Apple silicon and for Linux on x86-64 and arm64. On a Mac:
 
@@ -35,11 +35,11 @@ avg 2 4 9
 
     5
 
-Use `bpl -e 'avg←+/÷≢ ◇ avg 2 4 9'` for a shell command. The [command-line guide](https://answerdotai.github.io/basedpl/cli.html) covers source files and pipes.
+To run the same example from a shell, use `bpl -e 'avg←+/÷≢ ◇ avg 2 4 9'`. The [command-line guide](https://answerdotai.github.io/basedpl/cli.html) covers source files and pipes.
 
 ## Interactive use
 
-In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes `ι` when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for `+`. [`•prefs`](https://answerdotai.github.io/basedpl/system/prefs.html) changes display settings, such as boxes and how much of a large array shows. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
+In the REPL, type a backtick followed by a glyph name. For example, `` `iota `` becomes [`ι`](https://answerdotai.github.io/basedpl/glyphs/iota.html) when you press Tab or type a non-letter. Abbreviations and Alt-key shortcuts are available. `]help +` shows help for [`+`](https://answerdotai.github.io/basedpl/glyphs/plus.html). [`•prefs`](https://answerdotai.github.io/basedpl/system/prefs.html) changes display settings, such as boxes and how much of a large array is shown. See [REPL](https://answerdotai.github.io/basedpl/repl.html) and the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html), which lists each glyph’s key.
 
 In Jupyter, select the installed **BasedPL** kernel. Cells share definitions and support completion, Shift-Tab help and interruption. You can also use `%%bpl` cells in a Python notebook. See [Using BPL notebooks](https://answerdotai.github.io/basedpl/notebooks.html).
 
@@ -55,7 +55,7 @@ Numbers separated by spaces form a vector. Arithmetic applies to every item:
 
     11 12 13
 
-Operators modify or combine functions. Reduce (`/`) turns addition into summation. `ι10` generates 0…9:
+Operators modify or combine functions. [`/`](https://answerdotai.github.io/basedpl/glyphs/slash.html) turns addition into summation. `ι10` generates 0…9:
 
 ``` bpl
 +/ι10
@@ -63,7 +63,7 @@ Operators modify or combine functions. Reduce (`/`) turns addition into summatio
 
     45
 
-Functions can also be combined without naming their arguments. In `avg←+/÷≢`, sum (`+/`) divided by tally (`≢`) defines the mean:
+Functions can also be combined without naming their arguments. In `avg←+/÷≢`, the mean is defined as the sum (`+/`) divided by the tally ([`≢`](https://answerdotai.github.io/basedpl/glyphs/equal-underbar-slash.html)):
 
 ``` bpl
 avg 1 2 3 4
@@ -71,7 +71,7 @@ avg 1 2 3 4
 
     2.5
 
-To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⊗⍨↦50ₓ`), count the zeros down each column (`+⌿0ₓ=`), and find the positions (`⍸`) whose count is two. Positions count from 0. `≥` increments each position to recover its number:
+To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Calculate the remainders for every pair of numbers from 1 to 50 (`|⊗⍨↦50ₓ`), count the zeros down each column (`+⌿0ₓ=`), and find the positions ([`⍸`](https://answerdotai.github.io/basedpl/glyphs/iota-underbar.html)) whose count is two. Positions count from 0. [`≥`](https://answerdotai.github.io/basedpl/glyphs/greater-than-or-equal.html) increments each position to recover its number:
 
 ``` bpl
 ≥⍸2ₓ=+⌿0ₓ=|⊗⍨↦50ₓ
@@ -86,7 +86,7 @@ To see how these ideas express an algorithm, start from “a prime has exactly t
 For APL users, some key differences are:
 
 - [Based arrays](https://answerdotai.github.io/basedpl/arrays.html), as in BQN: numbers, characters and functions are atoms; enclosure always adds a layer.
-- **Vectors in brackets, and grouping by spaces.** `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A run that ends in a function is a train. For example, `+/÷≢ x` is the mean of `x`, and `2×` doubles its argument. `0⌷v` and `v₀` both select the first item of `v`.
+- **Vectors in brackets, and grouping by spaces.** `[a b c]` is a vector, and `a+b × c+d` is `(a+b)×(c+d)`. A [run](https://answerdotai.github.io/basedpl/terms.html#term-run) that ends in a function is a train. For example, `+/÷≢ x` is the mean of `x`, and `2×` doubles its argument. `0⌷v` and `v₀` both select the first item of `v`.
 - **Leading-axis broadcasting**, including expansion of length-1 axes, plus string keys and names on axes.
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
@@ -95,7 +95,7 @@ Positions and axes count from 0, as in BQN and Python. Default [Mathish mode](ht
 
 ### Numbers
 
-Bare numbers are approximate. Use `ₓ` for machine integers and `ᵣ` for unbounded integers and exact fractions:
+[Bare numbers](https://answerdotai.github.io/basedpl/terms.html#term-bare-number) are approximate. Use `ₓ` for machine integers and `ᵣ` for unbounded integers and exact fractions:
 
 ``` bpl
 1ᵣ÷3ᵣ
@@ -143,11 +143,11 @@ sales←axes:[10 20 30◇40 50 60]
 
     ["city":2]ρ["NY":60 "LA":150]
 
-Keys and names travel with axes through operations such as transpose. Arithmetic aligns matching names and keys. See [Axis keys](https://answerdotai.github.io/basedpl/keyed.html).
+Operations such as transpose preserve the names and keys of axes. Arithmetic aligns axes by name and positions by key. See [Axis keys](https://answerdotai.github.io/basedpl/keyed.html).
 
 ### Function operators
 
-A vector of counts keeps the history: one state for each count, where count 0 is the initial value. Here, double up to four times:
+Pass [`⍣`](https://answerdotai.github.io/basedpl/glyphs/star-diaeresis.html) a vector of iteration counts to get the history of states, with one state for each count and count 0 as the initial value. Here, double up to four times:
 
 ``` bpl
 2×⍣(ι5) 1
@@ -155,7 +155,7 @@ A vector of counts keeps the history: one state for each count, where count 0 is
 
     1 2 4 8 16
 
-Under (`@`) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
+[`@`](https://answerdotai.github.io/basedpl/glyphs/at.html) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
 
 ``` bpl
 ⌊@(10×)1.25 2.78
@@ -217,11 +217,11 @@ CSV headers likewise name column vectors. [Files, CSV and JSON](https://answerdo
 
 ![](index_files/figure-commonmark/cell-17-output-1.svg)
 
-Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees serialize to XML. See [XML and SVG](https://answerdotai.github.io/basedpl/xml.html).
+Build SVG from element functions and keyed attributes. Notebooks display the picture directly. The same element trees can be serialized to XML. See [XML and SVG](https://answerdotai.github.io/basedpl/xml.html).
 
 ``` bpl
 [circle text]←•element "circle" "text"
-c←["cx":50 "cy":40 "r":25 "fill":"orange"]circle ""
+c←circle ["cx":50 "cy":40 "r":25 "fill":"orange"]
 t←["x":50 "y":85 "text-anchor":"middle"]text "Hello, SVG"
 ["width":240 "height":240]•svg c t
 ```

@@ -5,9 +5,9 @@ resources: [playground/*]
 toc: false
 ---
 
-Press **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac), to run the code. Type a backtick and a glyph's name for a glyph, such as `` `iota ``, or click a glyph in the language bar.
+Press **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac), to run the code. To enter a glyph, type a backtick and the glyph's name, such as `` `iota ``, or click the glyph in the language bar.
 
-The interpreter runs in your browser. It is the latest release of the npm package [`basedpl`](https://www.npmjs.com/package/basedpl). Names you create are persistent between runs. **⏹ Stop** ends the session and starts a new one.
+The interpreter runs in your browser. It is the latest release of the npm package [`basedpl`](https://www.npmjs.com/package/basedpl). Names you create persist between runs. **⏹ Stop** ends the session and starts a new one.
 
 ::: {.column-screen-inset-right}
 ```{=html}

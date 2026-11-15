@@ -8,7 +8,7 @@ Monadic operator. Keys: `Alt-Minus /`. Hanzi: `汇` (`匯`)
 +⌿2 3ρι6ₓ           ⍝ [3 5 7]ₓ
 ```
 
-`S f⌿ Y` starts each lane from the whole seed `S` on the right.
+`S f⌿ Y` reduces each vector along the first axis, starting from the whole seed `S` on the right.
 
 ```bpl
 10+⌿3 2ρι6ₓ         ⍝ [16 19]

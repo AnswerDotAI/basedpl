@@ -191,6 +191,16 @@ ism,sm
 {+/(+/50↕ω)²}∂ sv
 ⍝⍝: 11	55	84	instructions macos 40.249 linux 25.159	allocated macos 64.931 linux 64.929
 
+⍝ Summing inner-axis windows transposes as another sliding sum, not one scatter per window item. Its work stays linear as the width grows.
+⍝⍝⍝ route trace
+{+/,⊼+/1 31↕ω}∂sq
+⍝⍝: -	-	-	instructions macos 40.269	allocated macos 31.755
+
+⍝ Strided windows add their overlapping cotangents in bounded frame groups, without listing every write or storing the expanded window cotangent whole.
+⍝⍝⍝ route trace
+{+/,⊼+/["size":31 "step":2]↕ω}∂sv
+⍝⍝: -	-	-	instructions macos 197.007	allocated macos 156.21
+
 ⍝ A product of windows reads them a block of rows at a time, straight into the matrix product, and never builds the windows matrix. A product of a single-channel image's windows with one filter adds each column of the windows, read where it lies, into the result. Its gradient for the kernel reads them again in blocks. Its gradient for the image is one product of the windows of the zero-padded cotangent with the kernel reversed.
 ⍝ Expected: `[64516 144]ρ3 3↕cimg +.× ck` 19 copies on macOS, 71 on Linux and 142 in wasm: a product of 595 million flops, 567 an item, at Accelerate's rank-k rate, at 8 in a copy's time for rustymath's own kernels and at 4 in wasm. Gathering the windows adds nothing: on 30 October 2026 the case cost 24.5 on macOS and 92 with rustymath's own kernels, against 24.8 and 92 for a product from the stored windows matrix. `{+/, [64516 144]ρ3 3↕cimg +.× ω}∂ ck` costs the same, because the function is linear in the kernel: `∂`'s program runs no primal, only one product, of the transposed windows with the broadcast seed. `{+/, [64516 144]ρ3 3↕ω +.× ck}∂ cimg` 27 copies on macOS, 106 on Linux and 212 in wasm, because the function is linear in the image: its program runs one product, of 604 million flops, between the windows of the zero-padded cotangent and the kernel reversed. That product has its own shape, 65,536 rows of 288 items times 16 columns: from a stored windows matrix it cost 27 on macOS and 106 with rustymath's own kernels on 30 October 2026, where the forward product's rate gives 19 and 72. Linux and wasm scale 72 and 144 by that 106 against 72.
 ⍝ CI measured 70 to 74 on Linux in runs 56 and 59-61.
@@ -244,3 +254,9 @@ ism,sm
 ⍝⍝⍝ held macos 3.04: open.md lists masked selects among the speed audit's outliers; busy hosts reach the Linux and wasm costs
 (0.5<)⍚[⊢ -] sv
 ⍝⍝: 2.5	4	5.2	instructions macos 14.133 linux 8.237	allocated macos 18.442 linux 18.439
+
+⍝⍝ static •prefs ["kinds":"static"]
+⍝ Matching window reads square each source item once, then produce the complete moving sum. Expected: 3 copies for a source pass and a sliding sum into the result.
+⍝⍝⍝ held macos 23: the multiply now runs once per source item, but the mapped fold still visits all 16 window positions instead of sliding
++/ (16↕sv)×16↕sv
+⍝⍝: 6	-	-	instructions macos 98.521	allocated macos 72.35

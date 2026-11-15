@@ -2,10 +2,10 @@
 
 `params •distribution name` returns the distribution called `name`, with parameters `params`. `•distribution name` uses the distribution's standard parameters, listed in the table below. A distribution is a keyed vector of four functions:
 
-- `sample shape` draws random values from the session's generator, as [`¿`](../glyphs/inverted-question.qmd) does. `g sample shape` draws them from a generator made by `•rand`.
+- `sample shape` draws random values from the session's generator, as [`¿`](../glyphs/inverted-question.qmd) does. `g sample shape` draws them from `g`, a generator made by `•rand`.
 - `density x` gives the probability density, or the probability mass for a discrete distribution.
 - `cdf x` gives P(X ≤ x).
-- `quantile p` inverts the CDF. `cdf⁻` is `quantile`. `quantile⁻` is `cdf`.
+- `quantile p` inverts the CDF. `cdf⁻` is `quantile`, and `quantile⁻` is `cdf`.
 
 ```bpl
 d←•distribution "normal"
@@ -14,7 +14,7 @@ b←10 0.5 •distribution "binomial"
 b.quantile 0.5                  ⍝ 5ₓ
 ```
 
-Parameters are finite real units or vectors. Scale, shape, rate and degrees of freedom are positive, except where stated. [Distributions](../distributions.ipynb) shows them in use.
+Parameters are finite real units or vectors. Scale, shape, rate and degrees of freedom are positive, except where the table says otherwise. [Distributions](../distributions.ipynb) shows distributions in use.
 
 | Name | Parameters | Standard |
 |---|---|---|

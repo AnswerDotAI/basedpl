@@ -550,7 +550,7 @@ impl Number {
     pub(crate) fn fixed_width(&self) -> Option<Width> { match &self.0 { Fixed(n) => Some(n.items().tag()), _ => None } }
     pub(crate) fn fixed_literal(text: &str, width: Width) -> Result<Self, ErrorKind> {
         let (text, _) = plain_suffixes(text);
-        let text = text.strip_suffix(['x', 'ₓ']).unwrap_or(&text).replace('¯', "-");
+        let text = text.trim_suffix(['x', 'ₓ']).replace('¯', "-");
         let n = Self::decimal(&text).ok_or(ErrorKind::Syntax)?.ok().filter(|&n| width.holds(n))
             .ok_or_else(|| ErrorKind::from(rustymath::error::Error::new(Kind::Limit, "integer literal doesn't fit its fixed width")))?;
         Ok(Self::fixed(n, width))

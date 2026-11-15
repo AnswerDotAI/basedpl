@@ -412,7 +412,7 @@ fn scatter_under(plan: &Pervasive, held: rustymath::domain::Range, z: &mut Value
             Some(computed(p, None, &[computes, types[0]], computes, numeric, |kernel| {
                 let mut out = Buffer::with_capacity(kernel.result_dtype(), 0);
                 let root = WriteRoot::Owned(root.take().expect("a kernel that can't fail an item runs once"));
-                rustymath::operation::at(Some(kernel), root, reads[0], writes, kernel.variant().checked, settings, &mut out).map(|()| out)
+                rustymath::operation::at(Some(kernel), root, z.shape(), reads[0], writes, kernel.variant().checked, settings, &mut out).map(|()| out)
             }).ok().flatten().expect("a write by a kernel that can't fail an item succeeds"))
         }).flatten();
         if let Some((out, dtype)) = written {
@@ -424,7 +424,8 @@ fn scatter_under(plan: &Pervasive, held: rustymath::domain::Range, z: &mut Value
     let (out, dtype) = with_reads([(&*z, &Mapping::Linear(1), len), (values, &map, n)], Missing::Default, |reads, types| {
         computed(p, None, &types[..2], computes, numeric, |kernel| {
             let mut out = Buffer::with_capacity(kernel.result_dtype(), len);
-            rustymath::operation::at(Some(kernel), WriteRoot::Read(reads[0]), reads[1], writes, kernel.variant().checked, settings, &mut out).map(|()| out)
+            rustymath::operation::at(Some(kernel), WriteRoot::Read(reads[0]), z.shape(), reads[1], writes, kernel.variant().checked, settings, &mut out)
+                .map(|()| out)
         }).ok().flatten()
     })??;
     *z = wrapped(Value::from_bounded(z.layout().clone(), out, numeric.fixed, held).ok()?, || Some(dtype), numeric);

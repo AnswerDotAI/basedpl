@@ -1,6 +1,6 @@
 # `•load` — Load
 
-`•load path` runs the BPL file at `path` as a [module](../modules.qmd), with names of its own. It returns a record of the module's public names: the names its top level assigns that don't start with `_`. The file adds no names to the caller, and shows nothing except explicit output. Each call runs the file again.
+`•load path` runs the BPL file at `path` as a [module](../modules.qmd), with names of its own. It returns a record of the module's public names: the names assigned at its top level that don't start with `_`. Loading the file adds no names to the caller's scope and displays only explicit output. Each call runs the file again.
 
 Take names with a pattern, as in `[a: b:]←•load path`, or keep the record and read names with a dot, as in `m←•load path` and then `m.a`.
 

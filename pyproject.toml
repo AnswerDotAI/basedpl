@@ -27,6 +27,9 @@ bpl-nb = "basedpl.notebook_runner:main"
 bpl-install-magic = "basedpl.notebooks:create_ipython_config"
 bpl-tests = "basedpl.bpltests:main"
 
+[project.entry-points.nbdev]
+basedpl = "basedpl.doclinks:d"
+
 [project.urls]
 Homepage = "https://github.com/AnswerDotAI/basedpl"
 Repository = "https://github.com/AnswerDotAI/basedpl"

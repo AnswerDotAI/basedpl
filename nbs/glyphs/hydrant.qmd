@@ -2,14 +2,14 @@
 
 Function. Keys: `Alt-o b`. Hanzi: `行`. Ranks: `1` monadic, `∞ ∞` dyadic
 
-`⍎Y` evaluates character code in the current lexical scope.
+`⍎Y` evaluates the string `Y` in the current lexical scope.
 
 ```bpl
 ⍎"2+3"             ⍝ 5
 x←7 ◇ ⍎"x+1"       ⍝ 8
 ```
 
-On a character matrix, `⍎` evaluates each row. On an array of strings, it evaluates each string.
+On a character matrix, `⍎` evaluates each row; on an array of strings, each string.
 
 ```bpl
 ⍎["1+1"◇"2×3"]    ⍝ 2 6
@@ -35,4 +35,4 @@ T←["a":1] ◇ T⍎"a←5 ◇ a+1"      ⍝ 6
 
 ## Errors
 
-- `DOMAIN`: `T` isn't a keyed vector
+- `DOMAIN`: `T` has no keys on its first axis

@@ -12,7 +12,7 @@ Monadic operator. Keys: `Alt-_`. Hanzi: `反`
 
 BPL infers inverses of the primitives and compositions listed under [Power](star-diaeresis.qmd). `f⁻←g` [attaches an inverse](../assignment.ipynb#inverses-and-derivatives) to a named function.
 
-The minus is bare: no superscript digit follows it. `f⁻¹` means [Rank](jot-diaeresis.qmd) ¯1. `f⁻ ¹` applies the inverse at rank 1. Numeric superscripts on arrays remain powers, including the reciprocal `2⁻¹`.
+The minus is bare: no superscript digit follows it. `f⁻¹` means [Rank](jot-diaeresis.qmd) ¯1. `f⁻ ¹` applies the inverse at rank 1. Numeric superscripts on subjects remain powers, including the reciprocal `2⁻¹`.
 
 ```bpl
 ⌽⁻ ¹[1 2◇3 4]   ⍝ [2 1◇4 3]

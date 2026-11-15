@@ -5,7 +5,7 @@ resources: [playground/*, gallery/*, driver.js]
 toc: false
 ---
 
-Choose a demo to run it. The **Code** tab holds its BPL, which you can edit and run again with **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac). **Reset** brings back the demo's own code and runs it. Each run starts a new session. The interpreter runs in your browser, as in the [playground](playground.qmd).
+Choose a demo to run it. The **Code** tab shows the demo's BPL, which you can edit and run again with **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac). **Reset** restores the demo's original code and runs it. Each run starts a new session. The interpreter runs in your browser, as in the [playground](playground.qmd).
 
 ::: {.column-screen-inset-right}
 ```{=html}

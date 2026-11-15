@@ -8,7 +8,7 @@ Function. Keys: `Alt-b`. Hanzi: `译` (`譯`). Ranks: `1` monadic, `1 1` dyadic
 ⊥1 0 1 0          ⍝ 10
 ```
 
-`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base extends to every digit. The first entry of a mixed base is unused.
+`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base is used for every digit. The first item of a mixed base is unused.
 
 ```bpl
 2⊥1 0 1 0          ⍝ 10

@@ -41,7 +41,7 @@ def library_dependencies(definitions, code):
 
 
 class Corpus:
-    def __init__(self, directory='provenance'): self.directory = Path(directory)
+    def __init__(self, directory='provenance'): self.directory = Path(directory).expanduser()
 
     def _read(self): return {p: [json.loads(line) for line in p.read_text().splitlines()] for p in sorted(self.directory.glob('*.jsonl'))}
 

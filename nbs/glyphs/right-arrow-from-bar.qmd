@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-l`. Hanzi: `至`. Ranks: `0` monadic, `0 0` dyadic
 
-`X↦Y` counts from `X` to `Y` in steps of 1. It counts down when `Y` is less than `X`. Two characters count through the code points between them.
+`X↦Y` counts from `X` to `Y` in steps of 1. It counts down when `Y` is less than `X`. Between two characters, `↦` counts through code points.
 
 ```bpl
 2↦5          ⍝ 2 3 4 5
@@ -10,7 +10,7 @@ Function. Keys: `Alt-l`. Hanzi: `至`. Ranks: `0` monadic, `0 0` dyadic
 'a'↦'e'      ⍝ "abcde"
 ```
 
-The last item is the last step that doesn't pass `Y`. The number of steps counts as whole within comparison tolerance.
+The last item is the last step that doesn't pass `Y`. Step counts are treated as whole within [comparison tolerance](../evaluation.qmd#equality-and-ordering).
 
 ```bpl
 0.5↦3        ⍝ 0.5 1.5 2.5
@@ -32,7 +32,7 @@ Each item is `X` plus or minus an exact count: `0ₓ`, `1ₓ`, `2ₓ` and so on.
 ↦0           ⍝ ⍬
 ```
 
-On a vector, `↦` applies to each item, as [Rank](jot-diaeresis.qmd) does. Fill pads the results to a common length.
+On a vector, `↦` applies to each item, as [Rank](jot-diaeresis.qmd) does. Results are padded with fill to a common length.
 
 ```bpl
 ↦2 3         ⍝ [1 2 0◇1 2 3]

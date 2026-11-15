@@ -1,15 +1,15 @@
 # `•plot` — Plots
 
-`X •plot Y` returns a plot spec: a keyed vector holding the data `Y` and the settings `X`. Its renderer displays the spec as an SVG chart. Plain text on the left is shorthand for `mark`. [Plots](../plot.ipynb) shows each mark and setting with examples.
+`X •plot Y` returns a plot spec: a keyed vector holding the data `Y` and the settings `X`. Its [renderer](../xml.ipynb#rich-display) displays the spec as an SVG chart. Plain text on the left is shorthand for the `mark` setting. [Plots](../plot.ipynb) shows each mark and setting with examples.
 
-The structure of `Y` chooses the series and axes:
+The series and axes depend on the structure of `Y`:
 
-- A vector plots its values against `0…n-1`.
-- A keyed vector of numbers uses its keys as x labels.
-- A matrix plots one series per row. Row keys name the series. Column keys label x.
+- A vector's values are plotted against `0…n-1`.
+- The keys of a keyed vector of numbers are the x labels.
+- Each row of a matrix is plotted as a series. Row keys name the series. Column keys label x.
 - With the `cell` mark, each row of a matrix is a row of cells, coloured by value. Row keys label the rows, and row 0 is at the top.
-- A table, a keyed vector of equal-length columns, plots each column as a series. A column named `x` supplies the x values.
-- A vector or matrix of plots draws a figure.
+- Each column of a table, a keyed vector of equal-length columns, is plotted as a series. A column named `x` supplies the x values.
+- A vector or matrix of plots is drawn as a figure.
 
 | Setting | Holds | Default |
 |---|---|---|
@@ -27,6 +27,6 @@ The structure of `Y` chooses the series and axes:
 | `series` | Styles for one series, keyed by its name | |
 | `widths`, `heights`, `share` | Figure cell sizes and shared axis ranges | |
 
-`color` also takes one number per point. `palette` turns these numbers into colours, over the range of every series in the plot. A cell takes its colour from its own value unless `color` is set.
+`color` also takes one number per point. `palette` turns these numbers into colours, over the range of every series in the plot. A cell is coloured by its value unless `color` is set.
 
 A direct [`•mime`](mime.qmd) call on a spec reports these errors: `DOMAIN` for unknown settings or values, and for cells mixed with other marks; `LENGTH` when series, colours, sizes or labels don't match the x values; `RANK` for data that isn't a vector, matrix or table.

@@ -2,7 +2,7 @@
 
 [Glyph index](glyphs.qmd)
 
-A BPL file that [`•load`](system/load.qmd) runs is a module. A module has names of its own. `•load` returns a record of its public names, and adds no names to the code that loads it.
+A BPL file that [`•load`](system/load.qmd) runs is a module. A module has names of its own. `•load` returns a record of the module's public names, and adds no names to the code that loads it.
 
 ```bpl
 n←•load "lib/numeric.bpl"
@@ -13,14 +13,14 @@ BPL's modules follow BQN's [namespaces](https://mlochbaum.github.io/BQN/doc/name
 
 ## Taking names
 
-A pattern takes names from the record by key, as in `[factors: factorial:]`. Each name reads the item with the same key. Names the pattern doesn't mention stay in the record. [Assignment](assignment.ipynb#destructuring) covers patterns.
+To take names from the record, destructure it by key, as in `[factors: factorial:]`. Each name is assigned the item with the same key. Names the pattern doesn't mention stay in the record. [Assignment](assignment.ipynb#destructuring) covers patterns.
 
 ```bpl
 [factors: factorial:]←•load "lib/numeric.bpl"
 factorial 5                ⍝ 120
 ```
 
-A record holds operators as well as functions and arrays. A dot path or a destructured name gives the operator back.
+A record holds operators as well as functions and arrays. Read an operator from a record with a dot path or by destructuring.
 
 ```bpl
 a←•load "lib/array.bpl"
@@ -40,34 +40,34 @@ order←["price":2 3 5;"qty":10 20 1]
 order.(+/price×qty)            ⍝ 85
 ```
 
-Names that aren't keys come from the code around the expression. A key hides an outer name it shares.
+Names that aren't keys come from the code around the expression. A key hides an outer name with the same spelling.
 
 ```bpl
 order←["price":2 3 5;"qty":10 20 1]
 rate←0.5 ◇ order.(price×≥rate)    ⍝ 3 4.5 7.5
 ```
 
-A dfn's argument, operand and recursion names, `α ω ⍶ ⍹ ∇ ⍢`, are the exception. They always come from the call, even where a key has the same spelling:
+A dfn's argument, operand and recursion names, `α ω ⍶ ⍹ ∇ ⍢`, are the exception. They always come from the call, even when a key has the same spelling:
 
 ```bpl
 f←{["ω":0].(ω+1)} ◇ f 5        ⍝ 6
 ```
 
-Assignments inside the parentheses stay there, as assignments in a dfn do. To change a field, assign to its dot path, as in `order.qty←5 5 5`.
+An assignment inside the parentheses is local to the expression, as an assignment in a dfn is local to the dfn. To change a field, assign to its dot path, as in `order.qty←5 5 5`.
 
 ```bpl
 order←["price":2 3 5;"qty":10 20 1]
 r←order.(qty←0) ◇ order.qty    ⍝ 10 20 1
 ```
 
-`T⍎text` does the same for code held as text, like Dyalog's `ns⍎text`:
+`T⍎text` evaluates the code in `text` with the keys of `T` as names, like Dyalog's `ns⍎text`:
 
 ```bpl
 order←["price":2 3 5;"qty":10 20 1]
 order⍎"+/price×qty"            ⍝ 85
 ```
 
-A key that holds a function binds as a function. A module's record therefore works as a namespace too:
+Because a key that holds a function binds as a function, a module's record works as a namespace too:
 
 ```bpl
 n←•load "lib/numeric.bpl"
@@ -81,11 +81,11 @@ prices←"cost" "sale":[2 3 5◇4 4 9]
 prices.(sale-cost)             ⍝ 2 1 4
 ```
 
-A scope applies to one array. For an array of records, `{ω.(expr)}¨records` evaluates `expr` in each.
+`T.(expr)` uses one array as its namespace. For an array of records, `{ω.(expr)}¨records` evaluates `expr` in each record.
 
 ## Writing a module
 
-A module is a file of BPL statements, run in order each time it's loaded. Loading shows no results, but explicit `⎕←` output appears. Every name the top level assigns is public, except a name that starts with `_`. A private name stays out of the record. The module's own functions can still use it.
+A module is a file of BPL statements, run in order each time it's loaded. Loading a module doesn't display the results of its statements, but explicit `⎕←` output appears. Every name assigned at the top level is public, except a name that starts with `_`. A private name is left out of the record. The module's own functions can still use it.
 
 ```text
 ⍝ stats.bpl
@@ -100,7 +100,7 @@ var←{mean _sq ω-mean ω}
 
 A path that starts with `./` or `../` is relative to the file that holds the code. A module finds the files beside it this way, whatever the working directory is. Other relative paths are relative to the working directory. [`•nget`](system/nget.qmd) and `•nput` follow the same rule. A module reads a data file beside it with `•nget "./table.csv"`.
 
-A module that uses another module usually keeps it under a private name. The other module's names then stay out of its record:
+A module that uses another module usually keeps it under a private name, which keeps the other module's names out of its record:
 
 ```text
 ⍝ report.bpl
@@ -108,9 +108,9 @@ _stats←•load "./stats.bpl"
 summary←{[_stats.mean ω;_stats.var ω]}
 ```
 
-A public name exports on purpose. With `stats←•load "./stats.bpl"`, the record of `report.bpl` would hold the `stats` record too. Destructured names are public as well: `[mean:]←•load "./stats.bpl"` makes `mean` one of the module's names.
+To export the other module, give it a public name. With `stats←•load "./stats.bpl"`, the record of `report.bpl` would hold the `stats` record too. Destructured names are public as well: `[mean:]←•load "./stats.bpl"` makes `mean` one of the module's names.
 
-A file that loads itself, directly or through other files, is a `DOMAIN` error.
+Loading a file that loads itself, directly or through other files, raises a `DOMAIN` error.
 
 ## The library
 

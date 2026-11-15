@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-m`. Hanzi: `乘/号` (`乘/號`). Ranks: `0` monadic, `0 0` dyadic
 
-`×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is an exact integer. Pervasive.
+`×Y` gives the sign of `Y`: zero, or `Y÷|Y`. The sign of a real number is an exact integer. Pervasive.
 
 ```bpl
 ×¯3 0 4           ⍝ [¯1 0 1]ₓ

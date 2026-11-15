@@ -7,7 +7,7 @@ golden←π 3-√5
 z←50ⱼ50 + 1.8× √i × ○i×golden
 size←0.4+1.1×t
 hue←300×t
-seed←{["cx":ω₀;"cy":ω₁;"r":ω₂;"fill":"hsl(",(⍕ω₃),",80%,60%)"] circle ""}
+seed←{circle ["cx":ω₀;"cy":ω₁;"r":ω₂;"fill":"hsl(",(⍕ω₃),",80%,60%)"]}
 seeds←⊂seed ¹ ∨z , ⍉[size◇hue]
-back←["width":100;"height":100;"fill":"#111"] rect ""
+back←rect ["width":100;"height":100;"fill":"#111"]
 ["width":500;"height":500] •svg [back],seeds

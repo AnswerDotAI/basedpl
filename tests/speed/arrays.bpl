@@ -8,6 +8,9 @@ m←[side side]ρv
 jv←¿nρ1000ₓ
 kv←¿nρ1000000000000ₓ
 b←0ₓ=¿nρ3ₓ
+row_b←side↑b
+row_v←side↑v
+row_w←side↑w
 i←¿nρ⌊ₓn
 cnt←¿nρ3ₓ
 c←nρ"the quick brown fox jumps over the lazy dog"
@@ -172,6 +175,13 @@ c=c
 ⍝ Expected: 0.73 copies: 0.5 for writing 8 bytes an item, and one node, about 0.23 copies of 65,536 floats (`fusion::MAC_NODE_NS`, 1,800 ns), because the call waits under the cost rule and nothing fuses with it (decision 13). Jeremy accepted a lone 65,536-item call's node on 30 October 2026, as for `c=c`. Main set this expected cost on 31 October 2026, for Jeremy's review. In the browser the call runs at once, because the cost rule's limit there, from the browser's node estimate of 4 × `MAC_NODE_NS`, is about 830 KB, above the call's 512 KB. CI measured it there at 1.06 copies.
 ι√n ×⊗ ι√n
 ⍝⍝: 1.5	1.7	1.9	instructions macos 6.694 linux 4.935	allocated macos 8.379 linux 8.379
+
+⍝ Outer products over two side-item vectors produce n floats. Expected: 1 copy, for writing each result (0.5), reading cache-resident rows and preparing one kernel call per row. The Boolean left side converts one item per row, not an expanded n-item buffer; the float pair guards the same-type row path.
+row_b×⊗row_v
+⍝⍝: 2	2	2	instructions macos 4.57	allocated macos 8.08
+
+row_v×⊗row_w
+⍝⍝: 2	2	2	instructions macos 4.059	allocated macos 8.08
 
 ⍝ Products of 64-bit integers that leave 64 bits become exact big integers, each held in an allocation of its own.
 ⍝ Expected: 220 copies: about 25 ns an item for an allocation, a free and a 128-bit product.

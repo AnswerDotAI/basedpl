@@ -31,7 +31,7 @@ def start_dyalog(
     dyalog=None, # Path to the interpreter binary; `find_dyalog()` result if None
     timeout=10, # Socket timeout during the startup handshake, in seconds
 ):
-    "Spawn a Dyalog interpreter that connects back to us over RIDE; return `(socket,Popen)`"
+    "Spawn a Dyalog interpreter that connects to a local socket over RIDE; return `(socket,Popen)`"
     if not dyalog: dyalog = find_dyalog()
     lsn = socket.create_server(('127.0.0.1', 0))
     port = lsn.getsockname()[1]
@@ -71,7 +71,7 @@ def ride_recv(sock):
 
 # %% ../../nbs/dyalog.ipynb #cf5023d3
 class AplError(Exception):
-    "A Dyalog diagnostic; `reset` means the interpreter was replaced and workspace state lost"
+    "A Dyalog diagnostic; `reset=True` means the interpreter was replaced and its workspace was lost"
     def __init__(self, msg, reset=False):
         super().__init__(msg)
         self.reset = reset

@@ -10,21 +10,21 @@ Function. Keys: `Alt-i`. Hanzi: `位`. Ranks: `1` monadic, `∞ ∞` dyadic
 ι¯3                ⍝ 2 1 0
 ```
 
-[Range](right-arrow-from-bar.qmd), `↦`, counts from 1 instead, or between any two ends.
+[Range](right-arrow-from-bar.qmd) `↦` counts from 1 instead, or between any two ends.
 
 ```bpl
 ↦4                 ⍝ 1 2 3 4
 3↦6                ⍝ 3 4 5 6
 ```
 
-A shape vector generates an array of coordinate vectors. A negative length reverses its axis.
+Shape vector: an array of coordinate vectors. Negative length: that axis reversed.
 
 ```bpl
 ι2ₓ 2               ⍝ [[0 0] [0 1]◇[1 0] [1 1]]
 ι2ₓ ¯2              ⍝ [[0 1] [0 0]◇[1 1] [1 0]]
 ```
 
-A keyed shape names the result's axes, as it does for [reshape](rho.qmd). The result is a named index, which pairs by name with axes of the same name. [Indexing](squad.qmd) by a named index gives the result its name. [`•index`](../system/index.qmd) gives an index whose name can't collide with a caller's names:
+A keyed shape names the result's axes, as for [Reshape](rho.qmd). The result is a named index, which pairs by name with axes of the same name. [Indexing](squad.qmd) by a named index gives the result its name. [`•index`](../system/index.qmd) gives an index whose name can't collide with a caller's names:
 
 ```bpl
 ρι["i":3]          ⍝ ["i":3]ₓ
@@ -32,13 +32,13 @@ x←10×ι5ₓ ◇ i←ι["i":5]
 x.[5|i+1]          ⍝ ["i":5]ρ[10 20 30 40 0]
 ```
 
-On a matrix, `ι` applies to each row, as [Rank](jot-diaeresis.qmd) does. Fill pads the results to a common shape.
+On a matrix, `ι` applies to each row, as [Rank](jot-diaeresis.qmd) does. Results are padded with fill to a common shape.
 
 ```bpl
 ρι[2 3◇1 1]       ⍝ [2 2 3]ₓ
 ```
 
-`ι⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed axis. The result lies along an axis with the name of the axis it selects. It pairs with that axis by name in arithmetic and indexing. Indexing by it keeps the keys at the positions it selects. Several axes return a vector of selector vectors.
+`ι⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed axis. The result's axis has the selected axis's name. It pairs with that axis by name in arithmetic and indexing. Indexing by it keeps the keys at the positions it selects. Several axes: a vector of selector vectors.
 
 ```bpl
 ι₀["price":1 "qty":2]   ⍝ "price" "qty"
@@ -52,7 +52,7 @@ On an axis where only some positions have keys, `ι⍠A Y` gives the keys where 
 ι₀["aa":10 20]      ⍝ "aa" 1ₓ
 ```
 
-`XιY` finds the first matching major cell in `X` for each cell of `Y`. Not found: `≢X`. Uses tolerant matching and returns exact positions.
+`XιY` finds the first matching major cell in `X` for each cell of `Y`. Not found: `≢X`. Uses [tolerant](../evaluation.qmd#equality-and-ordering) matching and returns exact positions.
 
 ```bpl
 "abc"ι"cabz"        ⍝ [2 0 1 3]ₓ
@@ -60,7 +60,7 @@ On an axis where only some positions have keys, `ι⍠A Y` gives the keys where 
 "abc"ι⊂'b'          ⍝ 1ₓ
 ```
 
-A single query returns an atom. Batch axes supply the result shape. To search for an array as one item, enclose it with `⊂`.
+Each cell of `Y` with the rank of `X`'s major cells is one query. One query returns an atom; otherwise the result has the frame's shape. To search for an array as one item, enclose it with `⊂`.
 
 ```bpl
 C←"cat" "dog"
@@ -74,7 +74,7 @@ mι[30 40◇10 20]  ⍝ [1 0]ₓ
 
 ## Inverse
 
-`ι⁻Y` gives the argument that generates `Y`: the count for a vector of positions, otherwise the shape. `Xι⁻Y` gives the items of `X` at the positions `Y`. A position that wasn't found is a `DOMAIN` error.
+`ι⁻Y` gives the argument that generates `Y`: the count for a vector of positions, otherwise the shape. `Xι⁻Y` gives the major cells of `X` at the positions `Y`. For a vector of atoms `X`, position `≢X` gives fill, unless `X` holds its fill. Any other position without a cell raises `DOMAIN`.
 
 ```bpl
 ι⁻ι5         ⍝ [5]ₓ

@@ -9,7 +9,7 @@ Function. Keys: `Alt-Minus ,`. Hanzi: `接/矩`. Ranks: `∞` monadic, `∞ ∞`
 ρ⍪2 3 4ρ0          ⍝ [2 12]ₓ
 ```
 
-`X⍪Y` joins on the first axis. `⍪⍠K` follows [catenate](comma.qmd).
+`X⍪Y` joins on the first axis. `⍪⍠K` follows [Catenate](comma.qmd).
 
 ```bpl
 1 2⍪3 4            ⍝ 1 2 3 4
@@ -17,7 +17,7 @@ Function. Keys: `Alt-Minus ,`. Hanzi: `接/矩`. Ranks: `∞` monadic, `∞ ∞`
 
 ## Inverse
 
-`⍪⁻Y` gives the vector that a one-column matrix holds, and gives back any other matrix. `X⍪⁻Y` removes the fixed major cells `X` from the front of `Y`. With the right argument fixed, `(⍪↢X)⁻Y` removes them from the end.
+`⍪⁻Y` gives the vector that a one-column matrix holds, and gives back any other matrix. `X⍪⁻Y` removes the fixed major cells `X` from the front of `Y`. `(⍪↢X)⁻Y` removes the major cells `X` from the end of `Y`.
 
 ```bpl
 ⍪⁻⍪1 2 3             ⍝ 1 2 3

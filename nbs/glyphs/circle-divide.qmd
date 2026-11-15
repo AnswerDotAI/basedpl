@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-o u`. Hanzi: `因`. Ranks: `0` monadic, `0 0` dyadic
 
-`⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive whole input. Results take the argument's domain: `⨸12ᵣ` gives `[2 2 3]ᵣ`.
+`⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive whole input. Factors are ordinary integers, or `ᵣ` numbers for a `ᵣ` argument: `⨸12ᵣ` gives `[2 2 3]ᵣ`.
 
 ```bpl
 ⨸700                 ⍝ [2 2 5 5 7]ₓ
@@ -28,7 +28,7 @@ Inverse: product. A product of machine integers past 64 bits gives the largest 6
 ¯∞⨸1                 ⍝ 2 0ρ0ₓ
 ```
 
-Unit cells; results assemble with fill. Large factors follow [Prime's](stile-tilde.qmd) probable-prime policy.
+Factor applies to each unit, and pads the results with fill to a common length. Large factors follow [Prime's](stile-tilde.qmd) probable-prime policy.
 
 ## Errors
 

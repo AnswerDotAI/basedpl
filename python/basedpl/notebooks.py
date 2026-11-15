@@ -26,7 +26,7 @@ class AplOut(str):
 
 # %% ../../nbs/magics.ipynb #3cdb5893
 def display_event(e):
-    "Display one output event, using its MIME bundle for a rich result. Text written with no line ending prints as it is."
+    "Display one output event, using its MIME bundle for a rich result. Text output is printed without adding a line ending."
     data = e['data']
     if e['kind'] == 'text': print(data['text/plain'], end='')
     elif set(data) == {'text/plain'}: display(AplOut(data['text/plain']))
@@ -39,7 +39,7 @@ class BPLMagic:
 # %% ../../nbs/magics.ipynb #0b57e64c
 @patch
 def bpl(self:BPLMagic, line, cell=None):
-    "Evaluate a line as a native value or display a cell as a BPL session."
+    "Evaluate a line of BPL and return its native value, or evaluate a cell and display it as a BPL session."
     display(Javascript(r'''if (window.loadBplInput) window.loadBplInput();
 else import('https://cdn.jsdelivr.net/npm/basedpl/browser/bpl-editor.js').then(m => m.install());'''))
     code = line if cell is None else cell.rstrip()
@@ -52,7 +52,7 @@ else import('https://cdn.jsdelivr.net/npm/basedpl/browser/bpl-editor.js').then(m
 @patch
 @context_matcher(identifier='basedpl.names')
 def complete(self:BPLMagic, context):
-    "Complete visible BPL names in line and cell magics."
+    "Complete visible BPL names in `%bpl` and `%%bpl`."
     empty = dict(completions=[])
     before = '\n'.join(context.full_text.split('\n')[:context.cursor_line] + [context.text_until_cursor])
     if m := re.match(r'%%bpl[^\S\n]*\n', before): code = before[m.end():]
@@ -69,7 +69,7 @@ def complete(self:BPLMagic, context):
 
 # %% ../../nbs/magics.ipynb #953c6348
 def create_magic(shell=None):
-    "Register line and cell magics with `shell`. They evaluate in `basedpl.bpl`, which takes the BPL prompt's display settings."
+    "Register the `%bpl` and `%%bpl` magics and their tab completer with `shell`. The magics evaluate in `basedpl.bpl`, which is given the BPL prompt's display settings."
     if shell is None: shell = get_ipython()
     basedpl.bpl._session.make_interactive()
     magic = BPLMagic()
@@ -88,7 +88,7 @@ def load_ipython_extension(ipython):
 
 # %% ../../nbs/magics.ipynb #66869255
 def create_ipython_config():
-    "Called by `bpl-install-magic` to install magic"
+    "Add `basedpl.notebooks` to the default IPython profile's extensions; called by `bpl-install-magic`"
     ipython_dir = Path(get_ipython_dir())
     cf = ipython_dir/'profile_default'/'ipython_config.py'
     cf.parent.mkdir(parents=True, exist_ok=True)

@@ -12,9 +12,15 @@ pub(crate) fn factory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
     Ok(element_function(tag))
 }
 
+fn arguments(attrs: Option<&Value>, children: &Value) -> (Value, Value) {
+    if attrs.is_none() && children.keys(0).is_some() && !["tag", "attrs", "children"].iter().all(|k| keyed::field(children, k).is_some()) {
+        (children.clone(), keyed::text(""))
+    } else { (attrs.cloned().unwrap_or_else(keyed::empty_record), children.clone()) }
+}
+
 pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value) -> Result<Value, Error> {
-    let attrs = attrs.cloned().unwrap_or_else(keyed::empty_record);
-    keyed::vector(vec!["tag".into(), "attrs".into(), "children".into()], vec![keyed::text(tag), attrs, children.clone()])
+    let (attrs, children) = arguments(attrs, children);
+    keyed::vector(vec!["tag".into(), "attrs".into(), "children".into()], vec![keyed::text(tag), attrs, children])
         .and_then(|e| e.with_renderer(display::renderer("html-renderer", render_html))).described("XML element exceeds array limits")
 }
 
@@ -117,8 +123,9 @@ fn read(node: roxmltree::Node<'_, '_>) -> Result<Value, Error> {
 
 pub(crate) fn svg(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let defaults = keyed::vector(vec!["xmlns".into(), "viewBox".into()], vec![keyed::text("http://www.w3.org/2000/svg"), keyed::text("0 0 100 100")]).unwrap();
-    let attrs = left.map_or(Ok(defaults.clone()), |a| keyed::merge(&defaults, a)).described("invalid SVG attributes")?;
-    element("svg", Some(&attrs), right)?.with_renderer(display::renderer("svg-renderer", render_svg)).described("SVG exceeds array limits")
+    let (attrs, children) = arguments(left, right);
+    let attrs = keyed::merge(&defaults, &attrs).described("invalid SVG attributes")?;
+    element("svg", Some(&attrs), &children)?.with_renderer(display::renderer("svg-renderer", render_svg)).described("SVG exceeds array limits")
 }
 
 fn render_html(_: Option<&Value>, tree: &Value, _: &Span) -> Result<Value, Error> { markup("text/html", tree, Markup::Html) }
