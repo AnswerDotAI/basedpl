@@ -1,6 +1,6 @@
 # `•replace` — Replace regular expression matches
 
-`text •replace [pattern template]` replaces each match of the regular expression `pattern` in `text` with `template`. Natively the template uses `$1` for a group, `${name}` for a named group, `$0` for the whole match and `$$` for `$`. In the browser it uses JavaScript's `$1`, `$<name>` and `$$`. Patterns follow [`•r`](r.qmd), and so does the keeping of compiled patterns.
+`text •replace [pattern template]` replaces each match of the regular expression `pattern` in `text` with `template`. Natively the template uses `$1` for a group, `${name}` for a named group, `$0` for the whole match and `$$` for `$`. In the browser it uses JavaScript's `$1`, `$<name>` and `$$`. `•replace` uses the same pattern syntax as [`•r`](r.qmd), and keeps compiled patterns in the same way.
 
 ```bpl
 "ab12 cd3" •replace ["([a-z]+)([0-9]+)" "$2:$1"]   ⍝ "12:ab 3:cd"

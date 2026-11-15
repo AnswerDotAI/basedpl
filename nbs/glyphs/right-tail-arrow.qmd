@@ -2,7 +2,7 @@
 
 Dyadic operator. Keys: `Alt-.`. Hanzi: `先`
 
-The monadic hook `f↣g Y` is `(f Y)g Y`, where `f` prepares the left argument of `g`. Operators bind from the left. For example, `3↣<↣#` is `(3↣<)↣#`, which keeps the items greater than 3.
+`f↣g Y` is `(f Y)g Y`. Operators bind from the left. For example, `3↣<↣#` is `(3↣<)↣#`, which keeps the items greater than 3.
 
 ```bpl
 -↣+ 5              ⍝ 0
@@ -16,7 +16,7 @@ The monadic hook `f↣g Y` is `(f Y)g Y`, where `f` prepares the left argument o
 10 -↣+ 3           ⍝ ¯7
 ```
 
-`A↣f` binds the left argument. The bound function takes one argument. A train binds the same way: `10- y` is `(10↣-)y`.
+`A↣f` binds the left argument, giving a monadic function. A train binds the same way: `10- y` is `(10↣-)y`.
 
 ```bpl
 10↣- 3             ⍝ 7
@@ -27,7 +27,7 @@ See [After](left-tail-arrow.qmd), [Atop / Rank](jot-diaeresis.qmd) and [Over](ci
 
 ## Inverse
 
-With an array operand, `(X↣f)⁻Y` is `X f⁻ Y`. With two functions, `X(f↣g)⁻Y` inverts `g` with `f X` fixed on the left.
+With a subject operand, `(X↣f)⁻Y` is `X f⁻ Y`. `X(f↣g)⁻Y` is `(f X)g⁻ Y`.
 
 ```bpl
 2↣× ⁻ 6    ⍝ 3

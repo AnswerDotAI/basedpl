@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-o`. Hanzi: `圆` (`圓`). Ranks: `0` monadic, `0 0` dyadic
 
-`○Y`: e<sup>iY</sup> = cos Y + i sin Y. Real Y is an angle in radians. Pervasive.
+`○Y`: Real `Y` is an angle in radians. Pervasive.
 
 ```bpl
 ○0                ⍝ 1
@@ -29,7 +29,7 @@ Function. Keys: `Alt-o`. Hanzi: `圆` (`圓`). Ranks: `0` monadic, `0 0` dyadic
 | 7 | tanh | arctanh |
 | 8 | `√(-1−y²)` | `-√(-1−y²)` |
 
-Uses complex continuation where needed. The cuts of `3○⁻` and `5○⁻` lie on the imaginary axis. The signed real zeros in `3○⁻ 0j2` and `3○⁻ ¯0j2` distinguish the two sides. [Zero's sign is not guaranteed](../numbers.qmd#accuracy). Under dynamic kinds, the literal `2j¯0` is read as real `2`. A real argument computes with an imaginary part of +0:
+Uses complex continuation where needed. The cuts of `3○⁻` and `5○⁻` lie on the imaginary axis. In `3○⁻ 0j2` and `3○⁻ ¯0j2`, the sign of the zero real part picks the side of the cut. [Zero's sign is not guaranteed](../numbers.qmd#accuracy). Under dynamic kinds, the literal `2j¯0` is read as real `2`. A real argument is treated as having an imaginary part of +0:
 
 ```bpl
 1○⁻2              ⍝ 1.5707963267948966j1.3169578969248166

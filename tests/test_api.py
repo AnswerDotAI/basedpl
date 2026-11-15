@@ -22,6 +22,10 @@ def test_builtin_attributes():
         teq(getattr(api, '•distribution')([2, 0.5], 'binomial')['quantile'](1.).py, 2)
         assert {'add', 'plus', 'conjugate', 'distribution', 'π'} <= set(dir(api))
         teq(api.plu(2, 3).py, 5)
+        teq(api.prefs(threads=1)['threads'].py, 1)
+        teq(api.element('circle')(r=5)['attrs'].py, {'r': 5})
+        teq(api.svg(width=120)['attrs']['width'].py, 120)
+        teq(api.add(a=1)(2).py, {'a': 3})
         for name in ('userfn', 'nonexistent', 'abs', 'disclose', 'diaeresis'):
             with pytest.raises(AttributeError): getattr(api, name)
     bpl('add←99 ◇ userfn←{ω+1}')

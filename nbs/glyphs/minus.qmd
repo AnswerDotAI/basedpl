@@ -14,7 +14,7 @@ Function. Hanzi: `减` (`減`). Ranks: `0` monadic, `0 0` dyadic
 10-1 2 3          ⍝ 9 8 7
 ```
 
-Characters shift by code point. Character differences are exact integers.
+Subtracting a number shifts a character by code point. Character differences are exact integers.
 
 ```bpl
 'd'-3             ⍝ 'a'

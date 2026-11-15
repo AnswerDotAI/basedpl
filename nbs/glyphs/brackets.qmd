@@ -10,7 +10,7 @@ a←1 ◇ b←2
 []≡⍬               ⍝ $t
 ```
 
-`[A;B C]` separates items with `;`. Each item reads as if it were in parentheses: `[A;B C]` is `[(A) (B C)]`. Inside an item, spaces separate runs, as they do outside brackets. A `;` is needed only when an item contains spaces. Inside nested brackets, spaces separate items instead: `[ι 3]` is the vector of `ι` and `3`, while the item `ι 3` in `[ι 3;⌽ 1 2]` is `0 1 2`.
+`[A;B C]` separates items with `;`. Each item is read as if it were in parentheses: `[A;B C]` is `[(A) (B C)]`. Inside an item, spaces separate runs, as they do outside brackets. A `;` is needed only when an item contains spaces. Inside nested brackets, spaces separate items instead: `[ι 3]` is the vector of `ι` and `3`, while the item `ι 3` in `[ι 3;⌽ 1 2]` is `0 1 2`.
 
 ```bpl
 [1 2;3 4]                     ⍝ [[1 2] [3 4]]
@@ -29,7 +29,7 @@ x←2 4 9
 ρ[[1]◇[2]]       ⍝ [2 1]ₓ
 ```
 
-Around literals, `[…]ₓ` makes every number exact, at any depth. A fractional number floors: `[1.5 2]ₓ` is `[1 2]ₓ`. After a list that holds anything else, `ₓ` floors its numbers to exact integers, as [Superscripts and subscripts](../scripts.ipynb) describes.
+Around literals, `[…]ₓ` makes every number exact, at any depth. Fractional numbers are floored: `[1.5 2]ₓ` is `[1 2]ₓ`. After a list that holds anything other than literals, `ₓ` floors its numbers to exact integers, as [Superscripts and subscripts](../scripts.ipynb) describes.
 
 ```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ  ⍝ $t

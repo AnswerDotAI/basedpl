@@ -8,7 +8,7 @@ Function. Keys: `Alt-r`. Hanzi: `形`. Ranks: `∞` monadic, `1 ∞` dyadic
 ρ2 3ρ0             ⍝ [2 3]ₓ
 ```
 
-The shape is keyed by the axis names. An unnamed axis gives an unkeyed entry. See [named axes](../keyed.ipynb#named-axes).
+The shape is keyed by the axis names. The length of an unnamed axis has no key. See [named axes](../keyed.ipynb#named-axes).
 
 ```bpl
 M←["city":2 "month":3]ρι6ₓ
@@ -16,20 +16,20 @@ M←["city":2 "month":3]ρι6ₓ
 "month"⌷ρM         ⍝ 3ₓ
 ```
 
-`SρY` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative whole numbers. Empty `Y` supplies fill, which [`⍠`](quad-colon.qmd#fill) can choose.
+`SρY` reshapes, cycling or truncating the items of [`,Y`](comma.qmd). Items of `S` are nonnegative [whole](../terms.qmd#term-whole) numbers. With empty `Y`, every item is fill, which [`⍠`](quad-colon.qmd#fill) can set.
 
 ```bpl
 2 3ρ1 2            ⍝ [1 2 1◇2 1 2]
 3ρ""               ⍝ "   "
 ```
 
-An empty shape makes a rank-zero array.
+With empty `S`, the result is a [scalar](../terms.qmd#term-scalar).
 
 ```bpl
 ⍬ρ1 2              ⍝ ⊂1
 ```
 
-A keyed `S` names the axes of the result. An unkeyed `S` gives no names. When `S` matches the shape of `Y`, the result keeps the position keys of `Y`.
+The keys of `S` name the result's axes. An unkeyed item leaves its axis unnamed. When `S` matches the shape of `Y`, the result keeps the keys of `Y`.
 
 ```bpl
 ρ["city":2 3]ρι6ₓ   ⍝ ["city":2 3]ₓ
@@ -37,8 +37,13 @@ A keyed `S` names the axes of the result. An unkeyed `S` gives no names. When `S
 
 ## Inverse
 
-`Sρ⁻Y` ravels `Y`, which must have shape `S`.
+`Sρ⁻Y` gives [`,Y`](comma.qmd). The axis lengths of `Y` must match `S`.
 
 ```bpl
 2 3ρ⁻2 3ρι6ₓ   ⍝ [0 1 2 3 4 5]ₓ
 ```
+
+## Errors
+
+- `DOMAIN`: an item of `S` isn't a nonnegative whole number, or, for `ρ⁻`, the shape of `Y` isn't `S`
+- `LIMIT`: the result has too many items

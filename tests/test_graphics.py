@@ -6,7 +6,7 @@ from basedpl.worker import Worker
 
 
 def test_svg_display_and_renderers():
-    pic = bpl('circle←•element "circle" ◇ pic←•svg ["r":20] circle ⍬')
+    pic = bpl('circle←•element "circle" ◇ pic←•svg circle ["r":20]')
     root = ET.fromstring(pic._repr_mimebundle_()['image/svg+xml'])
     teq(root.tag, '{http://www.w3.org/2000/svg}svg')
     teq(root.attrib['viewBox'], '0 0 100 100')

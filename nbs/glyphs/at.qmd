@@ -2,7 +2,7 @@
 
 Dyadic operator. Hanzi: `于` (`於`)
 
-`f@g Y` applies `f` to the [selection](../terms.qmd#term-selection) of `Y` that `g` makes, and writes the result back in its place. The rest of `Y` is unchanged. An array `f` that holds no function is a constant function, so it replaces the selection. Under follows BQN's [specification of inferred properties](https://mlochbaum.github.io/BQN/spec/inferred.html).
+`f@g Y` applies `f` to the [selection](../terms.qmd#term-selection) of `Y` that `g` makes, and writes the result back in its place. The rest of `Y` is unchanged. A subject `f` that holds no function replaces the selection. Under follows BQN's [specification of inferred properties](https://mlochbaum.github.io/BQN/spec/inferred.html).
 
 ## Positions
 
@@ -18,7 +18,7 @@ x←["a":1 "b":2 "c":3] ◇ ["b":20 "a":10]@0 1 x         ⍝ ["a":10 "b":20 "c"
 (1 2 3+)@⍬[¯1 ¯2]                                      ⍝ ¯1 ¯2
 ```
 
-`f@[p] Y` applies `f` to the cells where `p Y` isn't 0, and keeps the cells where it's 0: `(10×⊢)@[⊢] 0 2 1` gives `0 20 10`. The mask picks a case for each cell, as the selector of [Agenda](diamond-underbar.qmd) does, with three differences. Any value other than 0 selects a cell, where Agenda takes the value modulo 2. `@` converts its result to one kind, as assignment does. A cell that picks no case keeps its value, where Agenda gives it the fill. The mask's unnamed axes take the leading axes of `Y`, and a named axis takes the axis of `Y` with that name. A mask with keys pairs with `Y` by key. A cell picks no case where the mask lacks its key. A key that only the mask has is ignored. `f` runs once, on the list of the selected cells, and doesn't run when there are none. A mask array `m` works through a constant function, as in `f@[m⍨]`, because `@` reads an array as positions.
+`f@[p] Y` applies `f` to the cells where `p Y` isn't 0, and keeps the cells where it's 0: `(10×⊢)@[⊢] 0 2 1` gives `0 20 10`. The mask picks a case for each cell, as the selector of [Agenda](diamond-underbar.qmd) does, with three differences. Any value other than 0 selects a cell, whereas Agenda takes the value modulo 2. `@` converts its result to one kind, as assignment does. An unselected cell keeps its value, whereas Agenda gives it the fill. The mask's unnamed axes align with the leading axes of `Y`; named axes align by name. A mask with keys pairs with `Y` by key. A cell is unselected when the mask lacks its key. A key that only the mask has is ignored. `f` runs once, on the list of the selected cells, and doesn't run when there are none. A mask array `m` works through a constant function, as in `f@[m⍨]`, because `@` reads an array as positions.
 
 ```bpl
 0ₓ@[2|] ι5ₓ                  ⍝ [0 0 2 0 4]ₓ
@@ -70,7 +70,7 @@ For any other `g`, `f@g Y` is `g⁻(f(g Y))`, and `X f@g Y` is `g⁻((g X)f(g Y)
 
 ## Left argument
 
-With a function `g`, `X` goes through `g`, as it does for [Over](circle-diaeresis.qmd) and in BQN. With positions or `[p]`, `X` lines up with `Y` by position, or by key where both have keys: `f` gets the cells of `X` at the positions of the cells it gets from `Y`. A key that `X` lacks reads the fill. A key that only `X` has is ignored. A unit `X` goes to `f` whole. An axis of length 1 in `X` stretches to match `Y`, as agreement stretches it.
+With a function `g`, `X` goes through `g`, as it does for [Over](circle-diaeresis.qmd) and in BQN. With positions or `[p]`, `X` lines up with `Y` by position, or by key where both have keys: `f` gets the cells of `X` at the positions of the cells it gets from `Y`. For a key that `X` lacks, `f` gets the fill. A key that only `X` has is ignored. A unit `X` goes to `f` whole. `@` stretches a length-1 axis of `X` to match `Y`, as in agreement.
 
 ```bpl
 10 +@[0] 1 2 3                         ⍝ 11 2 3

@@ -69,12 +69,10 @@ class Function(_Combinators):
     def source(self): return self.inspect()['source']
     __doc__ = _Help(__doc__)
     def __call__(self, *args, **kwargs):
-        "Call with `ω` or `α, ω`. Keyword arguments supply `α` as a keyed vector, and the positional arguments then form `ω`."
+        "Call with `ω` or `α, ω`. Keywords alone make one keyed argument; with positional arguments they supply `α`."
         if len(args) == 1 and not kwargs and isinstance(args[0], Function): return atop(self, args[0])
-        if kwargs:
-            if self._valence == 1: raise TypeError('keyword arguments need a dyadic call')
-            args = (kwargs, args[0] if len(args) == 1 else list(args))
-        elif len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
+        if kwargs: args = (kwargs,) if not args else (kwargs, args[0] if len(args) == 1 else list(args))
+        if len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
         return self._invoke([_array(o) for o in args])
     def __rrshift__(self, value): return self(value)
@@ -184,10 +182,11 @@ def _bitwise(glyph, *operands):
     f = _glyph(glyph).bitwise
     return _unary(f, *operands) if len(operands) == 1 else _binary(f, *operands)
 
+_matrix_product = _glyph('+').inner_product(_glyph('×')).rank(2)
+
 def _matmul(x, y):
     if isinstance(x, _Combinators) or isinstance(y, _Combinators): raise TypeError('inner product requires two arrays or two functions')
-    f = _glyph('+').inner_product(_glyph('×')).rank(2)
-    if isinstance(x, _Expression) or isinstance(y, _Expression): return _Expression(x, f, y)
+    if isinstance(x, _Expression) or isinstance(y, _Expression): return _Expression(x, _matrix_product, y)
     try: x, y = (o if isinstance(o, Array) else Array(o) for o in (x, y))
     except TypeError: return NotImplemented
-    return f(x, y)
+    return _matrix_product(x, y)

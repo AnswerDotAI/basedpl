@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-o n`. Hanzi: `文`. Ranks: `∞` monadic, `1 ∞` dyadic
 
-`⍕Y` returns character text. Matrix rows remain rows. Numbers that share a marked kind write as display shows them: as their literal laid out in rows, with one mark after the brackets. Each plane of a higher rank is its own bracketed block.
+`⍕Y` returns character text. Matrix rows remain rows. Numbers of one kind that has a suffix are formatted as display shows them: as their literal laid out in rows, with one suffix after the brackets. Each plane of a higher rank is its own bracketed block.
 
 ```bpl
 ⍕1 2 3             ⍝ "1 2 3"
@@ -24,7 +24,7 @@ An empty `D`, `⍬` or `''`, gives `⍕Y`'s text without the markers of numbers'
 ''⍕2 2ρι4ₓ         ⍝ 2 3ρ"0 12 3"
 ```
 
-`W D⍕Y` also sets the field width `W`. Give one pair per column to set each column separately. Width 0 fits each column to its longest number, with one space between columns. Overflowing fields become `*`.
+`W D⍕Y` also sets the field width `W`. Give one pair per column to set each column separately. Width 0 fits each column to its longest number, with one space between columns. An overflowing field is filled with `*`.
 
 ```bpl
 6 2⍕3.125          ⍝ "  3.13"

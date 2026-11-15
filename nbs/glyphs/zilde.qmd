@@ -13,7 +13,7 @@ Literal. Keys: `Alt-Shift-0`. Hanzi: `空`
 1↑⍬ₓ               ⍝ [0]ₓ
 ```
 
-Other empty types retain their prototypes.
+Other empty arrays retain their [prototypes](../terms.qmd#term-prototype).
 
 ```bpl
 3↑0ρ0ₓ             ⍝ [0 0 0]ₓ

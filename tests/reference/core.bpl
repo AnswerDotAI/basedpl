@@ -3904,7 +3904,15 @@ pg←•special "polygamma" ◇ {ω pg 2}∂1
 ig←•special "gammainc" ◇ [{1 ig ω}∂0; {2 ig ω}∂3]   ⍝ [1;3×*¯3]
 
 ⍝ special-betainc — Shape pairs are call-time data; x slopes keep their endpoint limits
-bi←•special "betainc" ◇ ab←2 3 ◇ f←{ab bi ω} ◇ before←f0.5 ◇ ab←4 5 ◇ [before; f0.5; [2 3◇4 5](bi⍤1 0)0.5 0.25; {[2 3]biω}∂0.5; {[1 2]biω}∂0; {[2 1]biω}∂1] ⍝ [0.6875; 0.63671875; 0.6875 0.1138153076171875; 1.5; 2; 2]
+bi←•special "betainc" ◇ ab←2 3 ◇ f←{ab bi ω} ◇ before←f0.5 ◇ ab←4 5 ◇ [before; f0.5; [2 3◇4 5](bi⍤1 0)0.5 0.25; {[2 3]biω}∂0.5; {[1 2]biω}∂0; {[2 1]biω}∂1; [$n 3]bi0.5; [2 3]bi$n] ⍝ [0.6875; 0.63671875; 0.6875 0.1138153076171875; 1.5; 2; 2; $n; $n]
+
+⍝ special-domain-digamma — Negative integer ψ has no result
+psi←•special "digamma" ◇ psi ¯2
+⍝ error: DOMAIN ERROR
+
+⍝ special-domain-betainc — A bound formula keeps its domain
+bi←•special "betainc" ◇ [2 3]bi1.5
+⍝ error: DOMAIN ERROR
 
 ⍝ — In reverse mode, a result drawn only from constants has a gradient of zeros
 c←1 2 3 ◇ {+/,c∩ω}∂ 1.5 2 3.5   ⍝ 0 0 0
@@ -4445,6 +4453,12 @@ w←¿1000ρ0 ◇ t←⌊10×w ◇ ∧/[({+/,⌈/50↕ω}∂ w)≡{+/,⌈/1×50�
 
 ⍝ window-sum-gradient-slides — Under `∂`, a sum along the windows' axis gives each item the sum of the cotangents of the windows that read it, at both ends and along a matrix's first axis, as summing built windows does
 x←1.0×ι10 ◇ m←[6 4]ρ1.0×ι24 ◇ c←[4 4]ρ1.0+ι16 ◇ [{+/(1+ι8)×+/3↕ω}∂ x ; ({+/,c×+/⍠1⁝3↕ω}∂ m)≡{+/,c×+/⍠1⁝1×3↕ω}∂ m ; ({+/(1+ι6)×+/5↕ω}∂ x)≡{+/(1+ι6)×+/1×5↕ω}∂ x]   ⍝ [[1 3 6 9 12 15 18 21 15 8] $t $t]
+
+⍝ window-sum-gradient-inner-axis — An inner-axis window sum transposes as a sliding sum and replays with the current input
+f←{+/,⊼+/1 3↕ω} ◇ x←2 5ρ1+ι10 ◇ [f∂x ; f∂x+1]   ⍝ [[12 30 54 42 24◇42 90 144 102 54] [18 42 72 54 30◇48 102 162 114 60]]
+
+⍝ window-sum-gradient-strided — Overlapping strided windows add each cotangent back to every source position they read
+f←{+/,⊼+/["size":3 "step":2]↕ω} ◇ x←1+ι9 ◇ [f∂x ; f∂x+1]   ⍝ [[12 12 36 24 60 36 84 48 48] [18 18 48 30 72 42 96 54 54]]
 
 ⍝ — With an edge mode in an options record, every windowed axis is centred, and its edges read by that mode
 ["size":3 "edge":"wrap"]↕1 2 3 4   ⍝ [4 1 2◇1 2 3◇2 3 4◇3 4 1]
@@ -5879,6 +5893,12 @@ $t $t $t $t $t $t $t $t $t $t $t $t $t
 ⍝ — Structural reads of a pending matrix copy compose with it on both axes, and read what reading a stored copy reads
 m←0.5+600 1000ρι600000ₓ ◇ t←2↓m ◇ [(⌽₀2↓m)≡⌽₀t; (400 500↑1 2↓2↓m)≡400 500↑1 2↓t; (3⌽2↓m)≡3⌽t; (¯600↑2↓m)≡¯600↑t; (⌽⌽₀2↓m)≡⌽⌽₀t]
 $t $t $t $t $t
+
+⍝ fusion:identical-reads — Matching expanding reads factor through their sources. Other reads keep their values, comparison results keep Boolean storage, named layouts survive, and fill positions still apply the function
+x←(1+ι12)÷8 ◇ y←(13+ι12)÷8 ◇ m←["r":3 "c":4]ρx ◇ n←["r":3 "c":4]ρy
+[((3↕x)×3↕y)≡3↕x×y; ((2 2↕m)×2 2↕n)≡2 2↕m×n; ((⌽x)×⌽y)≡⌽x×y; ((3↕x)<3↕y)≡3↕x<y; (•storage (3↕x)<3↕y).kind; (14↑x)=14↑y]
+⍝ =>
+[$t;$t;$t;$t;"bool";(12ρ$f),2ρ$t]
 
 ⍝ — A transpose reads through a large take from an empty array, whose items are all fill
 ≢+/⍉2 30000 3↑2 0 3ρ0   ⍝ 3ₓ

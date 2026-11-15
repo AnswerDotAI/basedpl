@@ -1,3 +1,4 @@
+// Align CLI and wheel dependency features for compiled-core reuse.
 use basedpl::{
     EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value, buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
 };
@@ -9,6 +10,7 @@ use pyo3::{
 use rustymath::{layout::Keys, structure::{IndexPart, SliceBound}};
 use rustymath_buffer::walk::{Collect, walked, within};
 use std::{ffi::c_int, sync::{Arc, Mutex, atomic::{AtomicPtr, Ordering}}};
+use {ctrlc as _, kernmini as _, rustyline as _};
 
 #[global_allocator]
 static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();

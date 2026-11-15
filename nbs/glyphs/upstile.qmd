@@ -2,9 +2,9 @@
 
 Function. Keys: `Alt-s`. Hanzi: `上`. Ranks: `0` monadic, `0 0` dyadic
 
-`⌈Y` rounds real numbers up. Pervasive; tolerant near integers. Under dynamic kinds, real float results become ordinary machine integers. Under static kinds they remain floats. `⌈ₓY` gives ordinary machine integers in both modes. Exact-domain inputs stay exact.
+`⌈Y` rounds real numbers up. Pervasive; tolerant near integers. Under dynamic kinds, real float results become ordinary machine integers. Under static kinds they remain floats. `⌈ₓY` gives ordinary machine integers under both kinds. Exact numbers stay exact.
 
-Integer-producing real forms clamp to the selected integer range: positive infinity gives its maximum, negative infinity its minimum, and NaN gives zero. See [Static kinds](../numbers.qmd#static-kinds) for the integer width.
+An integer result is clamped to the integer range: `∞` gives its maximum, `¯∞` its minimum, and NaN gives zero. See [Static kinds](../numbers.qmd#static-kinds) for the integer width.
 
 Complex ceiling is `-⌊-Y`, using [complex floor's](downstile.qmd) Gaussian-integer rule.
 

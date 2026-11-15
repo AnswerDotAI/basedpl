@@ -9,14 +9,14 @@ Function. Keys: `Alt-n`. Hanzi: `编` (`編`). Ranks: `∞` monadic, `1 0` dyadi
 ⊤[2 5]ₓ           ⍝ [0 1 0◇1 0 1]ₓ
 ```
 
-`B⊤Y` represents numbers in bases `B`. A zero base retains the remaining quotient.
+`B⊤Y` represents numbers in bases `B`. For a zero base, the digit is the remaining quotient.
 
 ```bpl
 2 2 2 2⊤10         ⍝ 1 0 1 0
 [0 60 60]ₓ⊤3661ₓ   ⍝ [1 1 1]ₓ
 ```
 
-A unit `B` gives residues. A vector `B` adds a new last axis of digits. The result's shape is `ρY , ρB`. Exact operands retain exact arithmetic.
+Unit `B`: residues. Vector `B`: a new last axis of digits. The result's shape is `ρY , ρB`. Exact arguments give exact results.
 
 ```bpl
 9⊤15               ⍝ 6

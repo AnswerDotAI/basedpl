@@ -2,7 +2,7 @@
 
 Monadic operator. Keys: `Alt-4`. Hanzi: `优` (`優`)
 
-`f⇄ X` searches from the start `X` for the point where `f` is least, and returns that point. `X` is a number or an array of real numbers. The point has its shape and keys. `f` takes a point and returns one real number. `O f⇄ X` takes options from the keyed record `O`. With option `solve`, `f` returns residuals instead, and `⇄` searches for the point where they're zero.
+`f⇄ X` searches from the start `X` for the point where `f` is least, and returns that point. `X` is a number or an array of real numbers. The point has `X`'s shape and keys. `f` takes a point and returns one real number. `O f⇄ X` takes options from the record `O`. With option `solve`, `f` returns residuals instead, and `⇄` searches for the point where they're zero.
 
 ```bpl
 (⊼2-⍨)⇄10   ⍝ 2
@@ -27,7 +27,7 @@ Option `method` chooses the method. Without it, `⇄` minimizes with a method it
 | `"nelder-mead"` | Nelder–Mead's simplex | none of the above |
 | `"differential-evolution"` | differential evolution, which evolves a population of points within the bounds | only when named |
 
-`∂` differentiates `f` when `f` uses only what [`∂`](partial.qmd) differentiates, or has a JVP rule that `f∂←g` attaches. L-BFGS takes the gradient at each point it needs from one run of `f`, which also gives the value there. Nelder–Mead and Powell's method use only values of `f`. Differential evolution suits a function with many local minima, and needs finite bounds.
+`∂` differentiates `f` when `f` uses only what [`∂`](partial.qmd) differentiates, or has a JVP rule that `f∂←g` attaches. L-BFGS gets the value and the gradient at each point from one run of `f`. Nelder–Mead and Powell's method use only values of `f`. Differential evolution suits a function with many local minima, and needs finite bounds.
 
 ```bpl
 rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
@@ -89,7 +89,7 @@ With option `solve`, `f` returns residuals: one or more real numbers, the same n
 ["solve":$t] (2-⍨⊼)⇄ 1   ⍝ 1.4142135623730951
 ```
 
-One variable and one residual run Brent's method, `"brent"`. It steps outward from `X` until `f` changes sign, then narrows that bracket. Option `bracket` starts the search from two given points where the signs of `f` differ. Otherwise `⇄` runs Levenberg–Marquardt, `"levenberg-marquardt"`. It takes the Jacobian from forward differences, or from `f`'s derivative where `f` has one and returns no more residuals than `X` has variables. A circle and a line cross where both residuals are zero:
+With one variable and one residual, `⇄` runs Brent's method, `"brent"`. It steps outward from `X` until `f` changes sign, then narrows that bracket. Option `bracket` starts the search from two given points where the signs of `f` differ. Otherwise `⇄` runs Levenberg–Marquardt, `"levenberg-marquardt"`. It takes the Jacobian from forward differences, or from `f`'s derivative where `f` has one and returns no more residuals than `X` has variables. A circle and a line cross where both residuals are zero:
 
 ```bpl
 f←{[x y]←ω ◇ [⊼x + ⊼y - 4;y-x-1]}
@@ -118,7 +118,7 @@ m←[4 1◇1 3] ◇ b←1 2
 | `"minres"` | MINRES on the normal equations Aᵀ·A·x = Aᵀ·b, which takes the same steps as LSMR | the system isn't square, and `∂` differentiates `f` |
 | `"cg"` | conjugate gradients on the normal equations, which take the same steps as LSQR | only when named |
 
-The normal equations square A's condition number. For an ill-conditioned A, MINRES and CG on them reach less accuracy than LSMR and LSQR would. On a square system, `"cg"` and `"minres"` work on A itself, which must be symmetric, and positive definite for CG.
+Because the normal equations square A's condition number, MINRES and CG reach less accuracy on an ill-conditioned A than LSMR and LSQR would. On a square system, `"cg"` and `"minres"` work on A itself, which must be symmetric, and positive definite for CG.
 
 `∂` gives the products with Aᵀ that least squares needs:
 
@@ -130,7 +130,7 @@ f←{m+.×ω - b}
 
 `⇄` computes each product A·v as (f(t·v)−f(0))÷t, with a power of two t that makes t·A·v larger than b. A large b therefore costs no accuracy.
 
-Option `precondition` gives a function that applies M, an approximation to A⁻¹, or to (Aᵀ·A)⁻¹ for least squares. It takes and returns arrays of `X`'s shape. A good M cuts the products a solve needs. CG and MINRES apply M at each step and need it symmetric positive definite. Preconditioned MINRES stops on the residual measured through M, √(rᵀ·M·r), while CG and GMRES stop on the residual itself. GMRES applies M on the right. Calls of M don't count against `evaluations`. For a matrix whose diagonal spans five orders of magnitude, dividing by the diagonal cuts the products from 22 to 9:
+Option `precondition` gives a function that applies M, an approximation to A⁻¹, or to (Aᵀ·A)⁻¹ for least squares. It takes and returns arrays of `X`'s shape. With a good M, a solve needs fewer products. CG and MINRES apply M at each step and need it symmetric positive definite. Preconditioned MINRES stops on the residual measured through M, √(rᵀ·M·r), while CG and GMRES stop on the residual itself. GMRES applies M on the right. Calls of M don't count against `evaluations`. For a matrix whose diagonal spans five orders of magnitude, dividing by the diagonal cuts the products from 22 to 9:
 
 ```bpl
 n←20 ◇ d←10*5× ιn ÷ n-1 ◇ m←d×=⊗⍨ιn + 0.1×1=|-⊗⍨ιn ◇ b←nρ1
@@ -156,4 +156,4 @@ The search works in floats of the start's width. 32-bit and 16-bit floats comput
 
 - `LENGTH`: bounds of another shape or other keys, a `bracket` that isn't two numbers, a batched `f` that doesn't return one value for each point, or an `f` that returns another number of residuals at another point
 - `DOMAIN`: a left argument that isn't keyed options, an unknown option or method, an option for another task, such as `lower` with `solve` or `linear` without it, a method for another task, a start or bound that isn't real numbers, a lower bound above its upper bound, an `f` that doesn't return one real number when minimizing, `"brent"` with more than one variable or residual, `"l-bfgs"` with bounds or for an `f` that `∂` can't differentiate, `"differential-evolution"` without finite bounds or with a population below 4, `"levenberg-marquardt"` with a `bracket`, least squares on a linear system whose `f` `∂` can't differentiate, a `precondition` that isn't a function, a `tolerance` that isn't positive, or an `evaluations`, `population` or `seed` that isn't a whole number
-- `UNSUPPORTED`: a point where `f` reaches code that `∂` can't differentiate, during L-BFGS or least squares, as when a guard takes another branch. Option `method` chooses a method that uses only values
+- `UNSUPPORTED`: a point where `f` reaches code that `∂` can't differentiate, during L-BFGS or least squares, as when a predicate picks another body. Option `method` chooses a method that uses only values

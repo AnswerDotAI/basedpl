@@ -8,7 +8,7 @@
 | `kind` | `"file"`, `"dir"`, `"symlink"` or `"other"`, or `"none"` for a path that doesn't exist |
 | `target` | For a symbolic link, the path it points to, as Rust's `std::fs::read_link` gives it. Empty for any other entry |
 | `len` | The size in bytes |
-| `modified`, `accessed`, `created` | Moments, in seconds since the Unix epoch, as [`•date`](date.qmd) reads them. NaN where the system records none |
+| `modified`, `accessed`, `created` | Moments, in seconds since the Unix epoch, as [`•date`](date.qmd) reads them. NaN when the system records none |
 | `readonly` | Whether the permissions forbid writing |
 | `hidden` | Whether the name starts with `.` |
 | `readable`, `writable`, `executable` | Whether this process may read, write or execute the entry |

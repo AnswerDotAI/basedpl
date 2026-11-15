@@ -8,25 +8,25 @@
 bpl -e '+/ι10'       # 45
 ```
 
-Pass a UTF-8 BPL file to run it as one source. Names persist throughout the file.
+Pass a UTF-8 BPL file to run it as one program. Its statements run in order, names persist throughout the file, and the first error ends the run.
 
 ```bash
 bpl lesson.bpl
 ```
 
-An expression displays its result. An assignment displays nothing. Use `⎕←` for explicit output. `bpl` writes each output immediately, without waiting for the rest of the source. Diagnostics go to stderr and include source locations.
+The result of an expression is displayed. An assignment displays nothing. Use `⎕←` for explicit output. `bpl` writes each output immediately, without waiting for the rest of the source. Diagnostics go to stderr and include source locations.
 
 To run a file as a script, start it with `#!/usr/bin/env bpl`. `bpl` ignores a first line that starts with `#!`.
 
 ## Pipes
 
-With no arguments, piped input behaves like the REPL without prompts. Names persist between expressions.
+When you pipe input to `bpl` with no arguments, `bpl` behaves like the REPL without prompts. Names persist between lines, and an error in one line does not stop the lines after it.
 
 ```bash
 printf 'v←ι10\n+/v\n' | bpl
 ```
 
-`-` reads all stdin as one source before evaluation.
+`-` reads all of stdin first, then runs it as it runs a file.
 
 ```bash
 printf 'v←ι10\n+/v\n' | bpl -
@@ -40,7 +40,7 @@ A program run with `-e` or from a file can read standard input through [`⎕`](g
 printf 'name,qty\npen,2\ncup,5\n' | bpl -e '+/(•csv •nget "-").qty'   # 7ₓ
 ```
 
-When you pass `-`, or pipe input without arguments, the program comes from standard input. Reading `⎕` or `•nget "-"` is then an `IO` error. The interactive REPL reads `⎕` from the terminal. See [`⎕`](glyphs/quad.qmd#input).
+When you pass `-`, or pipe input without arguments, the program comes from standard input. Reading `⎕` or `•nget "-"` then raises an `IO` error. In the interactive REPL, reading `⎕` gives a line from the terminal. See [`⎕`](glyphs/quad.qmd#input).
 
 Use actual glyphs in files, pipes and `-e`; backtick names are a [REPL input method](repl.qmd#typing-glyphs).
 

@@ -10,7 +10,7 @@ Function. Keys: `Alt-?`. Hanzi: `数/异` (`數/異`). Ranks: `∞` monadic, `�
 ≢⍬                 ⍝ 0ₓ
 ```
 
-`X≢Y` negates [match](equal-underbar.qmd).
+`X≢Y` negates [Match](equal-underbar.qmd).
 
 ```bpl
 1≢,1               ⍝ $t

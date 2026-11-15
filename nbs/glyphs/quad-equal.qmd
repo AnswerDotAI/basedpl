@@ -2,19 +2,19 @@
 
 Monadic operator. Keys: `Alt-q =`. Hanzi: `组` (`組`)
 
-`K f⌸Y` groups major cells of `Y` by corresponding keys in `K`. Calls `key f group`; groups appear in first-occurrence order.
+`K f⌸Y` groups major cells of `Y` by the corresponding major cells of `K`, the keys. Calls `key f group`; groups appear in first-occurrence order.
 
 ```bpl
 1 1 2{+/ω}⌸10 20 30 ⍝ 30 30
 ```
 
-`f⌸Y` uses `Y` as keys and their positions as values.
+`f⌸Y` is `Y f⌸ι≢Y`: the major cells of `Y` are the keys, and their positions are the values.
 
-Keys match with [tolerance](../evaluation.qmd#equality-and-ordering), as in `≠`. Results assemble with fill. Empty input calls `f` once for its prototype.
+Keys match with [tolerance](../evaluation.qmd#equality-and-ordering), as in `≠`. Results are assembled with fill. With empty input, `f` is called once on [prototypes](../terms.qmd#term-prototype), to give the result's cell shape.
 
 ## Fast combinations
 
-BPL computes each of these combinations by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+BPL computes each of these combinations with a dedicated algorithm. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
 
 | Combination | Applies to | Benefit |
 |---|---|---|

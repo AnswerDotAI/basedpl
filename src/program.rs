@@ -63,11 +63,24 @@ fn held_identity(v: &Value) -> Option<*const ()> {
 pub(crate) struct Nodes { list: Vec<Node>, index: HashMap<u64, Vec<usize>> }
 
 impl Nodes {
-    /// Interns an already-described node, returning the newest equivalent node (`Node::matches`) or its new number. This runs no operation rewrites, so contraction/layout can emit replacement steps without restarting `folded`.
+    /// Interns an already-described node, factoring a map of identical positional reads (`map_of_copies`), then finding an equivalent node (`Node::matches`). Fold/contraction rewrites stay with their constructors.
     pub(crate) fn add(&mut self, node: Node) -> usize {
+        if let Some(of) = self.map_of_copies(&node) { return of; }
         let key = node.key(self.index.hasher());
         let found = key.and_then(|k| self.index.get(&k)?.iter().rev().copied().find(|&j| self.list[j].matches(&node)));
         found.unwrap_or_else(|| self.put(node, key))
+    }
+    /// A settled elementwise call on identical expanding, non-filling reads runs on their sources once, then reads its result through the same map. Their full ranges already bound the copies. Equal-size reads stay fused instead of adding a temporary. Both construction and imported pending programs enter here.
+    fn map_of_copies(&mut self, node: &Node) -> Option<usize> {
+        let Origin::Step(Step::Map { left: Some(left), right, plan }) = &node.origin else { return None };
+        let (x, xm) = positional_source(self, left.of)?;
+        let (y, ym) = positional_source(self, right.of)?;
+        if xm != ym || xm.fills() || x.layout != y.layout || x.layout.count() >= node.desc.layout.count() || self[x.of].desc.atom || self[y.of].desc.atom {
+            return None;
+        }
+        let desc = Desc { layout: x.layout.clone(), ..node.desc.clone() };
+        let of = self.add(Node { desc, origin: Origin::Step(Step::Map { left: Some(x), right: y, plan: plan.clone() }) });
+        Some(self.copied(Read::node(self, of), xm, node.desc.clone()).of)
     }
     /// Adds `node` as a new value, even where an earlier node gives the same value, and gives its number.
     pub(crate) fn push(&mut self, node: Node) -> usize { let key = node.key(self.index.hasher()); self.put(node, key) }

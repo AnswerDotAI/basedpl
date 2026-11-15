@@ -10,19 +10,19 @@ Hanzi are ordinary name characters by default. Enable their glyph spellings with
 •prefs ["hanzi_aliases":$t]
 ```
 
-The setting persists across inputs and loaded files. When enabled, simplified, traditional and APL spellings can be mixed. `+/`, `加总`, `加總` and `加/` all name the same function. Each alias retains the whole glyph's meaning in both valences. The [notation preference](system/prefs.qmd) changes printed functions, not accepted input.
+The setting persists across inputs and loaded files. When aliases are enabled, simplified, traditional and APL spellings can be mixed. `+/`, `加总`, `加總` and `加/` are all the same function. Each alias has the same one- and two-argument meanings as its glyph. The [notation preference](system/prefs.qmd) changes printed functions, not accepted input.
 
-`是` names assignment `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) names the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. Hanzi inside strings and comments remain ordinary text. [Hanzi as notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
+`是` is an alias for `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) is an alias for the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. Hanzi inside strings and comments remain ordinary text. [Hanzi as notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
 
 ## Names
 
-A name accepts characters not reserved for syntax, glyphs, numbers or whitespace, including hanzi and emoji. A digit ends a name, as it ends a glyph. `f2` therefore applies `f` to 2, the same way `ι2` applies `ι` to 2.
+A name can contain any character not reserved for syntax, glyphs, numbers or whitespace, including hanzi and emoji. A digit ends a name, as it ends a glyph. `f2` therefore applies `f` to 2, the same way `ι2` applies `ι` to 2.
 
 `_` adds the next non-whitespace character to a name, including glyphs and Hanzi aliases: `_+` and `_加_总` are names. Hanzi that aren't aliases remain name characters when aliases are enabled. Digits straight after `_` all stay in the name. A name can't end in `_`, except the lone name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `◇` or the end of the line follows it. Assign to `_` a value that nothing reads.
 
 After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
 
-After a dot, a named or parenthesized operator head needs a space: `T. op[I]` and `T. (op)[I]` modify the selector function `.[I]` with that operator. Tight `T.op[I]` and `T.(expr)[I]` retain their field and scope meanings. Glyph operators and numeric superscripts can touch the dot, as in `T.¨[I]` and `T.¹ ²[I]`. The first bracket at the current level starts selectors; parenthesized operands and dfns stay whole. See [Dot](glyphs/dot.qmd).
+After a dot, leave a space before a named or parenthesized operator head: `T. op[I]` and `T. (op)[I]` modify the selector function `.[I]` with that operator. Without a space after the dot, `T.op[I]` and `T.(expr)[I]` retain their field and scope meanings. Glyph operators and numeric superscripts can touch the dot, as in `T.¨[I]` and `T.¹ ²[I]`. The selectors start at the first bracket that is not inside parentheses or a dfn. See [Dot](glyphs/dot.qmd).
 
 ```bpl
 f←- ◇ f2                       ⍝ ¯2
@@ -35,11 +35,11 @@ T←["q1":5] ◇ T.q1             ⍝ 5
 
 ## Literals and strands
 
-Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A constant is `$` followed by one lowercase letter. `$a` is the uppercase Latin alphabet and `$d` the digits. `$e` names the error that an [error guard](glyphs/error-guard.qmd)'s handler caught. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
+Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A constant is `$` followed by one lowercase letter. `$a` is the uppercase Latin alphabet and `$d` the digits. `$e` is the error that an [error guard](glyphs/error-guard.qmd)'s handler caught. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
 
 `''` and `""` are the same empty character vector. A double-quoted string can span lines. Every line ending inside it reads as one newline, and its indentation stays as written.
 
-`ₓ` straight after a number, `⍬`, or a `]` or `)` that closes literals makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1◇2 3)ₓ`. A fractional number floors: `1.5ₓ` is `1ₓ`. After anything else, `ₓ` floors to exact integers: `nₓ` is `⌊ₓn`, and `÷ₓ` divides and floors, as [Superscripts and subscripts](scripts.ipynb) describes.
+`ₓ` straight after a number, `⍬`, or a `]` or `)` that closes literals makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1◇2 3)ₓ`. A fractional number is rounded down: `1.5ₓ` is `1ₓ`. After anything else, `ₓ` floors to exact integers: `nₓ` is `⌊ₓn`, and `÷ₓ` divides and floors, as [Superscripts and subscripts](scripts.ipynb) describes.
 
 After a number, `e`, `j` or `r`, or its subscript `ₑ`, `ⱼ` or `ᵣ`, continues the number only when the rest of a number follows it, as in `1e5`, `2ⱼ3` and `1r3`. Otherwise a plain letter starts a name: `2edges` is `2` beside the name `edges`. A subscript there, or between any two items, joins the items on each side into one term, as [Numbers](numbers.qmd#writing-numbers) describes: `2ₑn` is `2×10*n`.
 
@@ -56,23 +56,23 @@ h←- ◇ m←5 ◇ h⁝m             ⍝ ¯5
 f←2× ◇ f⍣3⁝1                ⍝ 8
 ```
 
-A literal strand can appear on each side. In `+/⍠2 3⁝3 3↕m`, the operand of `⍠` is `2 3`, and the argument starts with the `3 3` to its right. A space in place of `⁝` would join all four numbers into one operand.
+A literal strand can appear on each side of `⁝`. In `+/⍠2 3⁝3 3↕m`, the operand of `⍠` is `2 3`, and the argument starts with the `3 3` to its right. A space in place of `⁝` would join all four numbers into one operand.
 
 ## Runs
 
-Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. The operator rules below can join runs. Each completed run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
+Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. The operator rules below can join runs. Each completed run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else raises a `SYNTAX` error.
 
 BPL reads a statement in three steps:
 
 1. Literals separated by spaces join into strands, such as `1 2` or `"ab" "cd"`.
 2. Each remaining run is wrapped in parentheses.
-3. Bind the result from right to left, applying the operator rules below.
+3. The result is bound from right to left, by the operator rules below.
 
 So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not `(1)(2+3)`. Spaces around a function between two runs decide the grouping. `a×b + c` is `(a×b)(+)(c)`, the sum of `a×b` and `c`. `a×b +c` is `(a×b)(+c)`, a strand of two subjects. `a×b+ c` is `(a×b+)(c)`, the train `a×b+` applied to `c`.
 
-A call's result binds where a subject would, whatever it returns, and so do a field read from a call's result, a subscript's selection and a scope's result: `(f 0) 1 2` is a strand even where `f 0` returns a function. [Evaluation](evaluation.qmd#binding) shows how to call a function that a call returns.
+A call's result binds where a subject would, whatever it returns, and so do a field read from a call's result, a subscript's selection and a scope's result: `(f 0) 1 2` is a strand even when `f 0` returns a function. [Evaluation](evaluation.qmd#binding) shows how to call a function that a call returns.
 
-A run that ends in a dyadic operator takes the next run as its right operand: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. A run that starts with an operator takes the previous run as its left operand: `≢⊢ ⌸x` is `(≢⊢)(⌸x)`, where `≢⊢` is the operand of `⌸`. [Evaluation](evaluation.qmd) explains operands.
+A dyadic operator at the end of a run takes the next run as its right operand: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. An operator at the start of a run takes the previous run as its left operand: `≢⊢ ⌸x` is `(≢⊢)(⌸x)`, where `≢⊢` is the operand of `⌸`. [Evaluation](evaluation.qmd) explains operands.
 
 A space can thus replace parentheses around a short function operand: `⊂⊢ ⌸` is `(⊂⊢)⌸`. Keep the arguments outside that operand's run: `0 1 0 ⊂⊢ ⌸ "abc"`. [Composing functions](composition.qmd#operators-on-trains) gives examples.
 
@@ -95,8 +95,8 @@ A [bracket list](glyphs/brackets.qmd) is a vector, whatever the number of items.
 
 1. Without `;`, each space separates two items, and each item is one run.
 2. With `;`, only `;` separates items. Within each item, spaces divide runs as they do outside brackets.
-3. `◇` stacks rows into an array of higher rank, with each row as one major cell. Each row follows the first two rules. A row of one number has rank 0. Write a column with a one-item vector in each row.
-4. Each item stays one item of the vector, whatever it holds, including an array or a function. Items evaluate left to right.
+3. `◇` stacks rows into an array of higher rank, with each row as one major cell. Each row follows the first two rules. A row of one number is that number, not a one-item vector: `[1◇2]` is a vector. To write a column, put a one-item vector in each row, as in `[[1]◇[2]]`.
+4. Each item stays one item of the vector, whatever it holds, including an array or a function. Items are evaluated from left to right.
 5. Items written `"key":value` make a record. An item written `name:`, with no value, is `"name":name`.
 
 ```bpl
@@ -133,13 +133,13 @@ m←[
 
 [Braces](glyphs/braces.qmd) define a function. Inside braces, `◇` separates statements. `;` separates bodies. `?` ends a body's predicate. [Dfns](dfns.ipynb) describes what each part means.
 
-Outside brackets, parentheses and braces, `◇` separates statements. A `;` outside brackets and braces is a `SYNTAX` error.
+Outside brackets, parentheses and braces, `◇` separates statements. A `;` outside brackets and braces raises a `SYNTAX` error.
 
 ## Superscripts and subscripts
 
 A [superscript or subscript](scripts.ipynb) written straight after a [token](terms.qmd#term-token) applies to that token. After a subject, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
 
-Numeric superscripts are powers on arrays (`x²`, `x⁻¹`), but Rank on functions: `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. Bare `f⁻` is inverse, with no superscript digit immediately after the minus. `f⁻ ¹` applies that inverse at rank 1. Repeat a function with `f⍣2`, not `f²`.
+Numeric superscripts are powers on arrays (`x²`, `x⁻¹`), but Rank on functions: `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. `f⁻`, with no superscript digit straight after `⁻`, is the inverse of `f`. `f⁻ ¹` applies that inverse at rank 1. Repeat a function with `f⍣2`, not `f²`.
 
 On an array, a subscript selects one position on the leading axis: `x₁` is `(1⌷x)`. Numeric subscripts separated by spaces form one coordinate: `x₁ ₂` is `x.[1 2]`. Touching digits form one position: `x₁₂` selects position 12. Parentheses keep sequential selections separate: `(x₁)₂` selects item 2 of item 1.
 

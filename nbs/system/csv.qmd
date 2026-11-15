@@ -1,10 +1,10 @@
 # `•csv` — CSV
 
-`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. An integer outside the 64-bit range reads as its nearest float. Missing numeric cells become the `fill` option's value, NaN by default. A fill takes its column's type wherever it keeps its value in that type: `["fill":0]` reads `0ₓ` at each missing cell of an integer column. A fill that doesn't keep its value, such as NaN or `0.5` in an integer column, makes the column floats. Missing text cells become `""`.
+`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. An integer outside the 64-bit range is read as its nearest float. Missing numeric cells become the `fill` option's value, NaN by default. The fill is converted to its column's type when that type can hold its value exactly: with `["fill":0]`, each missing cell of an integer column is read as `0ₓ`. When the column's type can't hold the fill exactly, as with NaN or `0.5` in an integer column, the column is read as floats. Missing text cells become `""`.
 
-Under static kinds, every integer column reads at the `int` width whatever its values, as every new integer does. A value that doesn't fit is a `DOMAIN` error that names the column.
+Under [static kinds](../numbers.qmd#static-kinds), every integer column is read at the `int` width whatever its values, as every new integer is. A value that doesn't fit raises a `DOMAIN` error that names the column.
 
-The `types` option sets the type of columns, each from a value of that type. A number, such as `0ₓ₈`, `0ₚ` or `$f`, makes a numeric column of its type. Each of the column's values, and the fill at its missing cells, must keep its value in that type, or the read is a `DOMAIN` error. A float type rounds to its width. Text, such as `""`, reads a column as written: `02134` stays `"02134"`. A record sets the columns that it names. A vector sets every column in order. It needs one value for each column, as a file with no header does:
+The `types` option sets each column's type, given as a value of that type. A number, such as `0ₓ₈`, `0ₚ` or `$f`, makes a numeric column of its type. That type must hold each of the column's values exactly, and the fill at its missing cells, or `•csv` raises a `DOMAIN` error. With a float type, values are rounded to its width. With text, such as `""`, the column is read as written: `02134` stays `"02134"`. A record sets the columns that it names. A vector sets every column in order, and needs one value for each column. A file with no header needs a vector:
 
 ```bpl
 •prefs ["kinds":"static"]
@@ -18,8 +18,8 @@ T.zip                      ⍝ "02134" "10001"
 ["header":$f "types":["" 0ₓ]] •csv "a,12",(•ucs 10),"b,7"   ⍝ [["a" "b"] [12 7]ₓ]
 ```
 
-`•csv⁻ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN writes as an empty cell, and so does the exact value given as `fill`.
+`•csv⁻ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN is written as an empty cell, and so is the exact value given as `fill`.
 
-Both directions take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. Reading also takes `missing` and `types`, and writing takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](../data.ipynb#csv) describes the options.
+`•csv` and `•csv⁻` both take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. `•csv` also takes `missing` and `types`, and `•csv⁻` takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](../data.ipynb#csv) describes the options.
 
 Errors: `DOMAIN` for invalid options, duplicate headers, and cells that CSV can't hold: rationals that aren't whole, complex numbers, functions or nested cells, and for a value that doesn't keep itself in its column's type; `LENGTH` for unequal record widths or columns, or a `types` vector of the wrong length.

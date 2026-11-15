@@ -8,7 +8,7 @@
 ρ""                ⍝ [0]ₓ
 ```
 
-`'''` is the quote character. Inside a string, an apostrophe needs no escaping, and a double quote is written twice.
+`'''` is the apostrophe character. Inside a string, an apostrophe needs no escaping, and a double quote is written twice.
 
 ```bpl
 •ucs '''           ⍝ 39ₓ

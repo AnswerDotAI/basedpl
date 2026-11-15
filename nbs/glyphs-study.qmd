@@ -1,6 +1,6 @@
 # Glyphs Study Guide
 
-Work through these notebooks in order. Each part introduces the terms and glyphs used in its examples. Run them in a BPL notebook or try the examples in the [playground](playground.qmd).
+Work through these notebooks in order. Each notebook introduces the terms and glyphs used in its examples. Run them in a BPL notebook or try the examples in the [playground](playground.qmd).
 
 1. [Basics](study/01_basics.ipynb): numbers, vectors, grouping, functions and strings.
 2. [Functions and arrays](study/02_functions.ipynb): comparisons, counting, finding and filtering.

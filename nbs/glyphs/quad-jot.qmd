@@ -30,7 +30,7 @@ J's `p.` family.
 
 ## Coefficient/exponent tables
 
-Enclosed matrix: one row per term, coefficient then exponents. Enclose one coordinate vector to evaluate one point. A single coordinate extends to all variables. Batch axes collect answers.
+Enclosed matrix: one row per term, coefficient then exponents. Enclose one coordinate vector to evaluate one point. A number alone is used for every variable. The result has one answer for each item of `X`.
 
 ```bpl
 t←⊂[1 2 0◇1 0 2]ₓ
@@ -40,7 +40,7 @@ t⌻[3 4;5 12]ₓ                           ⍝ [25 169]ₓ
 ⌻⁻⊂[1 5◇¯1 0]ₓ                         ⍝ [¯1 0 0 0 0 1]ₓ
 ```
 
-Evaluation accepts fractional and negative exponents. Conversion to coefficients requires one variable and nonnegative whole exponents. Conversion also adds together terms of the same degree.
+`⌻` evaluates a table with fractional and negative exponents. `⌻⁻` of a table requires one variable and nonnegative whole exponents, and adds together terms of the same degree.
 
 Derivative coefficients: `1↓C×ι≢C`. Integral: `K,C÷↦≢C`. See [Derivative](partial.qmd).
 

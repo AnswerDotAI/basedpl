@@ -8,7 +8,7 @@ Function. Hanzi: `非/无` (`非/無`). Ranks: `0` monadic, `∞ ∞` dyadic
 ~0 1               ⍝ $t $f
 ```
 
-`X~Y` removes the major cells of `X` found among the major cells of `Y`, retaining order and repetitions. Uses tolerant matching.
+`X~Y` removes the major cells of `X` found among the major cells of `Y`, retaining order and repetitions. Uses [tolerant](../numbers.qmd#mathish-mode) matching.
 
 ```bpl
 1 2 1 3~2 4        ⍝ 1 1 3

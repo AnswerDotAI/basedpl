@@ -2,14 +2,14 @@
 
 Function. Keys: `Alt-2`. Hanzi: `转` (`轉`). Ranks: `1` monadic, `0 1` dyadic
 
-`⌽Y` reverses the last axis. [Axis](quad-colon.qmd) selects another: `⌽₀` reverses the first axis, and `⌽₋₁` selects the last. `⌽₀` replaces Dyalog's `⊖`.
+`⌽Y` reverses the last axis. [Axis](quad-colon.qmd) selects another: `⌽₀` reverses the first axis, and `⌽₋₁` the last. `⌽₀` replaces Dyalog's `⊖`.
 
 ```bpl
 ⌽1 2 3             ⍝ 3 2 1
 ⌽₀2 2ρι4ₓ           ⍝ [2 3◇0 1]ₓ
 ```
 
-`N⌽Y` rotates left by `N` places; negative `N` rotates right. Whole counts cycle modulo axis length.
+`N⌽Y` rotates left by `N` places; negative `N` rotates right. Counts are whole, taken modulo the axis length.
 
 ```bpl
 1⌽"abcd"           ⍝ "bcda"

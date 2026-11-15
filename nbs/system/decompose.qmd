@@ -1,6 +1,6 @@
 # `•decompose` — Matrix decompositions
 
-`kind •decompose m` factors the matrix `m` and returns the factors as a record. `kind` names the decomposition, as text or as the `kind` of a record of options:
+`kind •decompose m` factors the matrix `m` and returns the factors as a record. `kind` is the decomposition's name, given as text or as the `kind` field of an options record:
 
 | `kind` | Fields | Factors |
 |---|---|---|
@@ -17,14 +17,14 @@ The SVD and the QR decomposition are thin, unless option `complete` asks for the
 ("eigen" •decompose [2 1◇1 2]).values  ⍝ [1 3]
 ```
 
-Where option `vectors` is false, `"svd"` and `"eigen"` give only `s` or `values`, in less time. It's true by default. Where option `complete` is true, `"qr"` gives a square `q`, and an `r` with as many rows as `m`. It's false by default.
+When option `vectors` is false, `"svd"` gives only `s` and `"eigen"` gives only `values`, in less time. `vectors` is true by default. When option `complete` is true, `"qr"` gives a square `q`, and an `r` with as many rows as `m`. `complete` is false by default.
 
 ```bpl
 (["kind":"svd" "vectors":$f]•decompose [1 2◇3 4◇5 6]).s   ⍝ 9.525518091565104 0.5143005806586441
 ρ(["kind":"qr" "complete":$t]•decompose [1 2◇3 4◇5 6]).q  ⍝ [3 3]ₓ
 ```
 
-Option `rank`, a positive whole number, makes `"svd"` give only the first `rank` singular values, with their vectors unless `vectors` is false. A randomized method computes them, in far less time than the full SVD of a large matrix takes. The result is an approximation. The faster the singular values beyond the `rank`th decay, the smaller its error. For a `rank` within 10 of the matrix's smaller side, the result is the full SVD's first `rank` columns.
+Option `rank`, a positive whole number, makes `"svd"` give only the first `rank` singular values, with their vectors unless `vectors` is false. A randomized method computes them, in far less time than the full SVD of a large matrix takes. The result is an approximation. The faster the singular values beyond the `rank`th decay, the smaller its error. When `rank` is at least the matrix's smaller side minus 10, the result is exact: the full SVD's first `rank` columns.
 
 ```bpl
 (["kind":"svd" "rank":1]•decompose [1 2◇3 4◇5 6]).s   ⍝ [9.525518091565104]

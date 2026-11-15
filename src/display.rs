@@ -37,7 +37,7 @@ pub(crate) struct Elide {
     pub display: bool,
     /// How text shows hidden names, which start with `_`. Source text shows them in full. Box mode shortens them. Plain display leaves hidden axis names out and shortens hidden keys.
     pub hidden: Hidden,
-    /// Whether a complex number with a zero imaginary part shows as its real part, as the items of an array that holds a complex number with a nonzero imaginary part do (`items_of`). An atom, and an array whose imaginary parts are all zero, keep `ⱼ0`.
+    /// Whether a complex number with a zero imaginary part shows as its real part, as the shown items of an array that holds a complex number with a nonzero imaginary part do (`items_of`). An atom, and an array whose shown imaginary parts are all zero, keep `ⱼ0`.
     pub reals: bool,
 }
 /// How text shows a hidden name, which starts with `_`.
@@ -73,8 +73,14 @@ impl Elide {
             _ => std::borrow::Cow::Borrowed(n),
         }
     }
-    /// These settings for the items of `a`: complex items with a zero imaginary part show as real numbers in an array that holds a complex number with a nonzero one (`Value::keeps_complex`).
-    pub(crate) fn items_of(self, a: &Value) -> Self { Self { reals: a.keeps_complex(), ..self } }
+    /// Whether any shown position satisfies `test`. Unlimited output walks the array directly; previews use the same positions as their rows.
+    pub(crate) fn any_shown(self, a: &Value, mut test: impl FnMut(usize) -> bool) -> bool {
+        let (edges, last) = (self.edges(a.shape()), self.last(a.shape()));
+        if edges.is_none() && last.is_none() { return (0..a.len()).any(test); }
+        rows(a.shape(), edges, last).into_iter().flat_map(|(_, _, spots)| spots).any(|spot| matches!(spot, Spot::At(i) if test(i)))
+    }
+    /// These settings for the shown items of `a`: complex items with a zero imaginary part show as real numbers where another shown item has a nonzero one.
+    pub(crate) fn items_of(self, a: &Value) -> Self { Self { reals: a.keeps_complex(self), ..self } }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
     pub(crate) fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
         (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker())
@@ -408,10 +414,7 @@ fn array(a: &Value, el: Elide) -> Block {
 }
 
 /// Whether `a` displays as a string without keys or a visible axis name.
-fn is_text(a: &Value, el: Elide) -> bool {
-    a.shape().len() == 1 && !a.has_keys() && !a.shows_names(el) && (!a.is_empty() || matches!(a.prototype(), Value::Character(_)))
-        && a.elements().all(|e| matches!(e, Value::Character(_)))
-}
+fn is_text(a: &Value, el: Elide) -> bool { !a.has_keys() && !a.shows_names(el) && a.is_string(true) }
 
 /// Whether box mode draws `a` in a box.
 fn boxes(a: &Value) -> bool { a.shape().len() != 1 || !a.is_simple() }

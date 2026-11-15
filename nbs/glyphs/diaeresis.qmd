@@ -8,19 +8,19 @@ Monadic operator. Keys: `Alt-1`. Hanzi: `遍`
 ≢¨[1 2;3 4 5]      ⍝ [2 3]ₓ
 ```
 
-`X f¨Y` pairs items using leading agreement.
+`X f¨Y` pairs items using [leading agreement](../evaluation.qmd#agreement-and-pervasion).
 
 ```bpl
 1 2+¨10            ⍝ 11 12
 ```
 
-On empty arguments, Each calls `f` once using prototypes. If that call fails, the result is empty, with prototype 0. Prototype mode permits Pick to select fill.
+On empty arguments, Each calls `f` once using [prototypes](../terms.qmd#term-prototype). If that call raises an error that [`∞::`](error-guard.qmd) would catch, the result is empty, with prototype 0. In that call, a system function that reads or writes outside BPL returns a prototype of its result and does nothing else: `•nget` reads no file.
 
 ```bpl
 {100⊃"abc"}¨⍬      ⍝ ""
 ```
 
-Other errors and explicit output remain observable in that call.
+INTERRUPT, TIMEOUT and UNSUPPORTED are still raised, and output from that call still appears.
 
 Where it can, Each calls `f` once on all the items together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each item.
 

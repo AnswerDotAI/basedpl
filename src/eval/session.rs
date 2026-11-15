@@ -129,12 +129,10 @@ impl Session {
     pub(crate) fn transforming(&self) -> bool { self.transforming.get() }
     /// Runs within a transformation level, whose id exceeds every outer level's. The level exits on return, error or panic.
     pub(crate) fn with_level<T>(&self, kind: crate::transform::Kind, run: impl FnOnce(u64) -> T) -> T {
-        struct End<'a>(&'a Session);
-        impl Drop for End<'_> { fn drop(&mut self) { self.0.end(); } }
         let frames = self.bindings.depth();
         let id = self.levels.borrow_mut().begin(kind, frames);
         self.transforming.set(true);
-        let _end = End(self);
+        let _end = std::mem::DropGuard::new(self, Self::end);
         run(id)
     }
     /// Ends the innermost level and restores routing. Normal returns also strip its data from bindings it wrote; panic unwinding does no language work.

@@ -11,19 +11,25 @@ Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
 ~ᵇ6                ⍝ ¯7ₓ
 ```
 
-Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate): a whole float, such as bare `6`, stands for that integer, and with Mathish on so does a float within `1E¯14` of a whole number. Results are exact integers at any size, or Booleans when every argument is Boolean. Agreement is pervasive.
+Arguments use the usual [integer conversion](../numbers.qmd#exact-and-approximate): a whole float, such as bare `6`, is read as that integer, and with Mathish on so is a float within `1E¯14` of a whole number. Results are exact integers at any size, or Booleans when every argument is Boolean. `fᵇ` is pervasive.
 
 ```bpl
 6 3∧ᵇ5             ⍝ [4 1]ₓ
 $t∧ᵇ$f             ⍝ $f
 ```
 
-For a monadic call, `f` is evaluated on `$f` and `$t`. For a dyadic call, it is evaluated on all four Boolean pairs. Each evaluation must return one Boolean value. The operand can be any function or composition that satisfies this rule.
+For a monadic call, `f` is evaluated on `$f` and `$t`. For a dyadic call, it is evaluated on all four Boolean pairs. Each evaluation must return one Boolean value. The operand can be any function or composition that satisfies this rule. It can also be a constant, which acts as a function that always gives the constant. A constant must therefore be one Boolean value. An array of several items isn't read as a truth table: it raises a `LENGTH` error. `1ᵇ` sets every bit, including the infinitely many leading bits of two's complement, and gives `¯1ₓ` for an integer argument. `0ᵇ` clears every bit:
 
-`ᵇ` is an ordinary monadic operator. It requires a function operand. Differentiation is unsupported.
+```bpl
+1ᵇ 6               ⍝ ¯1ₓ
+6 (0ᵇ) 3           ⍝ 0ₓ
+```
 
-In Python, `f.bitwise` constructs `fᵇ`. Array and Function `&`, `|` and `~` use `∧ᵇ`, `∨ᵇ` and `~ᵇ`. Plain BPL `∧` and `∨` retain LCM and GCD.
+Under [`∂`](partial.qmd), the results of `fᵇ` have no derivative, like those of other functions that give integers: `{ω∧ᵇ3}∂6` is `0`.
+
+In Python, `f.bitwise` constructs `fᵇ`. The `&`, `|` and `~` operators of `Array` and `Function` use `∧ᵇ`, `∨ᵇ` and `~ᵇ`. Plain `∧` and `∨` are LCM and GCD.
 
 ## Errors
 
-- `DOMAIN`: a character argument, or a float that isn't a whole number (within `1E¯14` with Mathish on).
+- `DOMAIN`: a character argument, a float that isn't a whole number (within `1E¯14` with Mathish on), or an operand that gives a value that isn't Boolean
+- `LENGTH`: an operand that gives several items, such as the constant `1 0`

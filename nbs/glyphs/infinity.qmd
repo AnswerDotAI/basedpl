@@ -11,7 +11,7 @@ Literal. Keys: `Alt-8`. Hanzi: `永`
 ⌈/⍬                ⍝ ¯∞
 ```
 
-`¯∞` < every finite real < `∞`. Each infinity equals itself. Empty min/max identities are infinite even for exact arrays. As IEEE 754 defines, an undefined result with an infinity is NaN:
+`¯∞` < every finite real < `∞`. Each infinity equals itself. `⌊/` and `⌈/` of an empty array are infinite, even for exact arrays. Under dynamic kinds, the functions that [Infinities and NaN](../numbers.qmd#infinities-and-nan) lists raise `DOMAIN` where they have no result, as `∞∨2` does. Other undefined results with an infinity are NaN, as IEEE 754 defines:
 
 ```bpl
 ∞-∞                ⍝ $n

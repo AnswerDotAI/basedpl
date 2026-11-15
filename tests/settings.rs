@@ -61,6 +61,11 @@ fn boxed_display_and_function_trees() {
     assert!(s.eval(r#"•prefs ["boks":$t]"#).error.is_some());
     assert!(s.eval(r#"p←•prefs ["limit":4 "edges":1]"#).error.is_none());
     assert_eq!(s.eval(r#"3 3ρι9 ◇ ι9 ◇ ⎕←ι9 ◇ "abcdefghi" ◇ ≢⍕ι9"#).output_text(), ["0 … 2\n⋮ ⋱ ⋮\n6 … 8", "0 … 8", "0 1 2 3 4 5 6 7 8", "\"abc…i\"", "17ₓ"]);
+    let hidden = s.eval("v←9ρ1j0 ◇ v.[4]←1j1 ◇ v").value.unwrap();
+    assert_eq!(s.show(&hidden), "1ⱼ0 … 1ⱼ0");
+    assert_same(s.eval(&hidden.literal()).value, &hidden);
+    assert_eq!(s.eval("v.[0]←1j1 ◇ v").output_text(), ["1ⱼ1 … 1"]);
+    assert_eq!(s.eval("m←3 3ρ1j0 ◇ m.[1;1]←1j1 ◇ m").output_text(), ["1ⱼ0 … 1ⱼ0\n  ⋮ ⋱   ⋮\n1ⱼ0 … 1ⱼ0"]);
     assert_eq!(s.eval("\"a\nb\nc\nd\ne\"").output_text(), ["\"a\nb\nc\n⋮\ne\""]);
     s.eval(r#"•prefs ["limit":∞ "width":10]"#);
     let narrow = s.eval(r#""abcd界efghijk""#).output_text().join("\n");

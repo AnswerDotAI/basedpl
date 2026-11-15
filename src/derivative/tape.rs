@@ -293,24 +293,20 @@ impl Back<'_> {
         Ok(Some((source, plus_times(&a, &b, false, span)?)))
     }
 
-    /// Adds the cotangent of a sum along `axis` of `of` straight to the input that `of` reads, where `of` reads windows that slide along that input's first axis (rustymath's `Slide`), as the forward fold reads them. Each input item takes the sum of the cotangents of the windows that read it: the windows of `u` with `width - 1` zeros at each end of its first axis, summed, which runs as the same sliding fold. Gives false, adding nothing, for any other node, whose fold and read then transpose in turn.
+    /// Adds a window sum's cotangent through its source's walk: the sliding sum of the padded cotangent (`Walk::transpose_sum`), on any source axis. Other folds and reads transpose in turn.
     fn add_slid(&mut self, of: &Read, axis: usize, u: &Value) -> Result<bool, Error> {
-        use rustymath::reduce::{FoldRoute, fold_route};
+        use rustymath::structure::Walk;
         let Some((source, map)) = self.walked(of.of) else { return Ok(false) };
         let copy = self.nodes[of.of].desc.shape();
         if of.layout.shape() != copy { return Ok(false); }
-        let FoldRoute::Slide(s) = fold_route(&map, copy, Some(source.layout.shape()), false, &[axis]) else { return Ok(false) };
-        // The windows' frames, the copy's other axis along the same source axis, come first in `u`, which holds the folds' results in order.
-        let frames: Vec<usize> = s.walk.along[axis].map_or(vec![], |q| s.walk.walking(q).filter(|&r| r != axis).collect());
-        let (Ok([1, len, _]), [w], [1], [f]) = (<[usize; 3]>::try_from(&s.dims[..]), &s.widths[..], &s.every[..], &frames[..]) else { return Ok(false) };
-        if *f - usize::from(axis < *f) != 0 || !Steps::in_order(&s.tables) || u.shape().first() != Some(&(len + 1 - w)) { return Ok(false); }
-        let span = self.span;
-        let zeros = crate::primitive::reshape_to(&[&[w - 1][..], &u.shape()[1..]].concat(), &zero_of(u), span)?;
-        let first = Primitive::CatenateFirst;
-        let padded = first.call(Some(&first.call(Some(&zeros), u, span)?), &zeros, span)?;
-        let windows = Primitive::Windows.call(Some(&Value::integer(*w as i64)), &padded, span)?;
-        let summed = crate::eval::folded_along(PLUS, FoldKind::REDUCE, &[1], &windows, span)?;
-        self.add_at(&source, Places::Walk { base: s.region.start, steps: &[Steps::along(s.region.len(), 1)] }, &flat(&summed, span)?)?;
+        let Some((padding, windows, rest)) =
+            Walk::new(&map.tables(copy), copy, source.layout.shape()).and_then(|w| w.transpose_sum(axis, source.layout.shape()))
+        else { return Ok(false); };
+        let padded = crate::primitive::remap(u, padding, None)?;
+        let windows = crate::primitive::remap(&padded, windows, None)?;
+        let summed = crate::eval::folded_along(PLUS, FoldKind::REDUCE, &[windows.shape().len() - 1], &windows, self.span)?;
+        let (base, steps) = Steps::per_axis(&rest.steps, rest.layout.shape()).expect("a transpose's rest has one entry per axis");
+        self.add_walked(&source, base, &steps, summed)?;
         Ok(true)
     }
 

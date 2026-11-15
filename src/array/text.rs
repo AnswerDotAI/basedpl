@@ -167,7 +167,7 @@ impl Value {
                 let el = el.items_of(self);
                 if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
-                if self.string_literal(el.display).is_some() { return quoted(&self.elided_text(el)); }
+                if self.is_string(el.display) { return quoted(&self.elided_text(el)); }
                 if let Some(s) = crate::keyed::name(self) {
                     return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
                 }
@@ -236,11 +236,11 @@ impl Value {
     }
     /// A number of an array that `mark` marks, without its own marker.
     fn unmarked_item(&self, el: Elide) -> String { let Self::Number(n) = self else { unreachable!("compact storage holds numbers") }; el.unmarked(n) }
-    /// Whether this array holds a complex number with a nonzero imaginary part, so that its complex items with a zero imaginary part show as real numbers (`Elide::items_of`).
-    pub(crate) fn keeps_complex(&self) -> bool {
+    /// Whether a shown item is complex with a nonzero imaginary part, so shown zero imaginary parts can be omitted (`Elide::items_of`).
+    pub(crate) fn keeps_complex(&self, el: Elide) -> bool {
         match self.as_items() {
-            Items::Compact(View::Complexes(v)) => (0..v.len()).any(|i| v.get(i).im != 0.0),
-            Items::Values(items) => items.iter().any(|v| matches!(v, Value::Number(n) if n.as_complex().is_some_and(|z| z.im != 0.0))),
+            Items::Compact(View::Complexes(v)) => el.any_shown(self, |i| v.get(i).im != 0.0),
+            Items::Values(items) => el.any_shown(self, |i| matches!(&items[i], Value::Number(n) if n.as_complex().is_some_and(|z| z.im != 0.0))),
             Items::Compact(_) | Items::Fixed(_) => false,
         }
     }
@@ -284,12 +284,13 @@ impl Value {
 
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
     pub(crate) fn is_strand(&self, el: Elide) -> bool {
-        matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
-            && self.string_literal(el.display).is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _)))
-            && match self.as_items() {
-                Items::Values(items) => items.iter()
-                    .all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal(el.display).is_some()),
-                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()), _ => true
+        matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el) && !self.is_string(el.display)
+            && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _))) && match self.as_items() {
+                Items::Values(items) => {
+                    items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.is_string(el.display))
+                }
+                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
+                _ => true,
             }
     }
 
@@ -336,17 +337,20 @@ impl Value {
 
     /// A major cell as one part of array notation: a vector's items side by side, a higher rank in its own notation, or one item. A row with one item needs its own brackets, because a single item would be a cell by itself. `edges` elides the whole array's positions.
     fn row(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
-        if self.shape().len() == 1 && !self.has_keys() && self.string_literal(el.display).is_none() {
+        if self.shape().len() == 1 && !self.has_keys() && !self.is_string(el.display) {
             if self.len() == 1 { return format!("[{}]", item(&self.at(0), el)); }
             self.shown_items(edges, |e| item(&e, el)).join(" ")
         } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) }
         else { item(self, el) }
     }
 
-    /// A quoted character vector. Source excludes control characters other than a newline.
-    fn string_literal(&self, display: bool) -> Option<String> {
-        if let Self::Array(_) = self {
-            crate::keyed::name(self).filter(|s| display || !s.chars().any(|c| c.is_control() && c != '\n')).map(|s| quoted(&s))
-        } else { None }
+    /// Whether this value is a character vector. Source excludes control characters other than a newline.
+    pub(crate) fn is_string(&self, display: bool) -> bool {
+        if !matches!(self, Self::Array(_)) || self.shape().len() != 1 { return false; }
+        let printable = |c: &char| display || !c.is_control() || *c == '\n';
+        match self.as_items() {
+            Items::Compact(View::Characters(chars)) => display || chars.iter().all(printable),
+            Items::Values(items) => !items.is_empty() && items.iter().all(|v| matches!(v, Self::Character(c) if printable(c))), _ => false
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 Syntax. Keys: `Alt-Backtick`. Hanzi: `句`
 
-At statement level, `◇` separates expressions. Everywhere, a line break means `◇`, unless it's next to a bracket, `;`, `◇` or `?`.
+At statement level, `◇` separates expressions. Everywhere, a line break means `◇`, unless it's next to a bracket, parenthesis, brace, `;`, `◇` or `?`.
 
 ```bpl
 x←2 ◇ y←3 ◇ x+y    ⍝ 5
@@ -16,7 +16,7 @@ Inside [brackets](brackets.qmd), `◇` separates major cells. With a trailing `�
 ρ[42◇]            ⍝ [1]ₓ
 ```
 
-Inside [parentheses](parentheses.qmd), `◇` separates the rows of a vector. Each row is itself a vector, even a row with one item.
+Inside [parentheses](parentheses.qmd), `◇` separates rows, and the result is a vector with one item for each row. Each item is a vector, even for a row with one item.
 
 ```bpl
 (1 2◇3)          ⍝ [[1 2] [3]]

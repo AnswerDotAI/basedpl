@@ -1,6 +1,6 @@
 # `•edge` — Edge modes
 
-`n•edge p` gives the position on an axis of `n` items that each position in `p` reads, under the fill mode. `•edge mode` gives the function for another mode, `"clamp"`, `"wrap"`, `"reflect"` or `"symmetric"`, which takes `n` and `p` the same way. `•edge` maps over a list of mode names, as `•element` maps over tags. Like an element function, a mode function displays as the call that made it, such as `•edge"clamp"`. Positions inside the axis stay as they are in every mode.
+For an axis of `n` items, `n•edge p` gives the position to read for each position in `p`, under the fill mode. `•edge mode` gives the function for another mode, `"clamp"`, `"wrap"`, `"reflect"` or `"symmetric"`, which takes `n` and `p` the same way. `•edge` maps over a list of mode names, as `•element` maps over tags. Like an element function, a mode function is displayed as the call that made it, such as `•edge"clamp"`. Positions inside the axis stay as they are in every mode.
 
 ```bpl
 p←¯2+ι8ₓ
@@ -12,9 +12,9 @@ p←¯2+ι8ₓ
 4 symmetric p    ⍝ [1 0 0 1 2 3 3 2]ₓ
 ```
 
-Fill gives 64-bit floats whatever the float pref, with NaN for a position outside the axis. The other modes give exact integers. `"reflect"` leaves out the edge item, as NumPy's and PyTorch's `reflect` do. `"symmetric"` repeats it, as NumPy's `symmetric` does. An axis of length 0 gives NaN in every mode. A NaN in `p` stays NaN.
+Fill gives 64-bit floats whatever the `float` setting of [`•prefs`](prefs.qmd), with NaN for a position outside the axis. The other modes give exact integers. `"reflect"` leaves out the edge item, as NumPy's and PyTorch's `reflect` do. `"symmetric"` repeats it, as NumPy's `symmetric` does. An axis of length 0 gives NaN in every mode. A NaN in `p` stays NaN.
 
-A selection reads the positions that `•edge` gives. NaN isn't a whole number, so it reads the fill and a write there writes nothing, as [Indexing](../indexing.ipynb#positions) describes. `⌷⍠["fill":v]` reads `v` there instead. A position with spaces in it goes in parentheses inside brackets:
+A selection reads the positions that `•edge` gives. Because NaN isn't a whole number, selecting at NaN gives the fill, and a write there writes nothing, as [Indexing](../indexing.ipynb#positions) describes. `⌷⍠["fill":v]` reads `v` there instead. Put a position that has spaces in it in parentheses inside the brackets:
 
 ```bpl
 x←10 20 30 40 ◇ i←ι4ₓ ◇ clamp←•edge "clamp"
@@ -23,9 +23,9 @@ x.[(4 clamp i-1)]                ⍝ 10 10 20 30
 [(4•edge i-1)]⌷⍠["fill":¯1] x    ⍝ ¯1 10 20 30
 ```
 
-Each mode is arithmetic on positions. Wrap is `n|p`, and clamp is `0⌈(n-1)⌊p`. A bare negative position counts back from the end, as in every selection.
+Each mode is arithmetic on positions. Wrap is `n|p`, and clamp is `0⌈(n-1)⌊p`. `•edge` treats a negative position as outside the axis. A negative position given straight to a selection counts back from the end, as in every selection: `x.[¯1]` is `40`, whereas `x.[(4•edge ¯1)]` is the fill, `0`.
 
-[Windows](../glyphs/up-down-arrow.qmd) and [Stencil](../glyphs/quad-diamond.qmd) take a mode's name as the `edge` of an options record, and read their windows' positions past the ends by it, as in `["size":3 "edge":"wrap"]↕v`.
+[Windows](../glyphs/up-down-arrow.qmd) and [Stencil](../glyphs/quad-diamond.qmd) take a mode's name as the `edge` of an options record, and use that mode for window positions past the ends of an axis, as in `["size":3 "edge":"wrap"]↕v`.
 
 Errors: `DOMAIN` for a mode name that isn't one of the five, a length that isn't a nonnegative whole number, or a position that isn't whole.
 
