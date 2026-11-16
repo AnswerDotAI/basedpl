@@ -92,25 +92,25 @@ impl Options {
         }
     }
 
-    /// The `types` option, as in `["types":["id":0ₓ₈ "zip":""]]`: a value of each column's type, from a record that names columns, or from a vector that holds one for each column in order. A number gives its type, and text, such as `""`, makes a column text.
-    pub(crate) fn types(&self) -> Result<Types, Error> {
-        let Some(types) = self.values.get("types") else { return Ok(Types::Named(HashMap::new())) };
-        let invalid = || Error::domain(format!("{} types must be a record or a vector of numbers and texts", self.name));
-        let items: Vec<Value> = types.elements().collect();
-        if types.shape().len() != 1 || keyed::name(types).is_some() || !items.iter().all(|t| matches!(t, Value::Number(_)) || keyed::name(t).is_some()) {
+    /// Numeric or text column options, named in a record or given for every column in order, as `types` and `fills` are.
+    pub(crate) fn columns(&self, key: &str) -> Result<Columns, Error> {
+        let Some(values) = self.values.get(key) else { return Ok(Columns::Named(HashMap::new())) };
+        let invalid = || Error::domain(format!("{} {key} must be a record or a vector of numbers and texts", self.name));
+        let items: Vec<Value> = values.elements().collect();
+        if values.shape().len() != 1 || keyed::name(values).is_some() || !items.iter().all(|t| matches!(t, Value::Number(_)) || keyed::name(t).is_some()) {
             return Err(invalid());
         }
-        Ok(match types.keys(0) {
+        Ok(match values.keys(0) {
             Some(keys) => {
-                Types::Named(keys.names().iter().zip(items).map(|(k, t)| Ok((k.as_ref().ok_or_else(invalid)?.to_string(), t))).collect::<Result<_, Error>>()?)
+                Columns::Named(keys.names().iter().zip(items).map(|(k, t)| Ok((k.as_ref().ok_or_else(invalid)?.to_string(), t))).collect::<Result<_, Error>>()?)
             }
-            None => Types::Ordered(items),
+            None => Columns::Ordered(items),
         })
     }
 }
 
-/// The columns that the `types` option gives types: by name, or one for each column in order.
-pub(crate) enum Types { Named(HashMap<String, Value>), Ordered(Vec<Value>) }
+/// Numeric or text column options, by name or in column order.
+pub(crate) enum Columns { Named(HashMap<String, Value>), Ordered(Vec<Value>) }
 
 /// `column`, a column of numbers that `reader` read, named `name`, at the type it takes. A column that the `types` option names takes the type of `typed`, its entry there: an integer of the `int` width under static kinds where `typed` is an ordinary integer. Under static kinds, a column of integers that the option doesn't name takes the `int` width, as every new integer does, so that its type never depends on its values. A value that doesn't keep itself in that type is a DOMAIN error that names the column and the `types` option, and the fill where `missing` says that the column had missing cells. Any other column keeps the type that its numbers gave it.
 pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Option<&Value>, missing: bool) -> Result<Value, Error> {

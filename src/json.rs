@@ -21,8 +21,8 @@ pub(crate) fn integer(n: &Number) -> Option<Json> {
 pub(crate) fn parse(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let opts = Options::new("•json", left, None, &["fill", "types"])?;
     let read = json5::from_str(&text(right)?).map_err(|e| Error::domain(format!("JSON {e}")))?;
-    let types = match opts.types()? {
-        crate::data::Types::Named(types) if types.values().all(|t| matches!(t, Value::Number(_))) => types,
+    let types = match opts.columns("types")? {
+        crate::data::Columns::Named(types) if types.values().all(|t| matches!(t, Value::Number(_))) => types,
         _ => return Err(Error::domain("•json types must be a record from field names to numbers")),
     };
     let mut reading = Reading { fill: opts.fill()?, texts: keyed::Texts::default(), types, matched: Vec::new() };

@@ -10188,6 +10188,38 @@ nl←•ucs 10 ◇ t←"a,b",nl,"1,x",nl,",y",nl,"3,z"
 ⍝ =>
 [[1 0 3]ₓ ; 1 0.5 3]
 
+⍝ csv-column-fills — Integer fills preserve integer columns, per-column fills override them, and floats keep NaN. The same sentinels write as missing cells
+nl←•ucs 10 ◇ src←"id,count,price,note",nl,"1,2,1.0,x",nl,",,,"
+opts←["ifill":0 "fills":["id":¯1 "note":"unknown"]]
+T←opts•csv src ◇ encoded←opts•csv⁻T ◇ [T.id;T.count;T.price;T.note;(opts•csv encoded)≡T]
+⍝ =>
+[[1 ¯1]ₓ;[2 0]ₓ;1 $n;"x" "unknown";$t]
+
+⍝ csv-fill-defaults — ifill overrides the general numeric fill only in integer columns
+nl←•ucs 10 ◇ T←["fill":9 "ifill":0 "types":["f":0]]•csv "i,f",nl,"2,2",nl,"," ◇ [T.i;T.f]   ⍝ [[2 0]ₓ;2 9]
+
+⍝ csv-empty-fills — An all-missing column remains text unless types declares it integer
+nl←•ucs 10 ◇ ["ifill":0 "types":["b":0ₓ]]•csv "a,b",nl,",",nl,","   ⍝ ["a":["" ""] "b":[0 0]ₓ]
+
+⍝ csv-ordered-fills — Headerless fills use column order, as types does
+nl←•ucs 10 ◇ ["header":$f "ifill":7 "fills":[0 "unknown"]]•csv "1,x",nl,","   ⍝ [[1 0]ₓ;"x" "unknown"]
+
+⍝ csv-numeric-fill — A text fill cannot change numeric inference
+["missing":"NA" "fills":["a":"missing"]]•csv 'a',(•ucs 10),'1',(•ucs 10),"NA"
+⍝ error: DOMAIN ERROR
+
+⍝ csv-text-fill — A numeric fill cannot change text inference
+["fills":["a":0]]•csv 'a',(•ucs 10),'x'
+⍝ error: DOMAIN ERROR
+
+⍝ csv-integer-fill — ifill must be whole
+["ifill":0.5]•csv 'a',(•ucs 10),'1'
+⍝ error: DOMAIN ERROR
+
+⍝ csv-boolean-fill — Boolean types do not use the integer fill
+["ifill":0 "types":["a":$f]]•csv "a,b",(•ucs 10),"1,2",(•ucs 10),",3"
+⍝ error: DOMAIN ERROR
+
 ⍝ — In •json, a fill of 0 or 1 beside Booleans is a Boolean. Any other fill makes the array floats
 [["fill":0]•json "[true,null]" ; ["fill":2]•json "[true,null]"]
 [$t $f ; 1 2]
@@ -10264,7 +10296,7 @@ T←"n":1ₓ ∞ ◇ [•csv⁻ T;("fill":∞) •csv⁻ T]
 
 ⍝ — Export dialect and CRLF
 T←"n":,1234.5
-["separator":';' "decimal":',' "thousands":'.' "lineending":(•ucs 13 10)] •csv⁻ T
+["separator":';' "decimal":',' "thousands":'.' "eol":(•ucs 13 10)] •csv⁻ T
 ⍝ =>
 'n',(•ucs 13 10),"1.234,5",•ucs 13 10
 
@@ -10297,7 +10329,7 @@ T←"n":,1234.5
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Quote-free export errors when a field needs quoting
-("quotechar":"") •csv⁻ "a":,⊂"x,y"
+("quote":"") •csv⁻ "a":,⊂"x,y"
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Escape characters round-trip inside quoted text
