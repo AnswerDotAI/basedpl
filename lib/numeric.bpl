@@ -122,7 +122,7 @@ hex ← {  ⍝ Hexadecimal from decimal.
 
 dec ← {  ⍝ Decimal from hexadecimal
   α←$f  ⍝ unsigned by default.
-  1ₓ<ρρω?α↣∇⍤1 ω;  ⍝ vector-wise:
+  1ₓ<ρρω?α↣∇¹ω;  ⍝ vector-wise:
   0ₓ≡≢ω?0ₓ;  ⍝ dec"" → 0.
   1ₓ≠≡,ω?α∇¨ω;  ⍝ simple-array-wise:
   ws←∊↢(•ucs 9 10 13 32 133 160)

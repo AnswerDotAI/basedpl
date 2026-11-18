@@ -107,11 +107,11 @@ a←[0 1 2◇3 4 5◇6 7 8◇9 10 11] ◇ 1⌽ @(↑¹) a
 {(5↕ω)≡⍉3↕ω}"abcdefg"   ⍝ $t
 
 ⍝ bqn:windows:99 — Windows along the first axis of a matrix
-(⊂⍤2) 2↕["0123"◇"abcd"◇"ABCD"]
+⊂²2↕["0123"◇"abcd"◇"ABCD"]
 [["0123"◇"abcd"] ["abcd"◇"ABCD"]]
 
 ⍝ bqn:windows:103 — Windows along two axes of a matrix
-(⊂⍤2) [2 2]↕["0123"◇"abcd"◇"ABCD"]
+⊂²[2 2]↕["0123"◇"abcd"◇"ABCD"]
 [["01"◇"ab"] ["12"◇"bc"] ["23"◇"cd"]◇["ab"◇"AB"] ["bc"◇"BC"] ["cd"◇"CD"]]
 
 ⍝⍝ Swap

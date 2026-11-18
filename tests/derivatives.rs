@@ -79,7 +79,7 @@ const CASES: &[Case] = &[
     case("{2 3ρω×ω}", -2.0, 2.0, &[3], Oracle::Complex),
     case("{(⊂0 0 2)⌷ω×ω}", -2.0, 2.0, &[3], Oracle::Complex),
     case("{5↑ω×ω}", -2.0, 2.0, &[3], Oracle::Complex),
-    case("{,{(+/ω)×ω}⍤1ω}", -2.0, 2.0, &[2, 2], Oracle::Complex),
+    case("{,{(+/ω)×ω}¹ω}", -2.0, 2.0, &[2, 2], Oracle::Complex),
     case("{{ω×1○ω}¨ω}", -2.0, 2.0, &[3], Oracle::Complex),
     case("{ω⌻0.5 1.5}", -2.0, 2.0, &[3], Oracle::Complex),
     case("{⌹ω+[3 0◇0 3]}", -1.0, 1.0, &[2, 2], Oracle::Complex),

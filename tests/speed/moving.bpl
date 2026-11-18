@@ -7,8 +7,8 @@
 (+/w↕v)÷w
 ⍝⍝: -	12	-	instructions macos 15.874	allocated macos 24.124
 
-{(+/ω)÷≢ω}⍤1 w↕v   ⍝ (+/w↕v)÷w
+{(+/ω)÷≢ω}¹w↕v   ⍝ (+/w↕v)÷w
 ⍝⍝: -	12	-	instructions macos 16.144	allocated macos 24.136
 
-(+/÷≢)⍤1 w↕v   ⍝ (+/w↕v)÷w
+(+/÷≢)¹w↕v   ⍝ (+/w↕v)÷w
 ⍝⍝: -	12	-	instructions macos 18.141	allocated macos 25.455

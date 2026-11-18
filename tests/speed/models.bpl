@@ -6,7 +6,7 @@ mp←["w":0.25×¯0.5+¿[64 256]ρ0 "b":256ρ0 "v":0.1×¯0.5+¿256ρ0 "c":0]
 mlp←{
   [x y]←α
   [w b v c]←ω
-  h←7○b(+⍤1)x+.×w
+  h←7○b+¹x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
 gx←¿[(1000 size 8) 32]ρ0
@@ -26,16 +26,16 @@ gmm←{
   am←⌈/•detach alpha
   +/m+⊛+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢α × am+⊛+/*alpha-am
 }
-⍝ The same objective in rank notation, with the index form's detached shifts. `⍉⍤2` transposes each component's matrix. The two spellings compute one objective and share each case's expected cost.
+⍝ The same objective in rank notation, with the index form's detached shifts. `⍉²` transposes each component's matrix. The two spellings compute one objective and share each case's expected cost.
 gmmr←{
   [alpha mu q l]←ω
-  L←l×⍤2 glow
+  L←l×²glow
   Q←L+(*q)×¹ ²gi
-  sq←+/⊼(α(-⍤1)² ¹mu)+.×⍤2⍉⍤2⁝Q
+  sq←+/⊼(α(-¹)² ¹mu)+.×²⍉²Q
   t←(alpha++/q)-0.5×sq
   m←⌈⌿•detach t
   am←⌈/•detach alpha
-  (+/m+⊛+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
+  (+/m+⊛+⌿*t-¹m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
 }
 kx←¿[(16384 size 16) 32]ρ0
 kc←¿[(64 size 4) 32]ρ0

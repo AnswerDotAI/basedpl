@@ -596,7 +596,7 @@ def test_names():
     teq(bpl(':M').names, (None, None))
     teq(bpl('(ρM)ρ,M').names, ('city', 'month'))
     teq(bpl('+/¨⊂₁M').names, ('city',))
-    teq(bpl('⌽⍤1 M').names, ('city', 'month'))
+    teq(bpl('⌽¹M').names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
     v = Array([1, 2], names=('city',))
     teq(multiply.outer_product(v, v).names, (None, None))

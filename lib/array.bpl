@@ -360,7 +360,7 @@ pred ← {⊃⍶/¨(α#≥ιρα)⊆ω}  ⍝ Partitioned reduction.
 
 rows ← {  ⍝ Operand function applied to argument rows.
   1ₓ<≡ω?∇¨ω;  ⍝ nested: item-wise application
-  ⍶⍤1 ω
+  ⍶¹ω
 }
 
 ⍝ From http://dfns.dyalog.com/c_sam.htm

@@ -10,14 +10,14 @@ cs←¿(400 size 32)ρ0
 big←¿[4 (256 size 8) (256 size 8)]ρ0
 st←¿[(4096 size 16) 4 4]ρ0
 irow←(¿[(10000 size 16) 8]ρ100)ₓ
-nest←⊂⍤1⁝irow
+nest←⊂¹irow
 rag←{¿[2 ω]ρ0}¨1+15|ι(4096 size 32)
 ⍝ Sum of squared sines.
 f←{+/⊼1○ω}
 ⍝ Sum of squared sines of linear projections over rows of X.
 loss←{
   th←ω
-  +/{⊼1○+/th×ω}⍤1 X
+  +/{⊼1○+/th×ω}¹X
 }
 ⍝ The same projection loss using a matrix-vector product.
 lossw←{+/⊼1○X+.×ω}
@@ -53,11 +53,11 @@ pool←{⌈/₂ ₃[[2 2]◇[2 2]]↕ω}
 ⍝ Normalize each channel across spatial positions.
 norm←{
   x←(×/¯1↓ρω , ¯1↑ρω)ρω
-  c←x-⍤1 +⌿÷≢ x
-  ρω ρ c÷⍤1(√1E¯5+(+⌿÷≢)⊼c)
+  c←x-¹ +⌿÷≢ x
+  ρω ρ c÷¹(√1E¯5+(+⌿÷≢)⊼c)
 }
 ⍝ Convolution, ReLU, max pooling and channel normalization.
-cnn←{norm pool 0⌈cb+⍤1(ck conv ω)}
+cnn←{norm pool 0⌈cb+¹(ck conv ω)}
 Y←¿[(4096 size 8) 8]ρ0
 ⍝⍝ maps
 ⍝ Each, Rank and `⌺` first try one call of their operand on batches of all their cells, and call it once for each cell where that call stops. Maps inside `∂` batch too. Each mapped case sits beside the same computation written with whole arrays, whose cost a batched map should approach.
@@ -70,7 +70,7 @@ v×v+1
 ⍝⍝: 5	6.3	6.2	instructions macos 16.566 linux 10.7	allocated macos 16.621 linux 16.621
 
 ⍝ Each over a nested array whose 10,000 items are vectors of 8 small integers. Each passes its operand each item, as Rank passes each row of the matrix that holds them. Where every item is a compact array of one layout and dtype, a batched map stacks the items into one array and runs as Rank does.
-⍝ Expected: `{ω+1ₓ}¨nest` and `{+/ω}¨nest` 2.5 copies: as `{ω+1ₓ}⍤1⁝irow` and `+/⍤1 irow`, which cost 1.88 and 2.02 on 30 October 2026, and a copy of the 80,000 one-byte items into one array.
+⍝ Expected: `{ω+1ₓ}¨nest` and `{+/ω}¨nest` 2.5 copies: as `{ω+1ₓ}¹irow` and `+/¹irow`, which cost 1.88 and 2.02 on 30 October 2026, and a copy of the 80,000 one-byte items into one array.
 ⍝ On 30 October 2026 `{ω+1ₓ}¨nest` cost 33 times its Rank form, and `{+/ω}¨nest` 12 times. Stacking costs about 18 ns an item, and assembling `{ω+1ₓ}¨nest`'s 10,000 result arrays about 30 more. Before then each called its dfn once for each item, at 416 and 357.
 ⍝⍝⍝ held macos 62.9: stacking and assembling the items; Linux and wasm hold estimates of 1.7 and 1.4 times the macOS cost
 ⍝⍝⍝ route batching
@@ -119,7 +119,7 @@ lifew g
 ⍝⍝: 8	18	21	instructions macos 50.11 linux 39.678	allocated macos 39.126 linux 39.126
 
 ⍝ The gradient of a loss mapped over the rows of `X`, whose parameter every row shares, then per-example gradients, then a Hessian–vector product through the mapped loss. Each sits beside its form with `+.×`, or its closed form.
-⍝ Expected: `loss∂ thz` 4 copies: the primal over 32,768 items, about 1 copy, with sines of 4,096 items at 7 copies for each 65,536, about 0.45, and a transpose of about 3; `lossw∂ thz` 3 copies: a product over 32,768 items, `1○` over 4,096 items, about 0.45, and its transpose; `{f∂ ω}⍤1 X` 9 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, then the squares, the row sums and each item's product of sine and cosine, about 2; `2×(1○X)×2○X` 7.5 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, and two products; `hv∂ thz` 8 copies: about twice the gradient; `hvw∂ thz` 6 copies: about twice the gradient.
+⍝ Expected: `loss∂ thz` 4 copies: the primal over 32,768 items, about 1 copy, with sines of 4,096 items at 7 copies for each 65,536, about 0.45, and a transpose of about 3; `lossw∂ thz` 3 copies: a product over 32,768 items, `1○` over 4,096 items, about 0.45, and its transpose; `{f∂ ω}¹X` 9 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, then the squares, the row sums and each item's product of sine and cosine, about 2; `2×(1○X)×2○X` 7.5 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, and two products; `hv∂ thz` 8 copies: about twice the gradient; `hvw∂ thz` 6 copies: about twice the gradient.
 ⍝ On 27 October 2026 `loss∂ thz` measured 6.02 on macOS. Its wasm budget is twice its native budget, as `1○v`'s are. On 22 October 2026 CI measured 8.09 in wasm.
 loss∂ thz
 ⍝⍝: 8	15	18	instructions macos 72.231 linux 46.722	allocated macos 19.423 linux 19.423
@@ -128,8 +128,8 @@ loss∂ thz
 lossw∂ thz
 ⍝⍝: 6	7.5	11	instructions macos 71.702 linux 46.542	allocated macos 19.423 linux 19.423
 
-⍝ On 27 October 2026 `{f∂ ω}⍤1 X` measured 12.38 on macOS. Its budgets are twice the expected cost: 18 on macOS and Linux, and 36 in wasm, where `1○v`'s budgets in arrays.bpl give sine and cosine twice their native cost. On 22 October 2026 CI measured 11.6 on Linux and 20.6 in wasm.
-{f∂ ω}⍤1 X
+⍝ On 27 October 2026 `{f∂ ω}¹X` measured 12.38 on macOS. Its budgets are twice the expected cost: 18 on macOS and Linux, and 36 in wasm, where `1○v`'s budgets in arrays.bpl give sine and cosine twice their native cost. On 22 October 2026 CI measured 11.6 on Linux and 20.6 in wasm.
+{f∂ ω}¹X
 ⍝⍝: 18	23	53	instructions macos 124.486 linux 86.376	allocated macos 31.765 linux 31.755
 
 ⍝ `•explain` shows no fused stage: `1○X` and `2○X` each run over all of `X`, one after the other. On 27 October 2026 it measured 8.24 on macOS. The budgets are twice the expected cost: 15 on macOS and Linux, and 30 in wasm, where `1○v`'s budgets in arrays.bpl give sine and cosine twice their native cost. On 22 October 2026 CI measured 16.1 in wasm.
@@ -182,13 +182,13 @@ hvw∂ thz
 {
   r←1○ω
   ,r ι 0.5
-}⍤2 big
+}²big
 ⍝⍝: 60	130	190	instructions macos 121.528 linux 72.719	allocated macos 32.932 linux 32.932
 
 ⍝ Rank of a dfn on each row of `X` makes one batched call. The subtraction pads each row's mean, `+/÷≢ ω`, over the row.
 ⍝ Expected: 1 copy each: row sums of 32,768 items and one padded subtraction.
 ⍝⍝⍝ held macos 1.85: as `X - +/X ÷ 8`, the subtraction broadcasts each row's mean over its 8 items, one `pairs` call per row (open.md, row means, centring)
-{ω - +/÷≢ ω}⍤1 X
+{ω - +/÷≢ ω}¹X
 ⍝⍝: 2	5	5.5	instructions macos 36.401 linux 27.953	allocated macos 11.053 linux 11.053
 
 X - +/X ÷ 8
@@ -216,8 +216,8 @@ v+¿nρ10
 
 ⍝ The join rule runs a join of each row with itself as one call on `X`.
 ⍝ Expected: 1 copy each: reads 32,768 items twice and writes 65,536.
-⍝ `{ω,ω}⍤1 X` measures 0.9 on macOS since a join writes each row whole (`gather::interleave`, 22 October 2026), down from 2.4 to 2.7. In wasm it measured 0.91 to 1.02 in seven CI runs from 22 October 2026. CI measured 0.94 on Linux on 22 October 2026.
-{ω,ω}⍤1 X
+⍝ `{ω,ω}¹X` measures 0.9 on macOS since a join writes each row whole (`gather::interleave`, 22 October 2026), down from 2.4 to 2.7. In wasm it measured 0.91 to 1.02 in seven CI runs from 22 October 2026. CI measured 0.94 on Linux on 22 October 2026.
+{ω,ω}¹X
 ⍝⍝: 2	2.6	2.7	instructions macos 15.139 linux 10.203	allocated macos 8.893 linux 8.893
 
 ⍝ `X,X` measures 0.85 on macOS since a join writes each row whole, a lane from each argument in turn, straight into the result (`gather::interleave`, 22 October 2026), down from 2.3 to 2.6. In wasm it measured 0.67 to 0.74 in seven CI runs from 22 October 2026. CI measured 0.71 on Linux on 22 October 2026.
@@ -226,14 +226,14 @@ X,X
 
 ⍝ A matrix product of each 4 by 4 matrix in a stack with itself runs as one call of the stacked kernel.
 ⍝ Expected: 3 copies each: one stacked call of 8 flops an item, and the stack's overhead.
-⍝ `{ω+.×ω}⍤2 st` cost 15.6 on macOS before 22 October 2026. It now runs as `+.×⍤2⍨ st` does. The comment on `+.×⍤2⍨ st` below names their shared gap.
-⍝⍝⍝ held macos 4.48: the call for each cell and the zeroing, as `+.×⍤2⍨ st`'s comment says
-{ω+.×ω}⍤2 st
+⍝ `{ω+.×ω}²st` cost 15.6 on macOS before 22 October 2026. It now runs as `+.×²⍨st` does. The comment on `+.×²⍨st` below names their shared gap.
+⍝⍝⍝ held macos 4.48: the call for each cell and the zeroing, as `+.×²⍨st`'s comment says
+{ω+.×ω}²st
 ⍝⍝: 6	11	13	instructions macos 59.043 linux 50.941	allocated macos 12.512 linux 12.512
 
-⍝ `+.×⍤2⍨ st` cost 15.3 on macOS before 22 October 2026. That day `direct` began folding four results of a row side by side in registers without checking each index, `Frames` stopped listing the cells of an argument whose frame is the result's, and the call for each cell inlined `checked_into` and `inner_into`. Each 4×4 cell now costs about 370 instructions: about 250 in `direct` for its 64 multiply-adds, about 70 in the call that locates and checks the cell, and about 25 in zeroing the output before the cells write it. The call for each cell and the zeroing, about 95 of those 370, are the gap between its cost and its expected 3. Both cases' costs also depend on the process: on 30 October 2026 they cost 4.7 to 5.5 in some processes and 7.0 to 7.6 in others, on builds from before and after that day's changes. A speed test retries a case in the same process, so a slow process fails every retry. The cause isn't placed.
+⍝ `+.×²⍨st` cost 15.3 on macOS before 22 October 2026. That day `direct` began folding four results of a row side by side in registers without checking each index, `Frames` stopped listing the cells of an argument whose frame is the result's, and the call for each cell inlined `checked_into` and `inner_into`. Each 4×4 cell now costs about 370 instructions: about 250 in `direct` for its 64 multiply-adds, about 70 in the call that locates and checks the cell, and about 25 in zeroing the output before the cells write it. The call for each cell and the zeroing, about 95 of those 370, are the gap between its cost and its expected 3. Both cases' costs also depend on the process: on 30 October 2026 they cost 4.7 to 5.5 in some processes and 7.0 to 7.6 in others, on builds from before and after that day's changes. A speed test retries a case in the same process, so a slow process fails every retry. The cause isn't placed.
 ⍝⍝⍝ held macos 4.43: the call for each cell and the zeroing
-+.×⍤2⍨ st
++.×²⍨st
 ⍝⍝: 6	9.6	13	instructions macos 63.727 linux 51.975	allocated macos 12.719 linux 12.719
 
 ⍝ A fold or scan by a dfn along the rows of `X` runs as one batched map over the rows. Each stage is one call, on every row at once. Each sits beside its primitive form.
@@ -259,8 +259,8 @@ X,X
 ⍝⍝: 1	3.5	2.8	instructions macos 28.004 linux 19.296	allocated macos 5.872 linux 5.872
 
 ⍝ Row-wise dot products. `+.×` under Rank pairs each pair of rows' items in one call and folds along them, as `+/X×Y` does.
-⍝ Expected: `X+.×⍤1Y` 1 copy: as `+/X×Y`, two passes below the size at which fusion waits (`fusion::waits`). The product reads 65,536 items and writes 32,768, then the fold reads them. On 30 October 2026 it measured 1.71 on macOS, and `+/X×Y` 1.5.
-X+.×⍤1Y
+⍝ Expected: `X+.×¹Y` 1 copy: as `+/X×Y`, two passes below the size at which fusion waits (`fusion::waits`). The product reads 65,536 items and writes 32,768, then the fold reads them. On 30 October 2026 it measured 1.71 on macOS, and `+/X×Y` 1.5.
+X+.×¹Y
 ⍝⍝: 2	170	190	instructions macos 23.297 linux 15.914	allocated macos 6.06 linux 6.06
 
 ⍝ An inner product with a dfn `g` calls `g` once, on every triple of a row, a position along the contraction and a column. `f` then folds along the contraction.
@@ -279,7 +279,7 @@ X+.×⍤1Y
 ⍝⍝⍝ held linux 958: a single-thread slowdown since the rewrite, from about 246 ns an item in the released version to about 450
 ⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
 ⍝⍝⍝ allows forced "⌈/⍠[2 3]ₓ": a fold of windows reads its argument whole
-cnn⍤3 imgs
+cnn³imgs
 ⍝⍝: 180	770	880	instructions macos 963.712 linux 1290.515	allocated macos 1014.521 linux 1023.13
 
 ⍝⍝ static •prefs ["kinds":"static" "int":32 "float":32]
@@ -287,5 +287,5 @@ cnn⍤3 imgs
 ⍝⍝⍝ held macos 118: as at 64 bits
 ⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
 ⍝⍝⍝ allows forced "⌈/⍠[2 3]ₓ": a fold of windows reads its argument whole
-cnn⍤3 imgs
+cnn³imgs
 ⍝⍝: 89	390	570	instructions macos 753.564 linux 945.438	allocated macos 520.603 linux 524.888

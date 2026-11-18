@@ -25,7 +25,7 @@ wb←1.5 2 •distribution "weibull"
 coeffs←0.5 ¯1.25 0.75 2 ¯0.125 0.0625 ¯1.5 0.25
 ms←[n÷64 8 8]ρv
 ss←ms+0 2 1⍉ms
-sps←ss(+⍤2)16×=⊗⍨ι8
+sps←ss+²16×=⊗⍨ι8
 t←[n÷16 16]ρv
 tq←¿[n÷4 24]ρ0
 z←v+0j1×w
@@ -750,29 +750,29 @@ vιw
 ⍝⍝: 87	150	130	instructions macos 75.29 linux 234.546	allocated macos 55.041 linux 41.04
 
 ⍝ Rank calls a fold, a structural function or a fold of a ravel once on the whole stack, along the cells' axes, rather than once for each cell.
-⍝ Expected: `+/⍤1 t` and `(+/,)⍤2 ms` 0.5 copies: one pass reads 8 bytes an item and writes nothing; `(1 1↣⌷)⍤2 ms` 0.02 copies: reads one item of each cell; `⌽₀⍤2 ms` and `⌽⍤1 ms` 1 copy: one read and one write per item.
-⍝ `+/⍤1 t` measures 0.71 on macOS: float sums fold rows of 16 to 63 items eight rows side by side (`Reduction::rows` in rustymath), where a call of `slice` for each row cost about 4.5 ns.
-+/⍤1 t
+⍝ Expected: `+/¹t` and `(+/,)²ms` 0.5 copies: one pass reads 8 bytes an item and writes nothing; `(1 1↣⌷)²ms` 0.02 copies: reads one item of each cell; `⌽₀²ms` and `⌽¹ms` 1 copy: one read and one write per item.
+⍝ `+/¹t` measures 0.71 on macOS: float sums fold rows of 16 to 63 items eight rows side by side (`Reduction::rows` in rustymath), where a call of `slice` for each row cost about 4.5 ns.
++/¹t
 ⍝⍝: 1	1.3	1.2	instructions macos 5.457 linux 3.845	allocated macos 0.788 linux 0.788
 
-⍝ `(+/,)⍤2 ms` folds through `in_turn`, which folds the last axis's 8-item lanes, then the next axis's, at the cost of a second pass and the totals kept between the passes. One pass over each cell's 64 items measured 1.11 on macOS, because of the same gap as `+/⍤1 t`: the call and setup for each row.
-(+/,)⍤2 ms
+⍝ `(+/,)²ms` folds through `in_turn`, which folds the last axis's 8-item lanes, then the next axis's, at the cost of a second pass and the totals kept between the passes. One pass over each cell's 64 items measured 1.11 on macOS, because of the same gap as `+/¹t`: the call and setup for each row.
+(+/,)²ms
 ⍝⍝: 1	1.1	1.4	instructions macos 6.928 linux 4.427	allocated macos 0.476 linux 0.476
 
-(1 1↣⌷)⍤2 ms
+(1 1↣⌷)²ms
 ⍝⍝: 0.5	0.5	0.54	instructions macos 3.621 linux 2.494	allocated macos 0.434 linux 0.434
 
-⍝ `⌽₀⍤2 ms` measures 1.45 on macOS since short cells copy each run of adjacent items as one block (22 October 2026), down from 2.65 to 3.55. In wasm it measured 1.14 to 1.25 in seven CI runs from 22 October 2026. CI measured 1.08 on Linux on 22 October 2026.
-⌽₀⍤2 ms
+⍝ `⌽₀²ms` measures 1.45 on macOS since short cells copy each run of adjacent items as one block (22 October 2026), down from 2.65 to 3.55. In wasm it measured 1.14 to 1.25 in seven CI runs from 22 October 2026. CI measured 1.08 on Linux on 22 October 2026.
+⌽₀²ms
 ⍝⍝: 2	2.2	2.9	instructions macos 4.282 linux 2.661	allocated macos 8.135 linux 8.135
 
-⌽⍤1 ms
+⌽¹ms
 ⍝⍝: 2	2	2.9	instructions macos 3.741 linux 2.207	allocated macos 8.126 linux 8.126
 
 ⍝ The inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧` and `∧.∨`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the bounded generic path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.
-⍝ Expected: `+.×⍤2⍨ ms` 4 copies: one stacked call of 16 flops an item, about 2 copies, plus the stack's overhead; `m+.×m` 8.8 copies on macOS, 64 on Linux and 128 in wasm: 512 flops an item, at Accelerate's rate for large square products, as rustymath's `linalg::PlusTimes` expects, 8 in a copy's time for rustymath's own kernels and 4 in wasm; `m⌈.+m` 80 copies, and 160 in wasm: 512 operations an item, at about 8 in a copy's time natively and 4 in wasm; `bm∨.∧bm` and `bm∧.∨bm` 2 copies: bit-packed, about 4 word operations an item; `jm+.×jm` 32 copies: 512 integer operations an item; `jm+.=jm` and `cm+.=⍉cm` 32 copies: 256 vectorised comparisons and counts an item; `zm+.×zm` 5.9 copies on macOS, 32 on Linux and 64 in wasm: 256 real flops an item, at Accelerate's rate for complex 128×128 products, which counts complex copies, each taking 2.1 times as long as one of the `n` floats, 8 in a copy's time for rustymath's own kernels and 4 in wasm.
+⍝ Expected: `+.×²⍨ms` 4 copies: one stacked call of 16 flops an item, about 2 copies, plus the stack's overhead; `m+.×m` 8.8 copies on macOS, 64 on Linux and 128 in wasm: 512 flops an item, at Accelerate's rate for large square products, as rustymath's `linalg::PlusTimes` expects, 8 in a copy's time for rustymath's own kernels and 4 in wasm; `m⌈.+m` 80 copies, and 160 in wasm: 512 operations an item, at about 8 in a copy's time natively and 4 in wasm; `bm∨.∧bm` and `bm∧.∨bm` 2 copies: bit-packed, about 4 word operations an item; `jm+.×jm` 32 copies: 512 integer operations an item; `jm+.=jm` and `cm+.=⍉cm` 32 copies: 256 vectorised comparisons and counts an item; `zm+.×zm` 5.9 copies on macOS, 32 on Linux and 64 in wasm: 256 real flops an item, at Accelerate's rate for complex 128×128 products, which counts complex copies, each taking 2.1 times as long as one of the `n` floats, 8 in a copy's time for rustymath's own kernels and 4 in wasm.
 ⍝⍝⍝ held macos 9.35: open.md's "Speed budgets" lists the gap of stacked products of 4×4 cells: the call that locates and checks each cell, and zeroing the output
-+.×⍤2⍨ ms
++.×²⍨ms
 ⍝⍝: 8	28	30	instructions macos 42.399 linux 61.442	allocated macos 9.18 linux 29.18
 
 m+.×m
@@ -818,11 +818,11 @@ zm+.×zm
 ⍝⍝: 12	55	77	instructions macos 12.023 linux 60.44	allocated macos 4.902 linux 41.152
 
 ⍝ Matrix division, `•decompose`, `•decompose⁻` and the determinant `-.×` run on rustymath. Its own speed test times each factorisation on a 256×256 matrix, the size of `m`, and least squares on a 4096×16 matrix, the size of `t`. On macOS, Accelerate runs matrix products and triangular solves, and the SVD, the Hermitian eigendecomposition and the real nonsymmetric eigendecomposition from the sizes that rustymath's DEV.md gives. rustymath's own code runs LU, Householder QR, Cholesky, the complex nonsymmetric eigendecomposition and the smaller matrices' decompositions, with their block products and triangular solves on Accelerate. On Linux it runs all of them. These cases time basedpl's part on top of each factorisation: reading the arguments, writing the results, the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, and rebuilding a matrix from factors. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
-⍝ Expected, taking each factorisation's cost from rustymath's speed test on the same platform: `⌹⍤2 ms` 30 copies: 1,024 inverses of 8×8, each about 1,000 cycles of small-matrix work; `ms⌹⍤2 sps` 45 copies: 1,024 solves of 8×8 with 8 right sides, about 1.5 times the inverses; `⌹m` 42 copies on macOS and 133 on Linux: `linalg::Lu::inverse`, 40 and 131, then a read and a write; `(side↑w)⌹m` 25 copies on macOS and 52 on Linux: `linalg::Lu::solve`, 24 and 51, then a read; `((n÷16)↑w)⌹t` 14 copies on macOS: `linalg::lstsq` on the same shape, 13, then a read; `⌹t` 16 copies on macOS: the same tall QR, about 13, then two products with 16 columns and a write; `((n÷4)↑w)⌹tq` 29 copies on macOS: CholeskyQR2 forms two Gram matrices of `tq`'s 24 columns, 288 flops an item each, at about 40 flops in a copy's time, 7.2 each, which Accelerate measured for this Gram product, far above its tall thin Gram rate, whose 4096×16 product spends most of its time on a fixed cost, then solves with a 24×24 triangle, 144 flops an item at the rank-k rate, 4.8, copies `tq`, which holds 6 copies of data, 6, and scans `tq` and multiplies it by `b`, about 3.5; `"qr"•decompose tq` 38 copies on macOS: the same, with a second triangular solve for Q, 4.8, in place of the product with `b`, then writing Q, 6; `"qr"•decompose⍤2 ms` 60 copies: 1,024 QRs of 8×8, each about 2,000 cycles of small-matrix work; `"qr"•decompose m` 56 copies on macOS and 194 on Linux: `linalg::qr`, 54 and 192, then writing Q and R; `"cholesky"•decompose⍤2 sps` 30 copies: 1,024 Cholesky factors of 8×8, each about 1,000 cycles; `"svd"•decompose⍤2 ms` 400 copies: 1,024 iterative SVDs of 8×8, each about 10,000 operations; `"svd"•decompose⁻ f` 13 copies on macOS and 68 on Linux: a 256×256 product, which costs what `m+.×m` costs, 8.8 and 64, and four passes that scale U by `s`, transpose V, convert the product and write it; `["kind":"svd" "rank":8]•decompose m` 22 copies on macOS and 66 on Linux: Halko's range finder, with 18 columns and two power iterations, makes six products of 256×256 by 18 columns, 36 flops an item each, five thin QRs and the SVD of an 18×256 matrix, which on Accelerate cost 5.4 for the three products of `m` by 256×18, at about 20 flops in a copy's time, measured for that shape, between the matrix-vector and rank-k rates, 10.3 for the two of `m`'s transpose at the matrix-vector rate, 1.2 for Qᴴ times `m` at the rank-k rate, and 4.6 for the QRs and the SVD, about 32 flops an item at the matrix-vector rate, while products this thin run at about 3.5 flops in a copy's time on rustymath's own kernels, which cost 66 copies on macOS with `--native`; `"eigen"•decompose⁻ h` 54 copies on macOS and 200 on Linux: `linalg::Lu::inverse`, 40 and 131, three passes for the vectors' condition number, scaling the vectors by the values, then a 256×256 product, 8.8 and 64, and a write; `"eigen"•decompose⍤2 ss` 300 copies: 1,024 symmetric eigendecompositions of 8×8, each about 5,000 operations; `"eigen"•decompose⍤2 ms` 700 copies: 1,024 nonsymmetric eigendecompositions of 8×8, each about 13,000 operations; `⌹zm` 21 copies on macOS and 67 on Linux: a complex 128×128 inverse, 8n³/3 complex multiply-adds, about 341 real ones an item, at the rate `linalg::Lu::inverse` reaches on a 256×256 matrix, about 17 and 5.2 in a copy's time, then a read and a write; `-.×m` 24 copies on macOS and 51 on Linux: the LU in `linalg::Lu::solve`, whose solve costs under a copy; `-.×⍤2 ms` 20 copies: 1,024 LUs of 8×8. In wasm, which rustymath's speed test doesn't time, the expected costs stay the flop counts at about 4 in a copy's time: `⌹m` 128, `(side↑w)⌹m` 42, `((n÷16)↑w)⌹t` 8, `⌹t` 12, `((n÷4)↑w)⌹tq` 95, `"qr"•decompose tq` 130, `"qr"•decompose m` 170, `"svd"•decompose⁻ f` 128, `"eigen"•decompose⁻ h` 128, `⌹zm` 86 and `-.×m` 42.
-⌹⍤2 ms
+⍝ Expected, taking each factorisation's cost from rustymath's speed test on the same platform: `⌹²ms` 30 copies: 1,024 inverses of 8×8, each about 1,000 cycles of small-matrix work; `ms⌹²sps` 45 copies: 1,024 solves of 8×8 with 8 right sides, about 1.5 times the inverses; `⌹m` 42 copies on macOS and 133 on Linux: `linalg::Lu::inverse`, 40 and 131, then a read and a write; `(side↑w)⌹m` 25 copies on macOS and 52 on Linux: `linalg::Lu::solve`, 24 and 51, then a read; `((n÷16)↑w)⌹t` 14 copies on macOS: `linalg::lstsq` on the same shape, 13, then a read; `⌹t` 16 copies on macOS: the same tall QR, about 13, then two products with 16 columns and a write; `((n÷4)↑w)⌹tq` 29 copies on macOS: CholeskyQR2 forms two Gram matrices of `tq`'s 24 columns, 288 flops an item each, at about 40 flops in a copy's time, 7.2 each, which Accelerate measured for this Gram product, far above its tall thin Gram rate, whose 4096×16 product spends most of its time on a fixed cost, then solves with a 24×24 triangle, 144 flops an item at the rank-k rate, 4.8, copies `tq`, which holds 6 copies of data, 6, and scans `tq` and multiplies it by `b`, about 3.5; `"qr"•decompose tq` 38 copies on macOS: the same, with a second triangular solve for Q, 4.8, in place of the product with `b`, then writing Q, 6; `"qr"•decompose²ms` 60 copies: 1,024 QRs of 8×8, each about 2,000 cycles of small-matrix work; `"qr"•decompose m` 56 copies on macOS and 194 on Linux: `linalg::qr`, 54 and 192, then writing Q and R; `"cholesky"•decompose²sps` 30 copies: 1,024 Cholesky factors of 8×8, each about 1,000 cycles; `"svd"•decompose²ms` 400 copies: 1,024 iterative SVDs of 8×8, each about 10,000 operations; `"svd"•decompose⁻ f` 13 copies on macOS and 68 on Linux: a 256×256 product, which costs what `m+.×m` costs, 8.8 and 64, and four passes that scale U by `s`, transpose V, convert the product and write it; `["kind":"svd" "rank":8]•decompose m` 22 copies on macOS and 66 on Linux: Halko's range finder, with 18 columns and two power iterations, makes six products of 256×256 by 18 columns, 36 flops an item each, five thin QRs and the SVD of an 18×256 matrix, which on Accelerate cost 5.4 for the three products of `m` by 256×18, at about 20 flops in a copy's time, measured for that shape, between the matrix-vector and rank-k rates, 10.3 for the two of `m`'s transpose at the matrix-vector rate, 1.2 for Qᴴ times `m` at the rank-k rate, and 4.6 for the QRs and the SVD, about 32 flops an item at the matrix-vector rate, while products this thin run at about 3.5 flops in a copy's time on rustymath's own kernels, which cost 66 copies on macOS with `--native`; `"eigen"•decompose⁻ h` 54 copies on macOS and 200 on Linux: `linalg::Lu::inverse`, 40 and 131, three passes for the vectors' condition number, scaling the vectors by the values, then a 256×256 product, 8.8 and 64, and a write; `"eigen"•decompose²ss` 300 copies: 1,024 symmetric eigendecompositions of 8×8, each about 5,000 operations; `"eigen"•decompose²ms` 700 copies: 1,024 nonsymmetric eigendecompositions of 8×8, each about 13,000 operations; `⌹zm` 21 copies on macOS and 67 on Linux: a complex 128×128 inverse, 8n³/3 complex multiply-adds, about 341 real ones an item, at the rate `linalg::Lu::inverse` reaches on a 256×256 matrix, about 17 and 5.2 in a copy's time, then a read and a write; `-.×m` 24 copies on macOS and 51 on Linux: the LU in `linalg::Lu::solve`, whose solve costs under a copy; `-.×²ms` 20 copies: 1,024 LUs of 8×8. In wasm, which rustymath's speed test doesn't time, the expected costs stay the flop counts at about 4 in a copy's time: `⌹m` 128, `(side↑w)⌹m` 42, `((n÷16)↑w)⌹t` 8, `⌹t` 12, `((n÷4)↑w)⌹tq` 95, `"qr"•decompose tq` 130, `"qr"•decompose m` 170, `"svd"•decompose⁻ f` 128, `"eigen"•decompose⁻ h` 128, `⌹zm` 86 and `-.×m` 42.
+⌹²ms
 ⍝⍝: 60	88	100	instructions macos 108.664 linux 172.735	allocated macos 8.171 linux 8.483
 
-ms⌹⍤2 sps
+ms⌹²sps
 ⍝⍝: 90	76	99	instructions macos 169.092 linux 206.351	allocated macos 23.214 linux 23.371
 
 ⌹m
@@ -848,18 +848,18 @@ side↑w ⌹ m
 "qr"•decompose tq
 ⍝⍝: 110	390	410	instructions macos 90.22 linux 501.105	allocated macos 99.307 linux 322.479
 
-⍝ `"qr"•decompose⍤2 ms` measured about 126 on macOS and 225 on CI before 22 October 2026, about twice its expected cost. Each 8×8 cell retires about 24,000 instructions. `leaf_qr`'s reflections take about 40% of them, two `Zip` adapters that the test profile leaves out of line about 12%, and allocations about 6%, most of them basedpl's, which builds a Q and an R array for each cell of the nested result. Since 22 October 2026 a stack's cells factor in one reused `QrWork` and write into the two outputs directly, which cut the case's instructions by 12%. On 23 October 2026 it measures 46 on macOS, and CI's last two runs measured 65 and 68 on Linux and 61 and 68 in wasm. Every budget is twice its expected cost.
-"qr"•decompose⍤2 ms
+⍝ `"qr"•decompose²ms` measured about 126 on macOS and 225 on CI before 22 October 2026, about twice its expected cost. Each 8×8 cell retires about 24,000 instructions. `leaf_qr`'s reflections take about 40% of them, two `Zip` adapters that the test profile leaves out of line about 12%, and allocations about 6%, most of them basedpl's, which builds a Q and an R array for each cell of the nested result. Since 22 October 2026 a stack's cells factor in one reused `QrWork` and write into the two outputs directly, which cut the case's instructions by 12%. On 23 October 2026 it measures 46 on macOS, and CI's last two runs measured 65 and 68 on Linux and 61 and 68 in wasm. Every budget is twice its expected cost.
+"qr"•decompose²ms
 ⍝⍝: 90	89	77	instructions macos 186.167 linux 220.656	allocated macos 21.567 linux 21.833
 
 "qr"•decompose m
 ⍝⍝: 84	210	300	instructions macos 101.284 linux 306.275	allocated macos 71.682 linux 152.089
 
-"cholesky"•decompose⍤2 sps
+"cholesky"•decompose²sps
 ⍝⍝: 60	51	45	instructions macos 97.146 linux 104.193	allocated macos 26.845 linux 26.846
 
-⍝ `"svd"•decompose⍤2 ms` runs rustymath's own SVD on every platform, because 8×8 lies below rustymath's `GESDD_FROM`. On macOS it measures about 509, against 775 on Accelerate's `?gesdd`, and CI measured 608.
-"svd"•decompose⍤2 ms
+⍝ `"svd"•decompose²ms` runs rustymath's own SVD on every platform, because 8×8 lies below rustymath's `GESDD_FROM`. On macOS it measures about 509, against 775 on Accelerate's `?gesdd`, and CI measured 608.
+"svd"•decompose²ms
 ⍝⍝: 600	430	390	instructions macos 970.586 linux 914.832	allocated macos 114.273 linux 114.274
 
 ⍝ `["kind":"svd" "rank":8]•decompose m` in wasm: 82 copies, as CI's x86 V8 measured it on 22 October 2026, at 15.7 ns an item against a copy of 0.192 ns. That's about 2.8 flops in a copy's time, where the group's wasm rate of 4 would give 58. Thin products take 70% of its instructions on rustymath's own kernels, at 70 to 80% of a square product's flops per instruction. CI measured 79 to 92 in seven runs from 22 October 2026. This Mac's V8 takes about the same time, 14.3 ns an item, against a copy 1.6 times faster than CI's, and measures 118 to 121 copies, up to 153 under load.
@@ -867,12 +867,12 @@ side↑w ⌹ m
 ["kind":"svd" "rank":8]•decompose m
 ⍝⍝: 44	84	120	instructions macos 124.491 linux 247.441	allocated macos 29.457 linux 140.483
 
-⍝ `"eigen"•decompose⍤2 ss` runs rustymath's own Hermitian solver on every platform, because 8×8 lies below rustymath's `HEEVD_FROM`. On macOS it measures about 298, against 392 on Accelerate's `?heevd`.
+⍝ `"eigen"•decompose²ss` runs rustymath's own Hermitian solver on every platform, because 8×8 lies below rustymath's `HEEVD_FROM`. On macOS it measures about 298, against 392 on Accelerate's `?heevd`.
 ⍝ CI measured 241 to 252 on Linux in runs 56 to 61, and 442 in run 62, whose host was busy.
-"eigen"•decompose⍤2 ss
+"eigen"•decompose²ss
 ⍝⍝: 450	270	250	instructions macos 583.994 linux 557.885	allocated macos 48.392 linux 48.393
 
-"eigen"•decompose⍤2 ms
+"eigen"•decompose²ms
 ⍝⍝: 910	670	720	instructions macos 1373.757 linux 1422.279	allocated macos 110.783 linux 130.784
 
 ⍝ `⌹zm` measures 28.4 on macOS and 94 on CI, about 1.35 times its expected cost on both. Its complex inverse costs 3.4 to 4 times a real one of the same size, as its four real multiply-adds for each complex one predict, and less than a solve with as many right-hand sides. A 128×128 inverse runs at about 0.7 of the rate a 256×256 one reaches, on Accelerate and on rustymath's own kernels alike.
@@ -882,7 +882,7 @@ side↑w ⌹ m
 -.×m
 ⍝⍝: 48	72	76	instructions macos 39.151 linux 80.984	allocated macos 11.395 linux 24.77
 
--.×⍤2 ms
+-.×²ms
 ⍝⍝: 40	48	46	instructions macos 77.051 linux 82.107	allocated macos 0.366 linux 0.522
 
 ⍝⍝ exact •prefs ["mathish":$f]

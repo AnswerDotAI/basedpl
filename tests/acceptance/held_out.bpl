@@ -13,18 +13,18 @@ ty←32•float ¯0.5+¿[B T d]ρ0
 tp←32•float["wq":init[d d] "wk":init[d d] "wv":init[d d] "wo":init[d d] "ga":dρ1 "ba":dρ0 "wu":init[d f] "bu":fρ0 "wd":init[f d] "bd":dρ0 "gm":dρ1 "bm":dρ0]
 causal←32•float ¯1E9× ιT <⊗ ιT
 mean←+/÷≢
-norm←{c←ω-mean⍤1⁝ω ◇ c÷√1E¯5+mean⍤1⁝⊼c}
-ln←{[g b]←α ◇ b(+⍤1)g(×⍤1)norm ω}
+norm←{c←ω-mean¹ω ◇ c÷√1E¯5+mean¹⊼c}
+ln←{[g b]←α ◇ b+¹g×¹norm ω}
 heads←[0 2 [1 H;3 ∞]]⍉
 attend←{
   [wq wk wv wo]←α
   x←ω
   [q k v]←{heads x+.×ω}¨[wq wk wv]
-  s←causal(+⍤2) q+.×⍤2 ⍉⍤2⁝k ÷ √e
+  s←causal+² q+.×² ⍉²k ÷ √e
   w←*s-⌈/s
-  (heads⁻ w÷+/w +.×⍤2 v)+.×wo
+  (heads⁻ w÷+/w +.×²v)+.×wo
 }
-mlp←{[wu bu wd bd]←α ◇ bd(+⍤1)(0⌈bu(+⍤1)ω+.×wu)+.×wd}
+mlp←{[wu bu wd bd]←α ◇ bd+¹(0⌈bu+¹ω+.×wu)+.×wd}
 block←{
   [wq wk wv wo ga ba wu bu wd bd gm bm]←α
   h←ω+[wq wk wv wo]attend⁝[ga ba]ln⁝ω
@@ -60,7 +60,7 @@ cp←32•float["k":init[9 F] "c":Fρ0 "w":init[49×F ; K] "b":Kρ0]
 lsm←{c←ω-⌈/ω ◇ c-⊛+/*c}
 image←{
   [k c w b]←α
-  a←c(+⍤1)([14 14 9]ρ3 3↕ω)+.×k
+  a←c+¹([14 14 9]ρ3 3↕ω)+.×k
   r←(0<)⍚[0.01× ⊢]a
   p←⌈/₂ ₃[[2 2]◇[2 2]]↕r
   b+(,p)+.×w

@@ -34,7 +34,7 @@ loss←{+/⊼1-2×ω} ◇ rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
 ⍝⍝: -	-	-	instructions macos 520127.914 linux 440998.188	allocated macos 37761.812 linux 37761.812
 
 ⍝ Rank's general path calls a dfn once for each of the same 64 cells.
-{⌽ω}⍤0⍣n t
+{⌽ω}⁰⍣n t
 ⍝⍝: -	-	-	instructions macos 828788.719 linux 816740.578	allocated macos 43355.375 linux 43355.375
 
 ⍝ A system function that converts each item on its own runs once on the leaf of the same 64 strings (`batch::leaf_system`).
@@ -56,7 +56,7 @@ m+.×m
 ⍝⍝: -	-	-	instructions macos 112926.297 linux 86488.672	allocated macos 14808 linux 15032
 
 ⍝ Rank on a stack of 64 Boolean 2×2 matrices, which runs one or-and product for the whole stack.
-∨.∧⍤2⍨s
+∨.∧²⍨s
 ⍝⍝: -	-	-	instructions macos 137271.828 linux 117393.383	allocated macos 18354 linux 18354
 
 ⍝ `∂` of a dfn on 4 floats, whose later calls replay the program that its first call traced.

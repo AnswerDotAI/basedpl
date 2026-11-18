@@ -542,14 +542,14 @@ v←0.5×ι10 ◇ m←0.1×3 4ρι12 ◇ p←[3 5 3]ₓ ◇ q←[1 2 2]ₓ ◇ r
 ⍝ program-positions-range — Out-of-range positions read fill with zero derivative. Changing source and index-vector lengths within the same length class still uses current positions and shape
 v←0.5×ι10 ◇ f←{+/(ω.[α])*2} ◇ p←[3 5 3]ₓ ◇ q←[3 50 3]ₓ ◇ a←p f∂ v ◇ b←q f∂ v ◇ c←[0 2 2 3]ₓ f∂ 1 2 3 4 ◇ [b ; c ; ρc]   ⍝ [[0 0 0 6 0 0 0 0 0 0] [2 0 12 8] [4]ₓ]
 
-⍝ program-rank-fork — `∂` of a dfn that applies a fork by Rank or along a named axis, as a layer norm's mean `(+/÷≢)⍤1` does, runs from a program, and so does a pick from each row at positions that a free name holds. A replay after the name changes picks the new positions [batched]
-m←1×3 4ρι12 ◇ [n d]←•index ρm ◇ x←m.[n d] ◇ t←[2 0 3]ₓ ◇ f←{+/,⊼ω-(+/÷≢)⍤1ω} ◇ g←{+/,⊼ω-(+/÷≢)⍠dω} ◇ h←{+/t⌷⁰ ¹ω×ω} ◇ e←•explain "[f∂m ; ,g∂x ; h∂m]" ◇ t←[1 1 1]ₓ ◇ [(≢e.programs.event),≢e.stopped.reason ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3◇¯3 ¯1 1 3◇¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0◇8 0 0 0◇0 0 0 22]] [0 2 0 0◇0 10 0 0◇0 18 0 0]]
+⍝ program-rank-fork — `∂` of a dfn that applies a fork by Rank or along a named axis, as a layer norm's mean `(+/÷≢)¹` does, runs from a program, and so does a pick from each row at positions that a free name holds. A replay after the name changes picks the new positions [batched]
+m←1×3 4ρι12 ◇ [n d]←•index ρm ◇ x←m.[n d] ◇ t←[2 0 3]ₓ ◇ f←{+/,⊼ω-(+/÷≢)¹ω} ◇ g←{+/,⊼ω-(+/÷≢)⍠dω} ◇ h←{+/t⌷⁰ ¹ω×ω} ◇ e←•explain "[f∂m ; ,g∂x ; h∂m]" ◇ t←[1 1 1]ₓ ◇ [(≢e.programs.event),≢e.stopped.reason ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3◇¯3 ¯1 1 3◇¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0◇8 0 0 0◇0 0 0 22]] [0 2 0 0◇0 10 0 0◇0 18 0 0]]
 
 ⍝ program-map-dfn-replay — Rank and Each of a dfn inside a differentiated dfn replay their second invocation on new input values, including when already warm [batched]
 f←{+/{⊼ω}⍤0ω} ◇ g←{+/{⊼ω}¨ω} ◇ a←f∂1 2 3 ◇ b←•explain "f∂4 5 6" ◇ c←g∂1 2 3 ◇ d←•explain "g∂4 5 6" ◇ [(b.programs.event≡,⊂"replayed")∧d.programs.event≡,⊂"replayed" ; [a ; b.value ; c ; d.value]]   ⍝ [$t [2 4 6 ; 8 10 12 ; 2 4 6 ; 8 10 12]]
 
 ⍝ program-rank-named — `∂` of a dfn that applies a pervasive function by Rank to arguments whose frames have the same names runs from a program, and gives the gradient of the same dfn without names
-m←1×3 4ρι12 ◇ [n d]←•index ρm ◇ x←m.[n d] ◇ f←{c←+/⍠d ω ◇ +/,⊼ω-¹ ⁰c} ◇ e←•explain "f∂x" ◇ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{c←+/⍤1ω ◇ +/,⊼ω-¹ ⁰c}∂m]   ⍝ (1ₓ 0ₓ◇24 26 28 30 96 98 100 102 168 170 172 174◇24 26 28 30 96 98 100 102 168 170 172 174)
+m←1×3 4ρι12 ◇ [n d]←•index ρm ◇ x←m.[n d] ◇ f←{c←+/⍠d ω ◇ +/,⊼ω-¹ ⁰c} ◇ e←•explain "f∂x" ◇ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{c←+/¹ω ◇ +/,⊼ω-¹ ⁰c}∂m]   ⍝ (1ₓ 0ₓ◇24 26 28 30 96 98 100 102 168 170 172 174◇24 26 28 30 96 98 100 102 168 170 172 174)
 
 ⍝ program-rank-pick-named — `∂` of a dfn that picks from each row by Rank, with positions on the same named frame as the rows, runs from a program, and gives the gradient of the same dfn without names
 m←1×3 4ρι12 ◇ [n d]←•index ρm ◇ x←m.[n d] ◇ u←[2 0 3]ₓ ◇ p←u.[n] ◇ f←{+/,⊼p⌷⁰ ¹ω} ◇ e←•explain "f∂x" ◇ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{+/,⊼u⌷⁰ ¹ω}∂m]   ⍝ (1ₓ 0ₓ◇0 0 4 0 8 0 0 0 0 0 0 22◇0 0 4 0 8 0 0 0 0 0 0 22)
@@ -2187,7 +2187,7 @@ c←2 5 9ρ"ab"
 (⊃0⊃↓↓c)≡0⌷c   ⍝ $t
 
 ⍝ mix-view-rank-limit — Rejoining cells still validates the assembled rank before returning a view
-a←(128ρ1)ρ⊂⍤1⁝1 2ρι2ₓ ◇ ≢ρ⊃a
+a←(128ρ1)ρ⊂¹1 2ρι2ₓ ◇ ≢ρ⊃a
 ⍝ error: LIMIT ERROR
 
 ⍝ — Mix pads with a chosen fill at the type that holds both the items and the fill: small integers widen for a large fill, and floats keep their type for an exact one
@@ -3904,7 +3904,7 @@ pg←•special "polygamma" ◇ {ω pg 2}∂1
 ig←•special "gammainc" ◇ [{1 ig ω}∂0; {2 ig ω}∂3]   ⍝ [1;3×*¯3]
 
 ⍝ special-betainc — Shape pairs are call-time data; x slopes keep their endpoint limits
-bi←•special "betainc" ◇ ab←2 3 ◇ f←{ab bi ω} ◇ before←f0.5 ◇ ab←4 5 ◇ [before; f0.5; [2 3◇4 5](bi⍤1 0)0.5 0.25; {[2 3]biω}∂0.5; {[1 2]biω}∂0; {[2 1]biω}∂1; [$n 3]bi0.5; [2 3]bi$n] ⍝ [0.6875; 0.63671875; 0.6875 0.1138153076171875; 1.5; 2; 2; $n; $n]
+bi←•special "betainc" ◇ ab←2 3 ◇ f←{ab bi ω} ◇ before←f0.5 ◇ ab←4 5 ◇ [before; f0.5; [2 3◇4 5](bi¹ ⁰)0.5 0.25; {[2 3]biω}∂0.5; {[1 2]biω}∂0; {[2 1]biω}∂1; [$n 3]bi0.5; [2 3]bi$n] ⍝ [0.6875; 0.63671875; 0.6875 0.1138153076171875; 1.5; 2; 2; $n; $n]
 
 ⍝ special-domain-digamma — Negative integer ψ has no result
 psi←•special "digamma" ◇ psi ¯2
@@ -5978,7 +5978,7 @@ d←¿80000 2ρ0 ◇ k←"a" "b":₁ d ◇ q←"a" "c":₁ d ◇ n←["row":8000
 
 ⍝ fusion:contraction — A `+` fold along a named axis of a pending `×`, whose operands read their arrays through affine maps, runs as one product: `•explain` lists it as the combination `+.×`, and no group computes the grid of products. Axes that both operands read are batch axes, and a reversed index reads its rows through a negative stride. A fold along several adjacent axes contracts them all as one product
 x←¿64 32ρ0 ◇ w←¿32 64ρ0 ◇ [r k c]←•index 64 32 64 ◇ e←•explain "+/⍠k⁝x.[r k]×w.[k c]"
-q←¿4 32 32ρ0 ◇ v←¿4 32 32ρ0 ◇ [b t u j]←•index 4 32 32 32 ◇ bt←{α+.×⍉ω}⍤2
+q←¿4 32 32ρ0 ◇ v←¿4 32 32ρ0 ◇ [b t u j]←•index 4 32 32 32 ◇ bt←{α+.×⍉ω}²
 y←¿64 8 4ρ0 ◇ z←¿8 4 64ρ0 ◇ [h g]←•index 8 4 ◇ f←•explain "+/⍠[h g]y.[r h g]×z.[h g c]"
 [e.fast.function ; e.fused.glyphs ; e.value≡x+.×w ; (+/⍠j⁝q.[b t j]×v.[b u j])≡(q bt v) ; (+/⍠k⁝x.[⌽r k]×w.[k c])≡((⊂⌽ι64ₓ)⌷x)+.×w ; f.fast.function ; f.value≡(64 32ρy)+.×32 64ρz]
 ⍝ =>
@@ -5995,14 +5995,14 @@ x←¿32 16ρ0 ◇ w←¿16 24ρ0 ◇ y←¿32 4 4ρ0
 
 ⍝ program-storage-order — A program stores a map in the order of a value that it reads in another order. In `b.[c]++/⍠kω.[r k]×w.[k c]`, named agreement puts `c` first, while the product holds `[r c]`. The sum and each map after it then store as `[r c]`, and a fold along `c` folds that order. Both gradients match the same models written tacitly, within the last bits that a fold's order can change.
 x←0.1×8 4ρι32 ◇ w←0.01×4 6ρι24 ◇ b←0.1×ι6 ◇ v←0.1×ι6 ◇ [r k c]←•index 8 4 6 ◇ close←{(⌈/,|α-ω)≤1e¯12×⌈/,|ω}
-[({+/,7○b.[c]++/⍠kω.[r k]×w.[k c]}∂x) close {+/,7○b+⍤1(ω+.×w)}∂x ; ({+/,+/⍠c⁝v.[c]×7○b.[c]++/⍠kω.[r k]×w.[k c]}∂x) close {+/,(7○b+⍤1(ω+.×w))+.×v}∂x]   ⍝ $t $t
+[({+/,7○b.[c]++/⍠kω.[r k]×w.[k c]}∂x) close {+/,7○b+¹ω+.×w}∂x ; ({+/,+/⍠c⁝v.[c]×7○b.[c]++/⍠kω.[r k]×w.[k c]}∂x) close {+/,(7○b+¹ω+.×w)+.×v}∂x]   ⍝ $t $t
 
 ⍝ fusion:float-conversion — A width conversion of a pending float array, from `•float` or a width mark, joins the array's group as one more call. The group stores the converted items alone
 x←¿300000ρ0 ◇ y←32ₓ •float x×2 ◇ z←32ₓ •float (1000↑x)×2 ◇ e←•explain "32ₓ •float x×2" ◇ [(•storage y).pending ; (•storage y).kind ; (1000↑y)≡z ; e.fused.glyphs]
 [$t "float32" $t ["×"]]
 
 ⍝ fusion:gathered-cycle — An array that a grid reads through a transposed map and broadcasts along an outer axis, as `ω.[k e]` is over `n e k`, has one cycle of its items gathered once, in a fused group and in an eager call alike. Reading through the map instead walks every item. `walked` counts the items that a walk copies.
-mu←¿[25 32]ρ0 ◇ close←{(⌈/,|α-ω)≤1e¯12×⌈/,|ω} ◇ sq←{[[n e] k]←•index[ρα ≢ω] ◇ +/,⊼α.[n e]-ω.[k e]} ◇ tq←{+/,⊼α(-⍤1)² ¹ω}
+mu←¿[25 32]ρ0 ◇ close←{(⌈/,|α-ω)≤1e¯12×⌈/,|ω} ◇ sq←{[[n e] k]←•index[ρα ≢ω] ◇ +/,⊼α.[n e]-ω.[k e]} ◇ tq←{+/,⊼α(-¹)² ¹ω}
 x←¿[1000 32]ρ0 ◇ y←¿[100 32]ρ0 ◇ walked←{e←•explain ω ◇ +/(e.declined.reason≡¨⊂"steps other than a forward run")#e.declined.items}
 [(x sq mu) close x tq mu ; (y sq mu) close y tq mu ; walked "x sq mu" ; walked "y sq mu"]   ⍝ $t $t 800ₓ 800ₓ
 
@@ -7686,7 +7686,7 @@ same¨"{ω +.{α×ω} ⍉ω}⍤2 s" "{ω {α+ω}.× m}⍤2 s" "{1 +.{α×ω} ω}
 
 ⍝ — Each and an outer product batch over a nested array whose items are arrays of one shape and kind, as Rank does over the array that holds them, and give every cell a scalar argument's item, as calls on each item do [batched]
 ⍝⍝⍝ route batching
-r←⊂⍤1⁝[300 8]ρι2400ₓ ◇ unbatched←{•prefs ["batch":$f] ◇ x←⍎ω ◇ •prefs ["batch":$t] ◇ x}
+r←⊂¹[300 8]ρι2400ₓ ◇ unbatched←{•prefs ["batch":$f] ◇ x←⍎ω ◇ •prefs ["batch":$t] ◇ x}
 batches←{e←•explain ω ◇ ∧/[e.value≡unbatched ω ; 0ₓ=≢e.fallbacks.reason ; ~(⊂"batching")∊e.declined.route]}
 batches¨"{ω+1ₓ}¨r" "{+/ω}¨r" "{ωι5ₓ}¨r" "r {+/α×ω}⊗ 1 2" "(⊂1 2 3) {≢α}⊗ 10 20 30"   ⍝ $t $t $t $t $t
 
@@ -7703,7 +7703,7 @@ v←[1 2] [3] [4 5] [6] ◇ x←[10 20] [30] [40 50] [60]
 
 ⍝ cohort-row-projections: Key and dyadic Each select whole numeric cells without changing their order or kind.
 k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ 3ₓ ◇ m←6 3ρι18ₓ ◇ a←k{α + +/ω}⌸m
-v←[1 2] [3] [4 5] [6] ◇ rows←⊂⍤1⁝4 3ρ0.25+ι3 ◇ b←v{+/(⌈/α)+ω}¨rows
+v←[1 2] [3] [4 5] [6] ◇ rows←⊂¹4 3ρ0.25+ι3 ◇ b←v{+/(⌈/α)+ω}¨rows
 [a≡[5 23◇13 40◇33 51]ₓ;b≡9.75 12.75 18.75 21.75;(•storage a).kind]   ⍝ [$t $t "integer"]
 
 ⍝ — Each over ragged cells, arrays of one rank and kind with different shapes, runs pervasive calls, reductions, scans, grades, shapes, rotations, takes, drops and character conversion once on the cells' leaf, by each cell's own shape, giving what calls on each item give [batched]
@@ -7757,7 +7757,7 @@ h←{[0 0]ₓ≡ρω?ω; mask←∧\' '=↑↓⌽ωᵀ ◇ ⊃[⌽α,mask#'│']
 {x←⊃[ω] ◇ ≢¨x}¨["ab" "cde"]   ⍝ [[1 1◇]ₓ [1 1 1◇]ₓ]
 
 ⍝ — Rank encloses each row as a nested item in mixed storage
-r←⊂⍤1⁝[1000 300]ρ1.5+ι300000
+r←⊂¹[1000 300]ρ1.5+ι300000
 [ρr ; ρ↑r ; (•storage r).kind ; (↑r)≡1.5+ι300]   ⍝ [[1000]ₓ ; [300]ₓ ; "mixed" ; $t]
 
 ⍝ — A system function that acts stops a batched run for an effect, even on a constant [batched]

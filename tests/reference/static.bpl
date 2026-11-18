@@ -281,15 +281,15 @@ nl←•ucs 10 ◇ (kind (•csv "a",nl,"7").a) (kind (•json "{""a"":[1,2]}").
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A dfn on arrays with axis names or keys runs in the program, and its results keep the labels that the interpreter gives them. A fold by an axis name runs there too
-d←[3 4]ρ0.1×ι12 ◇ dn←["r":3 "c":4]ρd ◇ dk←["a" "b" "c" "d"]:⍤1 d ◇ g←{+⌿(ω-0.5)×ω+0.5} ◇ f←{+/⍠"r" ω} ◇ Gn←{+/ω×(g dn)} ◇ Gk←{+/ω×(g dk)} ◇ Fn←{+/ω×(f dn)} ◇ zn←0×(g dn) ◇ zk←0×(g dk) ◇ zf←0×(f dn) ◇ e←•explain "[Gn∂zn ; Gn∂zn ; Gk∂zk ; Gk∂zk ; Fn∂zf ; Fn∂zf]" ◇ x←[g dn ; g dn ; g dk ; g dk ; f dn ; f dn] ◇ [6ₓ=≢e.programs.event ; (⍕¨e.value)≡⍕¨x]
+d←[3 4]ρ0.1×ι12 ◇ dn←["r":3 "c":4]ρd ◇ dk←["a" "b" "c" "d"]:¹d ◇ g←{+⌿(ω-0.5)×ω+0.5} ◇ f←{+/⍠"r" ω} ◇ Gn←{+/ω×(g dn)} ◇ Gk←{+/ω×(g dk)} ◇ Fn←{+/ω×(f dn)} ◇ zn←0×(g dn) ◇ zk←0×(g dk) ◇ zf←0×(f dn) ◇ e←•explain "[Gn∂zn ; Gn∂zn ; Gk∂zk ; Gk∂zk ; Fn∂zf ; Fn∂zf]" ◇ x←[g dn ; g dn ; g dk ; g dk ; f dn ; f dn] ◇ [6ₓ=≢e.programs.event ; (⍕¨e.value)≡⍕¨x]
 $t $t
 
 ⍝ — Block stages run a labelled program's steps through its layouts' maps. Where two arrays' keys differ, the program pairs them by the union of the keys, as the interpreter does, and each missing item reads as 0
-d←[3 4]ρ0.1×ι12 ◇ dn←["r":3 "c":4]ρd ◇ dk←["a" "b" "c" "d"]:⍤1 d ◇ dq←["a" "b" "c" "e"]:⍤1 d ◇ g←{(ω-0.5)×ω+0.5} ◇ h←{α+ω×2} ◇ Gk←{+/,ω×(g dk)} ◇ Gn←{+/,ω×(g dn)} ◇ Hq←{+/,ω×(dk h dq)} ◇ zk←0×dk ◇ zn←0×dn ◇ zq←0×(dk h dq) ◇ e←•explain "[Gk∂zk ; Gk∂zk ; Gn∂zn ; Gn∂zn]" ◇ q←•explain "[Hq∂zq ; Hq∂zq]" ◇ [staged e ; 2ₓ=≢q.programs.event ; (⍕¨q.value)≡2ρ⊂⍕dk+dq×2]
+d←[3 4]ρ0.1×ι12 ◇ dn←["r":3 "c":4]ρd ◇ dk←["a" "b" "c" "d"]:¹d ◇ dq←["a" "b" "c" "e"]:¹d ◇ g←{(ω-0.5)×ω+0.5} ◇ h←{α+ω×2} ◇ Gk←{+/,ω×(g dk)} ◇ Gn←{+/,ω×(g dn)} ◇ Hq←{+/,ω×(dk h dq)} ◇ zk←0×dk ◇ zn←0×dn ◇ zq←0×(dk h dq) ◇ e←•explain "[Gk∂zk ; Gk∂zk ; Gn∂zn ; Gn∂zn]" ◇ q←•explain "[Hq∂zq ; Hq∂zq]" ◇ [staged e ; 2ₓ=≢q.programs.event ; (⍕¨q.value)≡2ρ⊂⍕dk+dq×2]
 $t $t $t
 
 ⍝ — A step that reads another step of its group through a table or a transpose ends the group, and the next stage reads the stored step through that map, as with permuted keys or named axes in another order
-d←[3 4]ρ0.1×ι12 ◇ dk←["a" "b" "c" "d"]:⍤1 d ◇ dp←["d" "c" "b" "a"]:⍤1 d ◇ dn←["r":3 "c":4]ρd ◇ dt←["c":4 "r":3]ρ⍉d ◇ h←{(α+ω×2)×3} ◇ Hp←{+/,ω×(dk h dp)} ◇ Ht←{+/,ω×(dn h dt)} ◇ zp←0×(dk h dp) ◇ zt←0×(dn h dt) ◇ p←•explain "[Hp∂zp ; Hp∂zp]" ◇ t←•explain "[Ht∂zt ; Ht∂zt]" ◇ [staged p ; staged t ; (⍕¨p.value)≡2ρ⊂⍕(dk+dp×2)×3 ; (⍕¨t.value)≡2ρ⊂⍕(dn+dt×2)×3]
+d←[3 4]ρ0.1×ι12 ◇ dk←["a" "b" "c" "d"]:¹d ◇ dp←["d" "c" "b" "a"]:¹d ◇ dn←["r":3 "c":4]ρd ◇ dt←["c":4 "r":3]ρ⍉d ◇ h←{(α+ω×2)×3} ◇ Hp←{+/,ω×(dk h dp)} ◇ Ht←{+/,ω×(dn h dt)} ◇ zp←0×(dk h dp) ◇ zt←0×(dn h dt) ◇ p←•explain "[Hp∂zp ; Hp∂zp]" ◇ t←•explain "[Ht∂zt ; Ht∂zt]" ◇ [staged p ; staged t ; (⍕¨p.value)≡2ρ⊂⍕(dk+dp×2)×3 ; (⍕¨t.value)≡2ρ⊂⍕(dn+dt×2)×3]
 $t $t $t $t
 
 ⍝ — A fold along a window axis of at most 8 positions runs as steps of a block stage, which read the windows' source once for each position: through padding by any edge mode, along two window axes, and from a value that an earlier stage stores. Maxima and minima pass over NaN as the interpreter's folds do
@@ -297,7 +297,7 @@ f←{+/¯3↕ω} ◇ g←{⌈/["size":3 "edge":"wrap"]↕ω} ◇ h←{⌊/⌊/3 
 $t $t
 
 ⍝ — A program's key holds its arguments' labels, so arguments with other keys run from another program, with their own keys in the result
-d←[3 4]ρ0.1×ι12 ◇ dk←["a" "b" "c" "d"]:⍤1 d ◇ dq←["a" "b" "c" "e"]:⍤1 d ◇ g←{+/,ω×ω} ◇ e←•explain "[g∂dk ; g∂dq ; g∂dk]" ◇ [3ₓ=≢e.programs.event ; (⍕¨e.value)≡⍕¨[2×dk ; 2×dq ; 2×dk]]
+d←[3 4]ρ0.1×ι12 ◇ dk←["a" "b" "c" "d"]:¹d ◇ dq←["a" "b" "c" "e"]:¹d ◇ g←{+/,ω×ω} ◇ e←•explain "[g∂dk ; g∂dq ; g∂dk]" ◇ [3ₓ=≢e.programs.event ; (⍕¨e.value)≡⍕¨[2×dk ; 2×dq ; 2×dk]]
 $t $t
 
 ⍝⍝ Constants in derivative graphs
