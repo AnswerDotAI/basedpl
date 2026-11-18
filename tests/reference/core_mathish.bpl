@@ -5,7 +5,10 @@
 
 ⍝ logical-numeric-truth — a float stands for a Boolean within tolerance only under Mathish
 n←1-1e¯15 ◇ on←[~[0 n];(1+1e¯15)⊼n;0⊽n]
-•prefs ["mathish":$f] ◇ off←{"DOMAIN"::1 ◇ ~n ◇ 0}0 ◇ •prefs ["mathish":$t] ◇ [on;off]
+•prefs ["mathish":$f]
+off←{"DOMAIN"::1 ◇ ~n ◇ 0}0
+•prefs ["mathish":$t]
+[on;off]
 ⍝ =>
 [[[$t $f] $f $f] 1]
 
@@ -143,7 +146,11 @@ y←[0.1+0.2 0.3 ¯0.1-0.2 1+5E¯15 1+5E¯14 1E8+5E¯7 1E8+5E¯5 1E¯100 0 ¯1E3
 0÷¯0   ⍝ 0
 
 ⍝ subscript-fixed — After a function, ₓ₁, ₓ₂, ₓ₄ or ₓ₈ converts its results to fixed integers of that width. A float takes its floor and then clamps to the type's range: NaN gives 0, and an infinity gives the nearer end of the range. Under Mathish mode the floor is tolerant: 2.9999999999999996 gives 3, where it gives 2 with Mathish mode off. An integer wraps to the width, and a Boolean gives 0 or 1
-v←0.5 1.5 ¯0.1 2.9999999999999996 ¯3.5 300.5 $n ∞ ¯∞ ◇ a←[⊢ₓ₁ v ; ⊢ₓ₂ v ; ⊢ₓ₁ [255 256 ¯1 ¯257]ₓ ; ⊢ₓ₂ 0≠[1 0 1]ₓ] ◇ •prefs ["mathish":$f] ◇ a,⊂(⊢ₓ₂ v)
+v←0.5 1.5 ¯0.1 2.9999999999999996 ¯3.5 300.5 $n ∞ ¯∞
+a←[⊢ₓ₁ v ; ⊢ₓ₂ v ; ⊢ₓ₁ [255 256 ¯1 ¯257]ₓ ; ⊢ₓ₂ 0≠[1 0 1]ₓ]
+•prefs ["mathish":$f]
+a,⊂(⊢ₓ₂ v)
+⍝ =>
 [[0 1 0 3 0 255 0 255 0]ₓ₁ ; [0 1 ¯1 3 ¯4 300 0 32767 ¯32768]ₓ₂ ; [255 0 255 255]ₓ₁ ; [1 0 1]ₓ₂ ; [0 1 ¯1 2 ¯4 300 0 32767 ¯32768]ₓ₂]
 
 ⍝ — The number of steps is whole within tolerance
