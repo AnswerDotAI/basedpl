@@ -75,7 +75,7 @@ nr ← {  ⍝ Newton-Raphson.
   ω + α×y ÷ y-∆y  ⍝ next estimate.
 }
 
-traj_2 ← {¯1↣↓ ,↢⊂↢⍶↢↑↢⌽⍨⍣(∊⍨↢⊂↢↑↢⌽⍨)∘(,⊂) ω}
+traj_2 ← {¯1↣↓ ,↢⊂↢⍶↢↑↢⌽⍨⍣(∊⍨↢⊂↢↑↢⌽⍨)ˢ∘(,⊂) ω}
 
 ⍝ From http://dfns.dyalog.com/c_while.htm
 

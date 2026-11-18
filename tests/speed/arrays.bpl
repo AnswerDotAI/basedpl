@@ -277,21 +277,21 @@ cιc
 ∪c
 ⍝⍝: 4	3.2	5.1	instructions macos 8.045 linux 7.523	allocated macos 1.069 linux 1.069
 
-⍝ Key classifies the keys once. `(≢⊢)⌸` counts each class without building its group, and a fold of `⊢` such as `(+/⊢)⌸` folds each group of a vector in one pass. Any other operand, `{≢ω}` included, runs once for each group, on that group's positions.
-⍝ Expected: `{≢ω}⌸b` 2 copies: classifying, then writing each group's positions; `(≢⊢)⌸b` 0.13 copies: reads 1 byte an item and counts.
+⍝ Key classifies the keys once. `≢ᵘ⌸` counts each class without building its group, and `+/ᵘ⌸` folds each group of a vector in one pass. Any other operand, `{≢ω}` included, runs once for each group, on that group's positions.
+⍝ Expected: `{≢ω}⌸b` 2 copies: classifying, then writing each group's positions; `≢ᵘ⌸b` 0.13 copies: reads 1 byte an item and counts.
 {≢ω}⌸b
 ⍝⍝: 4	5.8	5.3	instructions macos 17.014 linux 13.668	allocated macos 7.076 linux 7.076
 
-(≢⊢)⌸b
+≢ᵘ⌸b
 ⍝⍝: 0.5	1.8	1.9	instructions macos 3.038 linux 2.084	allocated macos 0.127 linux 0.127
 
-⍝ `(+/⊢)` folds each group of the values in one pass. The keys `i` make about 41,000 groups, each of which the general path would call the operand for.
+⍝ `+/ᵘ⌸` folds each group of the values in one pass. The keys `i` make about 41,000 groups, each of which the general path would call the operand for.
 ⍝ Expected: 15 copies: keys below 65,536 index a table of 32-bit positions directly. First sight of each key takes about 4.3, numbering each item through the table about 3.5, the fold about 3.8, filling the table and writing each class about 2.3, and allocation about 0.9, by the shares of a profile on 30 October 2026, when the case measured 1,790 ps an item on macOS. CI measured 19.9 on Linux.
-i (+/⊢)⌸ v
+i +/ᵘ⌸ v
 ⍝⍝: 30	29	26	instructions macos 59.227 linux 58.684	allocated macos 24.258 linux 24.258
 
-⍝ Layout cohorts gather equally sized groups and run the dfn once per group size through the dense batch evaluator. The specialized `(+/⊢)` route remains one native grouped fold.
-⍝ Expected: 15 copies, as `i (+/⊢)⌸ v`: the same classification and one fold of each group.
+⍝ Layout cohorts gather equally sized groups and run the dfn once per group size through the dense batch evaluator. The specialized `+/ᵘ⌸` route remains one native grouped fold.
+⍝ Expected: 15 copies, as `i +/ᵘ⌸ v`: the same classification and one fold of each group.
 ⍝⍝⍝ held macos 224.8 linux 361.7: cohorts still gather and dispatch per distinct group size instead of running one flat segmented fold
 i{+/ω}⌸v
 ⍝⍝: 30	29	26	instructions macos 763.952 linux 882.254	allocated macos 111.616 linux 111.616

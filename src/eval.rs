@@ -409,7 +409,7 @@ impl Function {
             FunctionNode::Ruled(f, _) => f.text(el, budget),
         }
     }
-    /// An operator takes the whole function to its left, so only a train needs parentheses there. A function array reads as its array would.
+    /// An ordinary operator takes the whole function to its left, so only a train needs parentheses there. A function array reads as its array would.
     fn left_text(&self, el: Elide, budget: &mut usize) -> String {
         match self.node() {
             FunctionNode::Fork(_) => format!("({})", self.text(el, budget)), FunctionNode::Array(a) => a.operand(el), _ => self.text(el, budget)
@@ -423,7 +423,7 @@ impl Function {
         } else { format!("{text}{mark}") }
     }
     /// An operator takes one token to its right, so anything larger than one token needs parentheses there.
-    fn right_text(&self, el: Elide, budget: &mut usize) -> String {
+    pub(crate) fn right_text(&self, el: Elide, budget: &mut usize) -> String {
         if let FunctionNode::Array(a) = self.node() { return a.operand(el); }
         let text = self.text(el, budget);
         let token = match self.node() {
@@ -489,6 +489,7 @@ impl Function {
                 if info.dyadic() || !accepts(info.left, &a) { return Err(Error::domain("operator needs a function operand").at(span)); }
                 match (op, a) {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
+                    (Unary, Operand::Function(f)) => return binder::atop(f, Self::primitive(Primitive::Identity(false)), span),
                     (Super(Superscript::Inverse), Operand::Function(f)) => return f.inverse(span),
                     (op @ Super(Superscript::Mark(_)), a @ Operand::Function(_)) => FunctionNode::Modified(op, a),
                     (Super(_), _) => return Err(Error::domain("ᵀ transposes an array, not a function").at(span)), (op, a) => FunctionNode::Modified(op, a)

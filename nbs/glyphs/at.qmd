@@ -18,7 +18,9 @@ x←["a":1 "b":2 "c":3] ◇ ["b":20 "a":10]@0 1 x         ⍝ ["a":10 "b":20 "c"
 (1 2 3+)@⍬[¯1 ¯2]                                      ⍝ ¯1 ¯2
 ```
 
-`f@[p] Y` applies `f` to the cells where `p Y` isn't 0, and keeps the cells where it's 0: `(10×⊢)@[⊢] 0 2 1` gives `0 20 10`. The mask picks a case for each cell, as the selector of [Agenda](diamond-underbar.qmd) does, with three differences. Any value other than 0 selects a cell, whereas Agenda takes the value modulo 2. `@` converts its result to one kind, as assignment does. An unselected cell keeps its value, whereas Agenda gives it the fill. The mask's unnamed axes align with the leading axes of `Y`; named axes align by name. A mask with keys pairs with `Y` by key. A cell is unselected when the mask lacks its key. A key that only the mask has is ignored. `f` runs once, on the list of the selected cells, and doesn't run when there are none. A mask array `m` works through a constant function, as in `f@[m⍨]`, because `@` reads an array as positions.
+## Masks
+
+A one-item vector holding a function supplies a mask. `f@[p] Y` applies `f` to the cells where `p Y` isn't 0, and keeps the cells where it's 0: `10× @[⊢] 0 2 1` gives `0 20 10`. The mask picks a case for each cell, as the selector of [Agenda](diamond-underbar.qmd) does, with three differences. Any value other than 0 selects a cell, whereas Agenda takes the value modulo 2. `@` converts its result to one kind, as assignment does. An unselected cell keeps its value, whereas Agenda gives it the fill. The mask's unnamed axes align with the leading axes of `Y`; named axes align by name. A mask with keys pairs with `Y` by key. A cell is unselected when the mask lacks its key. A key that only the mask has is ignored. `f` runs once, on the list of the selected cells, and doesn't run when there are none. A mask array `m` works through a constant function, as in `f@[m⍨]`, because `@` reads an array as positions.
 
 ```bpl
 0ₓ@[2|] ι5ₓ                  ⍝ [0 0 2 0 4]ₓ

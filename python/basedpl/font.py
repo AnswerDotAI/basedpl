@@ -32,7 +32,7 @@ def add_scripts(font):
         pen = TTGlyphPen(font.getGlyphSet())
         pen.addComponent(src, (scale, 0, 0, scale, 0, offset))
         add_glyph(font, char, pen.glyph(), round(font['hmtx'][src][0]*scale))
-    for char, source in zip('⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵇᵀᵘ', '0123456789-bTu'): add(char, source, 2/3, 392)
+    for char, source in zip('⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵇˢᵀᵘ', '0123456789-bsTu'): add(char, source, 2/3, 392)
     for char, source in zip('₀₁₂₃₄₅₆₇₈₉₋', '⁰¹²³⁴⁵⁶⁷⁸⁹⁻'): add(char, source, 1, -532)
     for char, source in zip('ₓᵣₑⱼ', 'xrej'):
         if ord(char) in cmap: continue
@@ -154,11 +154,12 @@ def build():
     thicken_slashes(font)
     add_separator(font)
     compact_subscripts(font)
-    paths = write_font(font, 'SAX2B', '2.004', Path(__file__).with_name('browser'))
+    paths = write_font(font, 'SAX2B', '2.005', Path(__file__).with_name('browser'))
     font = TTFont(io.BytesIO(urlread(BQN386_URL + 'BQN386.ttf', decode=False, timeout=30)), recalcTimestamp=False)
+    add_scripts(font)
     add_separator(font)
     compact_subscripts(font)
-    paths += write_font(font, 'BQN386B', '1.003', web_dest)
+    paths += write_font(font, 'BQN386B', '1.004', web_dest)
     for name, url in [('SAX2', SAX2_URL), ('BQN386', BQN386_URL)]:
         (GENERATED/f'fonts/LICENSE-{name}').write_text(urlread(url + 'LICENSE', timeout=30))
     return paths

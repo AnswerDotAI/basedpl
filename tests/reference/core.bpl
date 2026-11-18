@@ -40,7 +40,7 @@ f←{+/,=⌿ω} ◇ [f 1 2ρ2 3 ; f∂1 2ρ2 3]   ⍝ [5 ; 1 2ρ1]
 g←{3} ◇ [g∂ 1 2 3 4 ; g∂ 1 2 3 4 5 ; g∂ 1 2 3 4 5 6 7]   ⍝ [[0 0 0 0] [0 0 0 0 0] [0 0 0 0 0 0 0]]
 
 ⍝ program-bounded-key — Key's operand runs batched over groups of one length. Where that length changes between calls, the operand's recording bounds it, and `≢` on the batch pins it, so a replay never returns an earlier call's counts
-k←{(≢⊢)⌸ω} ◇ j←{(≢⊢)⌸ω} ◇ [k¨[10ρ2 ; (5ρ1),5ρ2 ; (6ρ1),6ρ2 ; (7ρ1),7ρ2] ; j¨[(5ρ1),5ρ2 ; (3ρ1),3ρ2 ; (6ρ1),6ρ2 ; (7ρ1),7ρ2 ; (8ρ1),8ρ2]]   ⍝ [[,10 ; 5 5 ; 6 6 ; 7 7]ₓ ; [5 5 ; 3 3 ; 6 6 ; 7 7 ; 8 8]ₓ]
+k←{≢ᵘ⌸ω} ◇ j←{≢ᵘ⌸ω} ◇ [k¨[10ρ2 ; (5ρ1),5ρ2 ; (6ρ1),6ρ2 ; (7ρ1),7ρ2] ; j¨[(5ρ1),5ρ2 ; (3ρ1),3ρ2 ; (6ρ1),6ρ2 ; (7ρ1),7ρ2 ; (8ρ1),8ρ2]]   ⍝ [[,10 ; 5 5 ; 6 6 ; 7 7]ₓ ; [5 5 ; 3 3 ; 6 6 ; 7 7 ; 8 8]ₓ]
 
 ⍝ program-bounded-rank — Rank's route on whole arguments gives `≢⍤1` each cell's length without calling `≢`, so it pins the length it reads, as a call does
 r←{((≢ω)ρ0)(≢⍤1⊢)⌸ω} ◇ ,¨r¨[2 3ρ0 ; 2 4ρ0 ; 2 5ρ0 ; 2 6ρ0 ; 2 7ρ0]   ⍝ [3 3 ; 4 4 ; 5 5 ; 6 6 ; 7 7]ₓ
@@ -442,7 +442,7 @@ v←1 1 2 ◇ f←{+/(+/ω)×ω} ◇ g←{+/ω×ω÷+/ω} ◇ e←•explain "[f
 m←[3 1 2◇0 5 5] ◇ f←{+/⌈/ω} ◇ g←{+/⌊⌿ω} ◇ e←•explain "[f∂m ; g∂m]" ◇ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[1 0 0◇0 1 0] [0 1 1◇1 0 0] 2ₓ 0ₓ]
 
 ⍝ program-picks-stopped — Where a trace has stopped, `⌈/` and `⌊/` of a dual still pick their item's tangent through a mask, a linear map, since reverse mode's tangent is a linear node whose items nothing may read. A loop whose predicate takes `⌈/` runs that way under `∂`.
-x←2 3 1 ◇ n←{(ω+2÷ω)÷2} ◇ a←{z←⍕ω ◇ ⌈/ω}∂ x ◇ b←{z←⍕ω ◇ ⌊/ω}∂ x ◇ c←{+/n⍣{1e¯9>⌈/|α-ω}⁝ω}∂ x ◇ [a≡0 1 0 ; b≡0 0 1 ; 1e¯9>⌈/|c]   ⍝ $t $t $t
+x←2 3 1 ◇ n←{(ω+2÷ω)÷2} ◇ a←{z←⍕ω ◇ ⌈/ω}∂ x ◇ b←{z←⍕ω ◇ ⌊/ω}∂ x ◇ c←{+/n⍣{1e¯9>⌈/|α-ω}ˢ⁝ω}∂ x ◇ [a≡0 1 0 ; b≡0 0 1 ; 1e¯9>⌈/|c]   ⍝ $t $t $t
 
 ⍝ program-item — `∂` runs from a program where a dfn reads one item of a traced array, as `↑`, `⊃`, subscripts and selection do. No trace stops
 v←1 2 3 4 ◇ f←{(↑ω)×+/ω} ◇ g←{(1⊃ω)+ω₃} ◇ h←{+/ω×ω.[2]} ◇ e←•explain "[f∂v ; g∂v ; h∂v]" ◇ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[11 1 1 1] [0 1 0 1] [3 3 13 3] 3ₓ 0ₓ]
@@ -1400,10 +1400,10 @@ aggs←["mean":+⌿÷≢ "sum":+⌿] ◇ aggs⍤1[1 2 3◇4 5 6]
 [ι ⊢]∘⊢ 3ₓ   ⍝ [0 1 2◇3 0 0]ₓ
 
 ⍝ — A scalar that holds a function adds no axis to the function's result
-{ω×10}ᵘ∘⊢ 2   ⍝ 20
+{ω×10}ˢ∘⊢ 2   ⍝ 20
 
 ⍝ — Each calls a scalar that holds a function on each item
-{ω×10}ᵘ¨ 1 2   ⍝ 10 20
+{ω×10}ˢ¨ 1 2   ⍝ 10 20
 
 ⍝ — A function inside a nested item is a constant, not a call
 [[+] -]∘⊢ 1   ⍝ 2 1ρ[+ ¯1]
@@ -1479,7 +1479,7 @@ d←1 2 ◇ [≢[[+ -] d];[+ -] 1]   ⍝ [2ₓ;1 ¯1]
 [≢ ≡] [+ -]   ⍝ [2 1]ₓ
 
 ⍝ — A scalar holding a function calls it when an array follows it
-(-ᵘ)3   ⍝ ¯3
+(-ˢ)3   ⍝ ¯3
 
 ⍝ — An array after the absent α of a monadic call calls it, as a function does, and gives an absent result
 {≢ [+ -] α} 1
@@ -1609,7 +1609,7 @@ v←10 20 30 ◇ v[2]   ⍝ [10 20 30;[2]]
 [10 20 30] [2 0]   ⍝ [10 20 30;2 0]
 
 ⍝ — A scalar holding a function is one item of a strand when no array follows it
-≢3(-ᵘ)   ⍝ 2ₓ
+≢3(-ˢ)   ⍝ 2ₓ
 
 ⍝ — Each run is one item
 a←1
@@ -3648,19 +3648,19 @@ h←{ω×ω×0.5} ◇ x←1.5 2 ◇ f←{⊃h⍣[1 3]⁝ω} ◇ g←{a←h ω �
 f←{+/{(ω+2÷ω)÷2}⍣∞⁝ω} ◇ 1e¯6>⌈/|f∂2 3   ⍝ $t
 
 ⍝ derivative-loop-predicate — Halving until every item is below 1e¯3 has the gradient of ten halvings
-h←{ω×0.5} ◇ f←{+/h⍣{1e¯3>⌈/|α}⁝ω} ◇ g←{+/h⍣10⁝ω} ◇ x←1 0.5 ◇ 1e¯12>⌈/|(f∂x)-g∂x   ⍝ $t
+h←{ω×0.5} ◇ f←{+/h⍣{1e¯3>⌈/|α}ˢ⁝ω} ◇ g←{+/h⍣10⁝ω} ◇ x←1 0.5 ◇ 1e¯12>⌈/|(f∂x)-g∂x   ⍝ $t
 
 ⍝ derivative-loop-predicate-jacobian — A predicate-controlled Power's Jacobians match explicit calls for outputs of different sizes
-h←{ω×0.5} ◇ f←{h⍣{1e¯3>⌈/|α}⁝ω} ◇ g←{h⍣10⁝ω} ◇ p←{a←f ω ◇ a,a×2} ◇ q←{a←g ω ◇ a,a×2} ◇ x←1 0.5 ◇ [1e¯12>⌈/,|(f∂x)-g∂x ; ρp∂x ; 1e¯12>⌈/,|(p∂x)-q∂x]   ⍝ $t [4 2]ₓ $t
+h←{ω×0.5} ◇ f←{h⍣{1e¯3>⌈/|α}ˢ⁝ω} ◇ g←{h⍣10⁝ω} ◇ p←{a←f ω ◇ a,a×2} ◇ q←{a←g ω ◇ a,a×2} ◇ x←1 0.5 ◇ [1e¯12>⌈/,|(f∂x)-g∂x ; ρp∂x ; 1e¯12>⌈/,|(p∂x)-q∂x]   ⍝ $t [4 2]ₓ $t
 
 ⍝ derivative-loop-fixed-predicate — Multiplying by a differentiated fixed left argument until every item is below 1e¯3 has the gradient of ten steps
-h←{α×ω} ◇ x←0.5 0.5 ◇ f←{+/ωh⍣{1e¯3>⌈/|α}⁝1 1} ◇ g←{+/ωh⍣10⁝1 1} ◇ 1e¯12>⌈/|(f∂x)-g∂x   ⍝ $t
+h←{α×ω} ◇ x←0.5 0.5 ◇ f←{+/ωh⍣{1e¯3>⌈/|α}ˢ⁝1 1} ◇ g←{+/ωh⍣10⁝1 1} ◇ 1e¯12>⌈/|(f∂x)-g∂x   ⍝ $t
 
 ⍝ derivative-loop-fixed-jacobian — Power's Jacobians include a differentiated fixed left argument for outputs of different sizes
 h←{α×ω} ◇ x←1.5 2 ◇ f←{ωh⍣3⁝1 2} ◇ g←{a←ω ◇ a h a h a h 1 2} ◇ p←{a←f ω ◇ a,a×2} ◇ q←{a←g ω ◇ a,a×2} ◇ [1e¯12>⌈/,|(f∂x)-g∂x ; ρp∂x ; 1e¯12>⌈/,|(p∂x)-q∂x]   ⍝ $t [4 2]ₓ $t
 
 ⍝ derivative-loop-nested-predicate — A predicate loop inside a nested `∂` picks with `⌈/` by the values beneath both calls' duals. Squaring and halving from 0.5 0.6 until every item is under 1e¯3 takes 3 steps.
-h←{ω×ω×0.5} ◇ f←{+/h⍣{1e¯3>⌈/|α}⁝ω} ◇ g←{+/h⍣3⁝ω} ◇ x←0.5 0.6 ◇ 1e¯12>⌈/|({+/f∂ω}∂x)-{+/g∂ω}∂x   ⍝ $t
+h←{ω×ω×0.5} ◇ f←{+/h⍣{1e¯3>⌈/|α}ˢ⁝ω} ◇ g←{+/h⍣3⁝ω} ◇ x←0.5 0.6 ◇ 1e¯12>⌈/|({+/f∂ω}∂x)-{+/g∂ω}∂x   ⍝ $t
 
 ⍝ derivative-loop-free — Power differentiates both its start and a captured value
 {v←ω ◇ +/{ω×v}⍣3⁝ω}∂ 1 2   ⍝ 4 32
@@ -4582,6 +4582,15 @@ n←0 ◇ v←10 20 30 ◇ r←(1+)@{n+←1 ◇ 1↑ω} v ◇ n r   ⍝ [1 [11 2
 ⍝ under-each-nested — Under and selective assignment inside Each over a nested array write into each item
 [{10@(1↑)ω}¨[1 2;3 4 5] ; {(1↑ω)←0 ◇ ω}¨[1 2;3 4 5]]   ⍝ ([10 2] [10 4 5]◇[0 2] [0 4 5])
 
+⍝ — A count function runs once on the original argument, before the state changes
+calls←0 ◇ count←{calls+←1 ◇ ≢ω} ◇ r←,↢0⍣count 1 2 ◇ [r;calls]   ⍝ [1 2 0 0;1]
+
+⍝ — The left argument sets the count. Unary calls successor monadically
+3≥ᵘ⍣⊣5   ⍝ 8
+
+⍝ — A count function can return an array of counts
+≥⍣{0 2}10   ⍝ 10 12
+
 ⍝ — Power preserves the count array's shape, including negative and repeated counts
 1+ ⍣[3 ¯2◇0 3] 10   ⍝ [13 8◇10 13]
 
@@ -4606,8 +4615,8 @@ n←0 ◇ v←10 20 30 ◇ r←(1+)@{n+←1 ◇ 1↑ω} v ◇ n r   ⍝ [1 [11 2
 ⍝ — Fixed-point history includes both the initial and unchanged next value
 ⊢⍣[≡] 4   ⍝ 4 4
 
-⍝ — An infinite count runs until the state stops changing, the same test as ⍣≡
-{0.5×ω+2÷ω}⍣∞⁝1   ⍝ {0.5×ω+2÷ω}⍣≡(1)
+⍝ — An infinite count and a Match predicate agree on this Newton step
+{0.5×ω+2÷ω}⍣∞⁝1   ⍝ {0.5×ω+2÷ω}⍣≡ˢ(1)
 
 ⍝ — An infinite count can sit in a list of counts
 {⌊ω÷2}⍣[0 1 ∞] 100ₓ   ⍝ [100 50 0]ₓ
@@ -5673,7 +5682,7 @@ x   ⍝ 10 20 9
 ⍝ — Fast combinations give what their parts give in turn: partial grades and sorts, ranks, and counts and folds under Key
 •prefs ["seed":0]
 v←¿1000ρ0 ◇ k←¿1000ρ7 ◇ b←0=¿1000ρ3 ◇ d←ι¯1000 ◇ z←v ◇ z.[[3 500 999]]←$n ◇ z.[[7 9]]←-0
-[((10↑)∘⍋ k)≡({10↑⍋ω} k); ((¯10↑)∘⍒ k)≡({¯10↑⍒ω} k); ((10↑)∘< d)≡({10↑<ω} d); (¯10↑> d)≡({¯10↑>ω} d); ((5↑)∘⍋ z)≡({5↑⍋ω} z); ((¯5↑)∘⍋ z)≡({¯5↑⍋ω} z); ((10↑)∘⍋ v)≡({10↑⍋ω} v); (¯10↑< v)≡({¯10↑<ω} v); (↑> v)≡({↑>ω} v); ((3⌷)∘⍒ v)≡({3⌷⍒ω} v); (⍋⍋ v)≡({⍋ω}⍋v); (⍋⍒ v)≡({⍋ω}⍒v); ((≢⊢)⌸ k)≡({≢ω}⌸ k); k (+/⊢)⌸ v; (k (⌈⌿⊢)⌸ v)≡(k {⌈⌿ω}⌸ v); (k (⌊/⊢)⌸ b)≡(k {⌊/ω}⌸ b); (k (+/⊢)⌸ k)≡(k {+/ω}⌸ k)]
+[((10↑)∘⍋ k)≡({10↑⍋ω} k); ((¯10↑)∘⍒ k)≡({¯10↑⍒ω} k); ((10↑)∘< d)≡({10↑<ω} d); (¯10↑> d)≡({¯10↑>ω} d); ((5↑)∘⍋ z)≡({5↑⍋ω} z); ((¯5↑)∘⍋ z)≡({¯5↑⍋ω} z); ((10↑)∘⍋ v)≡({10↑⍋ω} v); (¯10↑< v)≡({¯10↑<ω} v); (↑> v)≡({↑>ω} v); ((3⌷)∘⍒ v)≡({3⌷⍒ω} v); (⍋⍋ v)≡({⍋ω}⍋v); (⍋⍒ v)≡({⍋ω}⍒v); (≢ᵘ⌸ k)≡({≢ω}⌸ k); k +/ᵘ⌸ v; (k ⌈⌿ᵘ⌸ v)≡(k {⌈⌿ω}⌸ v); (k ⌊/ᵘ⌸ b)≡(k {⌊/ω}⌸ b); (k +/ᵘ⌸ k)≡(k {+/ω}⌸ k)]
 ⍝ =>
 •prefs ["seed":0] ◇ v←¿1000ρ0 ◇ k←¿1000ρ7
 [$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;$t;k {+/ω}⌸ v;$t;$t;$t]
@@ -5696,11 +5705,11 @@ v←¿1000ρ0 ◇ k←¿1000ρ7 ◇ b←0=¿1000ρ3 ◇ d←ι¯1000 ◇ z←v �
 
 ⍝ key-count-route — Counts under Key run as group counts
 ⍝⍝⍝ route group counts
-(≢⊢)⌸ 2 0 2 1 2   ⍝ [3 1 1]ₓ
+≢ᵘ⌸ 2 0 2 1 2   ⍝ [3 1 1]ₓ
 
 ⍝ key-fold-route — A fold under Key runs as group folds
 ⍝⍝⍝ route group folds
-2 0 2 1 2 (+/⊢)⌸ 1 2 3 4 5   ⍝ 9 2 4
+2 0 2 1 2 +/ᵘ⌸ 1 2 3 4 5   ⍝ 9 2 4
 
 ⍝ expansion-routes — The determinant and permanent of a square matrix run as their own routes
 ⍝⍝⍝ route determinant
@@ -5873,7 +5882,7 @@ x←¿160000ρ0 ◇ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ◇ [4↑x⌊0ₓ ◇ 4↑x
 [0 ¯∞ 0 0◇∞ 0 0 0◇1 ¯∞ 0 0◇∞ 1 1 1]
 
 ⍝ max-min-nan — Beside NaN, ⌈ and ⌊ give NaN or the other argument, which can vary by platform. A fold, scan, window, product, Key fold or repeated write gives NaN or the greatest or least of the items that aren't NaN, and never another number. `ok` takes a result and that result with each NaN left out. The items cover dyadic calls in either order, short and long folds and scans, a NaN at each place in a scan's group of four among rising items, columns, Key, seeded folds and scans, windows, rows, products, exact and mixed numbers, a place written more than once, and the long fold split into pieces that once gave 671743.5
-ok←{∧/,(α≠α)∨α=ω} ◇ m←64 64ρ0.5+ι4096 ◇ mx←m ◇ mn←m ◇ m₃ ₅←$n ◇ mx₃ ₅←¯∞ ◇ mn₃ ₅←∞ ◇ q←1000 4ρ0.5+ι4000 ◇ qx←q ◇ q₇ ₂←$n ◇ qx₇ ₂←¯∞ ◇ p←100 20ρ0.5+ι2000 ◇ px←p ◇ p₃ ₄←$n ◇ px₃ ₄←¯∞ ◇ w←0.5+ι200 ◇ wx←w ◇ w₁₀₀←$n ◇ wx₁₀₀←¯∞ ◇ g←0.5+ι64 ◇ gx←g ◇ g.[[9 14 19 24]]←$n ◇ gx.[[9 14 19 24]]←¯∞ ◇ s←0.5+ι1000000 ◇ s₉₀₀₀₀₀←$n ◇ s₉₀₀₀₀₁←1e9 ◇ h←3ρ0 ◇ h.[[0 0 0]]⌈←5 $n 3 ◇ x←1.5 4.5 $n 2.5 ◇ x.[[0]]←7ₓ ◇ [($n⌈3) ok 3;(3⌈$n) ok 3;($n⌊3) ok 3;(3⌊$n) ok 3;(⌈/1 $n 3) ok 3;(⌊/1 $n 3) ok 1;(⌈/$n,ι15) ok 14;(⌈/(ι15),$n) ok 14;(⌈/$n $n) ok ¯∞;(⌈\$n 1 2) ok ¯∞ 1 2;(⌊\1 $n 3) ok 1 1 1;(⌈\$n,ι63) ok ¯∞,ι63;(⌈\g) ok ⌈\gx;(⌊\-g) ok ⌊\-gx;(⌈⌿[1 $n◇3 4]) ok 3 4;(⌈⌿m) ok ⌈⌿mx;(0 1 0 1 (⌈/⊢)⌸ 1 $n 3 4) ok 3 4;(0 1 1 1 (⌈/⊢)⌸ 1 4 $n 2) ok 1 4;(0⌈/$n 1 2) ok 2;(0⌈/$n,ι20) ok 19;(⌈/3↕1 $n 3 4 5) ok 3 4 5;(⌈/50↕w) ok ⌈/50↕wx;(⌈/⍤1 [1 $n 3◇4 5 6]) ok 3 6;(⌈/⍤1 q) ok ⌈/⍤1 qx;(⌈/⍤1 p) ok ⌈/⍤1 px;(⌈/⍤1 m) ok ⌈/⍤1 mx;([1 $n◇3 4]⌈.+2 2ρ0) ok [1 1◇4 4];(m⌈.+m) ok mx⌈.+mx;(m⌊.+m) ok mn⌊.+mn;(1ₓ⌈$n) ok 1;($n⌊1ₓ) ok 1;(⌈/1ₓ $n 2.5) ok 2.5;(⌈/s) ok 1e9;(⌊/s) ok 0.5;($n⌈/ι40) ok 39;($n⌈\ι300) ok ι300;h ok 5 0 0;(⌈\x) ok 7 7 7 7;(⌈/x) ok 7]
+ok←{∧/,(α≠α)∨α=ω} ◇ m←64 64ρ0.5+ι4096 ◇ mx←m ◇ mn←m ◇ m₃ ₅←$n ◇ mx₃ ₅←¯∞ ◇ mn₃ ₅←∞ ◇ q←1000 4ρ0.5+ι4000 ◇ qx←q ◇ q₇ ₂←$n ◇ qx₇ ₂←¯∞ ◇ p←100 20ρ0.5+ι2000 ◇ px←p ◇ p₃ ₄←$n ◇ px₃ ₄←¯∞ ◇ w←0.5+ι200 ◇ wx←w ◇ w₁₀₀←$n ◇ wx₁₀₀←¯∞ ◇ g←0.5+ι64 ◇ gx←g ◇ g.[[9 14 19 24]]←$n ◇ gx.[[9 14 19 24]]←¯∞ ◇ s←0.5+ι1000000 ◇ s₉₀₀₀₀₀←$n ◇ s₉₀₀₀₀₁←1e9 ◇ h←3ρ0 ◇ h.[[0 0 0]]⌈←5 $n 3 ◇ x←1.5 4.5 $n 2.5 ◇ x.[[0]]←7ₓ ◇ [($n⌈3) ok 3;(3⌈$n) ok 3;($n⌊3) ok 3;(3⌊$n) ok 3;(⌈/1 $n 3) ok 3;(⌊/1 $n 3) ok 1;(⌈/$n,ι15) ok 14;(⌈/(ι15),$n) ok 14;(⌈/$n $n) ok ¯∞;(⌈\$n 1 2) ok ¯∞ 1 2;(⌊\1 $n 3) ok 1 1 1;(⌈\$n,ι63) ok ¯∞,ι63;(⌈\g) ok ⌈\gx;(⌊\-g) ok ⌊\-gx;(⌈⌿[1 $n◇3 4]) ok 3 4;(⌈⌿m) ok ⌈⌿mx;(0 1 0 1 ⌈/ᵘ⌸ 1 $n 3 4) ok 3 4;(0 1 1 1 ⌈/ᵘ⌸ 1 4 $n 2) ok 1 4;(0⌈/$n 1 2) ok 2;(0⌈/$n,ι20) ok 19;(⌈/3↕1 $n 3 4 5) ok 3 4 5;(⌈/50↕w) ok ⌈/50↕wx;(⌈/⍤1 [1 $n 3◇4 5 6]) ok 3 6;(⌈/⍤1 q) ok ⌈/⍤1 qx;(⌈/⍤1 p) ok ⌈/⍤1 px;(⌈/⍤1 m) ok ⌈/⍤1 mx;([1 $n◇3 4]⌈.+2 2ρ0) ok [1 1◇4 4];(m⌈.+m) ok mx⌈.+mx;(m⌊.+m) ok mn⌊.+mn;(1ₓ⌈$n) ok 1;($n⌊1ₓ) ok 1;(⌈/1ₓ $n 2.5) ok 2.5;(⌈/s) ok 1e9;(⌊/s) ok 0.5;($n⌈/ι40) ok 39;($n⌈\ι300) ok ι300;h ok 5 0 0;(⌈\x) ok 7 7 7 7;(⌈/x) ok 7]
 $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ gather-partial-view — A gather that reads a pending array, and a view of part of it that destructuring gives, computes the array before the gather takes its work: within one root's group, and at a barrier whose roots are the array and a reader of the view
@@ -8229,7 +8238,7 @@ k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ ◇ v←10ₓ 20ₓ 30ₓ 40ₓ 50ₓ ◇ f←{α+�
 ⍝⍝⍝ allows declined "group folds: arguments that don't suit it": rational groups keep arbitrary-precision arithmetic
 ⍝⍝⍝ allows itemwise "key groups": each exact group runs one fold
 ⍝⍝⍝ allows itemwise "item lanes": rational folds use exact arithmetic
-[1 1 2]((+/⊢)⌸)1ᵣ2 1ᵣ3 1ᵣ4   ⍝ 5ᵣ6 1ᵣ4
+[1 1 2](+/ᵘ⌸)1ᵣ2 1ᵣ3 1ᵣ4   ⍝ 5ᵣ6 1ᵣ4
 
 ⍝ — Empty Key retains the operand's result-cell shape
 {ι3ₓ}⌸⍬   ⍝ (0 3ρ0)ₓ
@@ -8238,13 +8247,13 @@ k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ ◇ v←10ₓ 20ₓ 30ₓ 40ₓ 50ₓ ◇ f←{α+�
 {÷0}⌸⍬   ⍝ ⍬
 
 ⍝ — Predicate power tests the next iterate after each step
-1 +⍣{α>4} 0   ⍝ 5
+1 +⍣{α>4}ˢ 0   ⍝ 5
 
 ⍝ — Power accepts a singleton-vector stopping result
-(+↢1)⍣{,α=3}0   ⍝ 3
+(+↢1)⍣{,α=3}ˢ0   ⍝ 3
 
 ⍝ — A stopping result may have any rank but must contain one Boolean
-(+↢1)⍣{1 1ρα=3}0   ⍝ 3
+(+↢1)⍣{1 1ρα=3}ˢ0   ⍝ 3
 
 ⍝ —
 2↣×⍣0⁝3   ⍝ 3
@@ -8261,11 +8270,11 @@ k←2ₓ 1ₓ 2ₓ 3ₓ 1ₓ ◇ v←10ₓ 20ₓ 30ₓ 40ₓ 50ₓ ◇ f←{α+�
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-(+↢1)⍣{1 1}0
+(+↢1)⍣{1 1}ˢ0
 ⍝ error: LENGTH ERROR
 
 ⍝ —
-(+↢1)⍣{⍬}0
+(+↢1)⍣{⍬}ˢ0
 ⍝ error: LENGTH ERROR
 
 ⍝ — Empty Key calls the operand with an empty group retaining the value-cell shape
@@ -9424,8 +9433,11 @@ offset←{+/⍶+ω} ◇ (1 2 offset)3   ⍝ 9
 ⍝ —
 1E¯2+2e¯2   ⍝ 0.03
 
-⍝ — First retrieves the function that a unit made with ᵘ holds
-f←↑-ᵘ ◇ 2 f 3   ⍝ ¯1.0
+⍝ — Unary calls its function monadically with one argument or two, as f⊢ does
+[-ᵘ3;10-ᵘ3;10(-⊢)3]   ⍝ ¯3 ¯3 ¯3
+
+⍝ — First retrieves the function that a unit made with ˢ holds
+f←↑-ˢ ◇ 2 f 3   ⍝ ¯1.0
 
 ⍝ — A parenthesis inside a comment does not affect grouping
 (2×3) + 4 ⍝ comment )

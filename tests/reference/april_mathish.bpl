@@ -15,7 +15,7 @@
 3.8j7.6∨5.2j6.8   ⍝ 0.2
 
 ⍝ april:1754 — remove April numeric separators
-⌊1000000000×2○⍣=1   ⍝ 739085133ₓ
+⌊1000000000×2○⍣=ˢ1   ⍝ 739085133ₓ
 
 ⍝ april/libraries/dfns/power/demo.lisp:21 — Upstream numerical-inverse library setup; its CT=1E-14 is the fixed language tolerance
 [invr:]←•load "lib/power.bpl"

@@ -54,6 +54,8 @@ n←⊽⁻+÷ ◇ n 1.5              ⍝ 1.416666667
 
 `0.5×⊢+2÷⊢` gives the same results, but its two `⊢`s hide the formula. When no clear tacit form exists, write a dfn, as in `{0.5×ω+2÷ω}`.
 
+[Unary](glyphs/superscript-u.qmd) `ᵘ` calls a function with its right argument alone. Both `fᵘ Y` and `X fᵘ Y` mean `f Y`, as the two-function train `f⊢` does. Use `+/ᵘ⌸` to sum each Key group without using its key.
+
 ## Atop and Over
 
 The two-function train `⌊÷` divides, then rounds down:

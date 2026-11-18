@@ -40,7 +40,7 @@ impl Session {
             let prefix = self.members_with(&out);
             let subject = prefix.len().checked_sub(1).and_then(|mut start| {
                 if matches!(prefix[start].kind, NodeKind::Assign) { return None; }
-                while start > 0 && self.static_category(&prefix[start]) == Category::Operator && crate::syntax::touching(&prefix[start - 1], &prefix[start]) {
+                while start > 0 && self.static_category(&prefix[start]).valence() == Some(false) && crate::syntax::touching(&prefix[start - 1], &prefix[start]) {
                     start -= 1;
                 }
                 self.trailing_operand(&prefix[start..], prefix.len() - start).ok().filter(|(_, c)| matches!(c, Category::Value | Category::Function))
@@ -173,7 +173,7 @@ impl Session {
             while i + 1 < out.len() {
                 let NodeKind::Joiner(joiner) = out[i].kind else { i += 1; continue; };
                 let mut start = i - 1;
-                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_)) | NodeKind::Script(..))
+                while start > 0 && self.static_category(&out[start]).is_script()
                     && touching(&out[start - 1], &out[start]) { start -= 1; }
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
@@ -234,7 +234,7 @@ impl Session {
 
 // Only the binder has unfinished trains and bound left arguments. Names and groups contain completed values. `Callable` is an array that holds a function, which binds by the item to its right (`Category::before`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Category { NoResult, Value, Function, Operator, DyadicOperator, Left, Train, Absent, Callable }
+pub(super) enum Category { NoResult, Value, Function, Operator, DyadicOperator, ValueScript, OperandScript, Left, Train, Absent, Callable }
 #[derive(Clone, Debug)]
 pub(super) enum Term {
     Binding(Binding),
@@ -362,7 +362,7 @@ fn split_call(left: Entity, source: &Arc<Source>) -> Result<(Option<Value>, Func
     Ok(match left { Entity { term: Term::Left(x, f), .. } => (Some(x), f), left => (None, left.function(source)?) })
 }
 
-/// What the operator `operator` gives on the operand `operand` (`Rule::Derive`): a derived function, a scalar that holds the function for `ᵘ`, or the call that a power, `ᵀ` or a number marker on an array stands for: of `*`, `⍉`, `⌊ₓ` or `•float`.
+/// What the operator `operator` gives on the operand `operand` (`Rule::Derive`): a derived function, a scalar that holds the function for `ˢ`, or the call that a power, `ᵀ` or a number marker on an array stands for: of `*`, `⍉`, `⌊ₓ` or `•float`.
 pub(super) enum Derived { Term(Binding), Call(Function, Option<Value>, Value) }
 
 /// `operand` given to `operator` at `span`, as `Derived` describes.
@@ -388,11 +388,11 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
     }
     if let self::OperatorNode::Primitive(OperatorKind::Super(s)) = &operator {
         match (*s, operand) {
-            // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
+            // `ˢ` makes a scalar that holds a function. `⊂` encloses a subject.
             (Superscript::Unit, Operand::Function(f)) => {
                 return Ok(Derived::Term(Binding::Value(crate::Value::Function(f).enclose().described("invalid scalar").at(span)?)));
             }
-            (Superscript::Unit, _) => return Err(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
+            (Superscript::Unit, _) => return Err(Error::domain("ˢ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
             (Superscript::Transpose, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Transpose), None, a)),
             (Superscript::Mark(mark), Operand::Value(a)) => return Ok(Derived::Term(Binding::Value(super::operators::converted_by(&a, mark, span)?))),
             (_, operand) => return Ok(Derived::Term(operator.derive(operand, span)?)),
@@ -460,11 +460,24 @@ impl Category {
             Binding::Function(_) => Self::Function, Binding::Operator(op) => Self::of_operator(op)
         }
     }
-    pub(super) fn of_operator(op: &self::OperatorNode) -> Self { if op.is_dyadic() { Self::DyadicOperator } else { Self::Operator } }
+    pub(super) fn of_operator(op: &self::OperatorNode) -> Self {
+        match op {
+            self::OperatorNode::Primitive(OperatorKind::Super(Superscript::Unit)) => Self::ValueScript,
+            self::OperatorNode::Primitive(OperatorKind::Super(Superscript::Transpose | Superscript::Mark(_))) | self::OperatorNode::Script(..) => Self::OperandScript,
+            op => if op.is_dyadic() { Self::DyadicOperator } else { Self::Operator },
+        }
+    }
     /// A name's category from its binding's, as `Bindings::category` gives it: an unbound name counts as an array, and so does an absent `α`.
     pub(super) fn named(found: Option<Self>) -> Self { match found { None | Some(Self::Absent) => Self::Value, Some(category) => category } }
     /// Whether this is an operator's category, as `Some` of whether the operator is dyadic.
-    pub(super) fn valence(self) -> Option<bool> { match self { Self::DyadicOperator => Some(true), Self::Operator => Some(false), _ => None } }
+    pub(super) fn valence(self) -> Option<bool> {
+        match self { Self::DyadicOperator => Some(true), Self::Operator | Self::ValueScript | Self::OperandScript => Some(false), _ => None }
+    }
+    pub(super) fn is_script(self) -> bool { matches!(self, Self::ValueScript | Self::OperandScript) }
+    pub(super) fn tight_on(self, operand: Self) -> bool { self == Self::ValueScript || self == Self::OperandScript && matches!(operand, Self::Value | Self::Callable) }
+    pub(super) fn derived(self, operand: Self) -> Self {
+        match self { Self::ValueScript => Self::Value, Self::OperandScript if matches!(operand, Self::Value | Self::Callable) => Self::Value, _ => Self::Function }
+    }
     /// The category of an array: `Callable` where it holds a function as an item, and otherwise `Value`.
     #[inline]
     pub(super) fn array(a: &Value) -> Self { if a.holds_functions() { Self::Callable } else { Self::Value } }
@@ -493,17 +506,18 @@ impl Rule {
             (Function | Train | Left, Absent) => Self::Call,
             (Absent, _) | (_, Absent) => Self::Absent,
             (Value, Value) => Self::Adjacent,
-            (Value | Function | Train, Operator) => Self::Derive,
+            (Value | Function | Train, operator) if operator.valence() == Some(false) => Self::Derive,
             (DyadicOperator, Value | Function | Train) => Self::BindRight,
             (Value, Function) => Self::Attach,
             (Function | Train | Left, Value) => Self::Call,
             (Value | Function | Train | Left, Function | Train | Left) => Self::Train,
-            (Operator, _) => Self::Wait(0),
+            (operator, _) if operator.valence() == Some(false) => Self::Wait(0),
             _ => Self::Invalid,
         }
     }
-    fn strength(self) -> u8 {
+    fn strength(self, left: Category, right: Category) -> u8 {
         match self {
+            Self::Derive if right.tight_on(left) => 7,
             Self::BindRight => 6, Self::Derive => 5, Self::Attach | Self::Drop | Self::DropRight => 4, Self::Adjacent => 3, Self::Call => 2, Self::Train => 1,
             Self::Wait(n) => n, Self::Missing | Self::Absent | Self::Invalid => 0
         }
@@ -550,19 +564,11 @@ impl Binder {
         match Rule::get(top.role, below.role) {
             // An operator still awaiting its operand cannot reduce with its right neighbour.
             Rule::Wait(_) => true,
-            // Postfix operators bind an array before its neighbours use it as an argument or operand.
-            _ if matches!(
-                &left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Script(..)))
-            ) =>
-            { true }
-            _ if top.role == Category::Value && matches!(
-                &below.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Script(..)))
-            ) =>
-            { false }
+            _ if left.category.is_script() => true,
             old => match Rule::get(left.category.before(Some(top.role)), top.role) {
                 // Adjacent arrays group from the right: `v w i` is `v (w i)`.
                 Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
-                new => new.strength() >= old.strength(),
+                new => new.strength(left.category.before(Some(top.role)), top.role) >= old.strength(top.role, below.role),
             },
         }
     }
@@ -640,7 +646,7 @@ impl Binder {
                 }
                 // A bound operator still needs its left operand before rebinding on the right.
                 let m = binder.stack.len();
-                if matches!(binder.stack[m - 1].category, Category::Operator) || Self::shifts(&binder.stack[m - 1], &binder.stack[..m - 1]) { break; }
+                if binder.stack[m - 1].category.valence() == Some(false) || Self::shifts(&binder.stack[m - 1], &binder.stack[..m - 1]) { break; }
                 pending.push(binder.stack.pop().unwrap());
                 crate::cancel::check().at(&nodes[0].span)?;
             }

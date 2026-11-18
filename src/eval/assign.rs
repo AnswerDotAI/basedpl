@@ -19,7 +19,7 @@ impl Session {
         match &node.kind {
             NodeKind::Name(name, _) => {
                 (self.bindings.current().is_some() && name.implicit().is_none())
-                    || !matches!(self.bindings.category(*name), Some(Category::Function | Category::Operator | Category::DyadicOperator))
+                    || self.bindings.category(*name).is_none_or(|c| c != Category::Function && c.valence().is_none())
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
             // Inside brackets every name is a target, whatever it holds. A pattern's cells each have a key, which `targets` checks.
@@ -42,7 +42,7 @@ impl Session {
             NodeKind::Embedded(crate::Value::Operator(op)) => Category::of_operator(&op.0),
             NodeKind::Function(_) | NodeKind::System(_) => Function,
             NodeKind::Operator(op) => Category::of_operator(&self::OperatorNode::Primitive(*op)),
-            NodeKind::Script(..) => Operator,
+            NodeKind::Script(..) => OperandScript,
             NodeKind::Name(name, _) => self.path_category(*name, &[]),
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
@@ -58,6 +58,10 @@ impl Session {
     }
 
     pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize) -> Result<(usize, Category), Error> {
+        self.operand_before(nodes, end, None)
+    }
+
+    fn operand_before(&self, nodes: &[Node], end: usize, outer: Option<Category>) -> Result<(usize, Category), Error> {
         use Category::*;
         if end == 0 { return Err(Error::new(ErrorKind::Syntax, "missing assignment operand").at(&nodes[0].span)); }
         let mut start = end - 1;
@@ -70,21 +74,17 @@ impl Session {
             },
             _ => self.static_category(&nodes[start]),
         };
-        if matches!(category, Operator) && start > 0 {
-            let superscript = match &nodes[start].kind { NodeKind::Operator(OperatorKind::Super(s)) => Some(*s), _ => None };
-            let (operand, operand_category) = self.trailing_operand(nodes, start)?;
+        if category.valence() == Some(false) && start > 0 {
+            let (operand, operand_category) = self.operand_before(nodes, start, Some(category))?;
             start = operand;
-            // `ᵘ` always gives an array, and the other superscripts give one on an array.
-            category = match superscript {
-                Some(Superscript::Unit) => Value,
-                _ if matches!(operand_category, Value) && (superscript.is_some() || matches!(nodes[end - 1].kind, NodeKind::Script(..))) => Value, _ => Function
-            };
+            category = category.derived(operand_category);
         }
-        if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner)) {
+        let tight = outer.is_some_and(|operator| operator.tight_on(category));
+        if !tight && start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner)) {
             // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽@ 1⌷)`.
             start -= 1;
             category = Function;
-        } else if start > 0 && matches!(Rule::get(self.static_category(&nodes[start - 1]), category), Rule::BindRight) {
+        } else if !tight && start > 0 && matches!(Rule::get(self.static_category(&nodes[start - 1]), category), Rule::BindRight) {
             if start == 1 {
                 start = 0;
                 category = Operator;

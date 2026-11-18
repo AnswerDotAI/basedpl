@@ -457,10 +457,10 @@ mat←2 3ρ"flyshyfly" ◇ [∪ "ab" "ba" "ab" 1 1 2;∪ mat]
 22 "ab" "fg" ∩ 'a' "ab" 22   ⍝ 22 "ab"
 
 ⍝ aplcart/table.tsv:137 — Power: iterating X∘f on Y until condition (f Y) g Y is true
-1 +↢÷⍣= 1   ⍝ 1.618033988749897
+1 +↢÷⍣=ˢ 1   ⍝ 1.618033988749897
 
 ⍝ aplcart/table.tsv:138 — Power: iterating f on Y until condition (f Y) g Y is true
-1↣+∘÷⍣= 1   ⍝ 1.618033988749897
+1↣+∘÷⍣=ˢ 1   ⍝ 1.618033988749897
 
 ⍝ aplcart/table.tsv:139 — Ascending grade: Indices to reorder Y into ascending order
 Y←3 1 2 1 ◇ ⍋Y   ⍝ [1 3 2 0]ₓ
@@ -1083,12 +1083,12 @@ Y←2 3ρι6ₓ ◇ 0↣⌷Y   ⍝ [0 1 2]ₓ
 X←2
 f←⌈
 Y←¯1 0 3
-X f⍣≡ Y   ⍝ 2 2 3
+X f⍣∞ Y   ⍝ 2 2 3
 
 ⍝ aplcart/table.tsv:623 — Limit: apply f until stable
 f←⌊
 Y←¯1.2 0 3.9
-f⍣≡Y   ⍝ [¯2 0 3]ₓ
+f⍣∞Y   ⍝ [¯2 0 3]ₓ
 
 ⍝ aplcart/table.tsv:624 — Cumulative sum
 [+\ 1 1 1 1 1;+\ 2 4 6 8 10]   ⍝ [1 2 3 4 5;2 6 12 20 30]
@@ -1252,10 +1252,10 @@ Y←ι5ₓ
 Iv (1+⍸)↣⊆ Y   ⍝ [0 1;2 3 4]ₓ
 
 ⍝ aplcart/table.tsv:688 — Limit: apply inverse of X∘f until stable; output expression returned directly
-f←+↢÷ ◇ 1 f⁻⍣≡ 0   ⍝ ¯0.618033988749894
+f←+↢÷ ◇ 1(f⁻⍣∞)0   ⍝ ¯0.618033988749894
 
 ⍝ aplcart/table.tsv:689 — Limit: apply inverse of f until stable; output expression returned directly
-f←1↣+∘÷ ◇ f⁻⍣≡0   ⍝ ¯0.618033988749894
+f←1↣+∘÷ ◇ f⁻⍣∞⁝0   ⍝ ¯0.618033988749894
 
 ⍝ aplcart/table.tsv:690 — Permutation vector that sorts like Y
 Y←3 1 2 1 ◇ ⍋∘⍋Y   ⍝ [3 0 2 1]ₓ
@@ -2449,7 +2449,7 @@ M ⊣+(0j1×⊢) N   ⍝ 1j4 2j5 3j6
 ⍝ aplcart/table.tsv:1015 — Join magnitude M and radians N to form complex; optional {X} instantiated as dyadic use
 M←1 2 3
 N←0 0.5 1
-M ⊣×(○⊢) N
+M ⊣×○ᵘ N
 ⍝ =>
 1 1.7551651237807455j0.958851077208406 1.6209069176044193j2.5244129544236893
 
@@ -2991,7 +2991,7 @@ r←⊂∘¿⍨∘≢↣⌷Y
 Y≡[⍋r]⌷r   ⍝ $t
 
 ⍝ aplcart/table.tsv:1165 — Transitive closure
-Bm←[$f $t $f◇$f $f $t◇$t $f $f] ◇ ∨.∧⍨↣∨⍣≡Bm   ⍝ [$t $t $t◇$t $t $t◇$t $t $t]
+Bm←[$f $t $f◇$f $f $t◇$t $f $f] ◇ ∨.∧⍨↣∨⍣∞Bm   ⍝ [$t $t $t◇$t $t $t◇$t $t $t]
 
 ⍝ aplcart/table.tsv:1166 — Rounding to nearest even integer (favouring up)
 N←¯3 ¯2.5 0 1 2.5 3 ◇ ⌊⊢+(1≤2|⊢) N   ⍝ [¯2 ¯2 0 2 2 4]ₓ
@@ -3210,7 +3210,7 @@ N←2 0ρ0 ◇ +/÷(1⌈0⊥ρ) N   ⍝ 0 0
 ⍝ aplcart/table.tsv:1219 — Base-Is digital root
 Is←10
 J←123 999
-Is(+/⊥⁻)⍣≡J   ⍝ 6 9
+Is(+/⊥⁻)⍣∞J   ⍝ 6 9
 
 ⍝ aplcart/table.tsv:1220 — Weighted average of columns of Nm with weights Mv
 Mv←1 2
@@ -3974,7 +3974,7 @@ Mv *@0(⊢↢⊛⌹1,↢⍪⊣) Nv
 2 1.0986122886681098
 
 ⍝ aplcart/table.tsv:1433 — Enlist (∊Y) but keep leaf simple arrays intact
-{,/,¨⊆¨ω}⍣≡ [["aaa" "bbb"] [["ccc" "ccc" "ccc"] "ddd"] (⊂"eee")]
+{,/,¨⊆¨ω}⍣∞ [["aaa" "bbb"] [["ccc" "ccc" "ccc"] "ddd"] (⊂"eee")]
 "aaa" "bbb" "ccc" "ccc" "ccc" "ddd" "eee"
 
 ⍝ aplcart/table.tsv:1434 — Leftmost neighbouring elements (padding at edge)
@@ -4078,7 +4078,7 @@ Dv← "a+'hello'+b"  ◇ ≠\↣∨∘=↢'''↣#Dv   ⍝ "'hello'"
 ⍝ aplcart/table.tsv:1463 — Rectangular scale of complex N by complex factor Ms
 Ms←2j3
 N←1j2 ¯3j4
-Ms (∨⊣)+.×(⍉∘∨⊢) N   ⍝ 8 6
+Ms (∨⊣)+.×⍉∘∨ᵘ N   ⍝ 8 6
 
 ⍝ aplcart/table.tsv:1465 — Number of digit positions in integers in J
 J←0 1 9 10 ¯99 100 ◇ 0↣ 1+<+↢⌊10⊛↢|⊢+= J   ⍝ 1 2 2 3 2 4
@@ -4195,7 +4195,7 @@ Y← "aaabbc"  ◇ -(1⊥2(⊛×⊢)⊢↢≢⌸÷ₐ≢) Y   ⍝ 1.459147917027
 ⍝ aplcart/table.tsv:1492 — Null near-zero (within absolute distance Ms) real and imaginary parts in N
 Ms←0.01
 N←0.001j2 3j0.002 0.001j0.002
-Ms 0j1⊥(⊣(⊢×<↢|)(⌽∘∨⊢)) N   ⍝ 0j2 3 0
+Ms 0j1⊥(⊣(⊢×<↢|)⌽∘∨ᵘ) N   ⍝ 0j2 3 0
 
 ⍝ aplcart/table.tsv:1493 — Number of decimals of elements of Nv; Reviewed Execute example checked through the Rust reference worker
 Nv←1.2 1.23 1.234 ◇ ⌊(10⊛⊢÷⍨↢⍎"."~⍨⍕) Nv   ⍝ [1 2 3]ₓ
@@ -4319,7 +4319,7 @@ Js←284
 Is ∧/+=↢(+/∘∪ι↣∨)¨, Js   ⍝ $t
 
 ⍝ aplcart/table.tsv:1525 — Bubble sort; First-true masks use cumulative counts under basedpl left scan
-⌽@[({ω∧1=+\ω}∨1⌽{ω∧1=+\ω})$f,>/∘(2↣↕)]⍣≡ 3 1 4 1 5   ⍝ 1 1 3 4 5
+⌽@[({ω∧1=+\ω}∨1⌽{ω∧1=+\ω})$f,>/∘(2↣↕)]⍣∞⁝3 1 4 1 5   ⍝ 1 1 3 4 5
 
 ⍝ aplcart/table.tsv:1526 — Length of edges of pyramid with height and width Mv and length Ns
 Mv←3 4
@@ -4330,7 +4330,7 @@ Mv ⊣,⍥(2*↢÷⍨+.×⍨)⊢÷2⍨ Ns   ⍝ 5 3
 Dv← "  ab  c  "  ◇ ' '↣ 1↓,#⍨(1(⊢∨⌽)0,≠) Dv   ⍝ "ab c"
 
 ⍝ aplcart/table.tsv:1529 — Arithmetic-harmonic mean
-Nv←1 4 ◇ ↑((+⌿÷≢),≢÷1⊥÷)⍣≡ Nv   ⍝ 2
+Nv←1 4 ◇ ↑((+⌿÷≢),≢÷1⊥÷)⍣∞ Nv   ⍝ 2
 
 ⍝ aplcart/table.tsv:1530 — Add line numbers to table Xm; Format exact counts as ordinary numbers
 Ym←2 3ρι6ₓ ◇ 3⌽"]  [",0↣⍕ ⁰∘ι∘≢,0↣⍕ Ym
@@ -4408,7 +4408,7 @@ Mv(⊢×+.×)↢ ⊢÷2*↢÷⍨+.×⍨ Nv
 1.5 1.5 0
 
 ⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
-Nv←1 4 ◇ ↑((+⌿÷≢),×⌿*↢÷≢ₐ)⍣≡ Nv   ⍝ 2.2430285802876027
+Nv←1 4 ◇ ↑((+⌿÷≢),×⌿*↢÷≢ₐ)⍣∞ Nv   ⍝ 2.2430285802876027
 
 ⍝ aplcart/table.tsv:1551 — Product of polynomials with descending coefficients
 Mv←1 2
@@ -4416,7 +4416,7 @@ Nv←1 3 2
 Mv +⌿∘⊃(,\0×⊣)(1↓,)¨×↢⊂ Nv   ⍝ 1 5 8 4
 
 ⍝ aplcart/table.tsv:1552 — Geometric-harmonic mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
-Nv←1 4 ◇ ↑((×⌿*↢÷≢ₐ),≢÷1⊥÷)⍣≡ Nv   ⍝ 1.7833031799742458
+Nv←1 4 ◇ ↑((×⌿*↢÷≢ₐ),≢÷1⊥÷)⍣∞ Nv   ⍝ 1.7833031799742458
 
 ⍝ aplcart/table.tsv:1553 — Median of non-empty Nv
 Nv←7 1 4 2 ◇ 2÷⍨(1⊥⊢⌷⍨↢⊂⍋⌷⍨↢⊂↢(¯1+⌈)2÷⍨(0 1+≢)) Nv   ⍝ 3
@@ -5856,7 +5856,7 @@ $t $t $f $f $t $t $t $f
 ⍝ aplcart/table.tsv:2068 — Sum of digit columns with carry
 Is←10
 Jm←[9 9 9◇0 0 1]
-Is ⊣{⍬(⊢↓⍨0⍨=ρ)+⌿1 0⌽0,⍉[0 α]⊤ω}⍣≡(+⌿⊢) Jm
+Is ⊣{⍬(⊢↓⍨0⍨=ρ)+⌿1 0⌽0,⍉[0 α]⊤ω}⍣∞+⌿ᵘ Jm
 ⍝ =>
 1 0 0 0
 
@@ -5972,7 +5972,7 @@ Cm←["ab  "◇"cde "]
 •ucs 97 98 10 99 100 101
 
 ⍝ aplcart/table.tsv:2094 — Collatz sequence for positive integer Js
-{r←⍬ ◇ {2|ω?1+3×ω;ω÷2}⍣{1=r,←ω}ω ◇ r} 27
+{r←⍬ ◇ {2|ω?1+3×ω;ω÷2}⍣{1=r,←ω}ˢω ◇ r} 27
 27 82 41 124 62 31 94 47 142 71 214 107 322 161 484 242 121 364 182 91 274 137 412 206 103 310 155 466 233 700 350 175 526 263 790 395 1186 593 1780 890 445 1336 668 334 167 502 251 754 377 1132 566 283 850 425 1276 638 319 958 479 1438 719 2158 1079 3238 1619 4858 2429 7288 3644 1822 911 2734 1367 4102 2051 6154 3077 9232 4616 2308 1154 577 1732 866 433 1300 650 325 976 488 244 122 61 184 92 46 23 70 35 106 53 160 80 40 20 10 5 16 8 4 2 1
 
 ⍝ aplcart/table.tsv:2095 — Vector (Iv[1]ρ1),(Jv[1]ρ0),(Iv[2]ρ1),…
@@ -6775,7 +6775,7 @@ X(f{∞::α ⍹ ω ◇ α ⍶ ω}g)Y   ⍝ [2 'a']
 ⍝ aplcart/table.tsv:2299 — Stable bubble sort using custom comparison function f (true:left precedes right); First-true masks use cumulative counts under basedpl left scan
 f←<
 Y←3 1 4 2
-f{⌽@[1(⌽∨⊢)$f{ω∧1=+\ω}∘,(⍶/∘⌽2↕)]⍣≡ω}Y
+f{⌽@[1(⌽∨⊢)$f{ω∧1=+\ω}∘,(⍶/∘⌽2↕)]⍣∞ω}Y
 ⍝ =>
 1 2 3 4
 
@@ -7384,7 +7384,7 @@ Y←9 8
 name   ⍝ 2 2ρ⊂9 8
 
 ⍝ aplcart/table.tsv:2900 — Golden ratio (as a limit)
-+↢÷⍣=⍨1   ⍝ 1.618033988749897
++↢÷⍣=ˢ⍨1   ⍝ 1.618033988749897
 
 ⍝ aplcart/table.tsv:2901 — Fast: A nested vector comprising simple character vectors constructed from the rows of Dm (which must be of depth 1) with all blank spaces removed; assignment recipes also read the target, and definition recipes call the defined function/operator
 Dm←["abc"◇"   "◇"de "]  ◇ ~↢" "¨↓Dm   ⍝ "abc" "" "de"
@@ -7718,7 +7718,7 @@ Y←0 1 2 1 2
 X {ω∧1=+\ω}@[=⍨]⍷ Y   ⍝ $f $t $f $f $f
 
 ⍝ aplcart/tt.tsv:202 — Bubble sort; First-true masks use cumulative counts under basedpl left scan
-Nv←3 1 4 1 2 ◇ ⌽@[1(⌽∨⊢)$f{ω∧1=+\ω}∘,>/∘(2↣↕)]⍣≡Nv   ⍝ 1 1 2 3 4
+Nv←3 1 4 1 2 ◇ ⌽@[1(⌽∨⊢)$f{ω∧1=+\ω}∘,>/∘(2↣↕)]⍣∞Nv   ⍝ 1 1 2 3 4
 
 ⍝ aplcart/tt.tsv:209 — Catalogue of all pairs from ιMs and ιNs
 Ms←2
@@ -7864,7 +7864,7 @@ Ym←1+2 3ρι6ₓ ◇ ⊂₀Ym   ⍝ [1 4;2 5;3 6]
 Jv←12 3 456 ◇ 10⊥↢,10↣⊥⁻ Jv   ⍝ 12003456
 
 ⍝ aplcart/tt.tsv:516 — Enlist (∊Y) but keep leaf simple arrays intact
-Y←[1 2;[3 4;5 6]] ◇ {,/,¨⊆¨ω}⍣≡Y   ⍝ [1 2;3 4;5 6]
+Y←[1 2;[3 4;5 6]] ◇ {,/,¨⊆¨ω}⍣∞Y   ⍝ [1 2;3 4;5 6]
 
 ⍝ aplcart/tt.tsv:518 — Ensure minimum rank 1 (reshaping scalar into one-element vector)
 Y←7 ◇ 1↣#Y   ⍝ 1ρ7
@@ -8315,12 +8315,12 @@ Bv←$t $f $f $t $f $t ◇ ≢(⊢-⍨1↣↓∘(⊢,⊣))⍸ Bv   ⍝ [3 2 1]�
 X←10
 f←-
 Y←5
-X f⁻⍣≡ Y   ⍝ 5
+X f⁻⍣∞ Y   ⍝ 5
 
 ⍝ aplcart/tt.tsv:1116 — Limit: apply inverse of f until stable
 f←⌽
 Y←1 2 1
-f⁻⍣≡Y   ⍝ 1 2 1
+f⁻⍣∞Y   ⍝ 1 2 1
 
 ⍝ aplcart/tt.tsv:1119 — Locate all instances of maximum of N; Reuse concrete inputs from aplcart/table.tsv:744; execute this alternate recipe independently
 N←3 1 3 2 3 ◇ ⊢=⌈⌿ N   ⍝ $t $f $t $f $t
@@ -8753,7 +8753,7 @@ Is */ρ Ns   ⍝ 16
 Js←12 ◇ ⍸(1=⊢∨ι) Js   ⍝ [1 5 7 11]ₓ
 
 ⍝ aplcart/tt.tsv:1837 — Transitive closure; Reuse concrete inputs from aplcart/table.tsv:1165; execute this alternate recipe independently
-Bm←[$f $t $f◇$f $f $t◇$t $f $f] ◇ ∨.∧⍨∨⊢ ⍣≡Bm   ⍝ [$t $t $t◇$t $t $t◇$t $t $t]
+Bm←[$f $t $f◇$f $f $t◇$t $f $f] ◇ ∨.∧⍨∨⊢ ⍣∞Bm   ⍝ [$t $t $t◇$t $t $t◇$t $t $t]
 
 ⍝ aplcart/tt.tsv:1845 — Transpose matrix Ym on condition Bs; Reuse concrete inputs from aplcart/table.tsv:759; execute this alternate recipe independently
 Bs←$t
@@ -9656,7 +9656,7 @@ T←•csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 •json⁻ 1ₓ 2ₓ "many"   ⍝ "[1,2,""many""]"
 
 ⍝ aplcart/table.tsv:492 — Convert JSON to high rank APL array
-(⊃⍣≡•json)"[[[1,2],[3,4]],[[5,6],[7,8]]]"
+(⊃⍣∞•json)"[[[1,2],[3,4]],[[5,6],[7,8]]]"
 2 2 2ρ[1 2 3 4 5 6 7 8]ₓ
 
 ⍝ aplcart/table.tsv:1533 — Convert any rank APL array to JSON

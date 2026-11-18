@@ -8,7 +8,7 @@ The [keyboard map](keyboard.qmd) shows the Option and Option-Shift bindings, wit
 
 Hold Alt, which is Option on a Mac, and press the key in the Key column. The keys are for a US keyboard layout. `≤` is Alt-< and `≥` is Alt->, each with Shift held. When the column shows a second key, press it with or without Alt held. For example, `Alt-o c` means Alt-o, then `c`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. When an Alt key takes a second key, press Space or an unlisted key instead to type the Alt key's glyph. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
 
-Superscripts start with Alt-6. Type Alt-6, `-`, then Space for bare inverse `⁻`; Alt-6 then `-1` gives signed `⁻¹`. The second key is a digit, `-` then a digit, `t` for `ᵀ`, `u` for `ᵘ`, or `b` for `ᵇ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no entry in the Key column, such as `+`, is on an ordinary ASCII key. The arrow glyphs `←`, `↓`, `↑` and `↦` are on Alt-h, Alt-j, Alt-k and Alt-l. Alt-[ types nothing, because terminals send it as the start of a control sequence. Type `∆` with Alt-7, and `⍙` with Alt-Minus then `7`.
+Superscripts start with Alt-6. Type Alt-6, `-`, then Space for bare inverse `⁻`; Alt-6 then `-1` gives signed `⁻¹`. The second key is a digit, `-` then a digit, `t` for `ᵀ`, `u` for `ᵘ`, `s` for `ˢ`, or `b` for `ᵇ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no entry in the Key column, such as `+`, is on an ordinary ASCII key. The arrow glyphs `←`, `↓`, `↑` and `↦` are on Alt-h, Alt-j, Alt-k and Alt-l. Alt-[ types nothing, because terminals send it as the start of a control sequence. Type `∆` with Alt-7, and `⍙` with Alt-Minus then `7`.
 
 In the REPL, type a backtick followed by one of the names in these tables, then press Tab to enter the glyph, as [named entry](repl.qmd#named-entry) describes. In Python, each function's name has `_` in place of `-` and a trailing `_` on Python keywords, as in `index_of` and `and_`. Each operator is a property of a function, under the operator's name, as in `f.reduce`.
 
@@ -89,6 +89,7 @@ A monadic operator takes one operand, on its left, as in `+/`. The Monad and Dya
 | `⍀` [backslash-bar](glyphs/backslash-bar.qmd) | Alt-Minus Backslash | scan-first | | `f⍀`, along the first axis. Seed as `\`. Accumulates LTR as BQN |
 | `¨` [diaeresis](glyphs/diaeresis.qmd) | Alt-1 | each | | `f¨` |
 | `ᵇ` [superscript-b](glyphs/superscript-b.qmd) | Alt-6 b | bitwise | | `fᵇ` applies a Boolean function to integer bits |
+| `ᵘ` [superscript-u](glyphs/superscript-u.qmd) | Alt-6 u | unary | | `X fᵘ Y` is `f Y` |
 | `⁻` [superscript-minus](glyphs/superscript-minus.qmd) | Alt-_ | inverse | | `f⁻` undoes `f`. A superscript digit immediately after the minus instead makes a negative Rank |
 | `⍨` [tilde-diaeresis](glyphs/tilde-diaeresis.qmd) | Alt-1 Backtick | self | commute | `f⍨`. `a⍨` is a constant function |
 | `⊗` [circle-times](glyphs/circle-times.qmd) | Alt-o m | outer-product | | `g⊗`, as BQN's `⌜` |
@@ -109,7 +110,7 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | `⍠` [quad-colon](glyphs/quad-colon.qmd) | Alt-q ; | axis | | `f⍠A`, `f⍠g` apply `f` along named or numbered axes |
 | `⍥` [circle-diaeresis](glyphs/circle-diaeresis.qmd) | Alt-1 o | over | | `f⍥g` |
 | `.` [dot](glyphs/dot.qmd) | | determinant | inner-product | `f.g`. The monad is J's determinant form, `u .v`. Also array fields and indexing |
-| `⍣` [star-diaeresis](glyphs/star-diaeresis.qmd) | Alt-1 8 | power | | `f⍣n` iterates or inverts, `f⍣∞` finds a fixed point, `f⍣g` repeats until `g`, and `f⍣[g]` keeps the history until `g`. List counts give history, as J/BQN |
+| `⍣` [star-diaeresis](glyphs/star-diaeresis.qmd) | Alt-1 8 | power | | `f⍣n` iterates or inverts, `f⍣g` computes counts once, `f⍣∞` finds a fixed point; `f⍣gˢ` stops at `g`, `f⍣[g]` keeps every state until `g`. List counts give history, as J/BQN |
 | `⊘` [circle-slash](glyphs/circle-slash.qmd) | Alt-o / | valences | | `f⊘g` calls `f` with one argument and `g` with two, as BQN's `⊘` |
 | `⍚` [diamond-underbar](glyphs/diamond-underbar.qmd) | Alt-Minus Backtick | agenda | | `selector⍚cases` calls the function that the selector picks, as BQN's `◶`, or one for each cell |
 | `@` [at](glyphs/at.qmd) | | under | | `f@g`, `f@a`, `f@[p]` apply `f` under a selection, positions, mask or transform. As BQN's `⌾`, not Dyalog's `@` |
@@ -139,7 +140,7 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | `∞` [infinity](glyphs/infinity.qmd) | Alt-8 | | Real infinity |
 | `$t` `$f` `$n` [constants](system/constants.qmd) | | | True, false and NaN |
 | `$e` [caught error](system/constants.qmd) | | | The error that an error guard's handler caught |
-| `²` `⁻` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | | `x²` is `x*2`; on a function, `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. Bare `f⁻` is inverse; `mᵀ` is `⍉m`; `fᵘ` is a scalar holding `f` |
+| `²` `⁻` `ᵀ` `ˢ` [superscript](scripts.ipynb#superscripts) | Alt-6 | | `x²` is `x*2`; on a function, `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. Bare `f⁻` is inverse; `mᵀ` is `⍉m`; `fˢ` is a scalar holding `f` |
 | `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | | Array positions: `v₁` is `1⌷v`, `v₋₁` is the last major cell, `m₁ ₂` is `m.[1 2]`, and `v₁←5` assigns to that cell. Function axes: `+/₀` is `+/⍠0`, and `+/₁ ₂` is `+/⍠[1 2]` |
 
 [Numbers](numbers.qmd) covers numeric notation, such as `ₓ`, `r`, `j` and `e`.

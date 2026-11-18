@@ -2203,10 +2203,10 @@ fn←2+⍣3 ◇ fn5   ⍝ 11
 3×⍣(gg←3) 5   ⍝ 135
 
 ⍝ april:1750 —
-fn←2+⍣{10<α} ◇ fn2   ⍝ 12
+fn←2+⍣{10<α}ˢ ◇ fn2   ⍝ 12
 
 ⍝ april:1751 —
-fn←2+⍣{10<ω} ◇ fn2   ⍝ 14
+fn←2+⍣{10<ω}ˢ ◇ fn2   ⍝ 14
 
 ⍝ april:1752 —
 fn←2× ◇ fn⍣3⁝4   ⍝ 32
@@ -2215,10 +2215,10 @@ fn←2× ◇ fn⍣3⁝4   ⍝ 32
 ↓⍣2 [2 2]ρι4ₓ   ⍝ (⊂[[0 1] [2 3]])ₓ
 
 ⍝ april:1755 — remove April numeric separators
-⌊100000×{ω{2.0÷⍨ω+α÷ω}⍣≡ω}123456789   ⍝ 1111111106ₓ
+⌊100000×{ω{2.0÷⍨ω+α÷ω}⍣∞ω}123456789   ⍝ 1111111106ₓ
 
 ⍝ april:1756 — remove April numeric separators
-⌊10000×1+↢÷⍣=1.0   ⍝ 16180ₓ
+⌊10000×1+↢÷⍣=ˢ1.0   ⍝ 16180ₓ
 
 ⍝ april:1759 —
 20 20@2 7ι9   ⍝ 0 1 20 3 4 5 6 20 8
@@ -6075,7 +6075,7 @@ newl←•ucs 13
 ⍝ april/libraries/dfns/string/demo.lisp:206 —
 [ltov: vtol:]←•load "lib/string.bpl"
 [lvec:]←•load "tests/reference/support/april.bpl"
-⍸(•ucs 10)=vtol∘ltov⍣≡ lvec   ⍝ [14 27 37]ₓ
+⍸(•ucs 10)=vtol∘ltov⍣∞ lvec   ⍝ [14 27 37]ₓ
 
 ⍝ april/libraries/dfns/string/demo.lisp:207 —
 [ltov:]←•load "lib/string.bpl"

@@ -1017,6 +1017,7 @@ impl Value {
     }
 
     pub fn as_number(&self) -> Option<Number> { if !self.is_unit() { return None; } match self.at(0) { Value::Number(n) => Some(n), _ => None } }
+    pub(crate) fn callback(&self) -> Option<crate::Function> { if self.is_atom() || !self.is_unit() { return None; } match self.at(0) { Value::Function(f) => Some(f), _ => None } }
     /// The one number of this unit as an `f64`. `None` for any other value, a complex number, or an exact number outside the float range.
     pub fn as_real(&self) -> Option<f64> { self.as_number()?.to_float().ok() }
 

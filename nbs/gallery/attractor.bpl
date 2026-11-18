@@ -9,7 +9,7 @@ map←{[a b c d]←α ◇ [x y]←ω
    (1○b×x)+d×2○b×y]}
 start←{¯2+4×¿[2 ω]ρ0}
 spread←{xy←ω map⍣300 start 400 ◇ ≢∪⍉⌊20×≥xy÷≥|2↓ω}
-⎕←"params←",⍎⁻ params←{⌊0.5+100×¯2+4×¿4ρ0 ÷ 100}⍣{150≤spread α}⍬
+⎕←"params←",⍎⁻ params←{⌊0.5+100×¯2+4×¿4ρ0 ÷ 100}⍣{150≤spread α}ˢ⍬
 xy←params map⍣100 start 3000
 [lo hi]←[⌊/xy◇⌈/xy]
 scale←460÷⌈/hi-lo

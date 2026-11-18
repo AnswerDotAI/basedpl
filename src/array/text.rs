@@ -252,9 +252,9 @@ impl Value {
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
     }
 
-    /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
+    /// Source text for a scalar holding `content`: `ˢ` after a function, and `⊂` before anything else.
     fn enclosed_literal(content: &Value, el: Elide) -> String {
-        match content { Self::Function(f) => f.superscripted("ᵘ", el, &mut 1000), _ => format!("{}{}", el.notation.glyph("⊂"), content.item(el)) }
+        match content { Self::Function(f) => format!("{}ˢ", f.right_text(el, &mut 1000)), _ => format!("{}{}", el.notation.glyph("⊂"), content.item(el)) }
     }
 
     /// Whether text shows any of the value's axis names.

@@ -1149,6 +1149,11 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="superscript-u" value="ᵘ" description="ᵘ" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="system" value="•" description="•" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -1205,6 +1210,11 @@
     </context>
   </template>
   <template name="tricolon" value="⁝" description="⁝" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="unary" value="ᵘ" description="ᵘ" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

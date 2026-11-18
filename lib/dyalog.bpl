@@ -624,7 +624,7 @@ ary←{  ⍝ Radix representation, including recurring fractional digits.
 pack_4←{  ⍝ Quad-tree packing; α=0 expands, α>1 allows lossy packing.
   cmp←{
     uniq←∪,ω
-    rep←{ω{ω#α-¯1⌽~ω}~$t $t $f⍷ω<0ₓ}⍣≡
+    rep←{ω{ω#α-¯1⌽~ω}~$t $t $f⍷ω<0ₓ}⍣∞
     ρω {[uniq α ω]} rep α {
       ~$f∊,ω∊[↑,ω]?↑,ω;
       α≥≢∪,ω?maxx+/ ι≢uniq =⊗ ,ω;
@@ -1096,7 +1096,7 @@ eis←{{⊂1#ω}⍣ 1ₓ=≡,ω ω}⊘{eisα , eisω}  ⍝ Enclose if simple; wi
          ∇ show [[∆l L] Aa BbCc R ∆r]            ⍝ binds with token to the right?
      }                                           ⍝ :: ∇ stream → stream
 
-     show←⊣↢{⎕←sfmt lft⍣{eos≡↑α}ω}⍣opt⍨          ⍝ optional tracing, en passant.
+     show←⊣↢{⎕←sfmt lft⍣{eos≡↑α}ˢω}⍣opt⍨          ⍝ optional tracing, en passant.
 
      bkt←{                                       ⍝ bind of bracketed node [ ω ].
          [cat expr]←ω                            ⍝ category of bracketed expr.

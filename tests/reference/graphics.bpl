@@ -40,7 +40,7 @@ pic.children.attrs.r←30
 $t
 
 ⍝ mime-renderer — A renderer attached with •mime displays the current value
-total←{["text/html":"<b>",(⍕+/ω.items),"</b>"]}ᵘ •mime ["items":[1 2 3]]
+total←{["text/html":"<b>",(⍕+/ω.items),"</b>"]}ˢ •mime ["items":[1 2 3]]
 total.items₁←10
 "text/html"⊃•mime total   ⍝ "<b>14</b>"
 

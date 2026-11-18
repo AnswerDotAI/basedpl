@@ -3,12 +3,12 @@ use super::*;
 
 pub(super) fn power(operands: &[Operand; 2], left: Option<&Value>, right: impl Argument, span: &Span) -> Result<Bound, Error> {
     let [Operand::Function(f), operand] = operands else { unreachable!() };
-    // A one-item list holding a predicate keeps every state of the until form.
-    let listed = match operand {
-        Operand::Value(a) if a.shape() == [1] && matches!(a.at(0), Value::Function(_)) => Some(Operand::from_value(Binding::from_element(a.at(0)))), _ => None
+    let evaluated = match operand {
+        Operand::Function(g) => Some(Operand::Value(g.call_array(left, right.value(), span)?)),
+        Operand::Value(a) => a.callback().or_else(|| predicate(a)).map(Operand::Function),
     };
-    let history = listed.is_some();
-    let operand = listed.as_ref().unwrap_or(operand);
+    let history = matches!(operand, Operand::Value(a) if a.shape() == [1]);
+    let operand = evaluated.as_ref().unwrap_or(operand);
     // `∞` runs until the state stops changing: until a state matches the one before within the convergence tolerance of each float width, whatever the pref. An iteration that settles into a cycle between adjacent floats then stops.
     let converge = |step: &Function, value: &mut Value, span: &Span| -> Result<(), Error> {
         loop {

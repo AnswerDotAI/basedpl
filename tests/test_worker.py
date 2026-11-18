@@ -66,7 +66,7 @@ def test_worker_cancellation_and_reference_sessions():
     case = dict(code='a←3', expected_code='3')
     with Worker() as w:
         assert w.eval('keep←42')['value'] == 42
-        result = w.eval('(+⍣{0})1', timeout=.01)
+        result = w.eval('(+⍣({0}ˢ))1', timeout=.01)
         assert result['error']['kind'] == 'TIMEOUT'
         timer = threading.Timer(.05, w.interrupt)
         timer.start()

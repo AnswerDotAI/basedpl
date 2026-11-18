@@ -75,7 +75,7 @@ fn calls_with_array_arguments() {
 fn cancellation_preserves_session_and_unwinds_calls() {
     use std::time::Duration;
     let s = Session::new();
-    let r = s.eval_timeout("keep←42 ◇ ⎕←7 ◇ {∞::99 ◇ (+⍣{0})ω}0", Duration::from_millis(10));
+    let r = s.eval_timeout("keep←42 ◇ ⎕←7 ◇ {∞::99 ◇ (+⍣({0}ˢ))ω}0", Duration::from_millis(10));
     assert!(matches!(r.error.as_ref().unwrap().kind, Timeout));
     assert_eq!(r.output_text(), ["7"]);
     equiv_in(&s, "keep+1", "43");
@@ -119,7 +119,10 @@ fn numeric_constructors() {
 #[test]
 fn exact_results_and_readback() {
     for code in ["0.1|0.3", "3|6.000000000000001"] { assert!(run(code).unwrap().unwrap().same(&float(0.0)), "{code}"); }
-    for code in ["1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100"] {
+    for code in [
+        "1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100",
+        "(⊽∘≥)ˢ", "((⊽∘≥)⁻)ˢ", "((⊽∘≥)ₓ)ˢ", "((~∘⊢)ᵇ)ˢ",
+    ] {
         let a = run(code).unwrap().unwrap();
         assert!(run(&a.literal()).unwrap().unwrap().same(&a), "{code}");
     }

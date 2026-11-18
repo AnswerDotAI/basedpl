@@ -90,13 +90,14 @@ impl Operation {
         }
     }
 }
-/// A postfix monadic operator: inverse `⁻`, transpose `ᵀ`, function unit `ᵘ`, or a number marker such as `ₓ` or `ₚ`.
+/// A postfix monadic operator: inverse `⁻`, transpose `ᵀ`, function unit `ˢ`, or a number marker such as `ₓ` or `ₚ`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Superscript { Inverse, Transpose, Unit, Mark(crate::number::Mark) }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OperatorKind {
     Each,
     Bitwise,
+    Unary,
     Commute,
     Before,
     Rank,
@@ -115,7 +116,7 @@ pub(crate) enum OperatorKind {
     Agenda,
     Stencil,
     Fold(FoldKind),
-    /// A postfix mark: `⁻` inverts a function, `ᵀ` transposes an array, `ᵘ` makes a scalar that holds a function, and a number marker makes an array's numbers, or a function's results, exact integers or floats of a width (`Superscript::Mark`). Numeric scripts bind the same way (`syntax::ScriptKind`).
+    /// A postfix mark: `⁻` inverts a function, `ᵀ` transposes an array, `ˢ` makes a scalar that holds a function, and a number marker makes an array's numbers, or a function's results, exact integers or floats of a width (`Superscript::Mark`). Numeric scripts bind the same way (`syntax::ScriptKind`).
     Super(Superscript),
 }
 impl FoldKind {
@@ -148,10 +149,10 @@ pub(crate) struct OperatorInfo { pub glyph: &'static str, pub names: [&'static s
 impl OperatorInfo { pub(crate) fn dyadic(&self) -> bool { self.right.is_some() } }
 
 impl OperatorKind {
-    const ALL: [Self; 24] = {
+    const ALL: [Self; 25] = {
         use OperatorKind::*;
         [
-            Each, Bitwise, Commute, Before, Rank, Atop, Axis, Over, After, Product, Outer, Key, Power, Optimize, Valences, Under, Differentiate, Agenda,
+            Each, Bitwise, Unary, Commute, Before, Rank, Atop, Axis, Over, After, Product, Outer, Key, Power, Optimize, Valences, Under, Differentiate, Agenda,
             Stencil, Fold(FoldKind { scan: false, first: false }), Fold(FoldKind { scan: false, first: true }), Fold(FoldKind { scan: true, first: false }),
             Fold(FoldKind { scan: true, first: true }), Super(Superscript::Inverse),
         ]
@@ -161,6 +162,7 @@ impl OperatorKind {
         let (glyph, names, left, right) = match self {
             Each => ("¨", ["diaeresis", "each", ""], Function, None), Commute => ("⍨", ["tilde-diaeresis", "self", "commute"], Any, None),
             Bitwise => ("ᵇ", ["superscript-b", "bitwise", ""], Function, None), Before => ("↣", ["right-tail-arrow", "before", ""], Any, Some(Function)),
+            Unary => ("ᵘ", ["superscript-u", "unary", ""], Function, None),
             Rank => ("⍤", ["jot-diaeresis", "rank", ""], Function, Some(Any)), Atop => ("∘", ["jot", "atop", ""], Function, Some(Function)),
             Axis => ("⍠", ["quad-colon", "axis", ""], Function, Some(Any)), Over => ("⍥", ["circle-diaeresis", "over", ""], Function, Some(Function)),
             After => ("↢", ["left-tail-arrow", "after", ""], Function, Some(Any)),

@@ -94,7 +94,7 @@ fn boxed_display_and_function_trees() {
     let key = AplValue::Function(s.late_bound("1键").unwrap());
     assert_eq!(AplValue::from_parts([1], vec![key.clone()], key).unwrap().literal(), "[(1键)]");
     let power = AplValue::Function(s.late_bound("f⍣永").unwrap());
-    assert_eq!(AplValue::from_parts([], vec![power.clone()], power).unwrap().literal(), "(f⍣永)ᵘ");
+    assert_eq!(AplValue::from_parts([], vec![power.clone()], power).unwrap().literal(), "(f⍣永)ˢ");
     assert!(s.eval(r#"•prefs ["notation":"traditional"]"#).error.is_none());
     assert_eq!(s.eval("+/÷≢").output_text(), ["加總除數"]);
     s.eval(r#"•prefs ["trees":$t]"#);

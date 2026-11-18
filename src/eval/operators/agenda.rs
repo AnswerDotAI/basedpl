@@ -60,8 +60,7 @@ pub(super) fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value
     Ok(Bound::from(selection.write(right, &values, span)?))
 }
 
-/// The function of `[p]`, a one-item vector that holds a function.
-fn predicate(a: &Value) -> Option<Function> { if a.shape() != [1] { return None; } match a.at(0) { Value::Function(p) => Some(p), _ => None } }
+pub(super) fn predicate(a: &Value) -> Option<Function> { if a.shape() != [1] { return None; } match a.at(0) { Value::Function(p) => Some(p), _ => None } }
 
 /// `f@[p]`, where `p` gives the mask `selector`: `f` runs once on the cells whose mask isn't 0 (`fusion::truths`, `Cells::marked`), and its results go back in their places under assignment's rule. Every other cell keeps its value, as does one whose key the mask lacks. A unit mask marks the whole argument or none of it. Where a select can run `f` on every item, it does (`selected`), and `•explain` names the call with `text`.
 fn masked(f: &Function, selector: &Value, left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, span: &Span) -> Result<Value, Error> {

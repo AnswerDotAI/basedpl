@@ -51,7 +51,7 @@ cfract ← {  ⍝ Continued fraction approximation of real ω.
 ⍝ From http://dfns.dyalog.com/c_colsum.htm
 
 colsum ← {  ⍝ Sum of (default decimal) columns.
-  α←10ₓ ◇ α{{0ₓ=↑ω ↓ ω}+⌿1 0⌽0ₓ,⍉[0ₓ α]⊤ω}⍣≡+⌿ω  ⍝ repeat while overflow.
+  α←10ₓ ◇ α{{0ₓ=↑ω ↓ ω}+⌿1 0⌽0ₓ,⍉[0ₓ α]⊤ω}⍣∞+⌿ω  ⍝ repeat while overflow.
 }
 
 ⍝ From http://dfns.dyalog.com/c_efract.htm
@@ -412,7 +412,7 @@ xtimes ← { m←0  ⍝ Fast multi-digit product using FFT.
   iFFT      ← {ρω ÷⍨ , cube+xrootsρω floop cubeω}
   rconvolve ← {≤α+⍥ρω ↑ iFFT×/FFT¨αextendω}
   carry     ← {1↓+⌿1 0⌽0ₓ,⍉[0 10]ₓ⊤ω}
-  (+/∧\0ₓ=t)↓t←carry⍣≡0ₓ,⌊0.5+⊣/∨αrconvolveω
+  (+/∧\0ₓ=t)↓t←carry⍣∞⁝0ₓ,⌊0.5+⊣/∨αrconvolveω
 }
 
 convolve ← {+⌿ -ιρα ⌽ α×⊗ω,0ₓ×1↓α}

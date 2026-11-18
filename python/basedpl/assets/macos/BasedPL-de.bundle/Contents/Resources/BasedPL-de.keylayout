@@ -1593,6 +1593,7 @@
   </action>
   <action id="k1-m0">
    <when state="none" output="s"/>
+   <when state="superscript" output="ˢ"/>
    <when state="subscript" output="ₛ"/>
   </action>
   <action id="k4-m0">
@@ -2869,6 +2870,7 @@
   </action>
   <action id="k1-m4">
    <when state="none" output="⌈"/>
+   <when state="superscript" output="ˢ"/>
    <when state="subscript" output="ₛ"/>
   </action>
   <action id="k4-m4">
@@ -3754,6 +3756,7 @@
   </action>
   <action id="k1-m10">
    <when state="none" output="‚"/>
+   <when state="superscript" output="ˢ"/>
    <when state="subscript" output="ₛ"/>
   </action>
   <action id="k4-m10">

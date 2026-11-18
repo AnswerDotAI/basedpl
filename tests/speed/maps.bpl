@@ -167,7 +167,7 @@ hvw∂ thz
 
 ⍝ The gradient of a sum through a loop with a predicate, which halves `v` until every item is under 1e¯3: 10 steps, a number the data decide. `∂` gives two loop nodes: the forward loop, and one that reruns it from its first carry, keeping the carries, then folds the body's VJP back over them.
 ⍝ Expected: 26 copies: the rerun's 10 steps at about 1.5 copies each (each halving writes `v` once, and the predicate's `⌈/|α` reads it once), then the backward pass's 10 halvings of the cotangent at about 1 copy each. A replay runs no forward loop of its own: only the loss's value reads it, and the gradient doesn't. On this Mac on 1 November 2026 it measured 28.5, against 30.4 for the gradient through 10 counted steps, `{+/{ω×0.5}⍣10⁝ω}∂ v`, whose forward loop keeps a stack.
-{+/{ω×0.5}⍣{1e¯3>⌈/|α}⁝ω}∂ v
+{+/{ω×0.5}⍣{1e¯3>⌈/|α}ˢ⁝ω}∂ v
 ⍝⍝: 52	120	230	instructions macos 373.167 linux 280.654	allocated macos 270.116 linux 270.11
 
 ⍝ A map of 400 scalars against `v`. Repeated for each cell, `v` would hold 26 million items, past the memory limit of a batched run. The map then calls its operand once for each cell, holding one copy of `v` at a time.

@@ -502,10 +502,10 @@ impl Session {
     /// `•mime Y` is the MIME bundle that displays `Y`. `X •mime Y` is `Y` displayed through `X`, which holds a function or names a MIME type. A MIME type shows `Y` itself as that type.
     pub(super) fn mime(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         let Some(left) = left else { return self.mime_value(right, span) };
-        let renderer = match left.is_singleton().then(|| left.at(0)) {
-            Some(Value::Function(f)) => f,
+        let renderer = match left.callback() {
+            Some(f) => f,
             _ => {
-                let Some(kind) = crate::keyed::name(left) else { return Err(Error::domain("•mime needs a function or a MIME type on its left").at(span)) };
+                let Some(kind) = crate::keyed::name(left) else { return Err(Error::domain("•mime needs a scalar holding a function or a MIME type on its left").at(span)) };
                 before(crate::keyed::text(&kind), Function::primitive(Primitive::Keys), span)?
             }
         };

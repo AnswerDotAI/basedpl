@@ -137,7 +137,7 @@ Outside brackets, parentheses and braces, `◇` separates statements. A `;` outs
 
 ## Superscripts and subscripts
 
-A [superscript or subscript](scripts.ipynb) written straight after a [token](terms.qmd#term-token) applies to that token. After a subject, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
+An attached [script](scripts.ipynb) on an array applies to the preceding token. A function-modifying script applies to the whole function on its left. Enclosure `ˢ` instead holds the preceding token: `f⍣gˢ` is `f⍣(gˢ)`. A script that stands alone after a space applies to the whole preceding run.
 
 Numeric superscripts are powers on arrays (`x²`, `x⁻¹`), but Rank on functions: `f¹` is `f⍤1`, `f⁰ ¹` is `f⍤[0 1]`, and `f⁻¹` is rank ¯1. `f⁻`, with no superscript digit straight after `⁻`, is the inverse of `f`. `f⁻ ¹` applies that inverse at rank 1. Repeat a function with `f⍣2`, not `f²`.
 

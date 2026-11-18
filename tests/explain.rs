@@ -30,8 +30,8 @@ fn reports_count_what_runs_did() {
     // Each documented spelling takes its fast combination. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn, and that each combination's route is taken.
     for (spelling, combination) in [
         ("(10↑)∘⍋ v", "partial grade"), ("¯10↑< v", "partial sort"), ("↑> v", "partial sort"), ("(3⌷)∘⍒ v", "partial grade"),
-        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("(≢⊢)⌸ k", "group counts"), ("k((+/⊢)⌸)v", "group folds"),
-        ("k((⌈⌿⊢)⌸)v", "group folds"), ("k((⌊/⊢)⌸)b", "group folds"), ("k((+/⊢)⌸)k", "group folds"), ("-.× m", "determinant"),
+        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("≢ᵘ⌸ k", "group counts"), ("k +/ᵘ⌸ v", "group folds"),
+        ("k ⌈⌿ᵘ⌸ v", "group folds"), ("k ⌊/ᵘ⌸ b", "group folds"), ("k +/ᵘ⌸ k", "group folds"), ("-.× m", "determinant"),
         ("+.× m", "permanent"),
     ] { report(&mut wrong, &session, &format!(r#"(⊂"{combination}")∊(•explain "{spelling}").routes.route"#), "$t"); }
     // Gradients through reversal, transpose, windows, a sum of windows, a broadcast, a maximum along an axis and windows that move by 2 make no accumulation. A selection that repeats positions makes one.

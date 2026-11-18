@@ -537,7 +537,7 @@ fn run_on(chars: &mut Characters<'_>, digit: bool) -> Option<usize> {
 pub(crate) fn name_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !c.is_ascii_digit() && !subscript(c) && !matches!(
         c, '(' | ')' | '[' | ']' | '{' | '}' | '\'' | '"' | ';' | ':' | '?' | '$' | '•' | '←' | '⎕' | '⍝' | '◇' | '⁝' | '⍬' | '¯' | '∞' | '⍛'
-            | 'ᵀ' | 'ᵘ' | '⁻' | '₋'
+            | 'ᵀ' | 'ˢ' | '⁻' | '₋'
     ) && !is_implicit(c) && script_digit(SUPERSCRIPT_DIGITS, c).is_none() && script_digit(SUBSCRIPT_DIGITS, c).is_none() && Primitive::from_glyph(c).is_none()
         && OperatorKind::from_glyph(c).is_none()
 }
@@ -547,7 +547,7 @@ pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { name_char(if aliase
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
 /// The characters that write a superscript operator, `ₓ` among them, for the editors' glyph lists.
-pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘₓ"].concat() }
+pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀˢₓ"].concat() }
 /// The characters that write a subscript, for the editors' glyph lists.
 pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 
@@ -823,7 +823,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             c if is_implicit(c) => TokenKind::Name(c.to_string()),
             '⍝' => { while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); } return Ok(None); }
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
-            'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
+            'ˢ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
             // A literal number takes `ⱼ`, `ₑ` or `ᵣ` only before a number part (`suffix_follows`). One that reaches here joins two items, as in `xⱼy`.
             'ⱼ' => TokenKind::Joiner(Joiner::Imaginary),
             'ₑ' => TokenKind::Joiner(Joiner::Exponent),
