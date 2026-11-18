@@ -14,7 +14,7 @@ Monadic operator. Keys: `Alt-o m`. Hanzi: `表`
 
 Each pair's result is one item of the result. See [inner product](dot.qmd).
 
-Where it can, `⊗` calls `g` once on all the pairs together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each pair.
+Where it can, `⊗` calls `g` once on all the pairs together, in a [batched call](../evaluation.qmd#functions-and-effects).
 
 ## Inverse
 

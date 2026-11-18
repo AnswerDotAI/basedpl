@@ -22,7 +22,7 @@ On empty arguments, Each calls `f` once using [prototypes](../terms.qmd#term-pro
 
 INTERRUPT, TIMEOUT and UNSUPPORTED are still raised, and output from that call still appears.
 
-Where it can, Each calls `f` once on all the items together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each item.
+Where it can, Each calls `f` once on all the items together, in a [batched call](../evaluation.qmd#functions-and-effects).
 
 ## Inverse
 

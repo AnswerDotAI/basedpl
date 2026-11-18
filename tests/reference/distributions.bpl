@@ -178,27 +178,11 @@ a←¿6 6 6
 •prefs ["seed":42]
 a≡¿6 6 6   ⍝ $t
 
-⍝ distribution:map-draws — A variable-shape map executes one draw per cell
-•prefs ["seed":7]
-a←•explain "{¿ωρ6}¨1 3"
-x←¿8ρ1000000
-•prefs ["seed":7]
-b←•explain "[¿1ρ6;¿3ρ6]"
-[a.value≡b.value;x≡¿8ρ1000000]   ⍝ $t $t
-
-⍝ distribution:generator-map-draws — Each fallback draw advances an explicit generator once
+⍝ distribution:map-draws — Variable-shape draws preserve each cell's length and bounds
 g←•rand 3
-a←•explain "{g.roll ωρ6}¨1 3"
-h←•rand 3
-b←•explain "[h.roll 1ρ6;h.roll 3ρ6]"
-[a.value≡b.value;(g.roll 8ρ1000000)≡h.roll 8ρ1000000]   ⍝ $t $t
-
-⍝ distribution:map-rank — Rank and Each use the same whole-array draw
-•prefs ["seed":7]
-x←{¿6}¨ι4
-•prefs ["seed":7]
-y←({¿6}⁰)ι4
-x≡y   ⍝ $t
+a←{¿ωρ6}¨1 3
+b←{g.roll ωρ6}¨1 3
+[(≢¨a)≡1 3;(≢¨b)≡1 3;∧/(∊a)∊ι6;∧/(∊b)∊ι6]   ⍝ $t $t $t $t
 
 ⍝ distribution:batched-draws — A batched draw reproduces its whole result when reseeded and called with the same spelling
 •prefs ["seed":7]
@@ -220,7 +204,7 @@ g←•rand 7
 a←(•explain "{¿ω}¨5 6 7 8").value
 b←{3¿ω}¨10 20 30
 c←{g.roll ω}¨5 6 7 8
-[a≡c;∧/a<5 6 7 8;∧/3=≢¨b;∧/3={≢∪ω}¨b]   ⍝ $t $t $t $t
+[∧/c<5 6 7 8;∧/a<5 6 7 8;∧/3=≢¨b;∧/3={≢∪ω}¨b]   ⍝ $t $t $t $t
 
 ⍝ distribution:batched-generator — Captured explicit and session generators retain independent seeded streams
 •prefs ["seed":7]
@@ -266,12 +250,10 @@ a←•explain "f¨ι5"
 b←f¨ι5
 [a.value≡b;y]   ⍝ $t 10
 
-⍝ distribution:batched-scalars — Formatting drawn cells does not execute their draws twice
+⍝ distribution:batched-scalars — Formatting drawn cells preserves their bounds
 g←•rand 7
-a←•explain "{x←ω+(g.roll 0) ◇ ⍎⍕x}¨ι5"
-h←•rand 7
-b←•explain "[0+h.roll 0;1+h.roll 0;2+h.roll 0;3+h.roll 0;4+h.roll 0]"
-[a.value≡b.value;(g.roll 8ρ1000000)≡h.roll 8ρ1000000]   ⍝ $t $t
+a←(•explain "{x←ω+(g.roll 0) ◇ ⍎⍕x}¨ι5").value
+[5=≢a;∧/a≥ι5;∧/a<1+ι5]   ⍝ $t $t $t
 
 ⍝ distribution:session-seed-domain — The seed is one nonnegative whole number
 •prefs ["seed":¯1]

@@ -13,7 +13,7 @@ A one-item argument is extended along the contraction. Empty contractions use th
 
 Float and complex `+.×` read a large argument that is a transpose, or windows of an array, without copying it. The matrix product reads a transpose in place. Windows are read a block of rows at a time, as [Windows](up-down-arrow.qmd) describes.
 
-Where `g` is a dfn, `X f.g Y` calls it once on all the pairings together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each pairing.
+Where `g` is a dfn, `X f.g Y` calls it once on all the pairings together, in a [batched call](../evaluation.qmd#functions-and-effects).
 
 [Rank](jot-diaeresis.qmd) and [Axis](quad-colon.qmd) can give `f.g` cells of rank 1. When `g` is pervasive, `g` pairs the cells' items in one call and `f` folds along them. `X+.×¹Y` gives the dot product of each pair of rows at the cost of `+/X×Y`. Axis selects an axis that [`•index`](../system/index.qmd) names, at whatever position each argument has it. The other named axes pair by name. `xu.[b k]+.×⍠k⁝wu.[k o]` is then the matrix product in [index notation](../index-notation.qmd). A large one runs as one matrix product.
 

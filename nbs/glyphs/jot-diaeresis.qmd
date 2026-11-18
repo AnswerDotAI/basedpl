@@ -52,7 +52,7 @@ To apply a function along chosen axes, see [Axis](quad-colon.qmd).
 
 ## Calls on the whole argument
 
-Rank calls each of these functions once on the whole argument, with the same result as one call for each cell:
+Rank has whole-argument routes for these functions:
 
 - a pervasive function, as in `m +⍤1 v`, where no frame axis has a name
 - a fold or scan by a pervasive primitive on a simple array, as in `+/⍤1 m`, which runs as `+/m` does

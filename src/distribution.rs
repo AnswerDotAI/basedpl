@@ -3,9 +3,8 @@ use crate::{
     Described, Error, Number, Span, Value, array::generated_len, element::read_as, keyed, number::Numeric, primitive::{numeric, pervade, real}, session,
     system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
-use rand::rngs::ChaCha8Rng;
+use rand::{SeedableRng, rngs::ChaCha8Rng};
 pub(crate) use rustymath::distribution::Distribution;
-use rustymath::random::{Counter, Items, Key};
 use rustymath::{Float as _, buffer::{Element as _, FloatWidth}, distribution::{Cdf, Invalid, Pdf, Quantile, standard}, error::Kind, with_float_width};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -82,12 +81,12 @@ fn bundle(d: Distribution) -> Value {
     ])
 }
 
-/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. The draws are one draw call's items, taken in blocks, with an interrupt check before each.
-fn samples(d: &Distribution, shape: &[usize], len: usize, stream: &mut Stream) -> Result<Value, Error> {
-    let (mut out, mut items) = (vec![0.0; len], stream.items(d.words()));
+/// Distribution samples in interruptible blocks, with integer storage for discrete distributions.
+fn samples(d: &Distribution, shape: &[usize], len: usize, stream: &mut ChaCha8Rng) -> Result<Value, Error> {
+    let mut out = vec![0.0; len];
     for block in out.chunks_mut(1 << 14) {
         check()?;
-        d.samples(&mut items, block);
+        d.samples(stream, block);
     }
     let made = if d.is_discrete() { Value::integers(shape.to_vec(), out.into_iter().map(|k| k as i64).collect()) }
     else { Value::floats(shape.to_vec(), Numeric::current().width, out) };
@@ -147,60 +146,71 @@ pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right:
 /// A stream of random numbers: the session's, which `¿` and a distribution's `sample` draw, or one that `•rand` makes. Every copy of a `•rand` record draws from the same stream.
 pub(crate) type Generator = Arc<Mutex<Stream>>;
 
-/// A generator's state: rustymath's count of draw calls under one key (`random::Counter`). Each draw call reads a stream of its own, so its numbers don't depend on how many numbers the calls before it took. A map's cells draw in turn, a call each, and a batched run makes the same calls in cell order, so a draw gives the same numbers whether or not the map batches.
+/// A generator's persistent random stream.
 #[derive(Debug)]
-pub(crate) struct Stream { counter: Counter }
+pub(crate) struct Stream { rng: ChaCha8Rng }
 
 impl Default for Stream {
-    /// The session's stream until a program sets a seed, keyed by the operating system.
-    fn default() -> Self { Self { counter: Counter { key: Key(rand::random()), count: 0 } } }
+    fn default() -> Self { Self { rng: rand::make_rng() } }
 }
 
 impl Stream {
-    /// A stream seeded by `seed`.
-    pub(crate) fn seeded(seed: u64) -> Self { Self { counter: Counter::seeded(seed) } }
-    /// The items of the next draw call, with `w` packed words each: 1 for a roll or a float between 0 and 1, and a distribution's `words` for its sampler.
-    pub(crate) fn items(&mut self, w: usize) -> Items { Items::new(self.counter.next(), w) }
-    /// The generator of the next draw call, for a draw that takes words in sequence, as a deal does.
-    pub(crate) fn rng(&mut self) -> ChaCha8Rng { self.counter.next().at(0) }
+    pub(crate) fn seeded(seed: u64) -> Self { Self { rng: ChaCha8Rng::seed_from_u64(seed) } }
+    fn state(&self) -> State { (self.rng.get_seed(), self.rng.get_stream(), self.rng.get_word_pos()) }
+    fn restore(&mut self, (seed, stream, position): State) {
+        self.rng = ChaCha8Rng::from_seed(seed);
+        self.rng.set_stream(stream);
+        self.rng.set_word_pos(position);
+    }
 }
 
-/// Each generator that the running batched try has drawn from, with its state before the try first drew from it (`Session::drawn`). Where the try falls back, `settle` puts each state back, so the run over cells draws the numbers it would draw had no try run.
-pub(crate) type Drawn = Mutex<Vec<(Generator, Counter)>>;
+type State = ([u8; 32], u64, u128);
+/// Generator states before a speculative batch first draws from them.
+pub(crate) type Drawn = Mutex<Vec<(Generator, State)>>;
 
-/// Ends a batched try's record of its draws. Restores each generator on fallback and reports whether there were draws.
-pub(crate) fn settle(drawn: &Drawn, fell_back: bool) -> bool {
+/// Restoring after sample-dependent batch rejection avoids conditionally redrawing different values.
+pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
     let drawn = std::mem::take(&mut *drawn.lock().unwrap_or_else(PoisonError::into_inner));
-    let drew = !drawn.is_empty();
-    if fell_back { for (generator, counter) in drawn { locked(&generator).counter = counter; } }
-    drew
+    if fell_back { for (generator, state) in drawn { locked(&generator).restore(state); } }
 }
 
 fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
 
 /// `draw` drawing from `generator`, or from the session's generator where it's `None`, given the id and frame of the batched run where one is running. In a batched run, it first records the generator's state, once for each try (`Drawn`). Under a trace, it stops the trace first (`program::trace::each_call`).
 fn drawing(
-    generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
+    generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     crate::program::trace::each_call("a random draw")?;
     let generator = generator.unwrap_or(&session().generator);
     let mut stream = locked(generator);
     let batched = session().batched();
     if batched.is_some() {
         let mut drawn = session().drawn.lock().unwrap_or_else(PoisonError::into_inner);
-        if !drawn.iter().any(|(g, _)| Arc::ptr_eq(g, generator)) { drawn.push((generator.clone(), stream.counter)); }
+        if !drawn.iter().any(|(g, _)| Arc::ptr_eq(g, generator)) { drawn.push((generator.clone(), stream.state())); }
     }
-    draw(batched.as_ref().map(|(level, frame)| (*level, frame)), &mut *stream)
+    draw(batched.as_ref().map(|(level, frame)| (*level, frame)), &mut stream.rng)
 }
 
 /// `f` drawing from `generator`, as `drawn_cells` does, where `f` doesn't depend on the cell.
-pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
+pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     drawn_cells(generator, |_, stream| f(stream))
 }
 
-/// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`), a call each in cell order, as the cells would draw unbatched. `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
-pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
+/// Draw once outside a batch, or once for each cell when the operation has no whole-frame form.
+pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     drawing(generator, |batched, stream| match batched {
         Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, stream)), None => f(0, stream)
+    })
+}
+
+/// Pervasive draws on the whole batched argument where it can be laid over the frame.
+pub(crate) fn drawn_items(generator: Option<&Generator>, value: &Value, f: impl Fn(&Value, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
+    drawing(generator, |batched, stream| {
+        let Some((level, frame)) = batched else { return f(value, stream) };
+        match crate::batch::whole_over(value.clone(), level, frame) {
+            Some(whole) => crate::batch::result(level, f(&whole, stream)?, frame.shape().len(), || true,
+                crate::error::Stop::new(level, crate::error::Cause::Rule)),
+            None => crate::batch::each_cell(level, frame, |c| f(&crate::batch::cell(value, c)?, stream)),
+        }
     })
 }
 
@@ -209,7 +219,7 @@ pub(crate) enum Draw { Roll, Deal }
 
 /// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.
 pub(crate) fn generator(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
-    // Each call makes a new stream, as each cell of a run cell by cell makes its own.
+    // A fresh mutable generator cannot be shared by all cells of a batched call.
     crate::transform::acts()?;
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(Error::new(Kind::Length, "•rand needs one seed")); }

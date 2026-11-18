@@ -249,7 +249,7 @@ h←16 •float 100000ρ1 0
 
 BPL inherits rustymath's floating-point accuracy guarantees and [exceptions](https://answerdotai.github.io/rustymath/accuracy.html). Pervasive functions give results within 4 units in the last place of the correctly rounded result unless that page specifies otherwise. BPL-specific qualifications follow below.
 
-Rustymath's Accuracy page also specifies which results are exact. With Mathish mode off, `=` compares floats exactly:
+These calculations give exact results. With Mathish mode off, `=` compares floats exactly:
 
 ```bpl
 •prefs ["mathish":$f]
@@ -288,7 +288,7 @@ $n=$n                ⍝ $f
 $n≡$n                ⍝ $t
 ```
 
-Complex arithmetic follows the `num_complex` crate. A complex number can have infinite or NaN parts.
+Complex arithmetic uses rustymath's complex functions. A complex number can have infinite or NaN parts.
 
 Putting an infinity or NaN into a numeric array uses float storage. Joining one to exact integers makes them floats:
 

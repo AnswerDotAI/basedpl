@@ -12,7 +12,7 @@ Monadic operator. Hanzi: `总` (`總`)
 
 Reduce returns the last result of `f`, not enclosed. An unseeded one-item reduction returns that item, at the type that a longer reduction gives: `+/,$t` counts one item as `+/$t $f` counts two. Unreduced axes form the result frame.
 
-A dfn that reduces several cells, such as the rows of a matrix, runs on every cell at once, in one [batched call](../evaluation.qmd#functions-and-effects) for each position along the axis. The result is the same as reducing each cell in turn.
+A dfn that reduces several cells, such as the rows of a matrix, runs on every cell at once, in one [batched call](../evaluation.qmd#functions-and-effects) for each position along the axis.
 
 ```bpl
 ,/⊂2 3            ⍝ 2 3

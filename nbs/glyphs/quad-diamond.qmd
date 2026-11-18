@@ -29,7 +29,7 @@ A function right operand computes the specification from the argument: `f⌺g Y`
 +/⌺{⌈√≢ω} ι9ₓ   ⍝ [1 3 6 9 12 15 18 21 15]ₓ
 ```
 
-Where it can, Stencil calls `f` once on all the windows together, in a [batched call](../evaluation.qmd#functions-and-effects), as Rank does. The result is the same as from one call for each window.
+Where it can, Stencil calls `f` once on all the windows together, in a [batched call](../evaluation.qmd#functions-and-effects), as Rank does.
 
 ## Errors
 

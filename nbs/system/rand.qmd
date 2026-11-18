@@ -1,13 +1,13 @@
 # `•rand` — Generator
 
-`•rand seed` returns a generator: a keyed vector of two functions that draw random numbers. The seed is a nonnegative whole number. The same seed gives the same draws.
+`•rand seed` returns a generator: a keyed vector of two functions that draw random numbers. The nonnegative whole number `seed` initializes its state.
 
 - `roll Y` works like `¿Y`.
 - `X deal Y` works like `X¿Y`.
 
-A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. Each draw call uses a new sequence of numbers. A draw's numbers depend on the seed and on how many draws came before it, not on how many numbers those draws produced. Copies of a generator share its count of draws.
+A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. Copies of a generator share its state.
 
-A [map](../terms.qmd#term-map) gives the same numbers whether or not it runs as a [batched call](../evaluation.qmd#functions-and-effects), because it draws for each cell separately, in cell order. A whole-array draw is one draw call and a map of draws is one for each cell, so `¿v` and `¿¨v` give different numbers.
+A [batched map](../terms.qmd#term-batched-call) can draw a whole array at once. Draws can differ with batching, thread count or scheduling, execution route, platform or build.
 
 ```bpl
 g←•rand 3 ◇ h←•rand 3 ◇ (g.roll 4ρ6)≡h.roll 4ρ6    ⍝ $t

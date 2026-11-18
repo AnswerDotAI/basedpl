@@ -49,7 +49,7 @@ Use the real forms `√ₐ`, `*ₐ`, `⊛ₐ` and `○ₐ` when values can leave
 
 Calls on 16-bit floats and on complex numbers don't join a [fused group](terms.qmd#term-fused-group). Each call runs on its [kernel](terms.qmd#term-kernel), over the whole array. Narrower storage alone does not guarantee faster execution.
 
-Calls that run in a fused group, and reductions that BPL reassociates, can give different last bits, infinities, NaNs and signs of zero. Their results still follow the accuracy bounds for finite results, and the exact results, that [Numbers](numbers.qmd#accuracy) gives.
+Calls that run in a fused group, and reductions that BPL reassociates, can give different last bits, infinities, NaNs and signs of zero. Finite results follow the accuracy bounds in [Numbers](numbers.qmd#accuracy).
 
 ## Calls that wait
 

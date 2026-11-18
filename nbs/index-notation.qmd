@@ -34,14 +34,14 @@ mlp←{
   h←7○b(+¹)x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
-[x y]mlp p                     ⍝ 0.3262591588
+loss←[x y]mlp p
 mlpi←{
   [x y]←α ◇ [w b v c]←ω
   [[n i] h]←•index[ρx ≢b]
   a←7○b.[h]+x.[n i]+.×⍠i⁝w.[i h]
   +/÷≢ ⊼y.[n]-c+a+.×⍠h⁝v.[h]
 }
-[x y]mlpi p                    ⍝ 0.3262591588
+1E¯12>|loss-([x y]mlpi p)       ⍝ $t
 g←[x y]mlp∂ p ◇ gi←[x y]mlpi∂ p
 1E¯12>⌈/,|g.w-gi.w             ⍝ $t
 ```
@@ -108,7 +108,7 @@ gmm←{
   am←⌈/•detach alpha
   (+/m+⊛+⌿*t-¹m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
 }
-gx gmm gp                      ⍝ ¯0.8795002466
+objective←gx gmm gp
 gmmi←{
   [alpha mu q l]←ω
   [[n d] [k e]]←•index[ρα ρmu]
@@ -120,7 +120,7 @@ gmmi←{
   am←⌈/•detach alpha
   +/m+⊛+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢α × am+⊛+/*alpha-am
 }
-gx gmmi gp                     ⍝ ¯0.8795002466
+1E¯12>|objective-(gx gmmi gp)   ⍝ $t
 g←gx gmm∂ gp ◇ h←gx gmmi∂ gp
 1E¯12>⌈/,|g.l-h.l              ⍝ $t
 ```

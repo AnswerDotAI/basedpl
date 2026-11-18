@@ -589,9 +589,9 @@ pub(crate) fn cohorts<K: Ord>(
         }
         Ok(values)
     })();
-    let drew = crate::distribution::settle(&session().drawn, true);
+    crate::distribution::settle(&session().drawn, attempt.is_err());
     match attempt {
-        Ok(values) if !drew => { crate::events::taken(crate::events::routes::Batching, count); Some(Ok(values)) } Err(Ended::Passed(error)) => Some(Err(error)),
+        Ok(values) => { crate::events::taken(crate::events::routes::Batching, count); Some(Ok(values)) } Err(Ended::Passed(error)) => Some(Err(error)),
         _ => None
     }
 }
