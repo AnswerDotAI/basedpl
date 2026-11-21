@@ -53,6 +53,7 @@ cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cl
 dev-profile = "release"
 native-binaries = true
 post-develop-module = "basedpl.editors"
+wasm-package = { name = "basedpl", path = "wasm/pkg" }
 
 [tool.fastship]
 branch = "main"
@@ -60,7 +61,7 @@ branch = "main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 timeout = 30
-asyncio_default_fixture_loop_scope = "function"
+addopts = "-p timeout"
 
 [tool.nbdev]
 lib_path = "python/basedpl"

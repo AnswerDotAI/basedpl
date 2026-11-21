@@ -1,6 +1,17 @@
 {
+  "name": "basedpl",
+  "version": "0.1.96",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.34.9",
+  "exports": {
+    ".": "./wasm/pkg/basedpl_wasm.js",
+    "./basedpl_wasm.js": "./wasm/pkg/basedpl_wasm.js",
+    "./basedpl_wasm_bg.wasm": "./wasm/pkg/basedpl_wasm_bg.wasm",
+    "./browser/*": "./python/basedpl/browser/*",
+    "./*.tmLanguage.json": "./python/basedpl/*.tmLanguage.json",
+    "./canvas.js": "./src/canvas.js"
+  },
   "devDependencies": {
     "shiki": "^4.5.0"
   }

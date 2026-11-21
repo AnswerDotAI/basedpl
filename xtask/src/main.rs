@@ -47,6 +47,14 @@ fn main() -> anyhow::Result<()> {
         "repository": { "type": "git", "url": format!("git+{repository}.git") },
         "type": "module",
         "main": format!("{MODULE}.js"),
+        "exports": {
+            ".": format!("./{MODULE}.js"),
+            "./basedpl_wasm.js": "./basedpl_wasm.js",
+            "./basedpl_wasm_bg.wasm": "./basedpl_wasm_bg.wasm",
+            "./browser/*": "./browser/*",
+            "./*.tmLanguage.json": "./*.tmLanguage.json",
+            "./canvas.js": "./canvas.js",
+        },
         "files": [format!("{MODULE}.js"), format!("{MODULE}_bg.wasm"), "*.d.ts", "browser", "*tmLanguage.json", "canvas.js"],
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;

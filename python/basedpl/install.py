@@ -5,7 +5,6 @@ from fastcore.script import call_parse
 from jupyter_core.paths import jupyter_data_dir
 from .assets import ASSETS, kernel_spec
 
-
 @call_parse(pos=['code'])
 def main(
     code:str='us', # macOS keyboard layout code
@@ -34,5 +33,3 @@ def main(
         print('Log out and back in if the layout is not listed or the old layout remains active.')
     else: print('No native Linux keyboard layout is provided; use the REPL or browser glyph entry.')
 
-
-if __name__ == '__main__': main()
