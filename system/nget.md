@@ -1,0 +1,16 @@
+
+
+# `•nget` — Read a file
+
+`•nget path` reads a UTF-8 text file. `•nget "-"` reads the rest of
+standard input. A path that starts with `./` or `../` is relative to the
+file holding the code, as for [`•load`](load.qmd).
+
+`X •nget path` takes an options record on the left: `binary` (`1` reads
+a vector of byte values, as in `["binary":1] •nget path`) and `encoding`
+(`"UTF-8"`, the only encoding). [Files](../data.ipynb#files) covers
+bytes and options.
+
+Errors: `IO` for missing files, invalid UTF-8, other file errors, and
+standard input that fails or that the frontend doesn’t provide; `DOMAIN`
+for invalid options.

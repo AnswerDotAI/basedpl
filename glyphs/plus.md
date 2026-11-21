@@ -1,0 +1,36 @@
+
+
+# `+` — Conjugate / Add
+
+Function. Hanzi: `加`. Ranks: `0` monadic, `0 0` dyadic
+
+`+Y` conjugates. Pervasive.
+
+``` bpl
++2j3              ⍝ 2j¯3
+```
+
+`X+Y` adds, with [leading
+agreement](../evaluation.qmd#agreement-and-pervasion).
+
+``` bpl
+2+3               ⍝ 5
+10+1 2 3          ⍝ 11 12 13
+```
+
+Adding a whole number to a character moves it that many Unicode code
+points, back for a negative number. Adding two characters, or a fraction
+to a character, raises a `DOMAIN` error.
+
+``` bpl
+'a'+3             ⍝ 'd'
+```
+
+## Inverse
+
+`+⁻Y` is `+Y`. With either argument fixed, `+⁻` subtracts the fixed
+argument.
+
+``` bpl
+3+⁻10   ⍝ 7
+```

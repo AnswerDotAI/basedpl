@@ -1,0 +1,27 @@
+
+
+# `⍬` — Empty
+
+Literal. Keys: `Alt-Shift-0`. Hanzi: `空`
+
+`⍬` is an empty approximate numeric vector: `0ρ0`. `[]` is the same
+value.
+
+`⍬ₓ` is the exact empty vector, `0ρ0ₓ`, and so is `[]ₓ`.
+
+``` bpl
+ρ⍬                 ⍝ [0]ₓ
+⍬,1 2              ⍝ 1 2
+[]≡⍬               ⍝ $t
+1↑⍬ₓ               ⍝ [0]ₓ
+```
+
+Other empty arrays retain their
+[prototypes](../terms.qmd#term-prototype).
+
+``` bpl
+3↑0ρ0ₓ             ⍝ [0 0 0]ₓ
+3↑""               ⍝ "   "
+```
+
+[Numbers](../numbers.qmd) covers exact and approximate numbers.

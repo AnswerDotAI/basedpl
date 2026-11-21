@@ -1,0 +1,171 @@
+
+
+# Modules and namespaces
+
+[Glyph index](glyphs.qmd)
+
+A BPL file that [`•load`](system/load.qmd) runs is a module. A module
+has names of its own. `•load` returns a record of the module’s public
+names, and adds no names to the code that loads it.
+
+``` bpl
+n←•load "lib/numeric.bpl"
+n.factors 360              ⍝ 2 2 2 3 3 5
+```
+
+BPL’s modules follow BQN’s
+[namespaces](https://mlochbaum.github.io/BQN/doc/namespace.html). In
+BQN, a namespace is a kind of value of its own. In BPL, `•load` returns
+an ordinary record.
+
+## Taking names
+
+To take names from the record, destructure it by key, as in
+`[factors: factorial:]`. Each name is assigned the item with the same
+key. Names the pattern doesn’t mention stay in the record.
+[Assignment](assignment.ipynb#destructuring) covers patterns.
+
+``` bpl
+[factors: factorial:]←•load "lib/numeric.bpl"
+factorial 5                ⍝ 120
+```
+
+A record holds operators as well as functions and arrays. Read an
+operator from a record with a dot path or by destructuring.
+
+``` bpl
+a←•load "lib/array.bpl"
+10 -a.foldl 1 2 3          ⍝ 4
+[foldl:]←a
+10 -foldl 1 2 3            ⍝ 4
+```
+
+Each `•load` runs the file again and returns a new record. Load a file
+again after you edit it to get the new version.
+
+## Records as namespaces
+
+Any record also works as a namespace. Inside `T.(expr)`, each key of `T`
+is a name for its item:
+
+``` bpl
+order←["price":2 3 5;"qty":10 20 1]
+order.(+/price×qty)            ⍝ 85
+```
+
+Names that aren’t keys come from the code around the expression. A key
+hides an outer name with the same spelling.
+
+``` bpl
+order←["price":2 3 5;"qty":10 20 1]
+rate←0.5 ◇ order.(price×≥rate)    ⍝ 3 4.5 7.5
+```
+
+A dfn’s argument, operand and recursion names, `α ω ⍶ ⍹ ∇ ⍢`, are the
+exception. They always come from the call, even when a key has the same
+spelling:
+
+``` bpl
+f←{["ω":0].(ω+1)} ◇ f 5        ⍝ 6
+```
+
+An assignment inside the parentheses is local to the expression, as an
+assignment in a dfn is local to the dfn. To change a field, assign to
+its dot path, as in `order.qty←5 5 5`.
+
+``` bpl
+order←["price":2 3 5;"qty":10 20 1]
+r←order.(qty←0) ◇ order.qty    ⍝ 10 20 1
+```
+
+`T⍎text` evaluates the code in `text` with the keys of `T` as names,
+like Dyalog’s `ns⍎text`:
+
+``` bpl
+order←["price":2 3 5;"qty":10 20 1]
+order⍎"+/price×qty"            ⍝ 85
+```
+
+Because a key that holds a function binds as a function, a module’s
+record works as a namespace too:
+
+``` bpl
+n←•load "lib/numeric.bpl"
+n.(factors 360)                ⍝ 2 2 2 3 3 5
+```
+
+An array with keys on its first axis also works as a namespace. Each key
+names its major cell, which in a matrix is a row:
+
+``` bpl
+prices←"cost" "sale":[2 3 5◇4 4 9]
+prices.(sale-cost)             ⍝ 2 1 4
+```
+
+`T.(expr)` uses one array as its namespace. For an array of records,
+`{ω.(expr)}¨records` evaluates `expr` in each record.
+
+## Writing a module
+
+A module is a file of BPL statements, run in order each time it’s
+loaded. Loading a module doesn’t display the results of its statements,
+but explicit `⎕←` output appears. Every name assigned at the top level
+is public, except a name that starts with `_`. A private name is left
+out of the record. The module’s own functions can still use it.
+
+``` text
+⍝ stats.bpl
+_sq←{ω×ω}
+mean←+/÷≢
+var←{mean _sq ω-mean ω}
+```
+
+`•load "stats.bpl"` returns a record that holds `mean` and `var`. `var`
+still uses `_sq` when you call it.
+
+## Modules that use other modules
+
+A path that starts with `./` or `../` is relative to the file that holds
+the code. A module finds the files beside it this way, whatever the
+working directory is. Other relative paths are relative to the working
+directory. [`•nget`](system/nget.qmd) and `•nput` follow the same rule.
+A module reads a data file beside it with `•nget "./table.csv"`.
+
+A module that uses another module usually keeps it under a private name,
+which keeps the other module’s names out of its record:
+
+``` text
+⍝ report.bpl
+_stats←•load "./stats.bpl"
+summary←{[_stats.mean ω;_stats.var ω]}
+```
+
+To export the other module, give it a public name. With
+`stats←•load "./stats.bpl"`, the record of `report.bpl` would hold the
+`stats` record too. Destructured names are public as well:
+`[mean:]←•load "./stats.bpl"` makes `mean` one of the module’s names.
+
+Loading a file that loads itself, directly or through other files,
+raises a `DOMAIN` error.
+
+## The library
+
+The files in `lib/` are modules. They load each other with `./` paths
+and private names: `lib/graph.bpl` holds `lib/array.bpl` as `_array`,
+and uses `_array.dsp`.
+
+## Names in the session
+
+The names of a loaded module aren’t session names. `]names` and name
+completion don’t list them. Take the names you use, or keep the record
+and use dot paths.
+
+From Python, `bpl('•load "lib/array.bpl"').py` gives the record as a
+dict. Its functions are `Function` objects. Its operators are `Operator`
+objects, which you call with their operands to get a function:
+
+``` python
+from basedpl import bpl
+a = bpl('•load "lib/array.bpl"').py
+a['foldl'](bpl.fn('-'))(10, [1, 2, 3]).py   # 4
+```

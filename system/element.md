@@ -1,0 +1,21 @@
+
+
+# `•element` — XML elements
+
+`•element tag` returns an element function for the XML tag `tag`. The
+function is displayed as the call that made it, such as
+`•element"circle"`. Typing that text makes the same function.
+
+Pass only an attributes record to make an element with no children:
+`circle ["r":10]`. Text, a vector of children or an existing element
+tree supplies children instead. With both attributes and children, put
+the attributes on the left, as in `["x":5] text "Hello"`. An empty right
+argument, `""` or `⍬`, gives no children.
+
+The result is a keyed vector with `tag`, `attrs` and `children` entries.
+Notebooks display it as HTML. In that HTML, the text of a `script` or
+`style` element isn’t escaped, as browsers require. A `script` element
+can hold JavaScript for the page. [XML and SVG](../xml.ipynb) covers
+element trees.
+
+Errors: `DOMAIN` for invalid tag or attribute names.

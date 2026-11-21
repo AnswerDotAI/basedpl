@@ -1,0 +1,32 @@
+
+
+# `•storage` — Storage
+
+`•storage Y` gives a record of how the items of `Y` are held. It reads
+no items, and a [pending](../terms.qmd#term-pending) array stays
+pending.
+
+- `kind` names the storage: `"bool"`, `"integer"`, `"float64"`,
+  `"float32"`, `"float16"`, `"complex128"`, `"complex64"`, `"character"`
+  or `"mixed"`. Under static kinds, integer names include their width,
+  such as `"int32"`. `kind` is `"rational"` for an unbounded exact
+  number and `"function"` for a function. [Compact
+  storage](../terms.qmd#term-compact-storage) holds items of one kind.
+  [Mixed storage](../terms.qmd#term-mixed-storage) keeps each item’s
+  kind. [Storage](../numbers.qmd#storage) describes the two forms.
+- `pending` is `$t` while `Y` is pending.
+- `view` is `$t` while `Y` is a [view](../terms.qmd#term-view) of
+  another array, as a reshape is. A view of a pending array is also
+  pending. A pending result of a function such as `⌽` is not a view.
+- `active` is the number of `∂` calls that are differentiating `Y`. It
+  is 0 outside `∂`, and for a value that doesn’t depend on the argument
+  of `∂`. It is 1 for a value that depends on that argument, and 2 for
+  one that depends on the arguments of two nested `∂` calls. Under `∂`,
+  `kind` names the storage of `Y`’s value, without its derivatives.
+
+``` bpl
+•storage 1.5 2.5
+(•storage 2 3ρι6ₓ).view       ⍝ $t
+y←1.5+¿200000ρ0
+(•storage y).pending         ⍝ $t
+```

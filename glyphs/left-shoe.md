@@ -1,0 +1,56 @@
+
+
+# `⊂` — Enclose / Partitioned enclose
+
+Function. Keys: `Alt-z`. Hanzi: `包`. Ranks: `∞` monadic, `1 ∞` dyadic
+
+`⊂Y` is a scalar holding `Y`.
+
+A one-item [bracket list](brackets.qmd), `[Y]`, is a vector, not a
+scalar. `⊂` cannot enclose a function, because `⊂` next to a function
+forms a train. To enclose a function, write
+[`ˢ`](../scripts.ipynb#superscripts) after it. `fˢ` is a scalar holding
+`f`.
+
+``` bpl
+ρ⊂1 2 3            ⍝ ⍬ₓ
+↑⊂1 2 3            ⍝ 1 2 3
+⊂3 ≡ 3             ⍝ $f
+```
+
+With [axes](quad-colon.qmd), `⊂⍠K Y` encloses cells on axes `K`.
+
+``` bpl
+⊂₁2 3ρι6ₓ          ⍝ [[0 1 2] [3 4 5]]ₓ
+```
+
+`N⊂Y` splits `Y` into partitions, blocks of major cells along the
+leading axis. `N` has one item for each major cell; a positive item
+starts a partition at its cell. Cells before the first positive item are
+left out.
+
+``` bpl
+1 0 1 0⊂"abcd"     ⍝ "ab" "cd"
+1 0 1⊂3 2ρι6ₓ       ⍝ [[0 1◇2 3] [4 5◇]]ₓ
+```
+
+An item `k` of `N` greater than 1 starts `k-1` extra empty partitions. A
+unit `N` applies to every major cell. `N⊂⍠K Y` partitions along axis `K`
+instead. `N⊂¹Y` partitions each row.
+
+``` bpl
+1 0 1⊂₁2 3ρι6ₓ       ⍝ [[0 1◇3 4] [[2]◇[5]]]ₓ
+1 0 1⊂¹(2 3ρι6ₓ)  ⍝ [[0 1] [2]◇[3 4] [5]]ₓ
+```
+
+See also [`⊆`](left-shoe-underbar.qmd).
+
+## Inverse
+
+`⊂⁻Y` is `↑Y`. `X⊂⁻Y` joins the partitions `Y`. Partitioning the result
+by `X` must give `Y` again, so `X` can’t start with a zero.
+
+``` bpl
+⊂⁻⊂1 2             ⍝ 1 2
+1 0 1⊂⁻(1 2◇3)   ⍝ 1 2 3
+```
