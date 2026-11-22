@@ -120,8 +120,8 @@ fn numeric_constructors() {
 fn exact_results_and_readback() {
     for code in ["0.1|0.3", "3|6.000000000000001"] { assert!(run(code).unwrap().unwrap().same(&float(0.0)), "{code}"); }
     for code in [
-        "1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100",
-        "(⊽∘≥)ˢ", "((⊽∘≥)⁻)ˢ", "((⊽∘≥)ₓ)ˢ", "((~∘⊢)ᵇ)ˢ",
+        "1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100", "(⊽∘≥)ˢ",
+        "((⊽∘≥)⁻)ˢ", "((⊽∘≥)ₓ)ˢ", "((~∘⊢)ᵇ)ˢ",
     ] {
         let a = run(code).unwrap().unwrap();
         assert!(run(&a.literal()).unwrap().unwrap().same(&a), "{code}");

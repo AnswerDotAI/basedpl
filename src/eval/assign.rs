@@ -57,9 +57,7 @@ impl Session {
         if keys.is_empty() { Category::named(self.bindings.category(name)) } else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) }
     }
 
-    pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize) -> Result<(usize, Category), Error> {
-        self.operand_before(nodes, end, None)
-    }
+    pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize) -> Result<(usize, Category), Error> { self.operand_before(nodes, end, None) }
 
     fn operand_before(&self, nodes: &[Node], end: usize, outer: Option<Category>) -> Result<(usize, Category), Error> {
         use Category::*;

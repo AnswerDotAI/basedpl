@@ -150,9 +150,7 @@ pub(crate) type Generator = Arc<Mutex<Stream>>;
 #[derive(Debug)]
 pub(crate) struct Stream { rng: ChaCha8Rng }
 
-impl Default for Stream {
-    fn default() -> Self { Self { rng: rand::make_rng() } }
-}
+impl Default for Stream { fn default() -> Self { Self { rng: rand::make_rng() } } }
 
 impl Stream {
     pub(crate) fn seeded(seed: u64) -> Self { Self { rng: ChaCha8Rng::seed_from_u64(seed) } }
@@ -207,8 +205,9 @@ pub(crate) fn drawn_items(generator: Option<&Generator>, value: &Value, f: impl 
     drawing(generator, |batched, stream| {
         let Some((level, frame)) = batched else { return f(value, stream) };
         match crate::batch::whole_over(value.clone(), level, frame) {
-            Some(whole) => crate::batch::result(level, f(&whole, stream)?, frame.shape().len(), || true,
-                crate::error::Stop::new(level, crate::error::Cause::Rule)),
+            Some(whole) => {
+                crate::batch::result(level, f(&whole, stream)?, frame.shape().len(), || true, crate::error::Stop::new(level, crate::error::Cause::Rule))
+            }
             None => crate::batch::each_cell(level, frame, |c| f(&crate::batch::cell(value, c)?, stream)),
         }
     })

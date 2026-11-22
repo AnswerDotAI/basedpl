@@ -26,11 +26,11 @@ impl Options {
         allowed.extend(if import { &["missing", "types"][..] } else { &["forcequotes", "eol"][..] });
         let common = crate::data::Options::new(if import { "•csv" } else { "•csv⁻" }, left, None, &allowed)?;
         let fill = common.values.contains_key("fill").then(|| common.fill()).transpose()?;
-        let ifill = common.values.get("ifill").map(|v| {
-            v.as_number().filter(|n| n.integer().is_ok()).ok_or_else(|| Error::domain("CSV ifill must be a whole real number"))
-        }).transpose()?;
+        let ifill = common.values.get("ifill")
+            .map(|v| v.as_number().filter(|n| n.integer().is_ok()).ok_or_else(|| Error::domain("CSV ifill must be a whole real number"))).transpose()?;
         let width = crate::number::Numeric::current().width;
-        let mut opts = Self { common, fill, ifill, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, width };
+        let mut opts = Self { common, fill, ifill, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.',
+            thousands: None, width };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
                 if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') { Ok(c as u8) }
@@ -66,9 +66,7 @@ impl Options {
     }
 
     fn fill(&self, specified: Option<Value>, integer: bool, numeric: bool) -> Result<Option<Fill>, Error> {
-        let fill = specified.or_else(|| {
-            self.ifill.as_ref().filter(|_| integer).or_else(|| self.fill.as_ref().filter(|_| numeric)).cloned().map(Value::Number)
-        });
+        let fill = specified.or_else(|| self.ifill.as_ref().filter(|_| integer).or_else(|| self.fill.as_ref().filter(|_| numeric)).cloned().map(Value::Number));
         fill.map(|v| match v {
             Value::Number(n) if n.as_complex().is_none() => Ok(Fill::Number(n)),
             _ => string(&v).map(Fill::Text).map_err(|_| Error::domain("CSV fills must be real numbers or text")),
@@ -149,14 +147,12 @@ fn import(source: &str, opts: &Options) -> Result<Value, Error> {
         let parsed: Vec<_> = cells.iter().zip(&absent).map(|(s, &a)| if text || a { None } else { opts.number(s) }).collect();
         let is_numeric = !text && (typed.is_some() || (parsed.iter().any(Option::is_some) && parsed.iter().zip(&absent).all(|(n, &a)| n.is_some() || a)));
         let integer = opts.ifill.is_some() && specified.is_none() && typed.as_ref().map_or_else(
-            || is_numeric && parsed.iter().flatten().all(|n| matches!(n.dtype(), Some(DType::Integer(_)))),
-            |v| matches!(v.dtype(), Some(DType::Integer(_))),
-        );
+                || is_numeric && parsed.iter().flatten().all(|n| matches!(n.dtype(), Some(DType::Integer(_)))), |v| matches!(v.dtype(), Some(DType::Integer(_)))
+            );
         let fill = opts.fill(specified, integer, is_numeric)?;
         let column = if is_numeric {
             let fill = match fill {
-                Some(Fill::Number(n)) => n, None => default_fill.clone(),
-                _ => return Err(Error::domain(format!("CSV column {name:?} needs a numeric fill"))),
+                Some(Fill::Number(n)) => n, None => default_fill.clone(), _ => return Err(Error::domain(format!("CSV column {name:?} needs a numeric fill")))
             };
             let mut numbers = Vec::with_capacity(cells.len());
             for (i, (s, n)) in cells.iter().zip(parsed).enumerate() {
@@ -170,11 +166,11 @@ fn import(source: &str, opts: &Options) -> Result<Value, Error> {
                 typed.as_ref(), absent.contains(&true))?
         } else {
             let fill = match fill {
-                Some(Fill::Text(s)) => s, None => String::new(),
-                _ => return Err(Error::domain(format!("CSV column {name:?} needs a text fill"))),
+                Some(Fill::Text(s)) => s, None => String::new(), _ => return Err(Error::domain(format!("CSV column {name:?} needs a text fill")))
             };
             let mut texts = keyed::Texts::default();
-            keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| texts.text(if a { &fill } else { s })).collect()).described("invalid CSV column")?
+            keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| texts.text(if a { &fill } else { s })).collect())
+                .described("invalid CSV column")?
         };
         result.push(column);
     }
@@ -244,8 +240,7 @@ fn field(v: &Value, opts: &Options, fill: Option<&Fill>) -> Result<String, Error
     let mut s = if let Some(s) = keyed::name(v) {
         if matches!(fill, Some(Fill::Text(f)) if &*s == f) { return Ok(String::new()); }
         if opts.trim { s.trim().to_owned() } else { s.to_string() }
-    }
-    else if let Value::Number(n) = v {
+    } else if let Value::Number(n) = v {
         if n.is_nan() || matches!(fill, Some(Fill::Number(f)) if n.grade_order(f).is_eq()) { return Ok(String::new()); }
         if let Some(t) = n.integer_text() { t }
         else if let Some(n) = n.as_float() { let s = n.to_string(); if n.is_finite() && !s.contains(['.', 'e', 'E']) { format!("{s}.0") }

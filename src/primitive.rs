@@ -162,9 +162,9 @@ impl OperatorKind {
         let (glyph, names, left, right) = match self {
             Each => ("¨", ["diaeresis", "each", ""], Function, None), Commute => ("⍨", ["tilde-diaeresis", "self", "commute"], Any, None),
             Bitwise => ("ᵇ", ["superscript-b", "bitwise", ""], Function, None), Before => ("↣", ["right-tail-arrow", "before", ""], Any, Some(Function)),
-            Unary => ("ᵘ", ["superscript-u", "unary", ""], Function, None),
-            Rank => ("⍤", ["jot-diaeresis", "rank", ""], Function, Some(Any)), Atop => ("∘", ["jot", "atop", ""], Function, Some(Function)),
-            Axis => ("⍠", ["quad-colon", "axis", ""], Function, Some(Any)), Over => ("⍥", ["circle-diaeresis", "over", ""], Function, Some(Function)),
+            Unary => ("ᵘ", ["superscript-u", "unary", ""], Function, None), Rank => ("⍤", ["jot-diaeresis", "rank", ""], Function, Some(Any)),
+            Atop => ("∘", ["jot", "atop", ""], Function, Some(Function)), Axis => ("⍠", ["quad-colon", "axis", ""], Function, Some(Any)),
+            Over => ("⍥", ["circle-diaeresis", "over", ""], Function, Some(Function)),
             After => ("↢", ["left-tail-arrow", "after", ""], Function, Some(Any)),
             Product => (".", ["dot", "determinant", "inner-product"], Function, Some(Function)),
             Outer => ("⊗", ["circle-times", "outer-product", ""], Function, None), Key => ("⌸", ["quad-equal", "key", ""], Function, None),

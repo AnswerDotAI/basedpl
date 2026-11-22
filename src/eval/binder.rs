@@ -40,9 +40,8 @@ impl Session {
             let prefix = self.members_with(&out);
             let subject = prefix.len().checked_sub(1).and_then(|mut start| {
                 if matches!(prefix[start].kind, NodeKind::Assign) { return None; }
-                while start > 0 && self.static_category(&prefix[start]).valence() == Some(false) && crate::syntax::touching(&prefix[start - 1], &prefix[start]) {
-                    start -= 1;
-                }
+                while start > 0 && self.static_category(&prefix[start]).valence() == Some(false) && crate::syntax::touching(&prefix[start - 1], &prefix[start])
+                { start -= 1; }
                 self.trailing_operand(&prefix[start..], prefix.len() - start).ok().filter(|(_, c)| matches!(c, Category::Value | Category::Function))
                     .map(|(_, c)| (start, c))
             });
@@ -173,8 +172,7 @@ impl Session {
             while i + 1 < out.len() {
                 let NodeKind::Joiner(joiner) = out[i].kind else { i += 1; continue; };
                 let mut start = i - 1;
-                while start > 0 && self.static_category(&out[start]).is_script()
-                    && touching(&out[start - 1], &out[start]) { start -= 1; }
+                while start > 0 && self.static_category(&out[start]).is_script() && touching(&out[start - 1], &out[start]) { start -= 1; }
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
                 if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1]) || !self.holds_array(&left)
@@ -463,8 +461,10 @@ impl Category {
     pub(super) fn of_operator(op: &self::OperatorNode) -> Self {
         match op {
             self::OperatorNode::Primitive(OperatorKind::Super(Superscript::Unit)) => Self::ValueScript,
-            self::OperatorNode::Primitive(OperatorKind::Super(Superscript::Transpose | Superscript::Mark(_))) | self::OperatorNode::Script(..) => Self::OperandScript,
-            op => if op.is_dyadic() { Self::DyadicOperator } else { Self::Operator },
+            self::OperatorNode::Primitive(OperatorKind::Super(Superscript::Transpose | Superscript::Mark(_))) | self::OperatorNode::Script(..) => {
+                Self::OperandScript
+            }
+            op => { if op.is_dyadic() { Self::DyadicOperator } else { Self::Operator } }
         }
     }
     /// A name's category from its binding's, as `Bindings::category` gives it: an unbound name counts as an array, and so does an absent `α`.
@@ -474,9 +474,13 @@ impl Category {
         match self { Self::DyadicOperator => Some(true), Self::Operator | Self::ValueScript | Self::OperandScript => Some(false), _ => None }
     }
     pub(super) fn is_script(self) -> bool { matches!(self, Self::ValueScript | Self::OperandScript) }
-    pub(super) fn tight_on(self, operand: Self) -> bool { self == Self::ValueScript || self == Self::OperandScript && matches!(operand, Self::Value | Self::Callable) }
+    pub(super) fn tight_on(self, operand: Self) -> bool {
+        self == Self::ValueScript || self == Self::OperandScript && matches!(operand, Self::Value | Self::Callable)
+    }
     pub(super) fn derived(self, operand: Self) -> Self {
-        match self { Self::ValueScript => Self::Value, Self::OperandScript if matches!(operand, Self::Value | Self::Callable) => Self::Value, _ => Self::Function }
+        match self {
+            Self::ValueScript => Self::Value, Self::OperandScript if matches!(operand, Self::Value | Self::Callable) => Self::Value, _ => Self::Function
+        }
     }
     /// The category of an array: `Callable` where it holds a function as an item, and otherwise `Value`.
     #[inline]
@@ -517,9 +521,8 @@ impl Rule {
     }
     fn strength(self, left: Category, right: Category) -> u8 {
         match self {
-            Self::Derive if right.tight_on(left) => 7,
-            Self::BindRight => 6, Self::Derive => 5, Self::Attach | Self::Drop | Self::DropRight => 4, Self::Adjacent => 3, Self::Call => 2, Self::Train => 1,
-            Self::Wait(n) => n, Self::Missing | Self::Absent | Self::Invalid => 0
+            Self::Derive if right.tight_on(left) => 7, Self::BindRight => 6, Self::Derive => 5, Self::Attach | Self::Drop | Self::DropRight => 4,
+            Self::Adjacent => 3, Self::Call => 2, Self::Train => 1, Self::Wait(n) => n, Self::Missing | Self::Absent | Self::Invalid => 0
         }
     }
 }

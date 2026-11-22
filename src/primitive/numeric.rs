@@ -619,9 +619,7 @@ fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: 
 
 /// Roll draws every item of the whole batched argument at once. Deal draws separately for each cell. With no explicit generator, both use the session's.
 pub(crate) fn drawn_value(generator: Option<&crate::distribution::Generator>, left: Option<&Value>, right: &Value) -> Result<Value, Error> {
-    let Some(left) = left else {
-        return crate::distribution::drawn_items(generator, right, |bounds, stream| roll(bounds, false, stream));
-    };
+    let Some(left) = left else { return crate::distribution::drawn_items(generator, right, |bounds, stream| roll(bounds, false, stream)); };
     crate::distribution::drawn_cells(generator, |c, stream| deal(&crate::batch::cell(left, c)?, &crate::batch::cell(right, c)?, stream))
 }
 
