@@ -22,6 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: AnswerDotAI/.github/actions/sccache@main
+        if: runner.os != 'Linux'
+        with:
+          r2-url: ${{ secrets.SCCACHE_R2 }}
       - uses: actions/setup-python@v7
         if: runner.os != 'Linux'
         with:
@@ -105,6 +109,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - uses: AnswerDotAI/.github/actions/sccache@main
+        with:
+          r2-url: ${{ secrets.SCCACHE_R2 }}
       - run: cargo wasm --strip
       - uses: actions/setup-node@v7
         with:

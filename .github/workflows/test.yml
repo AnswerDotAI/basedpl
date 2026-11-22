@@ -18,12 +18,10 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
       - run: vp install
       - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@nextest
-      # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
-      - run: cargo generate-lockfile
-      - uses: Swatinem/rust-cache@v2
+      - uses: AnswerDotAI/.github/actions/sccache@main
         with:
-          shared-key: native
+          r2-url: ${{ secrets.SCCACHE_R2 }}
+      - uses: taiki-e/install-action@nextest
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -48,11 +46,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - uses: AnswerDotAI/.github/actions/sccache@main
+        with:
+          r2-url: ${{ secrets.SCCACHE_R2 }}
       # V8's frame sizes decide the recursion test's margin. Each Node major keeps one V8 version. `.node-version` pins the major for the wasm correctness checks.
       - uses: voidzero-dev/setup-vp@v1
-      - run: cargo generate-lockfile
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: wasm
       - run: cargo wasm --strip
       - run: node --test tests/wasm.mjs
