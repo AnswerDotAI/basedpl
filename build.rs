@@ -27,11 +27,12 @@ fn main() {
     let mut entries = Vec::new();
     for dir in ["", "glyphs", "system"] {
         let folder = Path::new("nbs").join(dir);
-        println!("cargo::rerun-if-changed={}", folder.display());
+        if !dir.is_empty() { println!("cargo::rerun-if-changed={}", folder.display()); }
         let mut paths: Vec<_> = fs::read_dir(&folder).unwrap().map(|entry| entry.unwrap().path())
             .filter(|path| path.extension().is_some_and(|s| s == "qmd" || s == "ipynb")).collect();
         paths.sort();
         for path in &paths {
+            if dir.is_empty() { println!("cargo::rerun-if-changed={}", path.display()); }
             let stem = path.file_stem().unwrap().to_str().unwrap();
             let name = if dir.is_empty() { stem.to_owned() } else { format!("{dir}/{stem}") };
             let mut help = page_text(path);
@@ -54,5 +55,7 @@ fn main() {
             entries.push(format!("Page {{ name: {name:?}, title: {title:?}, aliases: &{aliases:?}, text: {help:?} }}"));
         }
     }
-    fs::write(Path::new(&env::var("OUT_DIR").unwrap()).join("help.rs"), format!("const HELP: &[Page] = &[{}];", entries.join(",\n"))).unwrap();
+    let out = Path::new(&env::var("OUT_DIR").unwrap()).join("help.rs");
+    let code = format!("const HELP: &[Page] = &[{}];", entries.join(",\n"));
+    if fs::read_to_string(&out).ok().as_deref() != Some(code.as_str()) { fs::write(&out, code).unwrap(); }
 }

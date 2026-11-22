@@ -13,6 +13,17 @@ const TARGET: &str = "wasm32-unknown-unknown";
 /// The file stem that `basedpl-wasm` builds, which wasm-bindgen also gives the glue.
 const MODULE: &str = "basedpl_wasm";
 
+fn is_fresh(inputs: &[&Path], outputs: &[&Path]) -> bool {
+    let mtime = |p: &&Path| fs::metadata(p).ok()?.modified().ok();
+    let newest_in = inputs.iter().map(mtime).collect::<Option<Vec<_>>>().and_then(|v| v.into_iter().max());
+    let oldest_out = outputs.iter().map(mtime).collect::<Option<Vec<_>>>().and_then(|v| v.into_iter().min());
+    matches!((newest_in, oldest_out), (Some(i), Some(o)) if i <= o)
+}
+
+fn write_if_changed(path: &Path, data: &[u8]) -> anyhow::Result<()> { if fs::read(path).ok().as_deref() != Some(data) { fs::write(path, data)?; } Ok(()) }
+
+fn copy_if_changed(src: &Path, dst: &Path) -> anyhow::Result<()> { write_if_changed(dst, &fs::read(src)?) }
+
 fn main() -> anyhow::Result<()> {
     let usage = || anyhow::anyhow!("usage: cargo wasm [--strip] [--out DIR] [--profile NAME]");
     let (mut strip, mut out, mut profile) = (false, None, "release".to_owned());
@@ -34,8 +45,14 @@ fn main() -> anyhow::Result<()> {
         "dev" | "test" => "debug", "bench" => "release", name => name
     }).join(format!("{MODULE}.wasm"));
     let pkg = out.clone().unwrap_or_else(|| root.join("wasm/pkg"));
-    wasm_bindgen_cli_support::Bindgen::new().input_path(module).web(true)?.typescript(false).omit_default_module_path(false).remove_name_section(strip)
-        .generate(&pkg)?;
+    let generated = [format!("{MODULE}.js"), format!("{MODULE}_bg.wasm")].map(|m| pkg.join(m));
+    let exe = env::current_exe().ok();
+    let inputs: Vec<&Path> = std::iter::once(module.as_path()).chain(exe.as_deref()).collect();
+    let outputs: Vec<&Path> = generated.iter().map(PathBuf::as_path).collect();
+    if strip || profile != "release" || !is_fresh(&inputs, &outputs) {
+        wasm_bindgen_cli_support::Bindgen::new().input_path(&module).web(true)?.typescript(false).omit_default_module_path(false).remove_name_section(strip)
+            .generate(&pkg)?;
+    }
     let pyproject: toml::Table = fs::read_to_string(root.join("pyproject.toml"))?.parse()?;
     let project = &pyproject["project"];
     let repository = project["urls"]["Repository"].as_str().expect("pyproject.toml's Repository is a URL");
@@ -57,22 +74,21 @@ fn main() -> anyhow::Result<()> {
         },
         "files": [format!("{MODULE}.js"), format!("{MODULE}_bg.wasm"), "*.d.ts", "browser", "*tmLanguage.json", "canvas.js"],
     });
-    fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
-    fs::copy(root.join("wasm/README.md"), pkg.join("README.md"))?;
+    write_if_changed(&pkg.join("package.json"), serde_json::to_string_pretty(&package)?.as_bytes())?;
+    copy_if_changed(&root.join("wasm/README.md"), &pkg.join("README.md"))?;
     let assets = ["python/basedpl/bpl.tmLanguage.json", "python/basedpl/hpl.tmLanguage.json", "src/canvas.js"].map(|a| root.join(a));
-    for asset in &assets { fs::copy(asset, pkg.join(asset.file_name().expect("an asset is a file")))?; }
+    for asset in &assets { copy_if_changed(asset, &pkg.join(asset.file_name().expect("an asset is a file")))?; }
     let mut browsers = vec![pkg.join("browser")];
     if out.is_none() { browsers.push(root.join("nbs/playground/browser")); }
     for dest in browsers {
         fs::create_dir_all(&dest)?;
         for entry in fs::read_dir(root.join("python/basedpl/browser"))? {
             let file = entry?.path();
-            fs::copy(&file, dest.join(file.file_name().expect("a browser asset")))?;
+            copy_if_changed(&file, &dest.join(file.file_name().expect("a browser asset")))?;
         }
     }
     if out.is_none() {
-        let module = [format!("{MODULE}.js"), format!("{MODULE}_bg.wasm")].map(|m| pkg.join(m));
-        for file in module.iter().chain(&assets) { fs::copy(file, root.join("nbs/playground").join(file.file_name().expect("a file")))?; }
+        for file in generated.iter().chain(&assets) { copy_if_changed(file, &root.join("nbs/playground").join(file.file_name().expect("a file")))?; }
     }
     Ok(())
 }
