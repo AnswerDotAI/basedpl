@@ -856,6 +856,7 @@ fn int_count(n: usize) -> u64 {
 pub(crate) fn depth(right: &Value) -> usize {
     if right.is_atom() { return 0; }
     if let Some(carrier) = right.carrier() { return depth(carrier.template()).max(1); }
+    if right.is_cells() { return 2; }
     1 + match right.as_items() { Items::Values([]) => depth(&right.prototype()), Items::Values(items) => items.iter().map(depth).max().unwrap_or(0), _ => 0 }
 }
 

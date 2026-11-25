@@ -498,6 +498,7 @@ fn copy_value(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>
     let fill = fill.filter(|_| map.fills());
     if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
     if defer && fill.is_none() && defers(len) && let Some(copy) = pending(right, &layout, map) { return Ok(copy); }
+    if !map.fills() && let Some(projected) = right.project_cells(&layout, map) { return Ok(projected); }
     let (base, tables) = map.to_walk(layout.shape());
     walked(right, layout, base, &tables, fill)
 }

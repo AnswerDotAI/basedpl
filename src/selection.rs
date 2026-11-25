@@ -1,6 +1,6 @@
 use crate::array::{Footprint, Seen};
 use crate::{
-    Described, Error, ErrorKind, Span, Value, array::{Frame, Gather, Items, Layout, Storage, Widening, generated_len},
+    Described, Error, ErrorKind, Span, Value, array::{Frame, Gather, Layout, Storage, Widening, generated_len},
     primitive::{Form, Origin, Primitive, Selection, Targets}, transform::{Carrier, Part}
 };
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -297,8 +297,7 @@ pub(crate) fn strip(value: &Value, level: u64) -> Value {
 
 /// `root` at label level `level`, each item labelled with its own position, with the `Labels` that turn labels back into places. A root with nested items labels them all through `Labels::new`. Any other root builds no labels until a reader needs them.
 pub(crate) fn labelled(root: &Value, level: u64) -> Result<(Labels, Value), Error> {
-    // Compact storage holds only atoms, and `dtype` says so without computing a pending root's items.
-    let simple = root.dtype().is_some() || match root.as_items() { Items::Values(items) => items.iter().all(Value::is_atom), _ => true };
+    let simple = root.is_simple();
     if matches!(root, Value::Array(_)) && !root.is_empty() && simple {
         let labels = Labels { places: Places::Offsets(root.len()), nested: HashMap::new() };
         return Ok((labels, Labelled::mapped(level, SelectionKind::Item, root.clone(), root.layout().clone(), false, Mapping::Linear(1))));

@@ -210,7 +210,7 @@ impl Value {
     fn mark_here(&self) -> Option<Mark> { self.carrier().map(Carrier::mark) }
     /// Visits the level of each carrier in this value, at its outer layer or inside nested arrays but never inside a carrier's parts, until `found` gives `true`. Returns whether it did.
     fn marks(&self, found: &mut impl FnMut(Mark) -> bool) -> bool {
-        match self.mark_here() { Some(mark) => found(mark), None => self.holds_values() && self.elements().any(|e| e.marks(&mut *found)) }
+        match self.mark_here() { Some(mark) => found(mark), None => self.holds_values() && !self.is_cells() && self.elements().any(|e| e.marks(&mut *found)) }
     }
     /// The newest level whose data this value carries, looking inside nested arrays but not inside a carrier's parts.
     pub(crate) fn newest(&self) -> Option<Mark> {
@@ -222,7 +222,7 @@ impl Value {
     pub(crate) fn carries_here(&self) -> bool { self.carrier().is_some() }
     /// Whether this value, or a value nested in it, carries a running level's data. Kernels that read items directly leave such a value to the general path. Only mixed storage holds nested values, so a compact value answers from two inline tests.
     #[inline]
-    pub(crate) fn carried(&self) -> bool { self.carries_here() || self.holds_values() && self.marks(&mut |_| true) }
+    pub(crate) fn carried(&self) -> bool { self.carries_here() || self.holds_values() && !self.is_cells() && self.marks(&mut |_| true) }
     /// Whether this value carries only levels older than `level` at its outer layer, as a dual's parts and a tape value's coefficients must (`derivative::Dual::new`, `program::trace::Traced`).
     pub(crate) fn older_than(&self, level: u64) -> bool { self.carrier().is_none_or(|c| c.level() < level) }
     /// The carrier at this value's outer layer that holds level `level`'s data. Level ids come from one counter, so the level alone names the carrier's kind.

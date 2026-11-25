@@ -18,7 +18,7 @@ const TIMES: Primitive = Primitive::Arithmetic(Arithmetic::Times);
 pub(crate) fn tape_of(value: &Value) -> Option<&Arc<Traced>> { value.carrier().and_then(Carrier::traced).filter(|t| t.role == Role::Tape) }
 
 /// Whether `value` holds a tape value among its items.
-pub(crate) fn holds_tape(value: &Value) -> bool { value.holds_values() && value.elements().any(|e| tape_of(&e).is_some()) }
+pub(crate) fn holds_tape(value: &Value) -> bool { value.holds_values() && !value.is_cells() && value.elements().any(|e| tape_of(&e).is_some()) }
 
 /// A zero of the kind of the numbers in `like`.
 pub(crate) fn zero_of(like: &Value) -> Value {

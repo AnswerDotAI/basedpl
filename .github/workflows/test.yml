@@ -22,10 +22,11 @@ jobs:
         with:
           r2-url: ${{ secrets.SCCACHE_R2 }}
       - uses: taiki-e/install-action@nextest
+      - uses: AnswerDotAI/.github/actions/setup-uv@main
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - run: pip install -e '.[dev]'
+      - run: uv pip install --system --config-settings-package basedpl:metadata-only=1 -e '.[test]'
       - run: cargo develop
       - run: node tests/input.mjs
       - run: node tests/highlighting.mjs

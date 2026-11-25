@@ -13,7 +13,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 rustymath = { version = ">=0.1.62, <1", default-features = false }
-rustymath-buffer = ">=0.1.60, <1"
+rustymath-buffer = ">=0.1.65, <1"
 rustymath-timing = ">=0.1.60, <1"
 pyo3 = ">=0.29.2, <1"
 pyo3-build-config = ">=0.29.2, <1"
@@ -45,9 +45,32 @@ opt-level = 3
 lto = false
 overflow-checks = false
 debug-assertions = false
-incremental = true
 # Line tables change with every shifted line and recompile the code below it.
 debug = false
+
+[profile.release.package.basedpl]
+incremental = true
+
+[profile.release.package.basedpl-cli]
+incremental = true
+
+[profile.release.package.basedpl-image]
+incremental = true
+
+[profile.release.package.basedpl-jit]
+incremental = true
+
+[profile.release.package.basedpl-py]
+incremental = true
+
+[profile.release.package.basedpl-testkit]
+incremental = true
+
+[profile.release.package.basedpl-wasm]
+incremental = true
+
+[profile.release.package.xtask]
+incremental = true
 
 [profile.quick]
 inherits = "release"
@@ -59,6 +82,30 @@ lto = "thin"
 codegen-units = 16
 incremental = false
 strip = true
+
+[profile.dist.package.basedpl]
+incremental = false
+
+[profile.dist.package.basedpl-cli]
+incremental = false
+
+[profile.dist.package.basedpl-image]
+incremental = false
+
+[profile.dist.package.basedpl-jit]
+incremental = false
+
+[profile.dist.package.basedpl-py]
+incremental = false
+
+[profile.dist.package.basedpl-testkit]
+incremental = false
+
+[profile.dist.package.basedpl-wasm]
+incremental = false
+
+[profile.dist.package.xtask]
+incremental = false
 
 # A local run before each release (`cargo test --profile checked`): debug assertions add `session()`'s turn check and the standard library's checks in unsafe code, at 12 to 55% per call.
 [profile.checked]
