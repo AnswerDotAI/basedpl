@@ -69,6 +69,7 @@ pub(super) fn items_whole(a: &Value) -> (Value, usize) {
         let rank = item.shape().len();
         return (item, rank);
     }
+    if let Some(Ok(whole)) = a.cell_stack() { return whole; }
     if a.holds_values() && let crate::array::Items::Values(items) = a.as_items() && let Some(whole) = crate::batch::stacked(a.layout(), items.iter()) {
         return whole;
     }

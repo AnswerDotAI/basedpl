@@ -422,7 +422,9 @@ def thread_scaling(
     least = lambda s: 1 + (1 / (s + (1 - s) / threads) - 1) / 2 if s < 1 else 0.9
     build, timeout = resolved(build), Limit.of(timeout)
     def timed(codes):
-        one, many = (time_cases(codes, setup, threads=t, build=build, timeout=timeout) for t in (1, threads))
+        one = time_cases(codes, setup, threads=1, build=build, timeout=timeout)
+        # Warm the worker's Rayon pool before timing so pool creation and CPU ramp don't skew scaling.
+        many = time_cases(['*262144ρ1.0', *codes], setup, threads=threads, build=build, timeout=timeout)[1:] if threads > 1 else time_cases(codes, setup, threads=1, build=build, timeout=timeout)
         return {code: (code, a, b, a / b, least(serial[code])) for (code, a, _), (_, b, _) in zip(one, many)}
     rows = timed(listify(cases) or list(serial))
     for pause in _retry_pauses:

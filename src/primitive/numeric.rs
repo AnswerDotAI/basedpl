@@ -299,8 +299,10 @@ pub(crate) fn decompose(left: Option<&Value>, right: &Value, span: &Span) -> Res
     let &[m, n] = right.shape() else { return Err(Error::new(Kind::Rank, "•decompose needs a matrix")) };
     if m == 0 || n == 0 { return Err(Error::domain("•decompose needs a nonempty matrix")); }
     if d.square() && m != n { return Err(Error::new(Kind::Length, "eigen, cholesky and lu need a square matrix")); }
-    let (names, cells) = factors(&d, right, None, span)?;
-    record(names, cells)
+    let (names, FactorStacks::Compact(arrays)) = factor_stacks(&d, right, None, span)? else {
+        unreachable!("one matrix cannot mix Hermitian and non-Hermitian")
+    };
+    record(names, arrays)
 }
 
 /// `kind •decompose⍤2` on a stack of matrices with compact storage and a plain layout: the array of factors that `⍤2` mixes from each cell's record, as `•decompose` gives it for that cell alone. A stack with failed cells gives an error. `None` where `•decompose⍤2` takes its general path, which also raises the errors that the options and the cells' shape give.
@@ -309,10 +311,15 @@ pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Span) -
     let d = Decomposition::new(Some(left)).ok()?;
     let [m, n] = matrix_size(right)?;
     if d.square() && m != n { return None; }
-    Some(factors(&d, right, None, span).and_then(|(names, cells)| {
-        let keys = record(names.clone(), cells[..names.len()].to_vec())?.layout().clone();
-        let layout = Layout::from(right.shape()[..right.shape().len() - 2].to_vec()).concat(&keys);
-        Value::new(layout, cells).described("invalid rank cells")
+    Some(factor_stacks(&d, right, None, span).and_then(|(names, stacks)| {
+        let frame = right.shape().len() - 2;
+        let keys = crate::keyed::Keys::partial(names.iter().map(|&n| Some(n.into())).collect()).described("invalid factors")?;
+        let layout =
+            Layout::from(right.shape()[..frame].to_vec()).concat(&Layout::from([names.len()]).with_keys(vec![Some(keys)]).described("invalid factors")?);
+        match stacks {
+            FactorStacks::Compact(arrays) => Value::cell_columns(layout, frame, &arrays).ok_or_else(|| Error::domain("invalid rank cells")),
+            FactorStacks::Mixed(cells) => Value::new(layout, cells).described("invalid rank cells"),
+        }
     }))
 }
 
@@ -340,8 +347,11 @@ impl Decomposition {
     fn square(&self) -> bool { matches!(self.kind.as_str(), "eigen" | "cholesky" | "lu") }
 }
 
-/// The factors that `d` names, for each matrix in `right`'s last two axes, from rustymath's matrix functions on stacks: their names, and the factors of each matrix in turn, in one list. The matrices factor in the [`Domain`] of their items, or as floats of their width where they're all exact. `"eigen"` gives a Hermitian matrix real eigenvalues, in ascending order, and orthonormal eigenvectors, and any other matrix complex ones: as `hermitian` says for every matrix, or where it's `None`, as each matrix is, so a matrix in a stack gets what it gets alone. A matrix that its factorization fails on, which rustymath gives as NaN, is a DOMAIN error.
-fn factors(d: &Decomposition, right: &Value, hermitian: Option<bool>, span: &Span) -> Result<(Vec<&'static str>, Vec<Value>), Error> {
+/// Factored stacks from [`factor_stacks`]: either one compact `[frame..., cell...]` array per factor, or flattened cells when a stack mixes Hermitian and non-Hermitian eigenmatrices.
+enum FactorStacks { Compact(Vec<Value>), Mixed(Vec<Value>) }
+
+/// The factors that `d` names, for each matrix in `right`'s last two axes, from rustymath's matrix functions on stacks. The matrices factor in the [`Domain`] of their items, or as floats of their width where they're all exact. `"eigen"` gives a Hermitian matrix real eigenvalues, in ascending order, and orthonormal eigenvectors, and any other matrix complex ones: as `hermitian` says for every matrix, or where it's `None`, as each matrix is, so a matrix in a stack gets what it gets alone. A matrix that its factorization fails on, which rustymath gives as NaN, is a DOMAIN error.
+fn factor_stacks(d: &Decomposition, right: &Value, hermitian: Option<bool>, span: &Span) -> Result<(Vec<&'static str>, FactorStacks), Error> {
     let (domain, width) = domain_of(&[right])?;
     let (domain, rank) = (domain.inexact(width), right.shape().len());
     let hermitian = match hermitian {
@@ -384,31 +394,30 @@ fn factors(d: &Decomposition, right: &Value, hermitian: Option<bool>, span: &Spa
         ("svd", true) => vec!["u", "s", "v"], ("svd", false) => vec!["s"], ("qr", _) => vec!["q", "r"], ("cholesky", _) => vec!["l"],
         ("lu", _) => vec!["l", "u", "p"], (_, true) => vec!["values", "vectors"], _ => vec!["values"]
     };
-    let frame = rank - 2;
-    let values = arrays.into_iter().map(|a| {
+    let arrays = arrays.into_iter().map(|a| {
         let (layout, buffer) = a.into_compact();
         value(buffer, Layout::from(layout.shape().to_vec()))
     }).collect::<Result<Vec<_>, _>>()?;
-    let cells = values.iter().map(|v| v.cells(v.shape().len() - frame)).collect::<Result<Vec<_>, _>>().described("invalid factors")?;
-    let count = crate::array::count(&right.shape()[..frame]);
-    let cells = (0..count).flat_map(|i| cells.iter().map(move |c| c.get(i))).collect::<Result<_, _>>().described("invalid factors")?;
-    Ok((names, cells))
+    Ok((names, FactorStacks::Compact(arrays)))
 }
 
-/// [`factors`] of a stack that mixes Hermitian matrices with others: each part factors as its matrices would alone, and the parts' factors merge back in the stack's order.
-fn mixed(d: &Decomposition, right: &Value, hermitian: &[bool], span: &Span) -> Result<(Vec<&'static str>, Vec<Value>), Error> {
+/// [`factor_stacks`] of a stack that mixes Hermitian matrices with others: each part factors as its matrices would alone, and the parts' factors merge back in the stack's order.
+fn mixed(d: &Decomposition, right: &Value, hermitian: &[bool], span: &Span) -> Result<(Vec<&'static str>, FactorStacks), Error> {
     let matrices = right.cells(2).described("invalid matrices")?;
-    let part = |h: bool| {
+    let part = |h: bool| -> Result<_, Error> {
         let chosen = hermitian.iter().enumerate().filter(|&(_, &e)| e == h).map(|(i, _)| matrices.get(i)).collect::<Result<Vec<_>, _>>()
             .described("invalid matrices")?;
         let stack = Value::assemble(&[chosen.len()], &chosen, &chosen[0]).described("invalid matrices")?;
-        factors(d, &stack, Some(h), span)
+        let (names, FactorStacks::Compact(arrays)) = factor_stacks(d, &stack, Some(h), span)? else { unreachable!("forced hermitian cannot mix") };
+        let cells = arrays.iter().map(|v| v.cells(v.shape().len() - 1)).collect::<Result<Vec<_>, _>>().described("invalid factors")?;
+        let flat = (0..chosen.len()).flat_map(|i| cells.iter().map(move |c| c.get(i))).collect::<Result<Vec<_>, _>>().described("invalid factors")?;
+        Ok((names, flat))
     };
     let ((names, yes), (_, no)) = (part(true)?, part(false)?);
     let (k, mut all) = (names.len(), Vec::with_capacity(yes.len() + no.len()));
     let (mut yes, mut no) = (yes.into_iter(), no.into_iter());
     for &h in hermitian { all.extend((if h { &mut yes } else { &mut no }).take(k)); }
-    Ok((names, all))
+    Ok((names, FactorStacks::Mixed(all)))
 }
 
 /// The record of `factors` under their `names`.

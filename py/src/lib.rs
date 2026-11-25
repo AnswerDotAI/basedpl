@@ -7,8 +7,8 @@ use pyo3::{
     IntoPyObjectExt, exceptions::{PyBufferError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
     types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}
 };
-use rustymath::{layout::Keys, structure::{IndexPart, SliceBound}};
-use rustymath_buffer::walk::{Collect, walked, within};
+use rustymath::{layout::{Keys, Layout}, structure::{IndexPart, SliceBound}};
+use rustymath_buffer::walk::{Collect, numeric as walk_numeric, walked, within};
 use std::{ffi::c_int, sync::{Arc, Mutex, atomic::{AtomicPtr, Ordering}}};
 use {ctrlc as _, kernmini as _, rustyline as _};
 
@@ -22,7 +22,10 @@ impl Collect for Items {
     type Piece = Value;
     fn int(&mut self, n: i128) -> Value { Value::Number(Number::from(BigInt::from(n)).marked(true)) }
     fn piece(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Option<(Value, Vec<usize>)>> { Ok(Some((element(obj, self)?, vec![]))) }
-    fn element(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Value> { element(obj, self) }
+    fn nest(&mut self, layout: Layout, mut pieces: Vec<Value>) -> PyResult<Value> {
+        if layout.shape().is_empty() { return Ok(pieces.pop().expect("a unit holds one item")); }
+        Value::imported(layout.shape().to_vec(), pieces, zero(self.width)).map_err(value_error)
+    }
 }
 
 fn value_error(e: impl ToString) -> PyErr { PyValueError::new_err(e.to_string()) }
@@ -45,9 +48,15 @@ fn zero(width: FloatWidth) -> Value { Value::Number(Number::float(0.0, width).ma
 /// The array that the Python data `obj` gives, converted by `items`. Nested lists, tuples and ranges give axes, a `str` gives a character vector, and any other object gives the value it gives as an item. Numbers take the import rules: they become floats only when every number converts exactly.
 fn import(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
     if let Ok(s) = obj.cast::<PyString>() { return Ok(keyed::text(s.to_str()?)); }
-    let (layout, mut values) = walked(obj, items)?;
-    if layout.shape().is_empty() { return Ok(values.pop().expect("a unit holds one item")); }
-    Value::imported(layout.shape().to_vec(), values, zero(items.width)).map_err(value_error)
+    if let Some((layout, buf)) = walk_numeric(obj) {
+        return match buf {
+            Buffer::Floats(rustymath::buffer::FloatBuf::F64(v)) if items.width != FloatWidth::F64 => Value::floats(layout, items.width, v),
+            Buffer::Floats(_) | Buffer::Booleans(_) | Buffer::Integers(_) => Value::from_buffer(layout, buf),
+            _ => unreachable!("walk::numeric returns floats, integers, or booleans"),
+        }.map_err(value_error);
+    }
+    let (layout, values) = walked(obj, items)?;
+    items.nest(layout, values)
 }
 
 /// The item that the `str` `s` gives: one character, or the character vector that `texts` holds for it.
@@ -112,7 +121,10 @@ fn numpy(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Option<Value>> {
 fn element(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
     let width = items.width;
     if let Ok(b) = obj.cast_exact::<PyBool>() { return Ok(Value::Number(Number::from_bool(b.is_true()))); }
-    if obj.is_exact_instance_of::<PyInt>() { return Ok(Value::Number(Number::from(obj.extract::<BigInt>()?).marked(true))); }
+    if obj.is_exact_instance_of::<PyInt>() {
+        let n = match obj.extract::<i64>() { Ok(n) => Number::from_integer(n), Err(_) => Number::from(obj.extract::<BigInt>()?) };
+        return Ok(Value::Number(n.marked(true)));
+    }
     if obj.is_exact_instance_of::<PyFloat>() { return Ok(Value::Number(Number::float(obj.extract()?, width).marked(true))); }
     if let Ok(z) = obj.cast_exact::<PyComplex>() {
         return Ok(Value::Number(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width).marked(true)));

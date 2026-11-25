@@ -7394,7 +7394,7 @@ x←1ₓ 0.5
 "float64" "mixed" "integer" "mixed"
 
 ⍝ import-shared-texts — `•csv` and `•json` store each distinct text once; Unicode round trips make fresh text buffers for the comparison
-v←1000ρ"ab" "cd"
+v←1000ρ"abcdefghij" "klmnopqrst"
 c←(•csv •csv⁻ ["s":v]).s
 j←•json •json⁻ v
 {(•memory ω).bytes<(•memory {•ucs •ucs ω}¨ω).bytes}¨[c j]
@@ -10159,6 +10159,15 @@ e←"eigen"•decompose⍤2 s
 [(0⌷e)≡("eigen" •decompose 0⌷s);(1⌷e)≡("eigen" •decompose 1⌷s)]
 ⍝ =>
 $t $t
+
+⍝ — Stacked •decompose⍤2 keeps factor columns compact through column projection, slicing, mix, and selective assignment
+a←0.5×2 3 2 2ρ1 2 3 4 2 1 1 3 4 1 2 5 3 2 5 1 1 4 2 3 5 2 1 4
+d←"qr"•decompose⍤2 a ◇ q←d.[∞;"q"] ◇ r←d.[∞;"r"]
+m←d ◇ m.[0;0;"q"]←0×m.[0;0;"q"]
+md←(•memory d).bytes ◇ z←0↑d ◇ dep←≡d ◇ mz←(•memory d).bytes ◇ s←1↑d
+[(1ₑ¯12>⌈/,|((⊃q)+.×⍤2 ⊃r)-a); (⊃s.[∞;"q"])≡1↑⊃q; md=2×(•memory a).bytes; mz=md+32ₓ; (•memory q).bytes=(•memory a).bytes; (dep=2ₓ)∧(ρz)≡0 3 2; (•storage 6 2ρd).view; (m.[0;0;"q"]≡0×d.[0;0;"q"])∧d.[0;0;"q"]≡(⊃q).[0;0;∞]]
+⍝ =>
+$t $t $t $t $t $t $t $t
 
 ⍝ — •storage gives a record: the storage's kind, whether the items wait in a pending call, whether the value reads another array's items, and how many ∂ levels' tags it carries
 •storage 1.5 2.5   ⍝ ["kind":"float64" "pending":$f "view":$f "active":0ₓ]
