@@ -37,9 +37,9 @@ loss←{+/⊼1-2×ω} ◇ rosen←{[x y]←ω ◇ ⊼1-x + 100×⊼y-⊼x}
 {⌽ω}⁰⍣n t
 ⍝⍝: -	-	-	instructions macos 828788.719 linux 816740.578	allocated macos 43355.375 linux 43355.375
 
-⍝ A system function that converts each item on its own runs once on the leaf of the same 64 strings (`batch::leaf_system`).
+⍝ A system function that converts each item on its own declines batching on the 64 ragged strings and runs item by item.
 •ucs⍣n t
-⍝⍝: -	-	-	instructions macos 240322.578 linux 241054.875	allocated macos 11984.688 linux 11984.688
+⍝⍝: -	-	-	instructions macos 280516.367 linux 266719.289	allocated macos 11656.688 linux 11656.688
 
 ⍝ `⇄` by L-BFGS on Rosenbrock's function: 53 evaluations, about 153,500 instructions each. Each evaluation calls `linearized` directly, outside the program cache. The case runs once, so its counts are for a 1,024th of the run.
 rosen⇄ ¯1.2 1
