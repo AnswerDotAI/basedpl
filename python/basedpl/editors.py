@@ -7,7 +7,7 @@ import json, re, subprocess, tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from . import symbols, keyboards, windows_keyboard
-from ._core import _superscripts, _subscripts, _number_marks
+from ._core import _superscripts, _subscripts, _number_marks, _dollars
 from .assets import GENERATED, kernel_spec
 
 VIM = Path('editors/vim/syntax/bpl.vim')
@@ -21,6 +21,7 @@ CLASSES = {'Function': ('dsFunction', 'function', ''), 'MonadicOperator': ('dsOp
            'DyadicOperator': ('dsExtension', 'dyadic-operator', ''), 'Argument': ('dsVariable', 'argument', ''), 'Keyword': ('dsKeyword', 'syntax', _subscripts)}
 # The characters each class colours in each language. The Dyalog APL and BQN tables serve the comparison page.
 SPELLINGS = {s['glyph']: ''.join(dict.fromkeys(s['glyph'] + ''.join(s['hanzi']))) for s in symbols}
+DOLLARS = {name: ''.join(dict.fromkeys(''.join(hanzi))) for name, hanzi in _dollars}
 BPL = {cls: ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
 HANZI = {cls: ''.join(SPELLINGS[s['glyph']][1:] for s in symbols if s['kind'] == kind) for cls, (_, kind, _) in CLASSES.items()}
 TOKEN_PATTERNS = {'System': r'•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*', 'Empty': r'⍬{mark}?', 'Mark': r'{mark}',
@@ -52,13 +53,21 @@ def vim_class(chars):
     return f'{delimiter}[{body}]{delimiter}'
 
 
-def token_patterns(spellings):
+def token_patterns(spellings, hanzi=False):
     "Lexical rules with `spellings` for each BPL glyph."
     marks = '(?:' + '|'.join(re.escape(glyph) for glyph, _ in _number_marks) + ')'
+    fmarks = '(?:' + '|'.join(re.escape(glyph) for glyph, kind in _number_marks if kind.startswith('float')) + ')'
     patterns = {cls: ''.join('[' + re.escape(spellings[c]) + ']' if c in '•¯∞⍬' else c for c in pattern)
         .replace(r'\.', '[' + spellings['.'] + ']').format(mark=marks) for cls, pattern in TOKEN_PATTERNS.items()}
-    name = r'[^\s\p{Cc}0-9' + re.escape(''.join(spellings.values()) + _superscripts + _subscripts + ''.join(glyph for glyph, _ in _number_marks) + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
-    return patterns | {'Name': rf'(?:_\d+|_\S|_|{name})+'}
+    if hanzi:
+        dollar_num = f"[{''.join(DOLLARS[k] for k in ('$t', '$f'))}]|[{''.join(DOLLARS[k] for k in ('$n', '$m'))}]{fmarks}?"
+        dollars = {'DollarNumber': dollar_num, 'DollarString': f"[{''.join(DOLLARS[k] for k in ('$a', '$d'))}]",
+            'DollarError': f"[{DOLLARS['$e']}]"}
+    else:
+        dollars = {'DollarNumber': rf'\$[tf]|\$[nm]{fmarks}?', 'DollarString': r'\$[ad]', 'DollarError': r'\$e'}
+    extra = ''.join(DOLLARS.values()) if hanzi else ''
+    name = r'[^\s\p{Cc}0-9' + re.escape(''.join(spellings.values()) + extra + _superscripts + _subscripts + ''.join(glyph for glyph, _ in _number_marks) + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
+    return patterns | dollars | {'Name': rf'(?:_\d+|_\S|_|{name})+'}
 
 
 def _xml(root):
@@ -75,8 +84,9 @@ def quarto(text, glyphs):
         root.find(f'./highlighting/itemDatas/itemData[@name="{cls}"]').set('defStyleNum', style)
     if glyphs is BPL:
         patterns = token_patterns({glyph: glyph for glyph in SPELLINGS})
-        normal.find('RegExpr[@attribute="Name"]').set('String', patterns['Name'])
-        for cls, attr, marker in [('System', 'Function', '•'), ('Number', 'Number', '∞'), ('Empty', 'Number', '⍬')]:
+        next(r for r in normal.findall('RegExpr[@attribute="Name"]') if '$e' not in r.get('String', '')).set('String', patterns['Name'])
+        for cls, attr, marker in [('System', 'Function', '•'), ('Number', 'Number', '∞'), ('Empty', 'Number', '⍬'),
+            ('DollarNumber', 'Number', '$[tf]'), ('DollarString', 'String', '$[ad]'), ('DollarError', 'Name', '$e')]:
             next(r for r in normal.findall(f'RegExpr[@attribute="{attr}"]') if marker in r.get('String', '')).set('String', patterns[cls])
         marked = normal.find('RegExpr[@attribute="MonadicOperator"]')
         if marked is None:
@@ -93,7 +103,7 @@ def quarto(text, glyphs):
 
 def hanzi_grammar(xml):
     "Hanzi-sensitive rules followed by an include of the BPL grammar."
-    root, patterns = ET.fromstring(xml), token_patterns(SPELLINGS)
+    root, patterns = ET.fromstring(xml), token_patterns(SPELLINGS, hanzi=True)
     root.set('name', 'BPL (Hanzi)')
     root.set('extensions', '*.hpl')
     contexts = root.find('./highlighting/contexts')
@@ -105,7 +115,10 @@ def hanzi_grammar(xml):
         if attr == 'Comment':
             rule.set('String', SPELLINGS['⍝'][1:])
             rule.set('context', 'Comment##BPL')
-        elif attr == 'Name': rule.set('String', patterns['Name'])
+        elif attr == 'Name' and '$e' not in value: rule.set('String', patterns['Name'])
+        elif rule.tag == 'RegExpr' and '$e' in value: rule.set('String', patterns['DollarError'])
+        elif rule.tag == 'RegExpr' and '$[tf]' in value: rule.set('String', patterns['DollarNumber'])
+        elif rule.tag == 'RegExpr' and '$[ad]' in value: rule.set('String', patterns['DollarString'])
         elif rule.tag == 'RegExpr' and '•' in value: rule.set('String', patterns['System'])
         elif rule.tag == 'RegExpr' and any(c in value for c in '∞⍬'): rule.set('String', patterns['Empty' if '⍬' in value else 'Number'])
         elif rule.tag == 'AnyChar' and attr in HANZI: rule.set('String', HANZI[attr])
@@ -149,7 +162,8 @@ def vim(text):
         if cls == 'MonadicOperator': glyphs = glyphs[0] + r'\v' + patterns['Mark'] + '|' + glyphs[1:]
         text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {glyphs}')
     for cls, marker, pattern in [('System', '•', patterns['System']),
-        ('Number', '∞', patterns['Number'] + '|' + patterns['Empty']), ('Comment', '⍝', r'⍝.*$')]:
+        ('Number', '∞', patterns['Number'] + '|' + patterns['Empty']), ('Number', r'\\\$', patterns['DollarNumber']),
+        ('Comment', '⍝', r'⍝.*$')]:
         text = _replace(text, f'(?m)^syntax match bpl{cls} .*{marker}.*$', f'syntax match bpl{cls} /\\v{pattern}/')
     return text
 

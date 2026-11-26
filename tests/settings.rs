@@ -95,8 +95,19 @@ fn boxed_display_and_function_trees() {
     assert_eq!(AplValue::from_parts([1], vec![key.clone()], key).unwrap().literal(), "[(1键)]");
     let power = AplValue::Function(s.late_bound("f⍣永").unwrap());
     assert_eq!(AplValue::from_parts([], vec![power.clone()], power).unwrap().literal(), "(f⍣永)ˢ");
+    assert_eq!(
+        s.eval(r#"$t ◇ $f ◇ $t $f ◇ $n ◇ $nₛ ◇ ⍬ ◇ ⍬ₓ ◇ 0ρ$f ◇ 0 2ρ0 ◇ 0 2ρ$f ◇ ⍬:⍬ ◇ ⊂4ₓ ◇ ["i":2]ρ1 2 ◇ •ucs 7"#).output_text(),
+        ["真", "假", "真 假", "缺", "缺ₛ", "空", "空ₓ", "0形假", "0 2形0", "0 2形假", "空:空", "包4ₓ", r#"["i":2]形[1 2]"#, "系ucs 7"]
+    );
+    assert_eq!(s.eval(r#"¯3 ◇ ∞ ◇ ¯∞ ◇ ○⁻ ◇ •json⁻ ◇ f⍣⍬ ◇ f⍣$t ◇ [[1 2◇3 4] 5]"#).output_text(),
+        ["¯3", "∞", "¯∞", "圆⁻", "系json⁻", "{加总乙}次空", "{加总乙}次真", "[[1 2◇3 4] 5]"]);
+    assert_eq!(s.eval(r#"["a":"x" "y"; "b":"p"; "c":"q"]:2 1 1ρ1 2"#).output_text(), ["\"x\"索\n  q\np 1\n\n\"y\"索\n  q\np 2"]);
+    assert_eq!(s.eval(r#"⍕$t $f ◇ •literal⁻ $t $f ◇ •literal⁻ ⍬ ◇ •literal⁻ 0ρ$f"#).output_text(), [r#""$t $f""#, r#""[$t $f]""#, r#""⍬ₚ""#, r#""0ρ$f""#]);
+    let boxed = s.eval(r#"]Display 2 2ρ[$t 1.5 2 $n]"#).output_text().join("\n");
+    let widths: Vec<_> = boxed.lines().map(unicode_width::UnicodeWidthStr::width).collect();
+    assert!(boxed.contains('真') && boxed.contains('缺') && widths.iter().all(|&w| w == widths[0]), "{boxed}");
     assert!(s.eval(r#"•prefs ["notation":"traditional"]"#).error.is_none());
-    assert_eq!(s.eval("+/÷≢").output_text(), ["加總除數"]);
+    assert_eq!(s.eval(r#"+/÷≢ ◇ ○⁻ ◇ ⊂$f"#).output_text(), ["加總除數", "圓⁻", "包假"]);
     s.eval(r#"•prefs ["trees":$t]"#);
     let tree = s.eval("avg").output_text().join("\n");
     for part in ["總", "加", "除", "數"] { assert!(tree.contains(part)); }
@@ -173,6 +184,17 @@ fn hanzi_spellings_and_language() {
             }
         }
     }
+    for (name, hanzi) in basedpl::symbols::dollars() {
+        for (aliases, notation) in hanzi.into_iter().zip([Notation::Simplified, Notation::Traditional]) {
+            assert!(!aliases.is_empty(), "{name} needs Hanzi spellings");
+            assert_eq!(notation.glyph(name), &aliases[..aliases.chars().next().unwrap().len_utf8()]);
+            for alias in aliases.chars() {
+                assert!(seen.insert(alias, name).is_none_or(|glyph| glyph == name), "duplicate alias {alias}");
+                assert_eq!(basedpl::symbols::dollar(alias), Some(name));
+                assert_eq!(canonical(alias), alias);
+            }
+        }
+    }
     equiv_in!(&s;
         "mean是加总除数句mean 2 4 9" => "5", "加累 2 3 4" => "2 5 9", "乘表己至3" => "[1 2 3◇2 4 6◇3 6 9]", "加總 1 2 3" => "6",
         "負3减负1" => "¯2", "1e负3加1r负4" => "1e¯3+1r¯4", "[负3 负1]ₓ" => "[¯3 ¯1]ₓ", "[空]ₛ" => "[⍬]ₛ", "负永" => "¯∞",
@@ -180,9 +202,16 @@ fn hanzi_spellings_and_language() {
         "f是{乙加1}句f次3隔5" => "8", "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
         "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"", "語←1 ◇ 𠀀←2 ◇ 語+𠀀" => "3",
         "_加←1 ◇ _+←2 ◇ _加_总←3 ◇ x_語←4 ◇ [_加 _+ _加_总 x_語]" => "1 2 3 4",
+        "真" => "$t", "假" => "$f", "真 假" => "$t $f", "真加假" => "1ₓ", "缺≡$n" => "$t",
+        "(系storage 缺ₛ).kind" => "\"float32\"", "(系storage 缺ₕ).kind" => "\"float16\"",
+        "英" => "$a", "码" => "$d", "碼" => "$d", "微" => "$m", "微ₛ" => "$mₛ", "微ₕ" => "$mₕ",
+        "{\"DOMAIN\"键键错内kind句除'a'}0" => "\"DOMAIN\"", "{\"DOMAIN\"键键錯内kind句除'a'}0" => "\"DOMAIN\"",
+        "_真←9 ◇ _真" => "9",
     );
     assert_eq!(s.name_class("系time"), 3);
     assert_eq!(s.inspect("系time").unwrap().source, "•time");
+    assert!(s.inspect("真").unwrap().help.contains("True and false"));
+    assert!(s.inspect("错").unwrap().help.contains("Caught error"));
     assert!(s.set("乙", number(basedpl::Number::from_integer(1))).is_err() && !s.erase("乙"));
     equiv_in(&s, "{系nc \"乙\"}0", "2ₓ");
     equiv("かな←2 ◇ 한글←3 ◇ かな+한글", "5");
@@ -191,7 +220,7 @@ fn hanzi_spellings_and_language() {
     assert_eq!(error.span.as_ref().unwrap().range, 13..16);
     assert_eq!(error.span.as_ref().unwrap().source.text, code);
     fails_in(&s, "DOMAIN", &[r#"0 ◇ •prefs ["hanzi_aliases":$f]"#, r#"p←["hanzi_aliases":$f] ◇ •prefs p"#]);
-    equiv_in(&s, r#"•prefs ["hanzi_aliases":$f] ◇ 中文←7 ◇ 中文"#, "7");
+    equiv_in(&s, r#"•prefs ["hanzi_aliases":$f] ◇ 中文←7 ◇ 真←5 ◇ 中文+真"#, "12");
     equiv_in(&s, "中文+1", "8");
 }
 

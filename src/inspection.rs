@@ -28,6 +28,7 @@ impl Inspection {
 
 /// Help for a system name, syntax token or glyph.
 pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
+    if let Some(dollar) = symbol.parse::<char>().ok().and_then(crate::symbols::dollar) { return page(dollar); }
     let canonical: String = symbol.chars().map(crate::symbols::canonical).collect();
     let symbol = canonical.as_str();
     if symbol.starts_with('$') { return page(symbol); }

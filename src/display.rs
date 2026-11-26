@@ -7,11 +7,12 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Clone, Copy, Default)]
 struct Decimals { left: usize, right: usize }
 impl Decimals {
-    /// The characters of a number's text before its decimal point, and from the point on.
-    fn of(text: impl IntoIterator<Item = char>) -> Self {
-        let mut d = Self::default();
-        for c in text { if d.right > 0 || c == '.' { d.right += 1 } else { d.left += 1 } }
-        d
+    /// The width of a number's text before its decimal point, and from the point on, measured by `measure`.
+    fn of(text: &str, measure: fn(&str) -> usize) -> Self {
+        match text.split_once('.') {
+            Some((left, right)) => Self { left: measure(left), right: 1 + measure(right) },
+            None => Self { left: measure(text), right: 0 },
+        }
     }
     /// Widens the column to hold `number`.
     fn fit(&mut self, number: Self) { *self = Self { left: self.left.max(number.left), right: self.right.max(number.right) } }
@@ -62,10 +63,10 @@ impl Elide {
     pub(crate) fn number(self, n: &Number) -> String {
         if !self.marks { return self.unmarked(n); }
         let n = self.shown_number(n);
-        format!("{}{}", n.rounded(self.prec), n.float_width().and_then(|w| self.width_marker(w)).unwrap_or_default())
+        format!("{}{}", n.rounded(self.prec).display_in(self.notation, false), n.float_width().and_then(|w| self.width_marker(w)).unwrap_or_default())
     }
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
-    pub(crate) fn unmarked(self, n: &Number) -> String { format!("{:#}", self.shown_number(n).rounded(self.prec)) }
+    pub(crate) fn unmarked(self, n: &Number) -> String { self.shown_number(n).rounded(self.prec).display_in(self.notation, true).to_string() }
     /// `n` as an item shows it: a complex number with a zero imaginary part as its real part where `reals` is set.
     pub(crate) fn shown_number(self, n: &Number) -> std::borrow::Cow<'_, Number> {
         match n.as_complex() {
@@ -300,7 +301,7 @@ impl Block {
 pub(crate) struct Cell { block: Block, number: Option<Decimals>, nested: bool }
 impl Cell {
     pub(crate) fn text(text: String) -> Self { Self { block: Block::new(text), number: None, nested: false } }
-    pub(crate) fn number(text: String) -> Self { Self { number: Some(Decimals::of(text.chars())), block: Block::new(text), nested: false } }
+    pub(crate) fn number(text: String) -> Self { let block = Block::new(text); Self { number: Some(Decimals::of(&block.lines[0], block.measure)), block, nested: false } }
     /// A cell for `spot`: `item` for an item's offset, and a marker that lines up with the units digits of numbers.
     pub(crate) fn spot(spot: &Spot, item: impl FnOnce(usize) -> Self) -> Self { match *spot { Spot::At(i) => item(i), Spot::Gap(c) => Self::number(c.into()) } }
     /// A cell of `⍕`'s layout for `item`, from the rows of its formatted text.
@@ -309,7 +310,7 @@ impl Cell {
     }
     /// A cell holding `block`, the text of `item`.
     fn item(block: Block, item: &Value) -> Self {
-        let number = matches!(item.displayed(), Plain::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
+        let number = matches!(item.displayed(), Plain::Number(_)).then(|| Decimals::of(&block.lines[0], block.measure));
         Self { block, number, nested: matches!(item, Value::Array(_)) }
     }
     pub(crate) fn height(&self) -> usize { self.block.lines.len() }
@@ -423,7 +424,7 @@ fn boxes(a: &Value) -> bool { a.shape().len() != 1 || !a.is_simple() }
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a.displayed() {
         Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
-        Plain::Operator(op) => return op.text(el), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
+        Plain::Operator(op) => return op.text(el), Plain::Character(_) => return a.source(el), Plain::Array(_) => ()
     }
     let el = el.items_of(a);
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
@@ -432,7 +433,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
         else if a.is_strand(el) && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
         else { a.source(el) };
     }
-    if a.is_empty() { return a.literal(); }
+    if a.is_empty() { return a.source(el); }
     // Numbers that share a marked kind write as their literal laid out in rows, with one mark after its brackets, as a vector does.
     let mark = a.mark(el);
     let (_, rows) = table(a, el, mark.is_none());
@@ -512,7 +513,7 @@ fn labelled(a: &Value, el: Elide) -> String {
         if rank == 2 { return text; }
         let coordinates: Vec<_> =
             index.iter().enumerate().map(|(axis, &i)| label(axis, i).map_or_else(|| i.to_string(), |k| crate::array::quoted(&k))).collect();
-        format!("{}⌷\n{text}", coordinates.join(" "))
+        format!("{}{}\n{text}", coordinates.join(" "), el.notation.glyph("⌷"))
     }).collect();
     pages.join("\n\n")
 }

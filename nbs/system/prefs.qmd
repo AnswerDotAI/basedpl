@@ -13,7 +13,7 @@
 | `edges` | Positions shown at each end of a long axis | `3` |
 | `prec` | Significant digits shown for each float. `∞` shows every digit | `10` |
 | `width` | The widest line display shows. `∞` allows any width | The terminal's width in the REPL, `∞` elsewhere |
-| `notation` | Generated function and operator notation: `"apl"`, `"simplified"` or `"traditional"` | `"apl"` |
+| `notation` | Display notation: `"apl"`, `"simplified"` or `"traditional"` | `"apl"` |
 | `hanzi_aliases` | `$t` enables Hanzi glyph aliases. Other Hanzi remain name characters. Requires a leading declaration on a literal record | `$f` |
 | `mathish` | `$t` applies [Mathish mode](../numbers.qmd#mathish-mode) to [Mathish types](../terms.qmd#term-mathish-types) under dynamic kinds | `$t` |
 | `float` | The width of new floats in bits, 16, 32 or 64 | `64` |
@@ -29,7 +29,7 @@ Character vectors display as quoted strings, including inside arrays and with `b
 
 `⎕←` always shows every item and rounds floats to `prec` as display does. [`⍕`](../glyphs/thorn.qmd) and source text always hold every item and every digit. `"-" •nput text` writes raw text without quotes or truncation.
 
-`notation` changes generated function and operator displays, including trees and dissected expressions. Dfn source, strings, record keys and field separators stay unchanged. Generated source and structural APIs keep canonical APL spellings.
+`notation` changes display for generated functions, operators, trees, dissected expressions, and these literals and prefixes: `$t` (`真`), `$f` (`假`), `$n` (`缺`), `⍬` (`空`), `ρ` (`形`), `⊂` (`包`), and `•` (`系`, including `•ucs`). Display keeps `◇`, `⁻`, `¯`, `∞`, `:`, `.`, box markers, and numeric marks and scripts (such as `ₓ`, `ᵣ`, `ₑ`, `ⱼ`, `ₛ`, `ₕ`, `²` and `¹`) unchanged. Their Hanzi spellings (`句`, `反`, `负`/`負`, `永`) remain valid input under `hanzi_aliases`. Dfn source, strings and record keys stay as written. `⍕`, `•literal⁻` and structural APIs always use canonical APL spellings.
 
 `hanzi_aliases` controls accepted input independently of `notation`. Put `•prefs ["hanzi_aliases":$t]` before any other code to enable Hanzi glyph spellings. The setting persists across notebook cells and REPL inputs. Loaded files use and update the same preferences as their caller. See [Hanzi spellings](../syntax.qmd#hanzi-spellings).
 

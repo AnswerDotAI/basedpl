@@ -1,6 +1,6 @@
 # `•literal` — Literals
 
-`•literal⁻ Y` writes `Y` as BPL source text, in the notation that display uses. `•literal text` reads such text back into its value without running code. The text may hold literals and the functions that `•literal⁻` writes: `ρ`, `⊂`, `,`, `:` and `•ucs`. Nested, keyed and exact values are read back unchanged. Floats are written with the marker of their width, `ₚ`, `ₛ` or `ₕ`, so that the text is read back the same at any default width. `•hash •literal⁻ Y` hashes any array.
+`•literal⁻ Y` writes `Y` as canonical BPL source text, always in APL notation regardless of `•prefs`. `•literal text` reads such text back into its value without running code. The text may hold literals and the functions that `•literal⁻` writes: `ρ`, `⊂`, `,`, `:` and `•ucs`. Nested, keyed and exact values are read back unchanged. Floats are written with the marker of their width, `ₚ`, `ₛ` or `ₕ`, so that the text is read back the same at any default width. `•hash •literal⁻ Y` hashes any array.
 
 ```bpl
 •literal⁻ 2 3ρι6              ⍝ "[0 1 2◇3 4 5]ₚ"

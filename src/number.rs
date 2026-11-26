@@ -1006,18 +1006,20 @@ impl Number {
 }
 
 /// The shortest digits that read back as `n` at its own width, in scientific notation outside `1E¯6` to `1E17`.
-fn write_float<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut impl fmt::Write, n: F) -> fmt::Result {
+fn write_float<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut impl fmt::Write, n: F, notation: crate::symbols::Notation) -> fmt::Result {
     let wide: f64 = n.into();
-    if wide.is_nan() { return out.write_str(NAN_NAME); }
+    if wide.is_nan() { return out.write_str(notation.glyph(NAN_NAME)); }
     if wide.is_infinite() { return out.write_str(if wide.is_sign_positive() { "∞" } else { "-∞" }); }
     if wide != 0.0 && !(1e-6..1e17).contains(&wide.abs()) { out.write_str(&scientific(&format!("{n:E}"))) } else { write!(out, "{n}") }
 }
 
 /// The complex number `z`: its real part, `ⱼ` and its imaginary part, each written as `write_float` writes it.
-fn write_complex<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut impl fmt::Write, z: num_complex::Complex<F>) -> fmt::Result {
-    write_float(out, z.re)?;
+fn write_complex<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(
+    out: &mut impl fmt::Write, z: num_complex::Complex<F>, notation: crate::symbols::Notation
+) -> fmt::Result {
+    write_float(out, z.re, notation)?;
     out.write_str("ⱼ")?;
-    write_float(out, z.im)
+    write_float(out, z.im, notation)
 }
 
 /// `text`, which Rust wrote in exponent notation, with the exponent subscript in place of Rust's `e` or `E`.
@@ -1038,18 +1040,32 @@ impl<W: fmt::Write + ?Sized> fmt::Write for HighMinus<'_, W> {
     }
 }
 
-/// `{:#}` leaves out an exact integer's `ₓ`. Array notation then marks the whole array once.
-impl fmt::Display for Number {
+/// A number formatted under a display notation, optionally leaving out an exact integer's `ₓ` when an array marks itself once.
+pub(crate) struct Displayed<'a> { number: &'a Number, notation: crate::symbols::Notation, unmarked: bool }
+
+impl Number {
+    pub(crate) fn display_in(&self, notation: crate::symbols::Notation, unmarked: bool) -> Displayed<'_> {
+        Displayed { number: self, notation, unmarked }
+    }
+}
+
+impl fmt::Display for Displayed<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use fmt::Write;
-        let mark = if f.alternate() { "" } else { Mark::integer(self.fixed_width()).marker() };
+        let mark = if self.unmarked { "" } else { Mark::integer(self.number.fixed_width()).marker() };
         let mut out = HighMinus(f);
-        match &self.0 {
-            Boolean(b, _) => out.write_str(if *b { TRUE_NAME } else { FALSE_NAME }), Integer(n, _) => write!(out, "{n}{mark}"),
-            Fixed(n) => write!(out, "{}{mark}", n.value()), Half(n, _) => write_float(&mut out, *n), Single(n, _) => write_float(&mut out, *n),
-            Float(n, _) => write_float(&mut out, *n), Exact(n, _) if n.is_integer() => write!(out, "{}ᵣ", n.numer()),
-            Exact(n, _) => write!(out, "{}ᵣ{}", n.numer(), n.denom()), Complex(n, _) => write_complex(&mut out, *n),
-            Complex32(n, _) => write_complex(&mut out, *n)
+        match &self.number.0 {
+            Boolean(b, _) => out.write_str(self.notation.glyph(if *b { TRUE_NAME } else { FALSE_NAME })),
+            Integer(n, _) => write!(out, "{n}{mark}"), Fixed(n) => write!(out, "{}{mark}", n.value()),
+            Half(n, _) => write_float(&mut out, *n, self.notation), Single(n, _) => write_float(&mut out, *n, self.notation),
+            Float(n, _) => write_float(&mut out, *n, self.notation), Exact(n, _) if n.is_integer() => write!(out, "{}ᵣ", n.numer()),
+            Exact(n, _) => write!(out, "{}ᵣ{}", n.numer(), n.denom()), Complex(n, _) => write_complex(&mut out, *n, self.notation),
+            Complex32(n, _) => write_complex(&mut out, *n, self.notation)
         }
     }
+}
+
+/// `{:#}` leaves out an exact integer's `ₓ`. Array notation then marks the whole array once.
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.display_in(crate::symbols::Notation::Apl, f.alternate()).fmt(f) }
 }

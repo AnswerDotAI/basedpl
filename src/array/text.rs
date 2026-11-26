@@ -154,7 +154,7 @@ impl Value {
     pub(crate) fn source(&self, el: Elide) -> String {
         match self.displayed() {
             Plain::Number(n) => el.number(n),
-            Plain::Character(c) if c.is_control() => format!("•ucs {}", c as u32),
+            Plain::Character(c) if c.is_control() => format!("{}ucs {}", el.notation.glyph("•"), c as u32),
             Plain::Character(c) => format!("'{c}'"),
             Plain::Function(f) => {
                 let text = f.text(el, &mut 1000);
@@ -169,7 +169,7 @@ impl Value {
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
                 if self.is_string(el.display) { return quoted(&self.elided_text(el)); }
                 if let Some(s) = crate::keyed::name(self) {
-                    return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
+                    return format!("{}{}ucs {}", el.notation.glyph(","), el.notation.glyph("•"), s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
                 }
                 if self.is_empty() && !self.has_keys() { return self.empty_literal(el); }
                 let mark = self.mark(el);
@@ -249,7 +249,9 @@ impl Value {
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3ρ0`, needs parentheses.
     pub(crate) fn operand(&self, el: Elide) -> String {
         let text = self.source(el);
-        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
+        let literal = |c: char| c.is_ascii_digit() || " ¯.∞".contains(c) || crate::symbols::canonical(c) == '⍬'
+            || crate::symbols::dollar(c).is_some() || crate::number::subscript(c);
+        if outside(&text, |c| !literal(c)) { format!("({text})") } else { text }
     }
 
     /// Source text for a scalar holding `content`: `ˢ` after a function, and `⊂` before anything else.
@@ -268,7 +270,7 @@ impl Value {
     fn named_literal(&self, el: Elide) -> String {
         let shape: Vec<_> = self.axis_names().iter().zip(self.shape())
             .map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(&n)))).collect();
-        format!("[{}]ρ{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
+        format!("[{}]{}{}", shape.join(" "), el.notation.glyph("ρ"), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
     /// An array of rank 2 or more with keys: a key list for each axis, applied to the array without keys. A position stands for each missing key.
@@ -277,7 +279,7 @@ impl Value {
         let lists: Vec<_> = self.shape().iter().enumerate().map(|(axis, &len)| {
             let keys: Vec<_> = positions(len, edges)
                 .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(axis, i, el).map_or_else(|| i.to_string(), |k| quoted(&k)))).collect();
-            match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
+            match keys.len() { 0 => el.notation.glyph("⍬").into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
         }).collect();
         format!("[{}]:{}", lists.join(";"), self.unkeyed().source(el))
     }
@@ -298,20 +300,20 @@ impl Value {
     fn empty_literal(&self, el: Elide) -> String {
         let prototype = self.prototype();
         match (self.shape(), &prototype) {
-            ([_], Self::Number(n)) if n.as_bool().is_some() => "0ρ$f".into(),
-            ([_], Self::Number(n)) if n.is_exact() => format!("⍬{}", Elide::NONE.marker(n).unwrap_or_default()),
-            ([_], Self::Number(n)) => format!("⍬{}", el.marker(n).unwrap_or_default()),
+            ([_], Self::Number(n)) if n.as_bool().is_some() => format!("0{}{}", el.notation.glyph("ρ"), el.notation.glyph(crate::number::FALSE_NAME)),
+            ([_], Self::Number(n)) if n.is_exact() => format!("{}{}", el.notation.glyph("⍬"), Elide::NONE.marker(n).unwrap_or_default()),
+            ([_], Self::Number(n)) => format!("{}{}", el.notation.glyph("⍬"), el.marker(n).unwrap_or_default()),
             ([_], Self::Character(_)) => "\"\"".into(),
             (shape, _) => {
                 let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
                 let fill = if matches!(prototype, Self::Array(_)) { Self::enclosed_literal(&prototype, el) } else { prototype.source(el) };
-                format!("{}ρ{fill}", shape.join(" "))
+                format!("{}{}{fill}", shape.join(" "), el.notation.glyph("ρ"))
             }
         }
     }
     fn vector_literal(&self, el: Elide, edges: Option<usize>) -> String {
         // An empty record keeps its keyed axis, which `[]` would lose.
-        if self.keys(0).is_some() && self.is_empty() { return "⍬:⍬".into(); }
+        if self.keys(0).is_some() && self.is_empty() { let z = el.notation.glyph("⍬"); return format!("{z}:{z}"); }
         if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row(el)) {
             let mark = self.elements().map(|e| e.mark(el)).reduce(|a, b| if a == b { a } else { None }).flatten();
             let item = if mark.is_some() { Self::unmarked_item } else { Self::item };

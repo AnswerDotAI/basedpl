@@ -61,12 +61,16 @@
       "name": "constant.numeric.bpl"
     },
     {
-      "match": "\\$[tfn]",
+      "match": "\\$[tf]|\\$[nm](?:ₕ|ₛ|ₚ)?",
       "name": "constant.numeric.bpl"
     },
     {
       "match": "\\$[ad]",
       "name": "string.quoted.double.bpl"
+    },
+    {
+      "match": "\\$e",
+      "name": "variable.other.bpl"
     },
     {
       "begin": "[\\])](?=(?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ))",

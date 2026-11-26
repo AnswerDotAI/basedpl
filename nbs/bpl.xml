@@ -11,8 +11,9 @@
         <RegExpr String="[•][A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="Function" />
         <RegExpr String="(?:[¯]?[∞]|[¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?([jJⱼ][¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?|[rᵣ][¯]?\d+)?)(?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)?|[ₑⱼᵣ]" attribute="Number" />
         <RegExpr String="[⍬](?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)?" attribute="Number" />
-        <RegExpr String="\$[tfn]" attribute="Number" />
+        <RegExpr String="\$[tf]|\$[nm](?:ₕ|ₛ|ₚ)?" attribute="Number" />
         <RegExpr String="\$[ad]" attribute="String" />
+        <RegExpr String="\$e" attribute="Name" />
         <RegExpr String="[\])](?=(?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ))" attribute="Normal Text" context="Mark" />
         <AnyChar String="+-×÷⌈⌊|*⊛○π√!∧∨⊼⊽~=≠&lt;≤&gt;≥ι↦:ρ≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿" attribute="Function" />
         <RegExpr attribute="MonadicOperator" String="(?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)" />

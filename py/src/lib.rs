@@ -768,6 +768,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;
+    m.add("_dollars", basedpl::symbols::dollars())?;
     m.add("_builtin_names", basedpl::symbols::builtins())?;
     m.add("_superscripts", basedpl::superscripts())?;
     m.add("_subscripts", basedpl::subscripts())?;

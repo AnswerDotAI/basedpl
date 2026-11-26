@@ -21,6 +21,7 @@ const HANZI: &[(&str, &str, &str)] = &[
     ("⌺", "邻", "鄰"), ("←", "是", ""), ("⎕", "出入", ""), ("•", "系", ""), ("α", "甲", ""), ("ω", "乙", ""), ("⍶", "丙", ""),
     ("⍹", "丁", ""), ("∇", "递", "遞"), ("⍢", "循", ""), ("⍝", "注", ""), ("◇", "句", ""), ("⁝", "隔", ""), ("?", "若", ""),
     ("¯", "负", "負"), ("∞", "永", ""), ("⍬", "空", ""),
+    ("$t", "真", ""), ("$f", "假", ""), ("$n", "缺", ""), ("$a", "英", ""), ("$d", "码", "碼"), ("$m", "微", ""), ("$e", "错", "錯"),
 ];
 
 fn hanzi(glyph: &str) -> [&'static str; 2] {
@@ -32,9 +33,28 @@ pub fn canonical(c: char) -> char {
     if c < '\u{3400}' { return c; }
     static ALIASES: OnceLock<HashMap<char, char>> = OnceLock::new();
     *ALIASES.get_or_init(|| {
-        HANZI.iter().flat_map(|&(glyph, simple, traditional)| simple.chars().chain(traditional.chars()).map(move |c| (c, glyph.chars().next().unwrap())))
+        HANZI.iter().filter(|&&(glyph, _, _)| !glyph.starts_with('$'))
+            .flat_map(|&(glyph, simple, traditional)| simple.chars().chain(traditional.chars()).map(move |c| (c, glyph.chars().next().unwrap())))
             .collect()
     }).get(&c).unwrap_or(&c)
+}
+
+/// The `$` name (`$t`, `$f`, `$n`, `$a`, `$d`, `$m` or `$e`) that a Hanzi spelling names.
+pub fn dollar(c: char) -> Option<&'static str> {
+    if c < '\u{3400}' { return None; }
+    static DOLLARS: OnceLock<HashMap<char, &'static str>> = OnceLock::new();
+    DOLLARS.get_or_init(|| {
+        HANZI.iter().filter(|&&(glyph, _, _)| glyph.starts_with('$'))
+            .flat_map(|&(glyph, simple, traditional)| simple.chars().chain(traditional.chars()).map(move |c| (c, glyph)))
+            .collect()
+    }).get(&c).copied()
+}
+
+/// Every `$` name and its simplified and traditional Hanzi spellings, for editors and tests.
+pub fn dollars() -> Vec<(&'static str, [&'static str; 2])> {
+    HANZI.iter().filter(|&&(glyph, _, _)| glyph.starts_with('$'))
+        .map(|&(glyph, simple, traditional)| (glyph, [simple, if traditional.is_empty() { simple } else { traditional }]))
+        .collect()
 }
 
 /// The spelling of generated function and operator notation, independent of input preferences.

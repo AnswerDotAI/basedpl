@@ -10,9 +10,9 @@ Hanzi are ordinary name characters by default. Enable their glyph spellings with
 •prefs ["hanzi_aliases":$t]
 ```
 
-The setting persists across inputs and loaded files. When aliases are enabled, simplified, traditional and APL spellings can be mixed. `+/`, `加总`, `加總` and `加/` are all the same function. Each alias has the same one- and two-argument meanings as its glyph. The [notation preference](system/prefs.qmd) changes printed functions, not accepted input.
+The setting persists across inputs and loaded files. When aliases are enabled, simplified, traditional and APL spellings can be mixed. `+/`, `加总`, `加總` and `加/` are all the same function. Each alias has the same one- and two-argument meanings as its glyph. The [notation preference](system/prefs.qmd) changes display output, not accepted input.
 
-`是` is an alias for `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) is an alias for the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. Hanzi inside strings and comments remain ordinary text. [Hanzi as notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
+`是` is an alias for `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) is an alias for the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. The `$` names also have single-character Hanzi spellings, listed in [Constants](system/constants.qmd). Hanzi inside strings and comments remain ordinary text. [Hanzi as notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
 
 ## Names
 
@@ -35,7 +35,7 @@ T←["q1":5] ◇ T.q1             ⍝ 5
 
 ## Literals and strands
 
-Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A constant is `$` followed by one lowercase letter. `$a` is the uppercase Latin alphabet and `$d` the digits. `$e` is the error that an [error guard](glyphs/error-guard.qmd)'s handler caught. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
+Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the [constants](system/constants.qmd) `$t`, `$f`, `$n`, `$a`, `$d` and `$m` are [literals](terms.qmd#term-literal). Each is `$` followed by one lowercase letter, or its single-character Hanzi spelling when `hanzi_aliases` is enabled. `$a` is the uppercase Latin alphabet, `$d` the digits, and `$m` machine epsilon. `$e` is the error that an [error guard](glyphs/error-guard.qmd)'s handler caught. [Numbers](numbers.qmd) and [Characters and strings](strings.ipynb) give the written forms of numbers and text.
 
 `''` and `""` are the same empty character vector. A double-quoted string can span lines. Every line ending inside it reads as one newline, and its indentation stays as written.
 

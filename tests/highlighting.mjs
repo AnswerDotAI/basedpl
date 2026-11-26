@@ -22,11 +22,13 @@ assert.deepEqual(scopes('xⱼy+nₓ').map(([, scope]) => scope), ['variable.othe
     'keyword.operator.monadic.bpl']);
 for (const lang of ['bpl', 'hpl']) for (const name of ['avg', 'x_12', '测试', '😎', '_+', '_加', '_加_总', 'x_語'])
     assert.deepEqual(scopes(name, lang), [[name, 'variable.other.bpl']]);
-for (const name of ['加总内乙', '加總內乙', '是']) assert.deepEqual(scopes(name), [[name, 'variable.other.bpl']]);
-for (const text of ['¯2ₓ', '1ᵣ3', '1ₑ¯2', '2ⱼ¯4', '255ₓ₁', '⍬ₓ₄', '2ₛ'])
+for (const name of ['加总内乙', '加總內乙', '是', '真', '错']) assert.deepEqual(scopes(name), [[name, 'variable.other.bpl']]);
+for (const text of ['¯2ₓ', '1ᵣ3', '1ₑ¯2', '2ⱼ¯4', '255ₓ₁', '⍬ₓ₄', '2ₛ', '$t', '$nₛ', '$mₕ'])
     assert.ok(scopes(text).every(([, scope]) => scope === 'constant.numeric.bpl'));
-for (const text of ['负2ₓ', '負永', '1ₑ负2', '2j負4', '空ₓ', '1内2', '1內2', '内5'])
+for (const text of ['负2ₓ', '負永', '1ₑ负2', '2j負4', '空ₓ', '1内2', '1內2', '内5', '真', '假', '缺ₛ', '微ₕ'])
     assert.ok(scopes(text, 'hpl').every(([, scope]) => scope === 'constant.numeric.bpl'));
+for (const text of ['英', '码', '碼']) assert.deepEqual(scopes(text, 'hpl'), [[text, 'string.quoted.double.bpl']]);
+for (const text of ['错', '錯', '_真']) assert.deepEqual(scopes(text, 'hpl'), [[text, 'variable.other.bpl']]);
 assert.deepEqual(scopes('+/@ω²₀').map(([, scope]) => scope), ['support.function.bpl', 'keyword.operator.monadic.bpl',
     'keyword.operator.dyadic.bpl', 'variable.parameter.bpl', 'keyword.operator.monadic.bpl', 'keyword.control.bpl']);
 assert.deepEqual(scopes('+/@ω²₀', 'hpl'), scopes('+/@ω²₀'));

@@ -12,7 +12,7 @@ syntax match bplArgument /[αω⍶⍹∇⍢]/
 syntax match bplKeyword /[←⎕◇⁝?₀₁₂₃₄₅₆₇₈₉₋]/
 syntax match bplNumber /\v%([¯]?[∞]|[¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?([jJⱼ][¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?|[rᵣ][¯]?\d+)?)%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)?|[ₑⱼᵣ]|[⍬]%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)?/
 syntax match bplNumber /\v([\])])@<=ₓ/
-syntax match bplNumber /\v\$[tfn]/
+syntax match bplNumber /\v\$[tf]|\$[nm]%(ₕ|ₛ|ₚ)?/
 syntax match bplCharacter /'.\?'/
 syntax region bplString oneline start=/"/ skip=/""/ end=/"/
 syntax match bplComment /\v⍝.*$/

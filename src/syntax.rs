@@ -2,7 +2,7 @@ use crate::name::{Name, is_implicit};
 use crate::{
     At, Described, Error, ErrorKind, Number, Source, Span, Value,
     number::{Arithmetic, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, Mark, Math, Numeric, SUFFIXES, Suffix, subscript},
-    primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::canonical
+    primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::{canonical, dollar}
 };
 use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
 use std::{iter::Peekable, str::CharIndices, sync::{Arc, OnceLock, atomic::{AtomicU64, Ordering::Relaxed}}};
@@ -403,9 +403,11 @@ fn mark(chars: &mut Characters<'_>) -> Result<Option<Mark>, (ErrorKind, String)>
     if mark == Mark::Rational {
         let mut next = chars.clone();
         next.next();
-        if number_part(next.clone())
-            || next.peek().is_some_and(|&(_, c)| name_char_in(c, chars.aliases) || is_implicit(c) || matches!(c, '(' | '[' | '\'' | '"' | '$' | '•' | '⍬'))
-        { return Ok(None); }
+        if number_part(next.clone()) || next.peek().is_some_and(|&(_, c)| {
+            let canonical = chars.spelling();
+            name_char_in(c, chars.aliases) || is_implicit(canonical(c)) || matches!(canonical(c), '(' | '[' | '\'' | '"' | '$' | '•' | '⍬')
+                || (chars.aliases && dollar(c).is_some())
+        }) { return Ok(None); }
     }
     chars.next();
     if mark != Mark::Exact { return Ok(Some(mark)); }
@@ -542,7 +544,7 @@ pub(crate) fn name_char(c: char) -> bool {
         && OperatorKind::from_glyph(c).is_none()
 }
 
-pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { name_char(if aliases { canonical(c) } else { c }) }
+pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { (!aliases || dollar(c).is_none()) && name_char(if aliases { canonical(c) } else { c }) }
 
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
@@ -577,7 +579,24 @@ fn script_integer(c: char, chars: &mut Characters<'_>, digits: &str, what: &str)
 }
 
 const UNQUOTED: &str = "_ quotes the next character into a name, and there is none";
-const DOLLAR: &str = "$ and one letter is a constant ($t, $f, $n, $a or $d) or a handler's error ($e)";
+const DOLLAR: &str = "$ and one letter is a constant ($t, $f, $n, $a, $d or $m) or a handler's error ($e)";
+
+/// The token for `$` followed by `letter`, or its Hanzi alias. `$n` and `$m` take a float width mark.
+fn dollar_token(letter: char, chars: &mut Characters<'_>, numeric: Numeric) -> Option<TokenKind> {
+    Some(match letter {
+        't' => TokenKind::Literal(Value::Number(Number::from_bool(true))),
+        'f' => TokenKind::Literal(Value::Number(Number::from_bool(false))),
+        'n' => TokenKind::Literal(Value::Number(Number::float(f64::NAN, width_mark(chars).unwrap_or(numeric.width)))),
+        'a' => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
+        'd' => TokenKind::Literal(crate::keyed::text("0123456789")),
+        'm' => {
+            let width = width_mark(chars).unwrap_or(numeric.width);
+            TokenKind::Literal(Value::Number(Number::float(width.epsilon(), width)))
+        }
+        'e' => TokenKind::Name("$e".into()),
+        _ => return None,
+    })
+}
 
 /// Reads the rest of a name. Unreserved characters continue it, and a digit ends it. `_` quotes the next character into the name, and a quoted digit takes the digits after it, so `x_12` is one name. After a dot, digits continue a key, so `T.q1` names the key `q1`. A lone `_`, before a space, `]`, `)`, `←`, `;`, `◇` or the end, is the name `_`. Any other `_` with nothing to quote gives the position after it.
 fn name(chars: &mut Characters<'_>, key: bool) -> Result<(), (usize, &'static str)> {
@@ -781,20 +800,11 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             '⍬' => TokenKind::Literal(zilde(marked(chars)?.map_or(numeric.float(0.0), Mark::zero))),
             // `$` and one letter: a literal constant, or `$e`, the error a handler caught. `$n` and `$m` take a width mark.
             '$' => {
-                let token = match chars.next() {
-                    Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
-                    Some((_, 'f')) => TokenKind::Literal(Value::Number(Number::from_bool(false))),
-                    Some((_, 'n')) => TokenKind::Literal(Value::Number(Number::float(f64::NAN, width_mark(chars).unwrap_or(numeric.width)))),
-                    Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
-                    Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
-                    Some((_, 'm')) => {
-                        let width = width_mark(chars).unwrap_or(numeric.width);
-                        TokenKind::Literal(Value::Number(Number::float(width.epsilon(), width)))
-                    }
-                    Some((_, 'e')) => TokenKind::Name("$e".into()),
-                    _ => return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into()),
+                let Some(token) = chars.next().and_then(|(_, letter)| dollar_token(letter, chars, numeric)) else {
+                    return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into());
                 };
-                if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
+                let aliases = chars.aliases;
+                if chars.peek().is_some_and(|&(_, c)| name_char_in(c, aliases) || c.is_ascii_digit()) {
                     return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into());
                 }
                 token
@@ -837,6 +847,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => TokenKind::Script(
                 ScriptKind::Sub, script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?),
             c if c.is_whitespace() || c == '⁝' => return Ok(None),
+            _ if chars.aliases && let Some(name) = dollar(raw) => dollar_token(name.as_bytes()[1] as char, chars, numeric).unwrap(),
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                 (Some(op), _) => TokenKind::Operator(op), (_, Some(f)) => TokenKind::Function(f),
                 _ => return Err(Error::new(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).at(&span(start + raw.len_utf8())).into())

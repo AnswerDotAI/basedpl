@@ -29,8 +29,8 @@ Entry: Dyalog diff, example, defining page. Index, not reference: read a feature
 - [Dfns](dfns.html.md): use a dfn only where a tacit form is longer or clearly awkward: `+/÷≢ v`, not `{+/ω ÷ ≢ω}v`. no tradfns, no `:If` etc. last statement returns. predicate picks body (BQN): `{ω<0?-ω;ω} ¯3`→`3`. absent `α` drops out (BQN `𝕨`). operator operands `⍶` `⍹`, not `αα` `ωω`. `⍢` recursive operator call. error guard kinds as text: `"DOMAIN"::`.
 - [Assignment](assignment.html.md): `←` local. modified/selective updates: nearest binding. `[a b]←Y` destructures items by position. repeated position: which value it keeps isn't promised. space before `←`: whole run is target: `[[0 2]]⌷v ←0`.
 - [Modules](modules.html.md): `•load "file.bpl"` runs module, gives record of public names. `_` names private.
-- [Hanzi](syntax.html.md#hanzi-spellings): hanzi are name chars. leading `•prefs ["hanzi_aliases":$t]` enables aliases: `加总` for `+/`. non-alias hanzi: names. `_` quotes next non-space char into name: `_加_总`.
-- [Constants](system/constants.html.md): `$` names: `$t $f $n` true false NaN; `$a` uppercase alphabet; `$d` digits.
+- [Hanzi](syntax.html.md#hanzi-spellings): hanzi are name chars. leading `•prefs ["hanzi_aliases":$t]` enables aliases: `加总` for `+/`; non-alias hanzi: names; `_` quotes next non-space char into name: `_加_总`. `•prefs ["notation":"simplified"|"traditional"]` displays fns, ops, `$t $f $n ⍬ ρ ⊂ •` in hanzi; keeps `◇ ⁻ ¯ ∞ : .`, numeric marks, `⍕`, `•literal⁻` in APL.
+- [Constants](system/constants.html.md): `$` names (hanzi aliases): `$t $f $n` true false NaN (`真 假 缺`); `$a` uppercase alphabet (`英`); `$d` digits (`码`/`碼`); `$m` machine epsilon (`微`, takes width mark); `$e` caught error (`错`/`錯`).
 - [Style](style.html.md): read before writing BPL. aim: readable to non-APL readers; looking like APL has no value.
 
 ## Glyphs
