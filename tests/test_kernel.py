@@ -153,5 +153,15 @@ async def kernel_story():
         for name, kind in [('mean', 'function'), ('reduce', 'operator')]:
             assert values[name]['metadata']['type'] == kind and values[name]['data']['text/plain']
 
+        # Live environment updates via control `set_env_request` update `•host "env"` (set, overwrite, and unset).
+        reply = await kc.control_request('set_env_request', env={'JUPYGATE_KERNEL_PATH': 'a/first.ipynb', 'PATH': 'custom-path'})
+        assert reply['content']['status'] == 'ok'
+        _, messages = await kc.exec_ok('(•host "env").JUPYGATE_KERNEL_PATH ◇ (•host "env").PATH ◇ envn←≢•host "env"')
+        assert displayed(messages) == [('execute_result', '"a/first.ipynb"'), ('execute_result', '"custom-path"')]
+        reply = await kc.control_request('set_env_request', env={'JUPYGATE_KERNEL_PATH': 'b/renamed.ipynb', 'PATH': None})
+        assert reply['content']['status'] == 'ok'
+        _, messages = await kc.exec_ok('(•host "env").JUPYGATE_KERNEL_PATH ◇ (≢•host "env")=envn-1')
+        assert displayed(messages) == [('execute_result', '"b/renamed.ipynb"'), ('execute_result', '$t')]
+
 
 def test_jupyter_kernel(): asyncio.run(kernel_story())

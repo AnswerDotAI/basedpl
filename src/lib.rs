@@ -71,6 +71,8 @@ pub use eval::{Evaluation, Function, Operand, Operator, Session, Turn};
 pub use execution::{EvalOptions, Input, MimeBundle, MimeData, Output, OutputKind, OutputSink};
 #[cfg(web)]
 pub use host::configure_browser;
+#[cfg(not(web))]
+pub use host::set_env;
 pub use inspection::Inspection;
 pub use keyed::Keys;
 pub use number::Number;

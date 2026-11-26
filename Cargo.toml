@@ -18,7 +18,7 @@ rustymath-timing = ">=0.1.60, <1"
 pyo3 = ">=0.29.2, <1"
 pyo3-build-config = ">=0.29.2, <1"
 ctrlc = ">=3.5.2, <4"
-kernmini = ">=0.1.22, <1"
+kernmini = ">=0.1.25, <1"
 # Custom bindings override Emacs Alt-digit prefixes in this fork.
 rustyline = { git = "https://github.com/AnswerDotAI/rustyline.git", branch = "master", default-features = false, features = ["custom-bindings", "with-file-history"] }
 flate2 = { version = ">=1.1.10, <2", default-features = false, features = ["zlib"] }

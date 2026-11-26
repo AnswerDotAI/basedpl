@@ -1,14 +1,34 @@
 //! What the native build takes from its operating system and crates: the clock, files, the environment, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host_web.rs` gives the browser's versions of the same functions. Each passes straight through to its host, and keeps the host's own behaviour and syntax.
 use crate::cancel::check;
 use crate::{Error, array::generated_len, data::{Request, Response}, regex::Match};
-use std::{io, path::{Path, PathBuf}, time::Duration};
+use std::{collections::HashMap, io, path::{Path, PathBuf}, sync::{OnceLock, RwLock}, time::Duration};
 
 pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> { std::fs::read(path) }
 /// The name that identifies the file at `path`, for `•load`'s cycle check.
 pub(crate) fn canonical(path: &Path) -> PathBuf { std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned()) }
+fn env_overrides() -> &'static RwLock<HashMap<String, Option<String>>> {
+    static OVERRIDES: OnceLock<RwLock<HashMap<String, Option<String>>>> = OnceLock::new();
+    OVERRIDES.get_or_init(Default::default)
+}
+/// Updates the environment variables `•host "env"` reports without mutating the process environment. `None` hides a variable.
+pub fn set_env(updates: impl IntoIterator<Item = (String, Option<String>)>) {
+    env_overrides().write().unwrap_or_else(std::sync::PoisonError::into_inner).extend(updates);
+}
 /// The environment variables, as names and values.
 pub(crate) fn environment() -> Vec<(String, String)> {
-    std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect()
+    let overrides = env_overrides().read().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if overrides.is_empty() {
+        return std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect();
+    }
+    let mut pending: HashMap<&str, Option<&str>> = overrides.iter().map(|(k, v)| (k.as_str(), v.as_deref())).collect();
+    let mut vars: Vec<(String, String)> = std::env::vars_os().filter_map(|(k, v)| {
+        let k = k.to_string_lossy().into_owned();
+        match pending.remove(k.as_str()) {
+            Some(Some(val)) => Some((k, val.to_owned())), Some(None) => None, None => Some((k, v.to_string_lossy().into_owned()))
+        }
+    }).collect();
+    for (k, v) in pending { if let Some(val) = v { vars.push((k.to_owned(), val.to_owned())); } }
+    vars
 }
 /// `text` in the Unicode normalization form `form`: `"NFC"`, `"NFD"`, `"NFKC"` or `"NFKD"`.
 pub(crate) fn normalize(form: &str, text: &str) -> String {

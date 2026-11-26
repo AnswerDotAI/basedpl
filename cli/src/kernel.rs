@@ -3,7 +3,7 @@ use kernmini::{
     CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, InspectRequest, KernelInfo, LanguageError, LanguageEvent, LanguageSession, ThreadWorker,
 };
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
 #[derive(Clone)]
 struct BplSession { worker: ThreadWorker<Turn> }
@@ -153,6 +153,8 @@ impl LanguageSession for BplSession {
             ParseStatus::Invalid(_) => json!({"status": "invalid"})
         }).await
     }
+
+    async fn set_env(&self, env: HashMap<String, Option<String>>) -> kernmini::Result<()> { basedpl::set_env(env); Ok(()) }
 
     async fn shutdown(&self) -> kernmini::Result<()> { self.worker.shutdown().await }
 }
