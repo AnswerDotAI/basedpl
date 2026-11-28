@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["fastws-cli>=0.0.42", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "fonttools", "brotli", "rustymath>=0.1.49"]
+test = ["fastws-cli>=0.0.42", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev[exec]>=3.3.32", "conkernelclient>=0.0.23", "pillow", "fonttools", "brotli", "rustymath>=0.1.49"]
 dev = ["fastship>=0.0.11", "maturin>=1.13,<2.0", "basedpl[test]"]
 
 [project.scripts]
@@ -65,6 +65,7 @@ timeout = 30
 addopts = "-p timeout"
 
 [tool.nbdev]
+to_meta = ["export"]
 lib_path = "python/basedpl"
 custom_sidebar = true
 tst_flags = "dyalog"
