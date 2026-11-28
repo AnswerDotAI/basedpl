@@ -1,0 +1,41 @@
+
+
+# [`↣`](https://answerdotai.github.io/basedpl/glyphs/right-tail-arrow.html) — Before
+
+Dyadic operator. Keys: `Alt-.`. Hanzi: `先`
+
+`f↣g Y` is `(f Y)g Y`. Operators bind from the left. For example,
+`3↣<↣#` is `(3↣<)↣#`, which keeps the items greater than 3.
+
+``` bpl
+-↣+ 5              ⍝ 0
+3↣<↣#2 7 1 8       ⍝ 7 8
+' '↣≠↣⊆"a bc  d"   ⍝ "a" "bc" "d"
+```
+
+`X f↣g Y` is `(f X)g Y`.
+
+``` bpl
+10 -↣+ 3           ⍝ ¯7
+```
+
+`A↣f` binds the left argument, giving a monadic function. A train binds
+the same way: `10- y` is `(10↣-)y`.
+
+``` bpl
+10↣- 3             ⍝ 7
+32+1.8↣× 100       ⍝ 212
+```
+
+See [After](left-tail-arrow.qmd), [Atop / Rank](jot-diaeresis.qmd) and
+[Over](circle-diaeresis.qmd).
+
+## Inverse
+
+With a subject operand, `(X↣f)⁻Y` is `X f⁻ Y`. `X(f↣g)⁻Y` is
+`(f X)g⁻ Y`.
+
+``` bpl
+2↣× ⁻ 6    ⍝ 3
+3(-↣+)⁻7   ⍝ 10
+```

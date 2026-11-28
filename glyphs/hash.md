@@ -1,0 +1,105 @@
+
+
+# [`#`](https://answerdotai.github.io/basedpl/glyphs/hash.html) — Runs / Replicate
+
+Function. Hanzi: `复` (`複`). Ranks:
+[`∞`](https://answerdotai.github.io/basedpl/glyphs/infinity.html)
+monadic, `1 ∞` dyadic
+
+`#Y` gives the runs of adjacent matching major cells of `Y`: the length
+of each run, as exact integers, and the cell that repeats. It matches
+cells as [`∪`](down-shoe.qmd) does. `#/` rebuilds `Y`. So does `#⁻`,
+which lets [Under](at.qmd) change the runs. Here
+[`⊽`](https://answerdotai.github.io/basedpl/glyphs/vee-bar.html) doubles
+each length:
+
+``` bpl
+#"aaabcc"               ⍝ [[3 1 2]ₓ "abc"]
+#/#"aaabcc"             ⍝ "aaabcc"
+⊽@(0⊃)@# "aab"          ⍝ "aaaabb"
+```
+
+For a unit `Y`, `#Y` is the atom `1ₓ` and `Y` itself. When `Y`’s leading
+axis has keys, a third item holds the key of every position, and `#⁻`
+attaches them again. `#/` doesn’t use that item.
+
+``` bpl
+#["x":1 "y":1 "z":2]    ⍝ (2ₓ 1ₓ◇1 2◇"x" "y" "z")
+```
+
+`N#Y` repeats each major cell of `Y` by its count in `N`. With Boolean
+counts, Replicate filters `Y`.
+
+``` bpl
+1 0 1#10 20 30          ⍝ 10 30
+2 1#10 20               ⍝ 10 10 20
+0 2#[1 2◇3 4]         ⍝ [3 4◇3 4]
+```
+
+For a count `¯k`, Replicate gives `k` fills in place of the cell.
+[`⍠`](quad-colon.qmd#fill) sets the fill, for Replicate and for its
+inverse. A single count applies to every cell. A single cell is repeated
+for every count.
+
+``` bpl
+1 ¯2 1#10 20 30         ⍝ 10 0 0 30
+2 ¯1 1#"abc"            ⍝ "aa c"
+2#3 4                   ⍝ 3 3 4 4
+1 0 2#5                 ⍝ 5 5 5
+```
+
+`#₋₁` replicates along the last axis. [Axis](quad-colon.qmd) gives the
+rules for choosing axes.
+
+``` bpl
+1 0 1#₋₁[1 2 3◇4 5 6]     ⍝ [1 3◇4 6]
+```
+
+## Expand
+
+With `N` fixed, [`⁻`](../scripts.ipynb#superscripts) inverts `N#`. The
+inverse gives one cell for each count: the first of its copies for a
+positive count, and a fill for a zero or negative count. With a Boolean
+mask, the inverse expands `Y`. The result has the next cell of `Y`
+wherever the mask has 1, and a fill wherever it has 0.
+
+``` bpl
+1 0 1#⁻10 20           ⍝ 10 0 20
+1 0 1#⁻₋₁[1 2◇3 4]       ⍝ [1 0 2◇3 0 4]
+2 1#⁻10 10 20          ⍝ 10 20
+1 ¯2 1#⁻10 0 0 30      ⍝ 10 0 30
+```
+
+The inverse must use every cell once, unless `Y` has one cell. With a
+single count, the inverse undoes Replicate by that count.
+
+``` bpl
+1 0 1#⁻5               ⍝ 5 0 5
+2#⁻1 1 2 2             ⍝ 1 2
+```
+
+[Under](at.qmd) and [selective assignment](left-arrow.qmd) both keep the
+cells that `N#` drops.
+
+``` bpl
+-@ 1 0 1# 1 2 3         ⍝ ¯1 2 ¯3
+x←1 2 3
+(1 0 1#x)←0
+x                       ⍝ 0 2 0
+```
+
+APL difference:
+[`#`](https://answerdotai.github.io/basedpl/glyphs/hash.html) replaces
+[`/`](https://answerdotai.github.io/basedpl/glyphs/slash.html),
+[`⌿`](https://answerdotai.github.io/basedpl/glyphs/slash-bar.html),
+[`\\`](https://answerdotai.github.io/basedpl/glyphs/backslash.html) and
+[`⍀`](https://answerdotai.github.io/basedpl/glyphs/backslash-bar.html).
+Dyalog’s expand with counts other than 0 and 1, `N\Y`, is
+`1⌈|N # N>0 #⁻ Y`.
+
+## Errors
+
+- `LENGTH`: counts that don’t match the cells, or an inverse that
+  doesn’t use every cell
+- `DOMAIN`: counts that aren’t integers, or one inverse count that
+  doesn’t divide the number of cells

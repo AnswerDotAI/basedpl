@@ -1,0 +1,36 @@
+
+
+# [`⍸`](https://answerdotai.github.io/basedpl/glyphs/iota-underbar.html) — Where / Interval index
+
+Function. Keys: `Alt-Minus i`. Hanzi: `处/间` (`處/間`). Ranks:
+[`∞`](https://answerdotai.github.io/basedpl/glyphs/infinity.html)
+monadic, `∞ ∞` dyadic
+
+`⍸Y` lists exact positions, each repeated by its nonnegative whole
+count. Higher-rank `Y`: coordinate vectors.
+
+``` bpl
+⍸0 2 0 1           ⍝ [1 1 3]ₓ
+```
+
+For each item of `Y`, `X⍸Y` counts the boundaries in `X` less than or
+equal to that item, by binary search. Unsorted `X` gives meaningless
+counts, not an error. It uses [structural
+ordering](../evaluation.qmd#equality-and-ordering), without tolerance.
+
+``` bpl
+10 20 30⍸5 10 25 40 ⍝ [0 1 2 3]ₓ
+1 3⍸2              ⍝ 1ₓ
+1 3⍸⊂2             ⍝ 1ₓ
+1 3⍸,2             ⍝ [1]ₓ
+```
+
+Queries and the result’s shape follow [Index Of](iota.qmd).
+
+## Inverse
+
+`⍸⁻Y` counts how often each position appears in `Y`.
+
+``` bpl
+⍸⁻0 2 2   ⍝ [1 0 2]ₓ
+```

@@ -1,0 +1,19 @@
+
+
+# `•load` — Load
+
+`•load path` runs the BPL file at `path` as a [module](../modules.qmd),
+with names of its own. It returns a record of the module’s public names:
+the names assigned at its top level that don’t start with `_`. Loading
+the file adds no names to the caller’s scope and displays only explicit
+output. Each call runs the file again.
+
+Take names with a pattern, as in `[a: b:]←•load path`, or keep the
+record and read names with a dot, as in `m←•load path` and then `m.a`.
+
+A path that starts with `./` or `../` is relative to the file holding
+the code. Other relative paths are relative to the working directory.
+`•nget` and `•nput` follow the same rule.
+
+Errors: `IO` for a file that can’t be read; `DOMAIN` for a file that
+loads itself, directly or through other files.

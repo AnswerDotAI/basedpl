@@ -1,0 +1,181 @@
+
+
+# [`⍠`](https://answerdotai.github.io/basedpl/glyphs/quad-colon.html) — Axis
+
+Dyadic operator. Keys: `Alt-q ;`. Hanzi: `轴` (`軸`)
+
+`f⍠A` applies `f` to the cells made of the axes `A`. The other axes form
+the frame. `A` is an axis or a vector of axes, given as numbers or
+names. Axes count from 0, and negative axes count from the end. A record
+operand gives options, which [Fill](#fill) describes.
+
+``` bpl
+m←2 3ρι6ₓ
++/⍠0 m                    ⍝ [3 5 7]ₓ
+ax←0 ◇ +/⍠ax m            ⍝ [3 5 7]ₓ
+```
+
+Numeric [subscripts](../scripts.ipynb#subscripts) give literal axes:
+`+/₀` is `+/⍠0`, and `+/₁ ₂` is `+/⍠[1 2]`. Use
+[`⍠`](https://answerdotai.github.io/basedpl/glyphs/quad-colon.html) for
+names, computed axes and options records.
+
+`⌽₀` reverses the first axis; `⌽₋₁` reverses the last, as plain
+[`⌽`](https://answerdotai.github.io/basedpl/glyphs/circle-stile.html)
+does. A nonnegative axis that the data lacks adds trailing length-1
+axes, as [views](../terms.qmd#term-view), before `f` applies. With axis
+1, shape `[2]` is treated as `[2 1]`. This holds for every `f`:
+
+``` bpl
+10 20 ,₁ 30 40            ⍝ [10 30◇20 40]
+2#₁10 20                  ⍝ [10 10◇20 20]
+2↑₁10 20                  ⍝ [10 0◇20 0]
+```
+
+Negative axes select only existing axes. With two arguments, no axes are
+added when the higher-rank argument has the selected axes. Counts and
+selectors, such as `2` in `2#₁10 20`, keep their ordinary meaning. On an
+atom, axis 0 first makes a length-1 vector.
+
+[Rank](jot-diaeresis.qmd) selects the last `r` axes: `⍤1` is `⍠¯1`.
+
+``` bpl
+m←2 3ρι6ₓ
++/⍤1 m                    ⍝ [3 12]ₓ
++/⍠¯1 m                   ⍝ [3 12]ₓ
++/⍠0 m                    ⍝ [3 5 7]ₓ
+```
+
+Result cells with the same rank as the selected cells return to the axes
+`A`. Other result cells start at the first selected axis.
+
+``` bpl
+m←2 3ρι6ₓ
+⌽⍠0 m                     ⍝ [3 4 5◇0 1 2]ₓ
+ρ,⍠0 1⁝2 3 4ρι24ₓ        ⍝ [6 4]ₓ
+```
+
+With two arguments, `A` applies to both. Cells pair using leading
+agreement of the frames, as for [Rank](jot-diaeresis.qmd). An argument
+without the selected axes is one cell, paired with every cell of the
+other.
+
+``` bpl
+m←2 3ρι6ₓ
+1 0 1 #⍠1 m               ⍝ [0 2◇3 5]ₓ
+10 20 +⍠0 m               ⍝ [10 11 12◇23 24 25]
+```
+
+A string selects one axis by name, and a vector of strings several. A
+[named index](iota.qmd) (`ι["row":2]`) or an index from
+[`•index`](../system/index.qmd) selects its own axis.
+
+``` bpl
+n←["row":2 "col":3]ρι6ₓ
++/⍠"row" n                ⍝ ["col":3]ρ[3 5 7]ₓ
++/⍠"row" "col" n          ⍝ 15ₓ
+r←ι["row":2] ◇ +/⍠r n     ⍝ ["col":3]ρ[3 5 7]ₓ
+[b k]←•index 2 3 ◇ +/⍠k b+k   ⍝ 3 6
+```
+
+A function right operand computes the axes from the arguments: `f⍠g Y`
+is `f⍠(g Y) Y`, and `X f⍠g Y` is `X f⍠(X g Y) Y`.
+[Rank](jot-diaeresis.qmd) and [Stencil](quad-diamond.qmd) take a
+function right operand in the same way. Here `g` selects the longest
+axis:
+
+``` bpl
+m←2 3ρι6ₓ ◇ +/⍠{↑⍒ρω} m      ⍝ [3 12]ₓ
+```
+
+## Exceptions
+
+For these primitives, `⍠A` has another meaning:
+
+- Multi-axis Reduce, including seeded Reduce. `+/⍠1 2` flattens each
+  cell before reducing.
+- Partitioned Enclose and Partition. `1 0 1 0⊂⍠1` and `1 1 2 2⊆⍠1` cut
+  the whole matrix into blocks along axis 1. `⊂⍠K` matches Dyalog.
+  Dyalog’s `⊆[K]` partitions each vector along axis `K` instead, which
+  is `{α⊆ω}⍠K` here.
+- Rotate with a count array. `1 2 3 4⌽⍠0` pairs one count with each
+  column.
+- Mix. `⊃⍠A` places the assembled cell axes among the frame axes; it
+  does not extend the nested input’s axes.
+- Axis selectors. `ι⍠A` returns the keys or positions of the selected
+  axes.
+
+``` bpl
++/⍠1 2⁝2 3 4ρι24ₓ        ⍝ [66 210]ₓ
+```
+
+Wrapping a primitive in a dfn gives the general rule:
+
+``` bpl
+{+/ω}⍠1 2⁝2 3 4ρι24ₓ     ⍝ [6 22 38◇54 70 86]ₓ
+m←2 4ρι8
+1 1 2 2{α⊆ω}⍠1 m        ⍝ [[0 1] [2 3]◇[4 5] [6 7]]
+```
+
+## Inverse
+
+`f⁻⍠A` inverts `f` along the same axes. Arithmetic and math functions,
+comparisons, Rotate, Replicate, the catenates, Enclose, Split, Mix and
+Reverse have such inverses.
+
+``` bpl
+10 20+⁻⍠0[11 12 13◇24 25 26]   ⍝ [1 2 3◇4 5 6]
+```
+
+## Fill
+
+The operand can be an options record, as in `f⍠["fill":v]`. The record
+has one option: `fill` gives the item for each filled position, in place
+of the array’s [prototype](../terms.qmd#term-prototype). Fill applies
+to: pervasive calls, keys one argument lacks; Take, past the end;
+Replicate, negative counts; Expand, inserted items; Mix, padding; Index
+and Pick, positions outside the axis or not whole; Pick and First,
+position 0 or ¯1 of an empty axis; Reshape, an empty argument. It
+applies too when `f` has a bound argument (`3↑`) or an axis (`↑⍠1`,
+`↑⍠{0}`). In `(f⍠R1)⍠R2`, `R1`’s fill applies. Any other function raises
+DOMAIN.
+
+``` bpl
+a←["p" "q"]:1 2 ◇ b←["q" "r"]:3 4
+a+b                             ⍝ ["p":1 "q":5 "r":4]
+a+⍠["fill":10] b                ⍝ ["p":11 "q":5 "r":14]
+5↑⍠["fill":¯1] 1 2 3            ⍝ 1 2 3 ¯1 ¯1
+⊃⍠["fill":$n] [[1 2] [3]]         ⍝ [1 2◇3 $n]
+[[$n 1]]⌷⍠["fill":¯1] 10 20 30  ⍝ ¯1 20
+(3↑⍠1)⍠["fill":¯1] [1 2◇3 4]    ⍝ [1 2 ¯1◇3 4 ¯1]
+(3↑⍠{0})⍠["fill":¯1] [1 2◇3 4]  ⍝ [1 2◇3 4◇¯1 ¯1]
+((3↑)⍠["fill":¯1])⍠["fill":¯2] 1 ⍝ 1 ¯1 ¯1
+```
+
+The fill is converted to the data’s type, and never changes the result’s
+type. A float fill is rounded to the data’s float width. Integers,
+Booleans, characters: the type must hold the fill’s value exactly. Under
+dynamic kinds, ordinary integers are widened to fit a whole fill. A
+nested array accepts any fill.
+
+``` bpl
+5↑⍠["fill":255] [1 2 3]ₓ₁      ⍝ [1 2 3 255 255]ₓ₁
+5↑⍠["fill":¯1000] [1 2 3]ₓ     ⍝ [1 2 3 ¯1000 ¯1000]ₓ
+3↑⍠["fill":"NA"] "a" "bc"      ⍝ "a" "bc" "NA"
+```
+
+The fill is checked when the call starts, even if no position is filled,
+against every argument that could be filled (pervasive: those with a
+keyed axis). [Windows](up-down-arrow.qmd) and
+[Stencil](quad-diamond.qmd) take a `fill` key in their own options
+records. A fill given to them through
+[`⍠`](https://answerdotai.github.io/basedpl/glyphs/quad-colon.html)
+raises DOMAIN.
+
+## Errors
+
+- `RANK`: an axis operand that is not a unit or vector
+- `DOMAIN`: axes that aren’t whole, repeated axes, negative axes outside
+  the higher-rank argument, an options record with a key other than
+  `fill`, a function that fills no position, Windows or Stencil, or a
+  fill that doesn’t keep its value as the data’s type

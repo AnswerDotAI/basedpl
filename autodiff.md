@@ -1,0 +1,559 @@
+
+
+# Automatic differentiation
+
+`f∂X` gives the derivative of `f` at `X`.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) works
+by running `f`. It differentiates through the primitives that `f` calls,
+inside dfns, trains and operators alike. A function needs no special
+form to be differentiated.
+[`⊼`](https://answerdotai.github.io/basedpl/glyphs/wedge-bar.html)
+squares its argument. `+/⊼` sums the squares:
+
+``` bpl
+⊼∂3                          ⍝ 6
++/⊼ ∂ 1 2 3                 ⍝ 2 4 6
+```
+
+The [`∂` page](glyphs/partial.qmd) lists what
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+differentiates and the errors it gives.
+
+## What [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) gives
+
+The Jacobian of `f` at `X` holds the derivative of each item of `f X`
+with respect to each number in `X`. `f∂X` gives it, with the keys, axis
+names and nesting of the outer product `(f X)×⊗X`. For a function that
+gives a number, the Jacobian is its gradient and has `X`’s structure.
+When the argument is a record, the gradient is a record with the same
+keys. `cart` converts polar coordinates to Cartesian ones. Its Jacobian
+has a row for each result and a column for each argument:
+
+``` bpl
+cart←{[r t]←ω ◇ [r×2○t r×1○t]} ◇ cart∂ 2 0.5   ⍝ [0.8775825619 ¯0.9588510772◇0.4794255386 1.755165124]
+p←["w":2 "b":1] ◇ {3×ω.w + ω.b}∂ p               ⍝ ["w":3 "b":1]
+```
+
+`W f∂ X` differentiates `W f X` with respect to `X`. The left argument
+holds what isn’t differentiated, such as training data:
+
+``` bpl
+3 {α×ω×ω}∂ 2                ⍝ 12
+```
+
+A Jacobian–vector product (JVP) is the derivative of `f` at `x` in a
+direction `t`. `{f x+ω×t}∂0` computes it by differentiating with respect
+to one number,
+[`ω`](https://answerdotai.github.io/basedpl/glyphs/omega.html). A
+vector–Jacobian product multiplies a vector `u` by the Jacobian.
+`{+/u×fω}∂ x` computes it by differentiating a sum. Neither builds the
+Jacobian. With `t` and `u` both `1 0`, the JVP gives the Jacobian’s
+first column. The vector–Jacobian product gives its first row:
+
+``` bpl
+f←{[x y]←ω ◇ [x×y x+y]} ◇ x←2 3
+f∂ x                        ⍝ [3 2◇1 1]
+t←1 0 ◇ {f x+ω×t}∂0         ⍝ 3 1
+u←1 0 ◇ {+/u×fω}∂ x         ⍝ 3 2
+```
+
+For a function that works item by item, such as the sine `1○`, `f∂⁰`
+gives the derivative at each item. Differentiating with respect to one
+number gives the same values in one pass:
+
+``` bpl
+x←0 0.5 1
+1○∂⁰ x                     ⍝ 1 0.8775825619 0.5403023059
+{1○x+ω}∂0                   ⍝ 1 0.8775825619 0.5403023059
+```
+
+`f∂∂` is
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) applied
+to `f∂`. It gives second and mixed derivatives, such as the matrix of
+mixed derivatives of `×/`, the product of the items.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) gives
+float derivatives, whatever the kind of `X`:
+
+``` bpl
+{ω×ω×ω}∂∂∂2                  ⍝ 6
+×/∂∂ 2 3                     ⍝ [0 1◇1 0]
+⊼∂3ₓ                         ⍝ 6
+```
+
+## Forward mode
+
+When `X` holds one number,
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) runs
+`f` once, in forward mode. Every value that depends on `X` is paired
+with its derivative with respect to `X`, as a dual number.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) starts
+the pass by making `X` a dual whose derivative is 1. A call on duals
+gives a dual. A pervasive function, such as
+[`×`](https://answerdotai.github.io/basedpl/glyphs/times.html) or
+[`*`](https://answerdotai.github.io/basedpl/glyphs/star.html), finds its
+result’s derivative by the chain rule, from a table of its partial
+derivatives. `α×ω` has the partials
+[`ω`](https://answerdotai.github.io/basedpl/glyphs/omega.html) and
+[`α`](https://answerdotai.github.io/basedpl/glyphs/alpha.html). `*ω` has
+the partial `*ω`, its own result.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) returns
+the derivative that is paired with the final result.
+
+Each [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+call tags the duals it makes. A call reads only the derivatives with its
+own tag. Under nested
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html), as in
+`{ω×ω×ω}∂∂∂2`, a value is a dual of a dual of a dual. Julia’s
+ForwardDiff tags its dual numbers in the same way.
+
+Functions that move items, such as reshape, transpose, take and windows,
+move each item’s derivative with the item. Comparisons, floor, integer
+[`÷`](https://answerdotai.github.io/basedpl/glyphs/obelus.html),
+[`ι`](https://answerdotai.github.io/basedpl/glyphs/iota.html), grade and
+other functions whose results are counts, positions, Booleans or floored
+integers give results with no derivative.
+
+## Reverse mode
+
+Forward mode takes one pass for each number in `X`. A network with a
+million parameters would take a million passes. When `X` holds more than
+one number,
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) instead
+runs `f` once with a tape in place of the derivatives. A tape is a list
+of linear steps, and no derivative is computed while `f` runs. Each call
+on a differentiated value adds a linear step to the tape, built from the
+same partial derivatives that forward mode uses. The steps are few:
+scaling by a coefficient, adding, copying from positions, broadcasting,
+folding by
+[`+`](https://answerdotai.github.io/basedpl/glyphs/plus.html), and
+matrix products with a constant. When `f` returns, the tape holds the
+linearisation of `f` at `X`. That’s the linear map from a small change
+in `X` to the change it causes in `f X`.
+
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) then
+reads the Jacobian from the tape. Running backwards through the tape,
+applying each step’s transpose in reverse order, gives one row of the
+Jacobian. Running forwards gives one column.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) takes
+the direction that needs fewer runs. A function that gives a number,
+such as a loss, needs one backward run. Its gradient costs a small
+multiple of one run of `f`, however many numbers `X` holds. Dex and JAX
+also build reverse mode as the transpose of a linearisation. One set of
+tangent rules then serves both modes.
+
+Each linear step has one transpose:
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Step</th>
+<th>Transpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scaling by a coefficient</td>
+<td>Scaling by the same coefficient</td>
+</tr>
+<tr>
+<td>Adding two values</td>
+<td>The same gradient to each value</td>
+</tr>
+<tr>
+<td>A broadcast</td>
+<td>A sum over the broadcast axes</td>
+</tr>
+<tr>
+<td>A fold by <a
+href="https://answerdotai.github.io/basedpl/glyphs/plus.html"><code>+</code></a>
+along an axis</td>
+<td>A broadcast along that axis</td>
+</tr>
+<tr>
+<td>A structural copy or a selection, such as a transpose, reverse,
+windows or a selection that repeats positions</td>
+<td>Each item’s gradient, added back where the item was read</td>
+</tr>
+<tr>
+<td>A matrix product with a constant</td>
+<td>A matrix product with the constant’s transpose</td>
+</tr>
+</tbody>
+</table>
+
+The transposes work on whole arrays, as the steps do. The transpose of a
+copy or a selection adds each gradient into the position that it was
+read from. It never builds an array of zeros with a one at each position
+read. In this example, `3↕` gives windows of 3. The first function reads
+item 0 twice and never reads item 1. In the second, the middle items
+appear in more of the windows:
+
+``` bpl
+0 0 2 {+/⊼ω.[α]}∂ 1 2 3     ⍝ 4 0 6
+{+/,⊼3↕ω}∂ 1 2 3 4 5        ⍝ 2 8 18 16 10
+```
+
+Folds and matrix functions have rules of their own. `×/` divides the
+product by each item to find that item’s derivative, counting zeros
+separately. `⌈/` and `⌊/` take the derivative of the item that they
+pick. [`⌹`](https://answerdotai.github.io/basedpl/glyphs/domino.html)
+and the determinant `-.×` compute their derivatives from one
+factorization of the matrix.
+
+The tape keeps the values that its steps need, such as the coefficients
+of its scalings, until
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+returns. Its memory grows with the work that `f` does.
+
+## Rules of your own
+
+`f∂←g` attaches `g` as the derivative of `f`. `g` is a JVP rule: `T g X`
+gives the derivative of `f` at `X` in the direction `T`. Forward mode
+calls `g` with the tangent as `T`. Reverse mode records the steps that
+`g` takes on `T`, then transposes them, as JAX transposes a `custom_jvp`
+rule. One rule serves both modes. A straight-through estimator, which
+treats rounding as if its derivative were 1, is such a rule:
+
+``` bpl
+r←{ω×ω} ◇ r∂←{α×2×ω}
+{1+rω}∂3                    ⍝ 6
+ste←{⌊ω} ◇ ste∂←{α}
+{+/steω×2}∂ 1.5 2.5         ⍝ 2 2
+```
+
+`•detach X` gives `X` with every derivative removed.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) then
+treats it as a constant, as JAX treats the result of `stop_gradient`.
+`×↢•detach` multiplies its argument by a detached copy of itself. Its
+derivative at 3 is the copy’s value, 3, whereas `⊼∂3` gives 6:
+
+``` bpl
+×↢•detach ∂3                ⍝ 3
+```
+
+A value that `f` writes to a name outside itself loses its derivatives
+when [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+returns. A function gives the same values with and without
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html).
+
+## Writes
+
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+differentiates indexed, sliced and masked updates, both replacements
+([`←`](https://answerdotai.github.io/basedpl/glyphs/left-arrow.html))
+and additive updates (`+←`). The replacement can depend on the
+differentiated input:
+
+``` bpl
+{v←ω ◇ v.[0]←0 ◇ +/v}∂1 2 3               ⍝ 0 1 1
+{v←ω ◇ v.[0]+←ω.[1] ◇ +/v}∂1 2 3         ⍝ 1 2 1
+{v←ω ◇ v.[[0 0]]+←ω.[1] ◇ +/v}∂1 2 3     ⍝ 1 3 1
+{v←ω ◇ v.[[0 2]]←+/ω ◇ +/v}∂1 2 3        ⍝ 2 3 2
+```
+
+Positions and masks are fixed choices during differentiation.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) does
+not differentiate which positions were chosen. When an additive update
+writes to the same position more than once, each addition contributes to
+the derivative, as the third example shows. When a replacement is
+broadcast, its gradient is summed back to the replacement’s original
+shape, as the fourth example shows.
+
+These rules also apply to [Under](glyphs/at.qmd) when its right operand
+selects.
+
+## Programs: trace once, replay
+
+Without a [program](terms.qmd#term-program),
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) builds
+its duals or its tape afresh on every call, through the interpreter. A
+training loop calls
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+hundreds of times, with arguments of the same types and shapes. This
+loop fits a network with 16 tanh units (`7○`) to 64 points of sin 3x
+(`1○3×x`), in 200 steps of gradient descent on a record of parameters:
+
+``` bpl
+x←ι64 ÷ 63 ◇ y←1○3×x
+loss←{[x y]←α ◇ [w b v c]←ω ◇ h←7○b(+¹)x×⊗w ◇ +/÷≢ ⊼y-c+h+.×v}
+p←["w":1○ι16 "b":16ρ0 "v":0.1×2○ι16 "c":0]
+[x y] loss p                ⍝ 0.5232276475
+p←{ω - 0.1× [x y]loss∂ω}⍣200p
+[x y] loss p                ⍝ 0.07655752909
+```
+
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) runs
+from a program. The first call with given argument types and shapes
+[traces](terms.qmd#term-trace) the function. The function runs on traced
+values, which have a type and a shape but no items. Each call on a
+traced value works out the type and shape of its result, and adds a step
+to the program. A map in the function, such as Rank in
+`+/{⊼1○+/w×ω}¹ X`, calls its dfn once on all its cells, as it does
+outside a trace. Each call in the dfn then adds one step for all the
+cells. The derivative’s tapes and their transposes add their steps to
+the same program. The program holds the whole call: the function’s value
+and its derivative together. JAX traces a Python function into a jaxpr
+in the same way.
+
+Later calls with the same argument types and shapes replay the program
+on their arguments, without running the function. The replay runs the
+program’s steps as ordinary calls. Chains of elementwise steps then run
+as one [fused group](terms.qmd#term-fused-group), a block of items at a
+time, as they do outside a program. When a chain ends in a fold, the
+fused group computes the fold as it computes the items. Its intermediate
+results exist only one block at a time. Once a fused group is large
+enough, or runs again, BPL compiles it to machine code with Cranelift,
+if its steps can compile. The browser build has no compiler. It runs
+every fused group on the interpreter’s [kernels](terms.qmd#term-kernel).
+`•explain` shows whether a call built a program or replayed one:
+
+``` bpl
+sq←{+/⊼ω} ◇ g←sq∂ 1 2 3
+(•explain "sq∂ 4 5 6").programs.event      ⍝ ["replayed"]
+(•explain "sq∂ 4 5 6 7").programs.event    ⍝ ["built"]
+```
+
+The second call replays the program that the first call built. The call
+with four numbers needs a new program.
+
+BPL keeps a dfn’s programs with the dfn’s definition. For any other
+function, such as a train, it keeps them under the function’s structure:
+the function without the arrays that it binds. Those arrays become
+inputs of the program, as a dfn’s free names do, and every function with
+that structure shares the programs. BPL keeps the structures used most
+recently in a session. So `+/w×` replays its program when `w` holds new
+values of the same type and shape:
+
+``` bpl
+w←1 2 3 ◇ g←+/w× ∂ 4 5 6
+w←7 8 9 ◇ (•explain "+/w× ∂ 4 5 6").programs.event   ⍝ ["replayed"]
+```
+
+### What stops a trace
+
+A trace stops at anything that a program can’t hold: output or another
+effect, a random draw,
+[`⍎`](https://answerdotai.github.io/basedpl/glyphs/hydrant.html), or a
+call that programs don’t take yet. It also stops when a differentiated
+value is read, as a guard on one does, or placed inside a nested array,
+as enclosing one does.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) then
+runs the call through duals and tapes.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+remembers that the trace stopped for those argument types and shapes.
+`•explain` gives the reason in its `stopped` rows:
+
+``` bpl
+pos←{+/ω > 0 ? +/⊼ω ; 0}
+(•explain "pos∂ 1 2 3").stopped.reason    ⍝ ["a read of a traced value"]
+(•explain "{+/,ω×⊃(⊂+/ω)×2}∂ 1 2 3").stopped.reason   ⍝ ["a traced value inside a nested array"]
+```
+
+Each replay reads the current value of every name that the function
+reads from outside its body, and of every array that a function other
+than a dfn binds. A name or an array read as positions, a count or a
+guard’s condition is part of the program itself. A replay checks its
+value. If the value has changed, the function is traced again.
+
+A program fixes every type before it runs. Under the default dynamic
+kinds, a result’s type can depend on its values:
+[`√`](https://answerdotai.github.io/basedpl/glyphs/radical.html) of a
+negative number gives a complex number. A trace stops at such a call,
+unless the argument is known to be nonnegative, as `⊼x` is. Under static
+kinds, which `•prefs ["kinds":"static"]` sets, every type follows from
+the argument types. The same call can then be traced. Use static kinds
+for work where speed matters.
+
+``` bpl
+roots←{+/√ω}
+(•explain "roots∂ 1 2 3").stopped.reason  ⍝ ["a result whose type depends on values"]
+```
+
+Write a function for
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) under
+static kinds, with each branch as
+[`⍚`](https://answerdotai.github.io/basedpl/glyphs/diamond-underbar.html)
+or `f@[p]` rather than a predicate. A predicate reads a differentiated
+value to pick one body for the whole call, which a program can’t hold.
+[`⍚`](https://answerdotai.github.io/basedpl/glyphs/diamond-underbar.html)
+and [`@`](https://answerdotai.github.io/basedpl/glyphs/at.html) pick
+items within whole arrays. Today they also stop a trace when their
+choice or their values come from differentiated values.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) still
+gives the right result there, more slowly. Tracing them is planned, as
+“Not built yet” describes.
+
+## Index notation
+
+In index notation, you write the formula for one item with named
+indices. BPL runs the formula once, on whole arrays.
+[Indexing](indexing.ipynb#named-and-fresh-indices) and
+[`•index`](system/index.qmd) describe it.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+differentiates index notation as it differentiates any other code. This
+matrix product, written with indices, has the same gradient as `+.×`:
+
+``` bpl
+xu←[2 3]ρι6 ◇ wu←[3 4]ρι12 ◇ [b o k]←•index 2 4 3
+{+/,⊼ω.[b k]+.×⍠k⁝wu.[k o]}∂ xu    ⍝ [324 1108 1892◇1008 3376 5744]
+{+/,⊼ω+.×wu}∂ xu                     ⍝ [324 1108 1892◇1008 3376 5744]
+```
+
+In a program, the indices keep their structure:
+
+- A [`+`](https://answerdotai.github.io/basedpl/glyphs/plus.html) fold
+  over named axes of a product, where both operands step along every
+  folded axis, runs as a matrix product `+.×`. The folds in its gradient
+  run as matrix products when they meet the same condition.
+- A read through positions computed from indices, such as `x.[i+1]`, is
+  a copy from positions that the program works out from the indices, not
+  from data. Its transpose copies back through the inverse of those
+  positions.
+- A read through positions from data, such as an embedding lookup
+  `E.[ids]`, is a gather. Its transpose adds each gradient into the
+  position that it was read from.
+
+Each replay of a dfn that uses `•index` gives its result’s indices fresh
+names, as an untraced call does.
+
+BPL’s design followed a study of Dex, whose index sets informed
+`•index`. Two points from Dex’s paper hold in BPL’s programs. Only
+nonlinear steps keep values for the transpose. Indexing is linear and
+keeps none. The transpose of indexing is an accumulation.
+
+## Where the design comes from
+
+JAX, Dex and tinygrad are the role models. Futhark, Dex and Julia set
+the standard that the design is judged by:
+
+- A gradient costs a small multiple of one run of the function, whatever
+  the number of variables.
+- The derivative of a whole-array operation is a whole-array operation.
+- One rule for each primitive serves both modes.
+- Nested
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) never
+  confuses its levels.
+- Code that isn’t differentiated pays nothing for
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html).
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>System</th>
+<th>What BPL shares with it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JAX</td>
+<td>A function traced into a program of primitives, and replayed on
+later calls. Reverse mode as the transpose of a linearisation. JVP rules
+that reverse mode transposes, like <code>custom_jvp</code> rules.
+<code>•detach</code> as <code>stop_gradient</code>. Rank doing the job
+of <code>vmap</code>.</td>
+</tr>
+<tr>
+<td>Dex</td>
+<td>Linearising, then transposing. Indices that name a formula’s axes.
+Accumulation as the transpose of indexing.</td>
+</tr>
+<tr>
+<td>tinygrad</td>
+<td>Lazy arrays: a call on a large array gives a <a
+href="terms.qmd#term-pending">pending</a> array, and a read of its items
+runs the calls it needs, fused. Derivative code that fuses as other code
+does. Copies, such as a transpose or a slice, whose transposes are
+copies, not scatters. A program replayed as <code>TinyJit</code> replays
+its kernels.</td>
+</tr>
+<tr>
+<td>Futhark</td>
+<td>One table of partial derivatives for both modes, which BPL’s table
+was mapped from. The rules for folds by <a
+href="https://answerdotai.github.io/basedpl/glyphs/times.html"><code>×</code></a>,
+<a
+href="https://answerdotai.github.io/basedpl/glyphs/upstile.html"><code>⌈</code></a>
+and <a
+href="https://answerdotai.github.io/basedpl/glyphs/downstile.html"><code>⌊</code></a>.
+Accumulation as the transpose of a gather.</td>
+</tr>
+<tr>
+<td>ForwardDiff</td>
+<td>Dual numbers with tags, which keep nested derivatives apart.</td>
+</tr>
+<tr>
+<td>J</td>
+<td><code>D.</code>, which gives a Jacobian, and <code>d.</code>, which
+gives the derivative at each item. <code>f∂</code> and <code>f∂⁰</code>
+do these jobs.</td>
+</tr>
+</tbody>
+</table>
+
+BPL also differs from all of them.
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) strips
+its tags from values that escape it, whereas JAX raises an error when a
+leaked tracer is used. One operator picks the mode, whereas JAX offers
+`jvp`, `vjp`, `jacfwd` and `jacrev`. A Jacobian’s keys, axis names and
+nesting follow the rules of outer products. Futhark differentiates its
+program before running it and recomputes values in reverse mode. BPL
+differentiates the calls that `f` makes as it runs. It keeps their
+linear steps instead of recomputing values.
+
+## Not built yet
+
+These are planned:
+
+- Branches in programs.
+  [`⍚`](https://answerdotai.github.io/basedpl/glyphs/diamond-underbar.html)
+  with a selector computed from differentiated values stops a trace, as
+  a predicate on them does. The plan is to trace such a selector as a
+  masked select, as JAX traces `select`.
+- Programs inside maps.
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+  inside a map, as in `{f∂ω}¨x`, runs without a program. `•explain`
+  gives the reason “a call under another level”.
+- Writes. [`@`](https://answerdotai.github.io/basedpl/glyphs/at.html)
+  and selective assignment with differentiated values stop a trace.
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) still
+  gives the right result, more slowly.
+- Whole training steps. A program holds one call of
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html). The
+  update, and the loop around it, run outside the program. A tracing
+  point for whole training steps, such as
+  [`⍣`](https://answerdotai.github.io/basedpl/glyphs/star-diaeresis.html),
+  would run a step’s forward pass, gradient and update as one program.
+- Deferred Jacobians. `f∂ x` builds every item of the Jacobian. The plan
+  is to hold a large Jacobian as its linearisation, and build its items
+  only when something reads them. `J+.×v` would then run as a JVP,
+  `u+.×J` as a vector–Jacobian product, and `b⌹J` as an iterative solve,
+  as in the Gauss–Newton step `x - r⁝x ⌹ r∂x`.
+- The GPU. Programs run on the CPU. A WebGPU back end, with arrays kept
+  on the device, is planned.
+
+These limits have no plan yet:
+
+- Reverse mode keeps every value that its transposes need until
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+  returns. A long iteration keeps those values for every one of its
+  steps. Checkpointing, which Futhark uses for loops, recomputes values
+  instead of keeping them. BPL has none.
+- Nested
+  [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html), as
+  in `f∂∂`, runs without a program.
+- [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+  differentiates through each iteration of `⍣∞` and
+  [`⇄`](https://answerdotai.github.io/basedpl/glyphs/right-left-arrows.html).
+  Rules from the implicit function theorem would differentiate their
+  answers directly.
+- [`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+  raises UNSUPPORTED for complex numbers.
+- Forward mode computes the derivative in one direction for each pass.

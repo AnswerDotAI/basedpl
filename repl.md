@@ -1,0 +1,424 @@
+
+
+# REPL
+
+Run `bpl`. The REPL displays the result of each expression. A name that
+you assign stays defined on later lines. After an error, the REPL shows
+the error’s source location and returns to the prompt.
+
+``` text
+      v←ι5
+      +/v
+10
+```
+
+## Typing glyphs
+
+Hold Alt and press the key that the [glyph
+reference](glyphs.qmd#typing-glyphs) lists. For example, Alt-m types
+[`×`](https://answerdotai.github.io/basedpl/glyphs/times.html), Alt-u
+types [`÷`](https://answerdotai.github.io/basedpl/glyphs/obelus.html),
+and Alt-h, Alt-j, Alt-k and Alt-l type
+[`←`](https://answerdotai.github.io/basedpl/glyphs/left-arrow.html),
+[`↓`](https://answerdotai.github.io/basedpl/glyphs/down-arrow.html),
+[`↑`](https://answerdotai.github.io/basedpl/glyphs/up-arrow.html) and
+[`↦`](https://answerdotai.github.io/basedpl/glyphs/right-arrow-from-bar.html).
+Some glyphs take a second key, with or without Alt held. Alt-Minus then
+`a` types
+[`⍶`](https://answerdotai.github.io/basedpl/glyphs/alpha-underbar.html),
+and Alt-o then `c` types
+[`⍝`](https://answerdotai.github.io/basedpl/glyphs/lamp.html). Tap the
+same dead key twice to type its character: Alt-o twice types
+[`○`](https://answerdotai.github.io/basedpl/glyphs/circle.html), and
+Alt-Backslash twice types
+[`⍭`](https://answerdotai.github.io/basedpl/glyphs/stile-tilde.html).
+The sequence ends after the second tap. Space or an unlisted key also
+types the dead key’s character. For example, Alt-o then Space types
+[`○`](https://answerdotai.github.io/basedpl/glyphs/circle.html).
+Backspace or Escape cancels the sequence. Superscripts start with Alt-6:
+Alt-6 then `2` types `²`, and Alt-6 then `-1` types `⁻¹`. For bare
+inverse
+[`⁻`](https://answerdotai.github.io/basedpl/glyphs/superscript-minus.html),
+type Alt-6,
+[`-`](https://answerdotai.github.io/basedpl/glyphs/minus.html), then
+Space. Subscripts start with Alt-5: Alt-5 then `1` types `₁`. Alt keys
+also insert glyphs inside strings and comments.
+
+While a dead key is pending, a compact hint shows its character and
+valid next keys. For example, Alt-Backslash shows `⍭:7g`. When a next
+key works with or without Shift, the hint shows only the unshifted key.
+
+On macOS, configure your terminal to send left Option as Alt. In
+Ghostty:
+
+``` text
+macos-option-as-alt = left
+```
+
+Right Option still types the usual Mac characters. In iTerm2, set the
+left Option key to “Esc+”. In Terminal.app, turn on “Use Option as Meta
+key”. Alt keys type glyphs instead of running the line editor’s Alt
+shortcuts. Cursor keys and Ctrl shortcuts still work.
+
+On a UK Mac keyboard, Shift-3 types `£`. Hold Alt or left Option while
+pressing Shift-3 to type
+[`#`](https://answerdotai.github.io/basedpl/glyphs/hash.html). This is
+the layout-independent alias Alt-£. It also works in the notebook
+keyboard. Plain `£` is unchanged.
+
+### Named entry
+
+Type a backtick followed by a name, then press Tab to replace them with
+the glyph. Typing a non-letter accepts the glyph and enters that
+character too.
+
+Use `` `bullet `` then Tab for the system prefix
+[`•`](https://answerdotai.github.io/basedpl/glyphs/bullet.html), and
+`` `quad `` for
+[`⎕`](https://answerdotai.github.io/basedpl/glyphs/quad.html).
+
+To type
+[`↣`](https://answerdotai.github.io/basedpl/glyphs/right-tail-arrow.html),
+use Alt-[`.`](https://answerdotai.github.io/basedpl/glyphs/dot.html), or
+`` `before `` then Tab. To type
+[`↢`](https://answerdotai.github.io/basedpl/glyphs/left-tail-arrow.html),
+use Alt-[`,`](https://answerdotai.github.io/basedpl/glyphs/comma.html),
+or `` `after `` then Tab. Use `` `pi `` for
+[`π`](https://answerdotai.github.io/basedpl/glyphs/pi.html) and
+`` `sqrt `` for
+[`√`](https://answerdotai.github.io/basedpl/glyphs/radical.html).
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Input</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>`iot</code> then Tab</td>
+<td><a
+href="https://answerdotai.github.io/basedpl/glyphs/iota.html"><code>ι</code></a></td>
+</tr>
+<tr>
+<td><code>`iota5</code></td>
+<td><code>ι5</code></td>
+</tr>
+<tr>
+<td><code>2`times3</code></td>
+<td><code>2×3</code></td>
+</tr>
+<tr>
+<td><code>v`assign</code> then Space</td>
+<td><code>v←</code></td>
+</tr>
+<tr>
+<td><code>`scan</code> then Tab</td>
+<td><a
+href="https://answerdotai.github.io/basedpl/glyphs/backslash.html"><code>\\</code></a></td>
+</tr>
+</tbody>
+</table>
+
+Each glyph has a glyph name, which is the linked name beside it in the
+[glyph reference](glyphs.qmd). The REPL also matches the names the
+reference lists for what a glyph does, such as `reshape` for
+[`ρ`](https://answerdotai.github.io/basedpl/glyphs/rho.html) and
+`assign` for
+[`←`](https://answerdotai.github.io/basedpl/glyphs/left-arrow.html). A
+listed match shows the name it matched: `` `resh `` lists `ρ reshape r`.
+
+Names are case-insensitive. Exact matches rank first, then prefixes,
+then abbreviations formed from prefixes of successive hyphen-separated
+parts. Glyph names and the names for what a glyph does rank alike, so
+`` `lar `` lists both
+[`←`](https://answerdotai.github.io/basedpl/glyphs/left-arrow.html), for
+`left-arrow`, and
+[`α`](https://answerdotai.github.io/basedpl/glyphs/alpha.html), for
+`left-argument`. A name that is a prefix of every other match wins:
+`` `om `` gives
+[`ω`](https://answerdotai.github.io/basedpl/glyphs/omega.html), and
+`` `omu `` gives
+[`⍹`](https://answerdotai.github.io/basedpl/glyphs/omega-underbar.html).
+`grup` matches `grade-up`. Type only the letters of a name. A hyphen
+ends the name, as any non-letter does: `` `as- `` becomes `←-`.
+
+Matches appear as you type. Each listed name ends with the keys that
+type its glyph, such as `a` for Alt-a or `o c` for Alt-o then `c`. Input
+that matches several names stays as typed. Press Tab twice to list the
+matches. Backtick then Tab twice lists every name. Enter accepts a
+unique match and submits the line.
+
+Expansion applies only to typed REPL input, outside strings and
+comments. Backtick names are not expanded in pasted BPL, source files,
+Python or process requests, which must contain the glyphs themselves.
+
+### Other editors
+
+The table of keys is `python/basedpl/browser/layout.json`, which is
+shipped in the Python package and embedded in the Rust REPL. In
+`layout.json`, `option` gives what each Alt key types: a glyph, or a
+dead-key state that the next key completes. Each state in `states` lists
+its keys, and the terminator that Space or an unlisted key types. The
+next key matches whether or not Alt is held. Repeating the dead key
+types its terminator and ends the sequence. Keys in `layout.json` are
+the characters that a US keyboard produces, after Shift. `alt_aliases`
+maps actual Alt characters such as `£` to text for the REPL and notebook
+keyboard. Native macOS layouts ignore these aliases.
+`basedpl.editors.write()` builds the regional macOS layout bundles in
+`python/basedpl/assets/macos` from `layout.json` and the native maps in
+`keyboards.json`.
+
+``` python
+import json
+from importlib.resources import files
+
+layout = json.loads(files('basedpl').joinpath('browser/layout.json').read_text())
+assert layout['option']['h'] == '←' and layout['option']['a'] == 'α'
+assert layout['states']['bar']['keys']['a'] == '⍶'
+```
+
+Monaco and CodeMirror adapters can import `layout.json`. Complete a
+pending dead-key sequence before matching a new Alt chord. Check
+`alt_aliases` against `KeyboardEvent.key` first. Otherwise derive the US
+character from `KeyboardEvent.code` and Shift, because macOS Option may
+already have changed `KeyboardEvent.key`. Track `AltLeft`/`AltRight`
+keydown/up to select one Option key, and clear modifier state on blur.
+For a mapped key, prevent the browser’s default action and insert the
+text through the editor’s normal edit transaction. Keep a pending
+dead-key state until the next key, and clear it on blur or a focus
+change. Leave composition events to the input method.
+
+## Editing and multiline input
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Left / Right</td>
+<td>Move within input</td>
+</tr>
+<tr>
+<td>Up / Down</td>
+<td>Recall input history</td>
+</tr>
+<tr>
+<td>Ctrl-C</td>
+<td>Cancel the current input, including unfinished multiline input</td>
+</tr>
+<tr>
+<td>Ctrl-D on an empty line</td>
+<td>Exit</td>
+</tr>
+</tbody>
+</table>
+
+The REPL loads `$XDG_CONFIG_HOME/basedpl/history` at startup, falling
+back to `~/.config/basedpl/history` when `XDG_CONFIG_HOME` is unset or
+not an absolute path. It appends this session’s inputs on exit and keeps
+the newest 1,000 entries. A complete multiline input is one entry;
+cancelled input is not saved.
+
+After a line with an unclosed delimiter, the REPL shows a continuation
+prompt. When you close the delimiter, the REPL evaluates the complete
+input once.
+
+``` text
+      double←{
+    · ω×2
+    · }
+      double 3
+6
+```
+
+Inside brackets and parentheses, a line break means
+[`◇`](https://answerdotai.github.io/basedpl/glyphs/diamond.html), so
+each line of a bracket list is a row of the array.
+
+## Help
+
+`]help` lists the topics available offline. Open a topic by name, as in
+`]help indexing`, or enter part of its name or title to find matching
+topics. Names and glyphs work too:
+
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>]help indexing</code></td>
+<td>The indexing guide</td>
+</tr>
+<tr>
+<td><code>]help +</code></td>
+<td>Help for a name or glyph</td>
+</tr>
+<tr>
+<td><code>]help mean -source</code></td>
+<td>Definition source</td>
+</tr>
+<tr>
+<td><code>]help llms</code></td>
+<td>The concise language reference</td>
+</tr>
+<tr>
+<td><code>]help ?</code></td>
+<td>Help for the predicate glyph</td>
+</tr>
+<tr>
+<td><code>]help? index(?!ing)</code></td>
+<td>Regex search over all help text</td>
+</tr>
+</tbody>
+</table>
+
+Everything after `]help?` is the pattern, without quotes. Search ignores
+case by default. Results list name and title matches first, then heading
+matches, then body text matches, and show the command to open each
+topic. Search uses the same platform-specific regex syntax as
+[`•r`](system/r.qmd). For example, `]help? index|select` finds both
+terms. Outside the browser, `(?-i)` makes the pattern case-sensitive.
+
+## Array and function display
+
+Interactive sessions draw arrays in boxes, show functions as trees, and
+box output made inside functions. [`•prefs`](system/prefs.qmd) reads and
+changes these settings: `•prefs ["box":$f]` turns boxes off, and
+`•prefs ⍬` shows every setting. Batch and JSON sessions start without
+boxes, and so does Python until IPython loads BPL’s magics.
+
+Matrices and nested arrays have boxes, axis arrows and a type marker on
+the bottom edge. Other vectors stay plain. Character vectors are
+displayed as quoted strings, including inside arrays. A plain vector
+shows its kind, keys and axis name, as in `[2 3 5]ₓ`, `[1.5 2.5]ₛ` and
+`$t $f`. The marker names the storage: `ₓ` for exact integers,
+[`~`](https://answerdotai.github.io/basedpl/glyphs/tilde.html) for
+floats, `j` for complex numbers, `─` for characters,
+[`∊`](https://answerdotai.github.io/basedpl/glyphs/epsilon.html) for
+nested arrays and
+[`+`](https://answerdotai.github.io/basedpl/glyphs/plus.html) for mixed
+storage, whose items keep their own kinds. A number inside an `ₓ` box
+has no suffix. Without boxes, a matrix whose numbers share a kind that
+has a suffix shows as its literal laid out in rows, with one suffix
+after the brackets. A keyed matrix shows that suffix in its top-left
+corner. Enter a function name to see its tree.
+
+An array of more than 1000 items shows only the first and last 3
+positions of each long axis. `…` replaces the hidden columns, `⋮` the
+hidden rows, and `⋱` sits where they cross. The `limit` and `edges`
+settings of `•prefs` change these numbers. `⎕←` prints every item.
+
+``` text
+      100 100ρι10000
+┌→──────────────────────────────┐
+↓   0    1    2 …   97   98   99│
+│ 100  101  102 …  197  198  199│
+│ 200  201  202 …  297  298  299│
+│   ⋮    ⋮    ⋮ ⋱    ⋮    ⋮    ⋮│
+│9700 9701 9702 … 9797 9798 9799│
+│9800 9801 9802 … 9897 9898 9899│
+│9900 9901 9902 … 9997 9998 9999│
+└~──────────────────────────────┘
+```
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>]Display [[1 2] [3 4]]</code></td>
+<td>Draw one array in a box, whatever the settings</td>
+</tr>
+<tr>
+<td><code>]dissect expression</code></td>
+<td>Show the bound expression before its result</td>
+</tr>
+<tr>
+<td><code>]clear</code></td>
+<td>Remove every name and restore the starting display settings</td>
+</tr>
+</tbody>
+</table>
+
+Both display modes show scalars as source code: `⊂4ₓ`, `⊂⊂4ₓ` or
+`⊂[1 2]`.
+
+`⎕←` explicitly prints a value, including an assignment’s result.
+
+``` text
+      ⎕←v←ι3
+0 1 2
+```
+
+## Expression grouping
+
+`]dissect` evaluates an expression once and shows its functions and
+arguments before the result. It uses the existing function display,
+including explicit bindings such as
+[`↣`](https://answerdotai.github.io/basedpl/glyphs/right-tail-arrow.html):
+
+``` text
+      ]dissect -@ 1 0 1# 1 2 3
+call
+├─ @
+│  ├─ -
+│  └─ ↣
+│     ├─ [1 0 1]
+│     └─ #
+└─ [1 2 3]
+¯1 2 ¯3
+```
+
+`•prefs ["trees":$f]` selects linear display:
+
+``` text
+(-@([1 0 1]↣#))[1 2 3]
+¯1 2 ¯3
+```
+
+`trees` controls function and expression display independently of array
+boxes. The view shows the bound value of each name and array operand.
+Calls inside functions are not shown.
+
+`•prefs ["dissect":$t]` enables this view for subsequent statements.
+Assignments stay [shy](terms.qmd#term-shy). Turn it off with
+`•prefs ["dissect":$f]`. `]dissect` does not change the `dissect`
+preference. When the result is a function whose display is the same as
+the dissected view, the REPL shows it once.
+
+## Timing
+
+[`•time`](system/time.qmd) gives elapsed time and compares the speed of
+functions. This compares two reductions on a million items:
+
+``` text
+      F←["sum":+/ "max":⌈/]
+      F •time ι1000000
+["sum":0.001085375 "max":0.00057625]
+```

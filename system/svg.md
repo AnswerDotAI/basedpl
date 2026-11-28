@@ -1,0 +1,11 @@
+
+
+# `•svg` — SVG pictures
+
+`X •svg children` returns an `svg` element with attributes `X`. It adds
+`xmlns` for the SVG namespace and `viewBox="0 0 100 100"`. Attributes in
+`X` replace these. With an attributes record as its only argument,
+`•svg` returns an empty picture: `•svg ["width":200 "height":100]`. An
+argument that is text or an element tree becomes the children unchanged,
+as with [`•element`](element.qmd). Notebooks display the `svg` element
+as a picture. [XML and SVG](../xml.ipynb) covers element trees.

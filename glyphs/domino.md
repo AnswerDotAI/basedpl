@@ -1,0 +1,69 @@
+
+
+# [`⌹`](https://answerdotai.github.io/basedpl/glyphs/domino.html) — Matrix inverse / Matrix divide
+
+Function. Keys: `Alt-q u`. Hanzi: `解/逆`. Ranks: `2` monadic, `∞ 2`
+dyadic
+
+`⌹Y` gives the inverse of a square matrix, and the pseudoinverse of any
+other matrix.
+[`⌹`](https://answerdotai.github.io/basedpl/glyphs/domino.html)
+reciprocates units.
+
+``` bpl
+⌹2ₓ                ⍝ 0.5
+⌹[1 0◇0 2]ₓ     ⍝ [1 0◇0 0.5]
+```
+
+On an array of rank 3 or more, `⌹Y` inverts each matrix, and `X⌹Y`
+divides `X` by each matrix.
+
+``` bpl
+⌹2 2 2ρ[1 0 0 1 2 0 0 4]ₓ   ⍝ 2 2 2ρ[1 0 0 1 0.5 0 0 0.25]
+```
+
+`X⌹Y` solves `Y+.×Z = X`, giving the least-squares solution when there
+are more rows than columns.
+
+``` bpl
+[3 5 7]ₓ⌹[1 1◇1 2◇1 3]ₓ      ⍝ 1 2
+```
+
+When many least-squares solutions exist, as for a singular or wide
+matrix, [`⌹`](https://answerdotai.github.io/basedpl/glyphs/domino.html)
+gives the one with the least norm, as NumPy’s `lstsq` and `pinv` do. A
+square matrix is singular when a pivot of its LU factorization is no
+greater than [`$m`](../system/constants.qmd) times its number of rows
+times the largest magnitude of its items. Singular values no greater
+than `$m` times the larger of the matrix’s two lengths times the largest
+singular value then count as zero.
+
+``` bpl
+[1 2]ₓ⌹[1 0 1◇0 1 0]ₓ      ⍝ 0.5 2 0.5
+⌹[1 2◇2 4]ᵣ                ⍝ [1ᵣ25 2ᵣ25◇2ᵣ25 4ᵣ25]
+⌹[1 2◇2 4]                 ⍝ [0.04 0.08◇0.08 0.16]
+```
+
+Rational arguments (`ᵣ`) give rational results, through row reduction.
+Integer arguments are converted to floats of the width that `÷ₐ` gives
+them. For approximate real and complex arguments,
+[`⌹`](https://answerdotai.github.io/basedpl/glyphs/domino.html) uses LU
+with partial pivoting on a square matrix that isn’t singular, and the
+SVD on any other matrix. LU applies no cutoff: `⌹[1 1e8◇0 1]` gives the
+exact inverse `[1 ¯1e8◇0 1]`, though the SVD’s cutoff would count its
+smaller singular value as zero.
+
+## Inverse
+
+`⌹⁻Y` is `⌹Y`.
+
+``` bpl
+⌹⁻[1 0◇0 2]ₓ   ⍝ [1 0◇0 0.5]
+```
+
+## Errors
+
+- `LENGTH`: `X` and `Y` have different numbers of rows
+- `DOMAIN`: an item that isn’t a number
+
+A matrix that holds an infinity or NaN gives NaN results.

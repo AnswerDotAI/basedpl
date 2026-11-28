@@ -1,0 +1,242 @@
+
+
+# Models in index notation
+
+In index notation, you write the formula for one item of a result, with
+a named index for each of its axes. BPL runs the formula once, on whole
+arrays, and
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html)
+differentiates it. Tacit code stays BPL’s main style: a plain matrix
+product reads better as `x+.×w` than in any index form. Index notation
+helps when leading axes and Rank line up a formula’s axes badly, as in
+attention’s heads and causal mask, a convolution’s stride and window, or
+one step of Gaussian elimination.
+
+## Indices
+
+A formula in index notation takes three steps:
+
+1.  Make the indices. [`•index`](system/index.qmd) gives `ιn` along an
+    axis with a fresh hidden name. It maps over a nested shape, so
+    `[[n i] h]←•index[ρx ≢b]` makes an index for each axis of `x` and
+    one for the length of `b`.
+2.  Select with them. `x.[n i]` holds the items of `x` along axes named
+    by `n` and `i`.
+3.  Name the axis that each fold removes, as in `+/⍠i`.
+
+Indices pair by name. The same index pairs with itself. Different
+indices build a grid. A matrix product sums along the index that its two
+operands share. Here `k` pairs the columns of `xu` with the rows of
+`wu`, and `+/⍠k` sums along it. `b` and `o` build the result’s grid. The
+[inner product](glyphs/dot.qmd) along `k`, `+.×⍠k`, is the same
+contraction. The examples below use it:
+
+``` bpl
+xu←[2 3]ρι6ₓ ◇ wu←[3 4]ρι12ₓ ◇ [b o k]←•index 2 4 3
+y←+/⍠k⁝xu.[b k]×wu.[k o]
+∧/,y=xu+.×wu                   ⍝ $t
+∧/,y=xu.[b k]+.×⍠k⁝wu.[k o]     ⍝ $t
+```
+
+`•index` sets each index’s length when it makes the index. BPL doesn’t
+infer the length from the selections that use the index.
+
+## A neural network
+
+This network has one hidden layer of tanh units (`7○`) and fits `y` from
+`x` by mean squared error. `p` holds its parameters. `mlp` is the tacit
+form, where `b(+¹)` adds the bias to each row. In the index form,
+`mlpi`, `n` names the samples, `i` the inputs and `h` the hidden units.
+The `a←` line of `mlpi` gives the formula for one sample and one unit.
+`a` is the tanh of the bias at `h` plus the sum over `i` of `x` at `n i`
+times `w` at `i h`. Both forms give the same loss and the same gradient:
+
+``` bpl
+•prefs ["seed":42]
+x←¯0.5+¿[64 8]ρ0 ◇ y←1○+/x
+p←["w":0.5×¯0.5+¿[8 16]ρ0 "b":16ρ0 "v":0.1×¯0.5+¿16ρ0 "c":0]
+mlp←{
+  [x y]←α ◇ [w b v c]←ω
+  h←7○b(+¹)x+.×w
+  +/÷≢ ⊼y-c+h+.×v
+}
+loss←[x y]mlp p
+mlpi←{
+  [x y]←α ◇ [w b v c]←ω
+  [[n i] h]←•index[ρx ≢b]
+  a←7○b.[h]+x.[n i]+.×⍠i⁝w.[i h]
+  +/÷≢ ⊼y.[n]-c+a+.×⍠h⁝v.[h]
+}
+1E¯12>|loss-([x y]mlpi p)       ⍝ $t
+g←[x y]mlp∂ p ◇ gi←[x y]mlpi∂ p
+1E¯12>⌈/,|g.w-gi.w             ⍝ $t
+```
+
+The index form runs at about the tacit form’s speed, forward and under
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html). BPL
+reads `x.[n i]` through its indices as a map, without copying `x`. An
+inner product along a named axis, as in `x.[n i]+.×⍠i⁝w.[i h]`, runs as
+the matrix product `x+.×w`. So does a
+[`+`](https://answerdotai.github.io/basedpl/glyphs/plus.html) fold along
+a named axis of a product, as in `+/⍠i⁝x.[n i]×w.[i h]`. Neither builds
+the grid of products. The folds in the gradient run as matrix products
+too. A traced program also stores each map in the order of axes that
+most of its readers need.
+
+## Attention
+
+Attention lets each token of a sequence read from the tokens before it.
+`x` holds a batch of 2 sequences of 4 tokens, each with 8 features.
+`wqkv` projects each token to a query, a key and a value for each of 2
+heads, with 4 features in each head. `wo` projects the heads back to 8
+features. `mask` stops a token from reading the tokens after it.
+
+In tacit form, two transposes and the reshape in `heads` line the axes
+up for `+.×` and Rank. In index notation, `b` names the sequence, `t`
+the token, `d` the feature and `u` the token that `t` reads from. `r`
+picks the query, key or value, `h` names the head and `j` the feature
+within a head. Both forms give the same result and the same gradient:
+
+``` bpl
+x←¯0.5+¿[2 4 8]ρ0 ◇ wqkv←0.3×¯0.5+¿[8 3 2 4]ρ0 ◇ wo←0.3×¯0.5+¿[8 8]ρ0
+mask←¯1E9× ι4 <⊗ ι4
+heads←{h←0 2 1 3⍉ω ◇ (¯2↓ρh , ×/¯2↑ρh)ρh}
+attn←{
+  [wqkv wo]←α
+  [q k v]←1 3 0 2 4⍉ω+.×wqkv
+  s←mask(+²) q+.×²⍉²k ÷ √(ρq)₋₁
+  e←*s-⌈/s
+  (heads e÷+/e +.×² v)+.×wo
+}
+attni←{
+  [wqkv wo]←α
+  [[b t d] u [r h j]]←•index[ρω (ρω)₁ 1↓ρwqkv]
+  [q k v]←:[r b t h j]⍉⁻ω.[b t d]+.×⍠d⁝wqkv.[d r h j]
+  s←mask.[t u] + q.[b t h j]+.×⍠j⁝k.[b u h j] ÷ √≢j
+  e←*s-⌈/⍠u⁝s
+  o←(e÷+/⍠u⁝e)+.×⍠u⁝v.[b u h j]
+  :[b t d]⍉⁻+/⍠[h j]o×wo.[j+(≢j)×h d]
+}
+a←[wqkv wo]attn x ◇ ai←[wqkv wo]attni x
+1E¯12>⌈/,|a-ai                 ⍝ $t
+pa←["wqkv":wqkv "wo":wo]
+g←{+/, ⊼[ω.wqkv ω.wo]attn⁝x}∂ pa ◇ gi←{+/, ⊼[ω.wqkv ω.wo]attni⁝x}∂ pa
+1E¯12>⌈/,|g.wqkv-gi.wqkv       ⍝ $t
+```
+
+Line by line, in `attni`:
+
+- The projection is one contraction over `d`.
+  [`⍉⁻`](glyphs/circle-backslash.qmd) puts `r` first by name.
+  [`:`](glyphs/colon.qmd) removes the axis names. `[q k v]←` then takes
+  the three parts along the first axis. Once the names are removed, each
+  part can be selected with new indices.
+- `k.[b u h j]` reads the keys with `u` for their token axis. The scores
+  then pair each query token `t` with each key token `u`. `mask.[t u]`
+  adds ¯1E9 wherever `u` comes after `t`.
+- `e÷+/⍠u⁝e` is the softmax over `u`. `o` is the sum of the values over
+  `u`, each weighted by its softmax share.
+- `wo.[j+(≢j)×h d]` reads the row of `wo` for head `h` and feature `j`.
+  BPL reads through positions computed from indices as a map. The fold
+  over `[h j]` merges the heads. `:[b t d]⍉⁻` orders the result’s axes
+  and removes their names, which gives the result the same shape as
+  `attn`’s.
+
+## A Gaussian mixture
+
+This objective scores how well a mixture of Gaussian components fits a
+set of points, with a prior on each component’s precision. `gp` holds
+each component’s log weight `alpha` and mean `mu`. Each component’s
+precision factor has the exponentials of `q` on its diagonal and `l`
+below it. `low` masks `l` to the part below the diagonal. `eye` is the
+identity matrix. `•detach` makes
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html) treat
+the log-sum-exp shifts as constants.
+
+`gmm` is the rank form. `l×² low` masks each component’s matrix,
+`(*q)×¹ ²eye` puts each component’s row of `*q` on a diagonal, `⍉²`
+transposes each component’s factor, and
+[`⌿`](https://answerdotai.github.io/basedpl/glyphs/slash-bar.html) folds
+along the first axis, the components. In the index form, `gmmi`, `n`
+names the points, `k` the components, and `d` and `e` the dimensions.
+Both forms give the same objective and the same gradient:
+
+``` bpl
+•prefs ["seed":42]
+gx←¿[50 4]ρ0 ◇ eye←=⊗⍨ι4 ◇ low←>⊗⍨ι4
+gp←["alpha":¿3ρ0 "mu":¿[3 4]ρ0 "q":0.1×¿[3 4]ρ0 "l":0.1×¿[3 4 4]ρ0]
+gmm←{
+  [alpha mu q l]←ω
+  L←l×² low
+  Q←L+(*q)×¹ ²eye
+  sq←+/⊼(α(-¹)² ¹mu)+.×²⍉²Q
+  t←(alpha++/q)-0.5×sq
+  m←⌈⌿•detach t
+  am←⌈/•detach alpha
+  (+/m+⊛+⌿*t-¹m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢α)×am+⊛+/*alpha-am
+}
+objective←gx gmm gp
+gmmi←{
+  [alpha mu q l]←ω
+  [[n d] [k e]]←•index[ρα ρmu]
+  L←l.[k d e]×low.[d e]
+  Q←L + *q.[k d] × eye.[d e]
+  sq←+/⍠d⊼Q+.×⍠e⁝α.[n e]-mu.[k e]
+  t←alpha.[k]++/⍠d⁝q.[k d] - 0.5×sq
+  m←⌈/⍠k•detach t
+  am←⌈/•detach alpha
+  +/m+⊛+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢α × am+⊛+/*alpha-am
+}
+1E¯12>|objective-(gx gmmi gp)   ⍝ $t
+g←gx gmm∂ gp ◇ h←gx gmmi∂ gp
+1E¯12>⌈/,|g.l-h.l              ⍝ $t
+```
+
+Each form reads better in different lines. Rank suits the lines that
+work on whole components: `²` and `¹ ²` pair each component’s matrix and
+row, and
+[`⌿`](https://answerdotai.github.io/basedpl/glyphs/slash-bar.html) folds
+along the components. Index notation suits `sq`. There
+`α.[n e]-mu.[k e]` pairs every point with every mean by name, whereas
+the rank form needs the nested Rank `α(-¹)² ¹mu`. `+.×⍠e` also names the
+axis that the product sums along.
+
+## Why it works this way
+
+No feature of BPL requires names or keys. Code written for plain data
+also runs on named or keyed data. It can give different results there,
+because the names decide which axes align.
+
+`•index` gives each index a hidden name that is new on every call. A
+caller’s names can’t collide with it. An index used twice pairs with
+itself and gives a diagonal, as in `m.[i i]`. Different names build a
+grid in any arithmetic, with no
+[`⊗`](https://answerdotai.github.io/basedpl/glyphs/circle-times.html). A
+length-1 axis expands to match, as elsewhere in BPL. A design where
+names only labelled axes, and only
+[`⊗`](https://answerdotai.github.io/basedpl/glyphs/circle-times.html)
+built a grid, would give neither the diagonal nor the grid. BPL also has
+no constructor that gives each index an axis by its position in the
+call, as NumPy’s `ix_` does. `•index` builds the same grids by name.
+
+[`¨`](https://answerdotai.github.io/basedpl/glyphs/diaeresis.html),
+[`⍤`](https://answerdotai.github.io/basedpl/glyphs/jot-diaeresis.html)
+and
+[`⌺`](https://answerdotai.github.io/basedpl/glyphs/quad-diamond.html)
+need no new syntax. They suit a function written for one cell, including
+one that branches cell by cell. Index notation suits a formula written
+for one item, where the axes that pair differ from line to line. BPL’s
+design followed a close study of Dex, whose index sets informed
+`•index`.
+
+## Not built yet
+
+[Automatic differentiation](autodiff.qmd#not-built-yet) lists what
+traced programs don’t cover yet. Two of its items apply to models like
+these. The first is whole training steps: a program holds one call of
+[`∂`](https://answerdotai.github.io/basedpl/glyphs/partial.html), and a
+training step’s update and the loop around it run outside the program.
+The second is branches in programs, such as Agenda
+([`⍚`](https://answerdotai.github.io/basedpl/glyphs/diamond-underbar.html))
+with a selector computed from differentiated values (see [What stops a
+trace](autodiff.qmd#what-stops-a-trace)).

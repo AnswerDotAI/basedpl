@@ -1,0 +1,60 @@
+
+
+# [`ᵇ`](https://answerdotai.github.io/basedpl/glyphs/superscript-b.html) — Bitwise
+
+Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
+
+`fᵇ` applies the Boolean function `f` separately to each bit of its
+whole arguments. Negative whole numbers use infinite two’s complement.
+
+``` bpl
+6∧ᵇ3               ⍝ 2ₓ
+6∨ᵇ3               ⍝ 7ₓ
+6≠ᵇ3               ⍝ 5ₓ
+~ᵇ6                ⍝ ¯7ₓ
+```
+
+Arguments use the usual [integer
+conversion](../numbers.qmd#exact-and-approximate): a whole float, such
+as bare `6`, is read as that integer, and with Mathish on so is a float
+within `1E¯14` of a whole number. Results are exact integers at any
+size, or Booleans when every argument is Boolean. `fᵇ` is pervasive.
+
+``` bpl
+6 3∧ᵇ5             ⍝ [4 1]ₓ
+$t∧ᵇ$f             ⍝ $f
+```
+
+For a monadic call, `f` is evaluated on `$f` and `$t`. For a dyadic
+call, it is evaluated on all four Boolean pairs. Each evaluation must
+return one Boolean value. The operand can be any function or composition
+that satisfies this rule. It can also be a constant, which acts as a
+function that always gives the constant. A constant must therefore be
+one Boolean value. An array of several items isn’t read as a truth
+table: it raises a `LENGTH` error. `1ᵇ` sets every bit, including the
+infinitely many leading bits of two’s complement, and gives `¯1ₓ` for an
+integer argument. `0ᵇ` clears every bit:
+
+``` bpl
+1ᵇ 6               ⍝ ¯1ₓ
+6 (0ᵇ) 3           ⍝ 0ₓ
+```
+
+Under [`∂`](partial.qmd), the results of `fᵇ` have no derivative, like
+those of other functions that give integers: `{ω∧ᵇ3}∂6` is `0`.
+
+In Python, `f.bitwise` constructs `fᵇ`. The `&`,
+[`|`](https://answerdotai.github.io/basedpl/glyphs/stile.html) and
+[`~`](https://answerdotai.github.io/basedpl/glyphs/tilde.html) operators
+of `Array` and `Function` use `∧ᵇ`, `∨ᵇ` and `~ᵇ`. Plain
+[`∧`](https://answerdotai.github.io/basedpl/glyphs/wedge.html) and
+[`∨`](https://answerdotai.github.io/basedpl/glyphs/vee.html) are LCM and
+GCD.
+
+## Errors
+
+- `DOMAIN`: a character argument, a float that isn’t a whole number
+  (within `1E¯14` with Mathish on), or an operand that gives a value
+  that isn’t Boolean
+- `LENGTH`: an operand that gives several items, such as the constant
+  `1 0`

@@ -1,0 +1,35 @@
+
+
+# [`⊗`](https://answerdotai.github.io/basedpl/glyphs/circle-times.html) — Outer product
+
+Monadic operator. Keys: `Alt-o m`. Hanzi: `表`
+
+`X g⊗Y` applies `g` to every pair.
+[`⊗`](https://answerdotai.github.io/basedpl/glyphs/circle-times.html)
+calls `g` directly on two atoms. With array arguments, the result has
+shape `ρX , ρY`.
+
+``` bpl
+5+⊗5               ⍝ 10
+5+⊗⊂5              ⍝ ⊂10
+1,⊗2               ⍝ 1 2
+1 2+⊗10 20         ⍝ [11 21◇12 22]
+ι3ₓ =⊗ ι3ₓ           ⍝ [$t $f $f◇$f $t $f◇$f $f $t]
+```
+
+Each pair’s result is one item of the result. See [inner
+product](dot.qmd).
+
+Where it can,
+[`⊗`](https://answerdotai.github.io/basedpl/glyphs/circle-times.html)
+calls `g` once on all the pairs together, in a [batched
+call](../evaluation.qmd#functions-and-effects).
+
+## Inverse
+
+`X f⊗⁻ Y` gives the right argument whose outer product with `X` is `Y`.
+`(f⊗↢X)⁻Y` gives the left argument.
+
+``` bpl
+1 2+⊗⁻1 2+⊗10 20   ⍝ 10 20
+```
